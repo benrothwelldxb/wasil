@@ -1,0 +1,255 @@
+import React, { useState, useMemo } from 'react'
+import { MessageCard, WeeklyMessagePreview } from '../components/messages'
+import { PulseBanner, PulseSurveyModal } from '../components/pulse'
+import { ScheduleWidget } from '../components/schedule'
+import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
+import { useApi, useMutation } from '../hooks/useApi'
+import * as api from '../services/api'
+import type { Message, Survey, PulseSurvey, WeeklyMessage, ScheduleItem } from '../types'
+
+export function ParentDashboard() {
+  const { user } = useAuth()
+  const theme = useTheme()
+
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all')
+  const [showWeeklyMessageModal, setShowWeeklyMessageModal] = useState(false)
+  const [showPulseSurvey, setShowPulseSurvey] = useState(false)
+
+  // Fetch data
+  const { data: messages, setData: setMessages } = useApi<Message[]>(
+    () => api.messages.list(),
+    []
+  )
+  const { data: surveys, setData: setSurveys } = useApi<Survey[]>(
+    () => api.surveys.list(),
+    []
+  )
+  const { data: weeklyMessageData, setData: setWeeklyMessage } = useApi<WeeklyMessage | null>(
+    () => api.weeklyMessage.getCurrent(),
+    []
+  )
+  const { data: pulseData, setData: setPulseData, refetch: refetchPulse } = useApi<PulseSurvey[]>(
+    () => api.pulse.list(),
+    []
+  )
+  const { data: scheduleData } = useApi<ScheduleItem[]>(
+    () => api.schedule.list(),
+    []
+  )
+
+  // Mutations
+  const { mutate: acknowledgeMessage } = useMutation(api.messages.acknowledge)
+  const { mutate: respondToSurvey } = useMutation(api.surveys.respond)
+  const { mutate: toggleHeart } = useMutation(api.weeklyMessage.toggleHeart)
+
+  // Get user's children's classes
+  const userClasses = useMemo(() => {
+    const classes = user?.children?.map((c) => c.className) || []
+    return [...new Set(classes)]
+  }, [user])
+
+  // Filter options including "All Messages" and "Whole School"
+  const filterOptions = ['all', 'Whole School', ...userClasses]
+
+  // Filter messages by selected class
+  const filteredMessages = useMemo(() => {
+    if (!messages) return []
+    if (selectedClassFilter === 'all') return messages
+    if (selectedClassFilter === 'Whole School') {
+      return messages.filter((m) => m.targetClass === 'Whole School')
+    }
+    return messages.filter(
+      (m) => m.targetClass === selectedClassFilter || m.targetClass === 'Whole School'
+    )
+  }, [messages, selectedClassFilter])
+
+  // Get the open pulse survey (show even if completed to display thank you message)
+  const openPulse = useMemo(() => {
+    return pulseData?.find((p) => p.status === 'OPEN')
+  }, [pulseData])
+
+  // Get today's schedule items (recurring for today's day + one-off for today's date)
+  const todayString = new Date().toISOString().split('T')[0]
+  const todayDayOfWeek = new Date().getDay()
+  const todaysSchedule = useMemo(() => {
+    if (!scheduleData) return []
+    return scheduleData.filter((item) => {
+      if (item.isRecurring && item.dayOfWeek === todayDayOfWeek) {
+        return true
+      }
+      if (!item.isRecurring && item.date === todayString) {
+        return true
+      }
+      return false
+    })
+  }, [scheduleData, todayDayOfWeek, todayString])
+
+  const handleAcknowledge = async (messageId: string) => {
+    await acknowledgeMessage(messageId)
+    setMessages((prev) =>
+      prev?.map((m) =>
+        m.id === messageId
+          ? { ...m, acknowledged: true, acknowledgmentCount: (m.acknowledgmentCount || 0) + 1 }
+          : m
+      ) || null
+    )
+  }
+
+  const handleToggleHeart = async (messageId: string) => {
+    const result = await toggleHeart(messageId)
+    setWeeklyMessage((prev) =>
+      prev
+        ? {
+            ...prev,
+            hasHearted: result.hearted,
+            heartCount: result.hearted ? prev.heartCount + 1 : prev.heartCount - 1,
+          }
+        : null
+    )
+  }
+
+  const getFilterLabel = (filter: string) => {
+    if (filter === 'all') return 'All Messages'
+    return filter
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Parent Pulse Banner */}
+      {openPulse && (
+        <PulseBanner
+          pulse={openPulse}
+          onStartSurvey={() => setShowPulseSurvey(true)}
+        />
+      )}
+
+      {/* Today's Schedule */}
+      {todaysSchedule.length > 0 && (
+        <ScheduleWidget
+          items={todaysSchedule}
+          date={todayString}
+        />
+      )}
+
+      {/* Messages Section */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-2xl font-bold mb-6" style={{ color: theme.colors.brandColor }}>
+          Messages
+        </h2>
+
+        {/* Weekly Message Preview */}
+        {weeklyMessageData && (
+          <div className="mb-6">
+            <WeeklyMessagePreview
+              message={weeklyMessageData}
+              onHeart={handleToggleHeart}
+              onClick={() => setShowWeeklyMessageModal(true)}
+            />
+          </div>
+        )}
+
+        {/* Filter Pills */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {filterOptions.map((filter) => (
+            <button
+              key={filter}
+              onClick={() => setSelectedClassFilter(filter)}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                selectedClassFilter === filter
+                  ? 'text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+              style={
+                selectedClassFilter === filter
+                  ? { backgroundColor: theme.colors.brandColor }
+                  : undefined
+              }
+            >
+              {getFilterLabel(filter)}
+            </button>
+          ))}
+        </div>
+
+        {/* Message Cards */}
+        <div className="space-y-4">
+          {filteredMessages.length > 0 ? (
+            filteredMessages.map((message) => (
+              <MessageCard
+                key={message.id}
+                message={message}
+                onAcknowledge={handleAcknowledge}
+              />
+            ))
+          ) : (
+            <p className="text-gray-500 text-center py-8">
+              No messages to display.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Weekly Message Modal */}
+      {showWeeklyMessageModal && weeklyMessageData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-auto">
+            <div className="p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-bold" style={{ color: theme.colors.brandColor }}>
+                    {weeklyMessageData.title}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Week of {new Date(weeklyMessageData.weekOf).toLocaleDateString('en-GB', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowWeeklyMessageModal(false)}
+                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                >
+                  &times;
+                </button>
+              </div>
+              <div className="prose prose-sm max-w-none">
+                {weeklyMessageData.content.split('\n').map((paragraph, idx) => (
+                  <p key={idx} className="text-gray-700 mb-3">
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+              <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
+                <button
+                  onClick={() => handleToggleHeart(weeklyMessageData.id)}
+                  className={`flex items-center space-x-2 ${
+                    weeklyMessageData.hasHearted ? 'text-red-500' : 'text-gray-400'
+                  }`}
+                >
+                  <span className={`text-2xl ${weeklyMessageData.hasHearted ? '' : 'opacity-50'}`}>
+                    {weeklyMessageData.hasHearted ? '❤️' : '🤍'}
+                  </span>
+                  <span className="font-medium">{weeklyMessageData.heartCount}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pulse Survey Modal */}
+      {showPulseSurvey && openPulse && (
+        <PulseSurveyModal
+          pulse={openPulse}
+          onClose={() => setShowPulseSurvey(false)}
+          onComplete={() => {
+            setShowPulseSurvey(false)
+            refetchPulse()
+          }}
+        />
+      )}
+    </div>
+  )
+}

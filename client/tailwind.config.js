@@ -1,0 +1,60 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        // Dynamic brand colors from CSS variables
+        brand: 'var(--brand-color)',
+        accent: 'var(--accent-color)',
+        'brand-light': 'var(--brand-color-light)',
+        burgundy: {
+          DEFAULT: '#7f0029',
+          50: '#fdf2f4',
+          100: '#fce7eb',
+          200: '#f9d0d9',
+          300: '#f5a8ba',
+          400: '#ee7694',
+          500: '#e34d72',
+          600: '#cf2c58',
+          700: '#ae2048',
+          800: '#7f0029',
+          900: '#6b1a35',
+          950: '#3d0919',
+        },
+        gold: {
+          DEFAULT: '#D4AF37',
+          50: '#fcf9eb',
+          100: '#f8f0cd',
+          200: '#f1de9c',
+          300: '#e9c862',
+          400: '#D4AF37',
+          500: '#d1982a',
+          600: '#b97721',
+          700: '#9a571f',
+          800: '#7f4620',
+          900: '#6a3b1f',
+          950: '#3d1e0d',
+        },
+        cream: {
+          DEFAULT: '#eeede7',
+          50: '#f9f9f7',
+          100: '#eeede7',
+          200: '#dddad0',
+          300: '#c6c1b2',
+          400: '#aea592',
+          500: '#9d917b',
+          600: '#90826f',
+          700: '#786b5d',
+          800: '#63594f',
+          900: '#514941',
+          950: '#2a2621',
+        },
+      },
+    },
+  },
+  plugins: [],
+}

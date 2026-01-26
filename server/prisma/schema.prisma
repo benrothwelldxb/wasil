@@ -1,0 +1,357 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Schools (white-label support)
+model School {
+  id           String   @id @default(cuid())
+  name         String   // "Victory Heights Primary School"
+  shortName    String   // "VHPS"
+  city         String
+  academicYear String   @default("2025/26") // e.g., "2025/26"
+  brandColor   String   @default("#7f0029")
+  accentColor  String   @default("#D4AF37")
+  tagline      String?  // "Stay Connected" - displayed in header
+  logoUrl      String?  // URL to school logo (login page)
+  logoIconUrl  String?  // URL to header icon (48x48)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users               User[]
+  classes             Class[]
+  messages            Message[]
+  surveys             Survey[]
+  events              Event[]
+  termDates           TermDate[]
+  scheduleItems       ScheduleItem[]
+  weeklyMessages      WeeklyMessage[]
+  knowledgeCategories KnowledgeCategory[]
+  pulseSurveys        PulseSurvey[]
+  policies            Policy[]
+  folders             FileFolder[]
+  files               SchoolFile[]
+}
+
+// Users (Parents & Admins)
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      Role     @default(PARENT)
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+
+  // OAuth fields
+  googleId    String? @unique
+  microsoftId String? @unique
+  avatarUrl   String?
+
+  children           Child[]
+  messageAcks        MessageAcknowledgment[]
+  surveyResponses    SurveyResponse[]
+  eventRsvps         EventRsvp[]
+  pulseResponses     PulseResponse[]
+  weeklyHearts       WeeklyMessageHeart[]
+
+  createdAt DateTime @default(now())
+}
+
+enum Role {
+  PARENT
+  ADMIN
+  SUPER_ADMIN
+}
+
+// Children linked to parents
+model Child {
+  id       String @id @default(cuid())
+  name     String
+  parentId String
+  parent   User   @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  classId  String
+  class    Class  @relation(fields: [classId], references: [id])
+}
+
+// Classes/Year Groups
+model Class {
+  id        String @id @default(cuid())
+  name      String // "FS1 Blue", "Y2 Red"
+  colorBg   String @default("bg-blue-500")
+  colorText String @default("text-white")
+  schoolId  String
+  school    School @relation(fields: [schoolId], references: [id])
+
+  children      Child[]
+  messages      Message[]
+  surveys       Survey[]
+  events        Event[]
+  scheduleItems ScheduleItem[]
+
+  @@unique([schoolId, name])
+}
+
+// Messages/Announcements
+model Message {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  targetClass String   // "Whole School" or class name
+  classId     String?
+  class       Class?   @relation(fields: [classId], references: [id])
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id])
+  senderId    String
+  senderName  String
+
+  // Action required
+  actionType    String? // "consent", "payment", "rsvp"
+  actionLabel   String?
+  actionDueDate DateTime?
+  actionAmount  String?
+
+  // Message flags
+  isPinned Boolean @default(false)
+  isUrgent Boolean @default(false)
+
+  acknowledgments MessageAcknowledgment[]
+
+  createdAt DateTime @default(now())
+}
+
+model MessageAcknowledgment {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+}
+
+// Quick Surveys/Polls
+model Survey {
+  id          String   @id @default(cuid())
+  question    String
+  options     Json     // ["Option 1", "Option 2", ...]
+  active      Boolean  @default(true)
+  targetClass String
+  classId     String?
+  class       Class?   @relation(fields: [classId], references: [id])
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id])
+
+  responses SurveyResponse[]
+
+  createdAt DateTime @default(now())
+}
+
+model SurveyResponse {
+  id        String   @id @default(cuid())
+  surveyId  String
+  survey    Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  response  String
+  createdAt DateTime @default(now())
+
+  @@unique([surveyId, userId])
+}
+
+// Events Calendar
+model Event {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  date         DateTime
+  time         String?
+  location     String?
+  targetClass  String
+  classId      String?
+  class        Class?   @relation(fields: [classId], references: [id])
+  schoolId     String
+  school       School   @relation(fields: [schoolId], references: [id])
+  requiresRsvp Boolean  @default(false)
+
+  rsvps EventRsvp[]
+
+  createdAt DateTime @default(now())
+}
+
+model EventRsvp {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    String   // "attending", "not_attending", "maybe"
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+}
+
+// Term Dates
+model TermDate {
+  id       String    @id @default(cuid())
+  term     Int
+  termName String
+  label    String
+  sublabel String?
+  date     DateTime
+  endDate  DateTime?
+  type     String    // "term-start", "term-end", "half-term", "public-holiday"
+  color    String
+  schoolId String
+  school   School    @relation(fields: [schoolId], references: [id])
+}
+
+// Daily/Recurring Schedule
+model ScheduleItem {
+  id          String   @id @default(cuid())
+  targetClass String
+  classId     String?
+  class       Class?   @relation(fields: [classId], references: [id])
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id])
+
+  // For recurring items
+  isRecurring Boolean @default(false)
+  dayOfWeek   Int?    // 0-6 for recurring
+  active      Boolean @default(true)
+
+  // For one-off items
+  date DateTime?
+
+  type        String  // "pe", "swimming", "trip", "early-finish", etc.
+  label       String
+  description String?
+  icon        String?
+
+  createdAt DateTime @default(now())
+}
+
+// Weekly Principal Message
+model WeeklyMessage {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  weekOf    DateTime
+  isCurrent Boolean  @default(false)
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+
+  hearts WeeklyMessageHeart[]
+
+  createdAt DateTime @default(now())
+}
+
+model WeeklyMessageHeart {
+  id        String        @id @default(cuid())
+  messageId String
+  message   WeeklyMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@unique([messageId, userId])
+}
+
+// Knowledge Base
+model KnowledgeCategory {
+  id       String @id @default(cuid())
+  name     String
+  icon     String
+  color    String
+  order    Int    @default(0)
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  articles KnowledgeArticle[]
+}
+
+model KnowledgeArticle {
+  id         String            @id @default(cuid())
+  title      String
+  content    String
+  categoryId String
+  category   KnowledgeCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  updatedAt  DateTime          @updatedAt
+  createdAt  DateTime          @default(now())
+}
+
+// Parent Pulse Surveys
+model PulseSurvey {
+  id           String   @id @default(cuid())
+  halfTermName String
+  status       String   // "DRAFT", "OPEN", "CLOSED"
+  opensAt      DateTime
+  closesAt     DateTime
+  schoolId     String
+  school       School   @relation(fields: [schoolId], references: [id])
+
+  responses PulseResponse[]
+
+  createdAt DateTime @default(now())
+}
+
+model PulseResponse {
+  id        String      @id @default(cuid())
+  pulseId   String
+  pulse     PulseSurvey @relation(fields: [pulseId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers   Json        // { q1: 4, q2: 5, ... }
+  createdAt DateTime    @default(now())
+
+  @@unique([pulseId, userId])
+}
+
+// School Policies
+model Policy {
+  id          String   @id @default(cuid())
+  name        String   // e.g., "Attendance Policy", "Behaviour Policy"
+  description String?
+  fileUrl     String   // URL to the policy document (PDF)
+  fileSize    Int?     // File size in bytes
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id])
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
+
+// File Folders for organizing school files
+model FileFolder {
+  id          String   @id @default(cuid())
+  name        String   // e.g., "Forms", "Letters", "Curriculum", "Photos"
+  icon        String?  // Emoji or icon identifier
+  color       String?  // Color for the folder
+  parentId    String?  // For nested folders (null = root level)
+  parent      FileFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children    FileFolder[] @relation("FolderHierarchy")
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id])
+  files       SchoolFile[]
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+// School Files
+model SchoolFile {
+  id          String     @id @default(cuid())
+  name        String     // Display name
+  fileName    String     // Original file name
+  fileUrl     String     // URL to the file
+  fileType    String     // MIME type or extension (pdf, doc, jpg, etc.)
+  fileSize    Int        // Size in bytes
+  folderId    String?
+  folder      FileFolder? @relation(fields: [folderId], references: [id])
+  schoolId    String
+  school      School     @relation(fields: [schoolId], references: [id])
+  uploadedAt  DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
