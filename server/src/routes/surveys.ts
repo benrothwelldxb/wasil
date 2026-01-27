@@ -9,6 +9,7 @@ router.get('/', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
     const childClassIds = user.children?.map(c => c.classId) || []
+    const now = new Date()
 
     const surveys = await prisma.survey.findMany({
       where: {
@@ -17,6 +18,15 @@ router.get('/', isAuthenticated, async (req, res) => {
         OR: [
           { targetClass: 'Whole School' },
           { classId: { in: childClassIds } },
+        ],
+        // Filter out expired surveys for parents
+        AND: [
+          {
+            OR: [
+              { expiresAt: null },
+              { expiresAt: { gt: now } },
+            ],
+          },
         ],
       },
       include: {
@@ -35,6 +45,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       targetClass: survey.targetClass,
       classId: survey.classId,
       schoolId: survey.schoolId,
+      expiresAt: survey.expiresAt?.toISOString(),
       userResponse: survey.responses[0]?.response || null,
       createdAt: survey.createdAt.toISOString(),
     })))
@@ -61,6 +72,7 @@ router.get('/all', isAdmin, async (req, res) => {
       orderBy: { createdAt: 'desc' },
     })
 
+    const now = new Date()
     res.json(surveys.map(survey => ({
       id: survey.id,
       question: survey.question,
@@ -69,6 +81,8 @@ router.get('/all', isAdmin, async (req, res) => {
       targetClass: survey.targetClass,
       classId: survey.classId,
       schoolId: survey.schoolId,
+      expiresAt: survey.expiresAt?.toISOString(),
+      isExpired: survey.expiresAt ? survey.expiresAt < now : false,
       responses: survey.responses.map(r => ({
         id: r.id,
         response: r.response,
@@ -77,6 +91,7 @@ router.get('/all', isAdmin, async (req, res) => {
         createdAt: r.createdAt.toISOString(),
       })),
       createdAt: survey.createdAt.toISOString(),
+      updatedAt: survey.updatedAt.toISOString(),
     })))
   } catch (error) {
     console.error('Error fetching all surveys:', error)
@@ -88,7 +103,7 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { question, options, targetClass, classId } = req.body
+    const { question, options, targetClass, classId, expiresAt } = req.body
 
     const survey = await prisma.survey.create({
       data: {
@@ -97,6 +112,7 @@ router.post('/', isAdmin, async (req, res) => {
         targetClass,
         classId: classId || null,
         schoolId: user.schoolId,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
       },
     })
 
@@ -108,6 +124,7 @@ router.post('/', isAdmin, async (req, res) => {
       targetClass: survey.targetClass,
       classId: survey.classId,
       schoolId: survey.schoolId,
+      expiresAt: survey.expiresAt?.toISOString(),
       createdAt: survey.createdAt.toISOString(),
     })
   } catch (error) {
@@ -168,6 +185,78 @@ router.patch('/:id/close', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error closing survey:', error)
     res.status(500).json({ error: 'Failed to close survey' })
+  }
+})
+
+// Update survey (admin only)
+router.put('/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const { question, options, targetClass, classId, active, expiresAt } = req.body
+
+    // Verify survey belongs to user's school
+    const existing = await prisma.survey.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Survey not found' })
+    }
+
+    const survey = await prisma.survey.update({
+      where: { id },
+      data: {
+        question,
+        options,
+        targetClass,
+        classId: classId || null,
+        active: active ?? existing.active,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+      },
+    })
+
+    res.json({
+      id: survey.id,
+      question: survey.question,
+      options: survey.options as string[],
+      active: survey.active,
+      targetClass: survey.targetClass,
+      classId: survey.classId,
+      schoolId: survey.schoolId,
+      expiresAt: survey.expiresAt?.toISOString(),
+      createdAt: survey.createdAt.toISOString(),
+      updatedAt: survey.updatedAt.toISOString(),
+    })
+  } catch (error) {
+    console.error('Error updating survey:', error)
+    res.status(500).json({ error: 'Failed to update survey' })
+  }
+})
+
+// Delete survey (admin only)
+router.delete('/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    // Verify survey belongs to user's school
+    const existing = await prisma.survey.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Survey not found' })
+    }
+
+    await prisma.survey.delete({
+      where: { id },
+    })
+
+    res.json({ message: 'Survey deleted successfully' })
+  } catch (error) {
+    console.error('Error deleting survey:', error)
+    res.status(500).json({ error: 'Failed to delete survey' })
   }
 })
 

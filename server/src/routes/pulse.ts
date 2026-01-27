@@ -228,6 +228,77 @@ router.post('/:id/send', isAdmin, async (req, res) => {
   }
 })
 
+// Update pulse survey (admin only)
+router.put('/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const { halfTermName, opensAt, closesAt } = req.body
+
+    // Verify pulse belongs to user's school
+    const existing = await prisma.pulseSurvey.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Pulse survey not found' })
+    }
+
+    const pulse = await prisma.pulseSurvey.update({
+      where: { id },
+      data: {
+        halfTermName,
+        opensAt: new Date(opensAt),
+        closesAt: new Date(closesAt),
+      },
+      include: {
+        _count: { select: { responses: true } },
+      },
+    })
+
+    res.json({
+      id: pulse.id,
+      halfTermName: pulse.halfTermName,
+      status: pulse.status,
+      opensAt: pulse.opensAt.toISOString(),
+      closesAt: pulse.closesAt.toISOString(),
+      schoolId: pulse.schoolId,
+      questions: PULSE_CORE_QUESTIONS,
+      responseCount: pulse._count.responses,
+      createdAt: pulse.createdAt.toISOString(),
+    })
+  } catch (error) {
+    console.error('Error updating pulse survey:', error)
+    res.status(500).json({ error: 'Failed to update pulse survey' })
+  }
+})
+
+// Delete pulse survey (admin only)
+router.delete('/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    // Verify pulse belongs to user's school
+    const existing = await prisma.pulseSurvey.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Pulse survey not found' })
+    }
+
+    await prisma.pulseSurvey.delete({
+      where: { id },
+    })
+
+    res.json({ message: 'Pulse survey deleted successfully' })
+  } catch (error) {
+    console.error('Error deleting pulse survey:', error)
+    res.status(500).json({ error: 'Failed to delete pulse survey' })
+  }
+})
+
 // Close pulse (admin only)
 router.post('/:id/close', isAdmin, async (req, res) => {
   try {

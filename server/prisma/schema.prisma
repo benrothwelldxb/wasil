@@ -37,7 +37,7 @@ model School {
   files               SchoolFile[]
 }
 
-// Users (Parents & Admins)
+// Users (Parents, Staff & Admins)
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -51,7 +51,14 @@ model User {
   microsoftId String? @unique
   avatarUrl   String?
 
+  // Parent relations
   children           Child[]
+
+  // Staff relations - classes they can manage/message
+  assignedClasses    StaffClassAssignment[]
+  sentMessages       Message[]
+
+  // Activity relations
   messageAcks        MessageAcknowledgment[]
   surveyResponses    SurveyResponse[]
   eventRsvps         EventRsvp[]
@@ -59,10 +66,12 @@ model User {
   weeklyHearts       WeeklyMessageHeart[]
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum Role {
   PARENT
+  STAFF
   ADMIN
   SUPER_ADMIN
 }
@@ -86,13 +95,26 @@ model Class {
   schoolId  String
   school    School @relation(fields: [schoolId], references: [id])
 
-  children      Child[]
-  messages      Message[]
-  surveys       Survey[]
-  events        Event[]
-  scheduleItems ScheduleItem[]
+  children         Child[]
+  messages         Message[]
+  surveys          Survey[]
+  events           Event[]
+  scheduleItems    ScheduleItem[]
+  assignedStaff    StaffClassAssignment[]
 
   @@unique([schoolId, name])
+}
+
+// Staff-Class assignments (which classes a staff member can manage)
+model StaffClassAssignment {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, classId])
 }
 
 // Messages/Announcements
@@ -106,7 +128,8 @@ model Message {
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id])
   senderId    String
-  senderName  String
+  sender      User     @relation(fields: [senderId], references: [id])
+  senderName  String   // Kept for historical/backup, but sender.name is preferred
 
   // Action required
   actionType    String? // "consent", "payment", "rsvp"
@@ -118,9 +141,13 @@ model Message {
   isPinned Boolean @default(false)
   isUrgent Boolean @default(false)
 
+  // Lifecycle
+  expiresAt DateTime? // Auto-archive after this date
+
   acknowledgments MessageAcknowledgment[]
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model MessageAcknowledgment {
@@ -146,9 +173,13 @@ model Survey {
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id])
 
+  // Lifecycle
+  expiresAt DateTime? // Auto-close after this date
+
   responses SurveyResponse[]
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model SurveyResponse {
@@ -181,6 +212,7 @@ model Event {
   rsvps EventRsvp[]
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model EventRsvp {

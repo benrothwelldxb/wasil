@@ -82,6 +82,7 @@ router.get('/all', isAdmin, async (req, res) => {
         createdAt: r.createdAt.toISOString(),
       })),
       createdAt: event.createdAt.toISOString(),
+      updatedAt: event.updatedAt.toISOString(),
     })))
   } catch (error) {
     console.error('Error fetching all events:', error)
@@ -163,10 +164,70 @@ router.post('/:id/rsvp', isAuthenticated, async (req, res) => {
   }
 })
 
+// Update event (admin only)
+router.put('/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const { title, description, date, time, location, targetClass, classId, requiresRsvp } = req.body
+
+    // Verify event belongs to user's school
+    const existing = await prisma.event.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Event not found' })
+    }
+
+    const event = await prisma.event.update({
+      where: { id },
+      data: {
+        title,
+        description: description || null,
+        date: new Date(date),
+        time: time || null,
+        location: location || null,
+        targetClass,
+        classId: classId || null,
+        requiresRsvp: requiresRsvp ?? existing.requiresRsvp,
+      },
+    })
+
+    res.json({
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      date: event.date.toISOString().split('T')[0],
+      time: event.time,
+      location: event.location,
+      targetClass: event.targetClass,
+      classId: event.classId,
+      schoolId: event.schoolId,
+      requiresRsvp: event.requiresRsvp,
+      createdAt: event.createdAt.toISOString(),
+      updatedAt: event.updatedAt.toISOString(),
+    })
+  } catch (error) {
+    console.error('Error updating event:', error)
+    res.status(500).json({ error: 'Failed to update event' })
+  }
+})
+
 // Delete event (admin only)
 router.delete('/:id', isAdmin, async (req, res) => {
   try {
+    const user = req.user!
     const { id } = req.params
+
+    // Verify event belongs to user's school
+    const existing = await prisma.event.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Event not found' })
+    }
 
     await prisma.event.delete({
       where: { id },

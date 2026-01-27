@@ -20,6 +20,7 @@ import classesRoutes from './routes/classes.js'
 import policiesRoutes from './routes/policies.js'
 import filesRoutes from './routes/files.js'
 import schoolsRoutes from './routes/schools.js'
+import staffRoutes from './routes/staff.js'
 
 dotenv.config()
 
@@ -66,6 +67,7 @@ app.use('/api/classes', classesRoutes)
 app.use('/api/policies', policiesRoutes)
 app.use('/api/files', filesRoutes)
 app.use('/api/schools', schoolsRoutes)
+app.use('/api/staff', staffRoutes)
 
 // Health check
 app.get('/health', (_req, res) => {

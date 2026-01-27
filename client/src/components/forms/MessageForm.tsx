@@ -5,6 +5,9 @@ export interface MessageFormData {
   title: string
   content: string
   targetClass: string
+  isPinned: boolean
+  isUrgent: boolean
+  expiresAt: string
   hasAction: boolean
   actionType: string
   actionLabel: string
@@ -18,6 +21,7 @@ interface MessageFormProps {
   onSubmit: (e: React.FormEvent) => void
   targetClassOptions: string[]
   isSubmitting: boolean
+  submitLabel?: string
 }
 
 export function MessageForm({
@@ -26,6 +30,7 @@ export function MessageForm({
   onSubmit,
   targetClassOptions,
   isSubmitting,
+  submitLabel = 'Send Message',
 }: MessageFormProps) {
   const theme = useTheme()
 
@@ -64,15 +69,47 @@ export function MessageForm({
             ))}
           </select>
         </div>
-        <div className="flex items-center space-x-2">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Show Until (optional)</label>
           <input
-            type="checkbox"
-            id="hasAction"
-            checked={formData.hasAction}
-            onChange={(e) => onChange({ ...formData, hasAction: e.target.checked })}
-            className="rounded"
+            type="date"
+            value={formData.expiresAt}
+            onChange={(e) => onChange({ ...formData, expiresAt: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy focus:border-burgundy"
           />
-          <label htmlFor="hasAction" className="text-sm text-gray-700">Requires action from parents</label>
+          <p className="text-xs text-gray-500 mt-1">Message will be hidden from parents after this date</p>
+        </div>
+        <div className="flex items-center flex-wrap gap-4">
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="isPinned"
+              checked={formData.isPinned}
+              onChange={(e) => onChange({ ...formData, isPinned: e.target.checked })}
+              className="rounded text-amber-600 focus:ring-amber-500"
+            />
+            <label htmlFor="isPinned" className="text-sm text-gray-700">Pin to top</label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="isUrgent"
+              checked={formData.isUrgent}
+              onChange={(e) => onChange({ ...formData, isUrgent: e.target.checked })}
+              className="rounded text-red-600 focus:ring-red-500"
+            />
+            <label htmlFor="isUrgent" className="text-sm text-gray-700">Mark as urgent</label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="hasAction"
+              checked={formData.hasAction}
+              onChange={(e) => onChange({ ...formData, hasAction: e.target.checked })}
+              className="rounded"
+            />
+            <label htmlFor="hasAction" className="text-sm text-gray-700">Requires action</label>
+          </div>
         </div>
         {formData.hasAction && (
           <div className="grid grid-cols-2 gap-4">
@@ -105,7 +142,7 @@ export function MessageForm({
           className="w-full py-2 rounded-lg text-white font-medium disabled:opacity-50"
           style={{ backgroundColor: theme.colors.brandColor }}
         >
-          {isSubmitting ? 'Sending...' : 'Send Message'}
+          {isSubmitting ? 'Please wait...' : submitLabel}
         </button>
       </div>
     </form>

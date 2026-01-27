@@ -1,5 +1,5 @@
 // User & Auth types
-export type Role = 'PARENT' | 'ADMIN' | 'SUPER_ADMIN'
+export type Role = 'PARENT' | 'STAFF' | 'ADMIN' | 'SUPER_ADMIN'
 
 export interface User {
   id: string
@@ -65,6 +65,7 @@ export interface Message {
   actionAmount?: string
   isPinned?: boolean
   isUrgent?: boolean
+  expiresAt?: string
   acknowledged?: boolean
   acknowledgmentCount?: number
   createdAt: string

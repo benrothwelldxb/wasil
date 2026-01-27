@@ -13,6 +13,7 @@ interface SurveyFormProps {
   onSubmit: (e: React.FormEvent) => void
   targetClassOptions: string[]
   isSubmitting: boolean
+  submitLabel?: string
 }
 
 export function SurveyForm({
@@ -21,6 +22,7 @@ export function SurveyForm({
   onSubmit,
   targetClassOptions,
   isSubmitting,
+  submitLabel = 'Create Survey',
 }: SurveyFormProps) {
   const theme = useTheme()
 
@@ -80,7 +82,7 @@ export function SurveyForm({
           className="w-full py-2 rounded-lg text-white font-medium disabled:opacity-50"
           style={{ backgroundColor: theme.colors.brandColor }}
         >
-          {isSubmitting ? 'Creating...' : 'Create Survey'}
+          {isSubmitting ? 'Please wait...' : submitLabel}
         </button>
       </div>
     </form>

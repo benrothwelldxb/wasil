@@ -161,6 +161,32 @@ router.put('/:id', isAdmin, async (req, res) => {
   }
 })
 
+// Delete weekly message (admin only)
+router.delete('/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    // Verify message belongs to user's school
+    const existing = await prisma.weeklyMessage.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Weekly message not found' })
+    }
+
+    await prisma.weeklyMessage.delete({
+      where: { id },
+    })
+
+    res.json({ message: 'Weekly message deleted successfully' })
+  } catch (error) {
+    console.error('Error deleting weekly message:', error)
+    res.status(500).json({ error: 'Failed to delete weekly message' })
+  }
+})
+
 // Toggle heart on weekly message
 router.post('/:id/heart', isAuthenticated, async (req, res) => {
   try {

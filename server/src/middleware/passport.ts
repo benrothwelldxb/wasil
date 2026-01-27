@@ -20,6 +20,11 @@ export function configurePassport() {
               class: true,
             },
           },
+          assignedClasses: {
+            include: {
+              class: true,
+            },
+          },
           school: true,
         },
       })

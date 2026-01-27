@@ -61,10 +61,34 @@ export const messages = {
     actionLabel?: string
     actionDueDate?: string
     actionAmount?: string
+    isPinned?: boolean
+    isUrgent?: boolean
+    expiresAt?: string
   }) =>
     fetchApi<Message>('/api/messages', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  update: (id: string, data: {
+    title: string
+    content: string
+    targetClass: string
+    classId?: string
+    actionType?: string
+    actionLabel?: string
+    actionDueDate?: string
+    actionAmount?: string
+    isPinned?: boolean
+    isUrgent?: boolean
+    expiresAt?: string
+  }) =>
+    fetchApi<Message>(`/api/messages/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/messages/${id}`, {
+      method: 'DELETE',
     }),
   acknowledge: (id: string) =>
     fetchApi<{ id: string; messageId: string }>(`/api/messages/${id}/ack`, {
@@ -72,19 +96,43 @@ export const messages = {
     }),
 }
 
+// Survey with responses (for admin list)
+export interface SurveyWithResponses extends Survey {
+  responses: Array<{ id: string; response: string; userName: string; userEmail: string; createdAt: string }>
+  isExpired?: boolean
+  updatedAt?: string
+}
+
 // Surveys
 export const surveys = {
   list: () => fetchApi<Survey[]>('/api/surveys'),
-  listAll: () => fetchApi<Survey[]>('/api/surveys/all'),
+  listAll: () => fetchApi<SurveyWithResponses[]>('/api/surveys/all'),
   create: (data: {
     question: string
     options: string[]
     targetClass: string
     classId?: string
+    expiresAt?: string
   }) =>
     fetchApi<Survey>('/api/surveys', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  update: (id: string, data: {
+    question: string
+    options: string[]
+    targetClass: string
+    classId?: string
+    active?: boolean
+    expiresAt?: string
+  }) =>
+    fetchApi<Survey>(`/api/surveys/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/surveys/${id}`, {
+      method: 'DELETE',
     }),
   respond: (id: string, response: string) =>
     fetchApi<{ id: string }>(`/api/surveys/${id}/respond`, {
@@ -113,6 +161,20 @@ export const events = {
   }) =>
     fetchApi<Event>('/api/events', {
       method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: {
+    title: string
+    description?: string
+    date: string
+    time?: string
+    location?: string
+    targetClass: string
+    classId?: string
+    requiresRsvp?: boolean
+  }) =>
+    fetchApi<Event>(`/api/events/${id}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     }),
   rsvp: (id: string, status: EventRsvpStatus) =>
@@ -209,6 +271,10 @@ export const weeklyMessage = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/weekly-message/${id}`, {
+      method: 'DELETE',
+    }),
   toggleHeart: (id: string) =>
     fetchApi<{ hearted: boolean }>(`/api/weekly-message/${id}/heart`, {
       method: 'POST',
@@ -267,6 +333,19 @@ export const pulse = {
     fetchApi<PulseSurvey>('/api/pulse', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  update: (id: string, data: {
+    halfTermName: string
+    opensAt: string
+    closesAt: string
+  }) =>
+    fetchApi<PulseSurvey>(`/api/pulse/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/pulse/${id}`, {
+      method: 'DELETE',
     }),
   respond: (id: string, answers: Record<string, number | string>) =>
     fetchApi<{ id: string }>(`/api/pulse/${id}/respond`, {
@@ -370,6 +449,45 @@ export const files = {
     }),
 }
 
+// Staff Management
+export interface StaffMember {
+  id: string
+  email: string
+  name: string
+  role: 'STAFF' | 'ADMIN'
+  avatarUrl?: string
+  assignedClasses: Array<{ id: string; name: string }>
+  createdAt: string
+}
+
+export const staff = {
+  list: () => fetchApi<StaffMember[]>('/api/staff'),
+  create: (data: {
+    email: string
+    name: string
+    role: 'STAFF' | 'ADMIN'
+    assignedClassIds?: string[]
+  }) =>
+    fetchApi<StaffMember>('/api/staff', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: {
+    email?: string
+    name?: string
+    role?: 'STAFF' | 'ADMIN'
+    assignedClassIds?: string[]
+  }) =>
+    fetchApi<StaffMember>(`/api/staff/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/staff/${id}`, {
+      method: 'DELETE',
+    }),
+}
+
 // Schools (Super Admin)
 export interface SchoolWithCount extends School {
   _count?: { users: number }
@@ -401,5 +519,6 @@ export default {
   classes,
   policies,
   files,
+  staff,
   schools,
 }
