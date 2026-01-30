@@ -23,6 +23,7 @@ model School {
   updatedAt    DateTime @updatedAt
 
   users               User[]
+  yearGroups          YearGroup[]
   classes             Class[]
   messages            Message[]
   surveys             Survey[]
@@ -86,14 +87,33 @@ model Child {
   class    Class  @relation(fields: [classId], references: [id])
 }
 
+// Year Groups
+model YearGroup {
+  id        String   @id @default(cuid())
+  name      String   // "Reception", "Year 1", "Year 2"
+  order     Int      // Sorting (0=Reception, 1=Year 1, etc.)
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  classes   Class[]
+  messages  Message[]
+  surveys   Survey[]
+  events    Event[]
+  scheduleItems ScheduleItem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([schoolId, name])
+}
+
 // Classes/Year Groups
 model Class {
-  id        String @id @default(cuid())
-  name      String // "FS1 Blue", "Y2 Red"
-  colorBg   String @default("bg-blue-500")
-  colorText String @default("text-white")
-  schoolId  String
-  school    School @relation(fields: [schoolId], references: [id])
+  id          String  @id @default(cuid())
+  name        String  // "FS1 Blue", "Y2 Red"
+  colorBg     String  @default("bg-blue-500")
+  colorText   String  @default("text-white")
+  schoolId    String
+  school      School  @relation(fields: [schoolId], references: [id])
+  yearGroupId String?
+  yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
 
   children         Child[]
   messages         Message[]
@@ -125,6 +145,8 @@ model Message {
   targetClass String   // "Whole School" or class name
   classId     String?
   class       Class?   @relation(fields: [classId], references: [id])
+  yearGroupId String?
+  yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id])
   senderId    String
@@ -170,6 +192,8 @@ model Survey {
   targetClass String
   classId     String?
   class       Class?   @relation(fields: [classId], references: [id])
+  yearGroupId String?
+  yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id])
 
@@ -205,6 +229,8 @@ model Event {
   targetClass  String
   classId      String?
   class        Class?   @relation(fields: [classId], references: [id])
+  yearGroupId  String?
+  yearGroup    YearGroup? @relation(fields: [yearGroupId], references: [id])
   schoolId     String
   school       School   @relation(fields: [schoolId], references: [id])
   requiresRsvp Boolean  @default(false)
@@ -248,6 +274,8 @@ model ScheduleItem {
   targetClass String
   classId     String?
   class       Class?   @relation(fields: [classId], references: [id])
+  yearGroupId String?
+  yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id])
 

@@ -8,13 +8,6 @@ interface ScheduleWidgetProps {
   date: string
 }
 
-// Class colors for demo - these would come from backend in production
-const CLASS_COLORS: Record<string, { bg: string; text: string; hex: string }> = {
-  'FS1 Blue': { bg: 'bg-blue-100', text: 'text-blue-700', hex: '#3b82f6' },
-  'Y2 Red': { bg: 'bg-red-100', text: 'text-red-700', hex: '#ef4444' },
-  'Y4 Green': { bg: 'bg-green-100', text: 'text-green-700', hex: '#22c55e' },
-  'Whole School': { bg: 'bg-purple-100', text: 'text-purple-700', hex: '#7f0029' },
-}
 
 export function ScheduleWidget({ items, date }: ScheduleWidgetProps) {
   const theme = useTheme()
@@ -49,11 +42,9 @@ export function ScheduleWidget({ items, date }: ScheduleWidgetProps) {
       {/* Items */}
       <div className="p-4 space-y-3">
         {items.map((item) => {
-          const classColor = CLASS_COLORS[item.targetClass] || {
-            bg: 'bg-gray-100',
-            text: 'text-gray-700',
-            hex: '#6b7280',
-          }
+          // Brand color for whole school / year group; class color for single class
+          const isSingleClass = !!item.classId
+          const fallbackHex = '#6b7280'
 
           return (
             <div
@@ -72,9 +63,9 @@ export function ScheduleWidget({ items, date }: ScheduleWidgetProps) {
                     <span
                       className="text-xs px-2.5 py-1 rounded-full font-medium"
                       style={
-                        item.targetClass === 'Whole School'
-                          ? { backgroundColor: theme.colors.brandColor, color: 'white' }
-                          : { backgroundColor: classColor.hex + '20', color: classColor.hex }
+                        isSingleClass
+                          ? { backgroundColor: fallbackHex + '20', color: fallbackHex }
+                          : { backgroundColor: theme.colors.brandColor, color: 'white' }
                       }
                     >
                       {item.targetClass}

@@ -1,20 +1,20 @@
 import React, { useState } from 'react'
-import { Send, BarChart3, Users, Plus, X, Pencil, Trash2, UserCog, Shield, GraduationCap, Calendar, MessageSquare, MapPin, Clock, CheckCircle, CalendarDays, ClipboardList, Play, Square } from 'lucide-react'
+import { Send, BarChart3, Users, Plus, X, Pencil, Trash2, UserCog, Shield, GraduationCap, Calendar, MessageSquare, MapPin, Clock, CheckCircle, CalendarDays, ClipboardList, Play, Square, Upload, BookOpen } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useApi } from '../hooks/useApi'
 import { MessageForm, SurveyForm } from '../components/forms'
 import { ConfirmModal } from '../components/ui'
-import type { MessageFormData, SurveyFormData } from '../components/forms'
+import type { MessageFormData, SurveyFormData, AudienceOption } from '../components/forms'
 import * as api from '../services/api'
-import type { StaffMember, SurveyWithResponses } from '../services/api'
-import type { Message, Class, Event, WeeklyMessage, TermDate, TermDateType, PulseSurvey } from '../types'
+import type { StaffMember, SurveyWithResponses, ClassWithDetails } from '../services/api'
+import type { Class, Message, Event, WeeklyMessage, TermDate, TermDateType, PulseSurvey, YearGroup } from '../types'
 
 export function AdminDashboard() {
   const { user } = useAuth()
   const theme = useTheme()
 
-  const [activeTab, setActiveTab] = useState<'messages' | 'surveys' | 'events' | 'weekly' | 'termDates' | 'pulse' | 'staff' | 'analytics'>('messages')
+  const [activeTab, setActiveTab] = useState<'messages' | 'surveys' | 'events' | 'weekly' | 'termDates' | 'pulse' | 'yearGroups' | 'classes' | 'staff' | 'analytics'>('messages')
   const [showMessageForm, setShowMessageForm] = useState(false)
   const [showSurveyForm, setShowSurveyForm] = useState(false)
   const [showStaffForm, setShowStaffForm] = useState(false)
@@ -22,6 +22,7 @@ export function AdminDashboard() {
   const [showWeeklyForm, setShowWeeklyForm] = useState(false)
   const [showTermDateForm, setShowTermDateForm] = useState(false)
   const [showPulseForm, setShowPulseForm] = useState(false)
+  const [showClassForm, setShowClassForm] = useState(false)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   const [editingSurvey, setEditingSurvey] = useState<SurveyWithResponses | null>(null)
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
@@ -29,7 +30,10 @@ export function AdminDashboard() {
   const [editingWeekly, setEditingWeekly] = useState<WeeklyMessage | null>(null)
   const [editingTermDate, setEditingTermDate] = useState<TermDate | null>(null)
   const [editingPulse, setEditingPulse] = useState<PulseSurvey | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'message' | 'survey' | 'staff' | 'event' | 'weekly' | 'termDate' | 'pulse'; id: string; title: string } | null>(null)
+  const [editingClass, setEditingClass] = useState<ClassWithDetails | null>(null)
+  const [showYearGroupForm, setShowYearGroupForm] = useState(false)
+  const [editingYearGroup, setEditingYearGroup] = useState<YearGroup | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'message' | 'survey' | 'staff' | 'event' | 'weekly' | 'termDate' | 'pulse' | 'class' | 'yearGroup'; id: string; title: string } | null>(null)
 
   // Fetch data
   const { data: messages, refetch: refetchMessages } = useApi<Message[]>(
@@ -42,6 +46,10 @@ export function AdminDashboard() {
   )
   const { data: classes } = useApi<Class[]>(
     () => api.classes.list(),
+    []
+  )
+  const { data: classesDetailed, refetch: refetchClasses } = useApi<ClassWithDetails[]>(
+    () => api.classes.listAll(),
     []
   )
   const { data: staffList, refetch: refetchStaff } = useApi<StaffMember[]>(
@@ -62,6 +70,10 @@ export function AdminDashboard() {
   )
   const { data: pulseSurveys, refetch: refetchPulse } = useApi<PulseSurvey[]>(
     () => api.pulse.listAll(),
+    []
+  )
+  const { data: yearGroups, refetch: refetchYearGroups } = useApi<YearGroup[]>(
+    () => api.yearGroups.list(),
     []
   )
 
@@ -99,6 +111,12 @@ export function AdminDashboard() {
     assignedClassIds: [] as string[],
   })
 
+  // Bulk import state
+  const [showBulkImport, setShowBulkImport] = useState(false)
+  const [bulkPasteValue, setBulkPasteValue] = useState('')
+  const [bulkStaffData, setBulkStaffData] = useState<Array<{ name: string; email: string; role: 'STAFF' | 'ADMIN' }>>([])
+  const [bulkImportResult, setBulkImportResult] = useState<{ created: number; skipped: number; errors?: string[] } | null>(null)
+
   // Event form state
   const [eventForm, setEventForm] = useState({
     title: '',
@@ -107,6 +125,8 @@ export function AdminDashboard() {
     time: '',
     location: '',
     targetClass: 'Whole School',
+    classId: '' as string,
+    yearGroupId: '' as string,
     requiresRsvp: false,
   })
 
@@ -137,6 +157,34 @@ export function AdminDashboard() {
     closesAt: '',
   })
 
+  // Class form state
+  const [classForm, setClassForm] = useState({
+    name: '',
+    colorBg: 'bg-gray-600',
+    colorText: 'text-white',
+    staffIds: [] as string[],
+    yearGroupId: '' as string,
+  })
+
+  // Year group form state
+  const [yearGroupForm, setYearGroupForm] = useState({
+    name: '',
+    order: 0,
+  })
+
+  const CLASS_COLOR_PRESETS = [
+    { bg: 'bg-gray-600', text: 'text-white', label: 'Grey', hex: '#4B5563' },
+    { bg: 'bg-blue-600', text: 'text-white', label: 'Blue', hex: '#2563EB' },
+    { bg: 'bg-red-600', text: 'text-white', label: 'Red', hex: '#DC2626' },
+    { bg: 'bg-green-600', text: 'text-white', label: 'Green', hex: '#16A34A' },
+    { bg: 'bg-purple-600', text: 'text-white', label: 'Purple', hex: '#9333EA' },
+    { bg: 'bg-amber-500', text: 'text-white', label: 'Amber', hex: '#F59E0B' },
+    { bg: 'bg-teal-600', text: 'text-white', label: 'Teal', hex: '#0D9488' },
+    { bg: 'bg-pink-600', text: 'text-white', label: 'Pink', hex: '#DB2777' },
+    { bg: 'bg-orange-600', text: 'text-white', label: 'Orange', hex: '#EA580C' },
+    { bg: 'bg-indigo-600', text: 'text-white', label: 'Indigo', hex: '#4F46E5' },
+  ]
+
   const handleCreateMessage = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -145,6 +193,8 @@ export function AdminDashboard() {
         title: messageForm.title,
         content: messageForm.content,
         targetClass: messageForm.targetClass,
+        classId: messageForm.classId || undefined,
+        yearGroupId: messageForm.yearGroupId || undefined,
         isPinned: messageForm.isPinned,
         isUrgent: messageForm.isUrgent,
         expiresAt: messageForm.expiresAt || undefined,
@@ -228,6 +278,12 @@ export function AdminDashboard() {
       } else if (deleteConfirm.type === 'pulse') {
         await api.pulse.delete(deleteConfirm.id)
         refetchPulse()
+      } else if (deleteConfirm.type === 'class') {
+        await api.classes.delete(deleteConfirm.id)
+        refetchClasses()
+      } else if (deleteConfirm.type === 'yearGroup') {
+        await api.yearGroups.delete(deleteConfirm.id)
+        refetchYearGroups()
       }
       setDeleteConfirm(null)
     } catch (error) {
@@ -247,6 +303,8 @@ export function AdminDashboard() {
         question: surveyForm.question,
         options: surveyForm.options.filter(Boolean),
         targetClass: surveyForm.targetClass,
+        classId: surveyForm.classId || undefined,
+        yearGroupId: surveyForm.yearGroupId || undefined,
       }
       if (editingSurvey) {
         await api.surveys.update(editingSurvey.id, data)
@@ -348,6 +406,81 @@ export function AdminDashboard() {
     setStaffForm({ name: '', email: '', role: 'STAFF', assignedClassIds: [] })
   }
 
+  // Bulk import handlers
+  const parseBulkInput = (text: string) => {
+    const lines = text.split('\n').filter(line => line.trim())
+    const parsed: Array<{ name: string; email: string; role: 'STAFF' | 'ADMIN' }> = []
+
+    for (const line of lines) {
+      // Split by tab or comma
+      const parts = line.split(/[\t,]/).map(p => p.trim())
+
+      if (parts.length >= 2) {
+        const name = parts[0]
+        const email = parts[1]
+
+        if (name && email && email.includes('@')) {
+          parsed.push({ name, email, role: 'STAFF' })
+        }
+      }
+    }
+
+    if (parsed.length > 0) {
+      setBulkStaffData(parsed)
+      setBulkPasteValue('')
+      setBulkImportResult(null)
+    }
+  }
+
+  const handleBulkRoleChange = (index: number, role: 'STAFF' | 'ADMIN') => {
+    setBulkStaffData(prev => prev.map((item, i) =>
+      i === index ? { ...item, role } : item
+    ))
+  }
+
+  const handleBulkRemoveRow = (index: number) => {
+    setBulkStaffData(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const handleBulkImport = async () => {
+    if (bulkStaffData.length === 0) return
+
+    setIsSubmitting(true)
+    try {
+      const result = await api.staff.bulkCreate(bulkStaffData)
+      setBulkImportResult({ created: result.created, skipped: result.skipped, errors: result.errors })
+
+      if (result.created > 0) {
+        refetchStaff()
+        // Clear imported rows, keep failed ones
+        if (result.errors && result.errors.length > 0) {
+          // Keep rows that had errors
+          const errorEmails = new Set(
+            result.errors
+              .filter(e => e.includes(':'))
+              .map(e => e.split(':')[0].trim().toLowerCase())
+          )
+          setBulkStaffData(prev => prev.filter(s => errorEmails.has(s.email.toLowerCase())))
+        } else {
+          setBulkStaffData([])
+        }
+      }
+    } catch (error) {
+      console.error('Error bulk importing staff:', error)
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      alert(`Failed to import staff: ${message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleCancelBulkImport = () => {
+    setShowBulkImport(false)
+    setBulkPasteValue('')
+    setBulkStaffData([])
+    setBulkImportResult(null)
+  }
+
   // Event handlers
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -360,6 +493,8 @@ export function AdminDashboard() {
         time: eventForm.time || undefined,
         location: eventForm.location || undefined,
         targetClass: eventForm.targetClass,
+        classId: eventForm.classId || undefined,
+        yearGroupId: eventForm.yearGroupId || undefined,
         requiresRsvp: eventForm.requiresRsvp,
       }
       if (editingEvent) {
@@ -368,7 +503,7 @@ export function AdminDashboard() {
       } else {
         await api.events.create(data)
       }
-      setEventForm({ title: '', description: '', date: '', time: '', location: '', targetClass: 'Whole School', requiresRsvp: false })
+      setEventForm({ title: '', description: '', date: '', time: '', location: '', targetClass: 'Whole School', classId: '', yearGroupId: '', requiresRsvp: false })
       setShowEventForm(false)
       refetchEvents()
     } catch (error) {
@@ -388,6 +523,8 @@ export function AdminDashboard() {
       time: event.time || '',
       location: event.location || '',
       targetClass: event.targetClass,
+      classId: event.classId || '',
+      yearGroupId: event.yearGroupId || '',
       requiresRsvp: event.requiresRsvp,
     })
     setEditingEvent(event)
@@ -397,7 +534,7 @@ export function AdminDashboard() {
   const handleCancelEventForm = () => {
     setShowEventForm(false)
     setEditingEvent(null)
-    setEventForm({ title: '', description: '', date: '', time: '', location: '', targetClass: 'Whole School', requiresRsvp: false })
+    setEventForm({ title: '', description: '', date: '', time: '', location: '', targetClass: 'Whole School', classId: '', yearGroupId: '', requiresRsvp: false })
   }
 
   // Weekly message handlers
@@ -564,7 +701,105 @@ export function AdminDashboard() {
     }
   }
 
-  const targetClassOptions = ['Whole School', ...(classes?.map((c) => c.name) || [])]
+  // Class handlers
+  const handleCreateClass = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    try {
+      const data = {
+        name: classForm.name,
+        colorBg: classForm.colorBg,
+        colorText: classForm.colorText,
+        staffIds: classForm.staffIds,
+        yearGroupId: classForm.yearGroupId || undefined,
+      }
+      if (editingClass) {
+        await api.classes.update(editingClass.id, data)
+        setEditingClass(null)
+      } else {
+        await api.classes.create(data)
+      }
+      setClassForm({ name: '', colorBg: 'bg-gray-600', colorText: 'text-white', staffIds: [], yearGroupId: '' })
+      setShowClassForm(false)
+      refetchClasses()
+    } catch (error) {
+      console.error('Error saving class:', error)
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      alert(`Failed to save class: ${message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleEditClass = (cls: ClassWithDetails) => {
+    setClassForm({
+      name: cls.name,
+      colorBg: cls.colorBg,
+      colorText: cls.colorText,
+      staffIds: cls.assignedStaff.map(s => s.id),
+      yearGroupId: cls.yearGroupId || '',
+    })
+    setEditingClass(cls)
+    setShowClassForm(true)
+  }
+
+  const handleCancelClassForm = () => {
+    setShowClassForm(false)
+    setEditingClass(null)
+    setClassForm({ name: '', colorBg: 'bg-gray-600', colorText: 'text-white', staffIds: [], yearGroupId: '' })
+  }
+
+  // Year group handlers
+  const handleCreateYearGroup = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    try {
+      const data = { name: yearGroupForm.name, order: yearGroupForm.order }
+      if (editingYearGroup) {
+        await api.yearGroups.update(editingYearGroup.id, data)
+        setEditingYearGroup(null)
+      } else {
+        await api.yearGroups.create(data)
+      }
+      setYearGroupForm({ name: '', order: 0 })
+      setShowYearGroupForm(false)
+      refetchYearGroups()
+    } catch (error) {
+      console.error('Error saving year group:', error)
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      alert(`Failed to save year group: ${message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleEditYearGroup = (yg: YearGroup) => {
+    setYearGroupForm({ name: yg.name, order: yg.order })
+    setEditingYearGroup(yg)
+    setShowYearGroupForm(true)
+  }
+
+  const handleCancelYearGroupForm = () => {
+    setShowYearGroupForm(false)
+    setEditingYearGroup(null)
+    setYearGroupForm({ name: '', order: 0 })
+  }
+
+  // Build audience options: Whole School, then year groups with nested classes
+  const audienceOptions: AudienceOption[] = [
+    { value: 'Whole School', type: 'school' },
+    ...(yearGroups || []).flatMap(yg => {
+      const ygClasses = (classes || []).filter(c => c.yearGroupId === yg.id)
+      return [
+        { value: yg.name, type: 'yearGroup' as const, id: yg.id },
+        ...ygClasses.map(c => ({ value: c.name, type: 'class' as const, id: c.id })),
+      ]
+    }),
+    // Classes not assigned to any year group
+    ...(classes || []).filter(c => !c.yearGroupId).map(c => ({
+      value: c.name, type: 'class' as const, id: c.id,
+    })),
+  ]
 
   return (
     <div className="space-y-6">
@@ -632,6 +867,8 @@ export function AdminDashboard() {
               { key: 'weekly', label: 'Weekly Updates' },
               { key: 'termDates', label: 'Term Dates' },
               { key: 'pulse', label: 'Parent Pulse' },
+              { key: 'yearGroups', label: 'Year Groups' },
+              { key: 'classes', label: 'Classes' },
               { key: 'staff', label: 'Staff' },
               { key: 'analytics', label: 'Analytics' },
             ] as const).map((tab) => (
@@ -671,7 +908,7 @@ export function AdminDashboard() {
                   formData={messageForm}
                   onChange={setMessageForm}
                   onSubmit={handleCreateMessage}
-                  targetClassOptions={targetClassOptions}
+                  audienceOptions={audienceOptions}
                   isSubmitting={isSubmitting}
                   submitLabel={editingMessage ? 'Update Message' : 'Send Message'}
                 />
@@ -744,7 +981,7 @@ export function AdminDashboard() {
                   formData={surveyForm}
                   onChange={setSurveyForm}
                   onSubmit={handleCreateSurvey}
-                  targetClassOptions={targetClassOptions}
+                  audienceOptions={audienceOptions}
                   isSubmitting={isSubmitting}
                   submitLabel={editingSurvey ? 'Update Survey' : 'Create Survey'}
                 />
@@ -881,11 +1118,21 @@ export function AdminDashboard() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience</label>
                       <select
                         value={eventForm.targetClass}
-                        onChange={(e) => setEventForm({ ...eventForm, targetClass: e.target.value })}
+                        onChange={(e) => {
+                          const opt = audienceOptions.find(o => o.value === e.target.value)
+                          setEventForm({
+                            ...eventForm,
+                            targetClass: e.target.value,
+                            classId: opt?.type === 'class' ? (opt.id || '') : '',
+                            yearGroupId: opt?.type === 'yearGroup' ? (opt.id || '') : '',
+                          })
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                       >
-                        {targetClassOptions.map((option) => (
-                          <option key={option} value={option}>{option}</option>
+                        {audienceOptions.map((opt) => (
+                          <option key={`${opt.type}-${opt.id || opt.value}`} value={opt.value}>
+                            {opt.type === 'class' ? `  └ ${opt.value}` : opt.value}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -1422,19 +1669,409 @@ export function AdminDashboard() {
             </div>
           )}
 
+          {activeTab === 'yearGroups' && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Year Groups</h3>
+                <button
+                  onClick={() => showYearGroupForm ? handleCancelYearGroupForm() : setShowYearGroupForm(true)}
+                  className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
+                  style={{ backgroundColor: theme.colors.brandColor }}
+                >
+                  {showYearGroupForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  <span>{showYearGroupForm ? 'Cancel' : 'Add Year Group'}</span>
+                </button>
+              </div>
+
+              {showYearGroupForm && (
+                <form onSubmit={handleCreateYearGroup} className="bg-gray-50 rounded-lg p-4 mb-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={yearGroupForm.name}
+                      onChange={(e) => setYearGroupForm({ ...yearGroupForm, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      placeholder="e.g. Reception, Year 1, Year 2"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Order</label>
+                    <input
+                      type="number"
+                      value={yearGroupForm.order}
+                      onChange={(e) => setYearGroupForm({ ...yearGroupForm, order: parseInt(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      placeholder="0 = first"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Controls display order (0 = first)</p>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full py-2 rounded-lg text-white font-medium disabled:opacity-50"
+                    style={{ backgroundColor: theme.colors.brandColor }}
+                  >
+                    {isSubmitting ? 'Please wait...' : editingYearGroup ? 'Update Year Group' : 'Create Year Group'}
+                  </button>
+                </form>
+              )}
+
+              <div className="space-y-3">
+                {yearGroups?.map((yg) => (
+                  <div key={yg.id} className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <span className="font-medium text-gray-900">{yg.name}</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">
+                          Order: {yg.order}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          {yg.classCount || 0} {(yg.classCount || 0) === 1 ? 'class' : 'classes'}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleEditYearGroup(yg)}
+                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                          title="Edit year group"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm({ type: 'yearGroup', id: yg.id, title: yg.name })}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete year group"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(!yearGroups || yearGroups.length === 0) && (
+                  <div className="text-center py-8 text-gray-500">
+                    <GraduationCap className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No year groups yet. Create your first year group above.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'classes' && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Classes</h3>
+                <button
+                  onClick={() => showClassForm ? handleCancelClassForm() : setShowClassForm(true)}
+                  className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
+                  style={{ backgroundColor: theme.colors.brandColor }}
+                >
+                  {showClassForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  <span>{showClassForm ? 'Cancel' : 'Add Class'}</span>
+                </button>
+              </div>
+
+              {showClassForm && (
+                <form onSubmit={handleCreateClass} className="bg-gray-50 rounded-lg p-4 mb-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Class Name</label>
+                    <input
+                      type="text"
+                      value={classForm.name}
+                      onChange={(e) => setClassForm({ ...classForm, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      placeholder="e.g. Reception, Year 1, Year 2"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Year Group</label>
+                    <select
+                      value={classForm.yearGroupId}
+                      onChange={(e) => setClassForm({ ...classForm, yearGroupId: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="">No year group</option>
+                      {yearGroups?.map((yg) => (
+                        <option key={yg.id} value={yg.id}>{yg.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Chip Colour</label>
+                    <div className="flex flex-wrap gap-2">
+                      {CLASS_COLOR_PRESETS.map((preset) => (
+                        <button
+                          key={preset.bg}
+                          type="button"
+                          onClick={() => setClassForm({ ...classForm, colorBg: preset.bg, colorText: preset.text })}
+                          className={`w-8 h-8 rounded-full border-2 transition-all ${
+                            classForm.colorBg === preset.bg ? 'border-gray-900 scale-110' : 'border-transparent'
+                          }`}
+                          style={{ backgroundColor: preset.hex }}
+                          title={preset.label}
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-2 flex items-center space-x-2">
+                      <span className="text-xs text-gray-500">Preview:</span>
+                      <span
+                        className={`text-xs px-3 py-1 rounded-full text-white font-medium`}
+                        style={{ backgroundColor: CLASS_COLOR_PRESETS.find(p => p.bg === classForm.colorBg)?.hex || '#4B5563' }}
+                      >
+                        {classForm.name || 'Class Name'}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Assign Staff</label>
+                    <div className="flex flex-wrap gap-2">
+                      {staffList?.map((s) => (
+                        <label key={s.id} className="flex items-center space-x-2 bg-white px-3 py-2 rounded-lg border border-gray-200">
+                          <input
+                            type="checkbox"
+                            checked={classForm.staffIds.includes(s.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setClassForm({ ...classForm, staffIds: [...classForm.staffIds, s.id] })
+                              } else {
+                                setClassForm({ ...classForm, staffIds: classForm.staffIds.filter(id => id !== s.id) })
+                              }
+                            }}
+                            className="rounded"
+                          />
+                          <span className="text-sm">{s.name}</span>
+                          <span className="text-xs text-gray-400">({s.role === 'ADMIN' ? 'Admin' : 'Staff'})</span>
+                        </label>
+                      ))}
+                      {(!staffList || staffList.length === 0) && (
+                        <p className="text-sm text-gray-500">No staff members yet. Add staff first.</p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full py-2 rounded-lg text-white font-medium disabled:opacity-50"
+                    style={{ backgroundColor: theme.colors.brandColor }}
+                  >
+                    {isSubmitting ? 'Please wait...' : editingClass ? 'Update Class' : 'Create Class'}
+                  </button>
+                </form>
+              )}
+
+              <div className="space-y-3">
+                {classesDetailed?.map((cls) => (
+                  <div key={cls.id} className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <span
+                          className="text-xs px-3 py-1 rounded-full font-medium text-white"
+                          style={{ backgroundColor: CLASS_COLOR_PRESETS.find(p => p.bg === cls.colorBg)?.hex || '#4B5563' }}
+                        >
+                          {cls.name}
+                        </span>
+                        {cls.yearGroup && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">
+                            {cls.yearGroup.name}
+                          </span>
+                        )}
+                        <span className="text-sm text-gray-500">
+                          {cls.studentCount} {cls.studentCount === 1 ? 'student' : 'students'}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleEditClass(cls)}
+                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                          title="Edit class"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm({ type: 'class', id: cls.id, title: cls.name })}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete class"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                    {cls.assignedStaff.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {cls.assignedStaff.map(s => (
+                          <span key={s.id} className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">
+                            {s.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {(!classesDetailed || classesDetailed.length === 0) && (
+                  <div className="text-center py-8 text-gray-500">
+                    <BookOpen className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No classes yet. Create your first class above.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'staff' && (
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">Staff Members</h3>
-                <button
-                  onClick={() => showStaffForm ? handleCancelStaffForm() : setShowStaffForm(true)}
-                  className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
-                  style={{ backgroundColor: theme.colors.brandColor }}
-                >
-                  {showStaffForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                  <span>{showStaffForm ? 'Cancel' : 'Add Staff'}</span>
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => {
+                      if (showBulkImport) {
+                        handleCancelBulkImport()
+                      } else {
+                        setShowBulkImport(true)
+                        setShowStaffForm(false)
+                      }
+                    }}
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg border ${
+                      showBulkImport
+                        ? 'bg-gray-100 border-gray-300 text-gray-700'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {showBulkImport ? <X className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+                    <span>{showBulkImport ? 'Cancel' : 'Bulk Import'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (showStaffForm) {
+                        handleCancelStaffForm()
+                      } else {
+                        setShowStaffForm(true)
+                        setShowBulkImport(false)
+                      }
+                    }}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
+                    style={{ backgroundColor: theme.colors.brandColor }}
+                  >
+                    {showStaffForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                    <span>{showStaffForm ? 'Cancel' : 'Add Staff'}</span>
+                  </button>
+                </div>
               </div>
+
+              {/* Bulk Import UI */}
+              {showBulkImport && (
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 space-y-4">
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-2">Bulk Import Staff</h4>
+                    <p className="text-sm text-gray-600 mb-3">
+                      Copy staff names and emails from Excel (two columns: Name, Email) and paste below.
+                    </p>
+                    {bulkStaffData.length === 0 ? (
+                      <div className="space-y-2">
+                        <textarea
+                          className="w-full h-32 px-3 py-2 border-2 border-dashed border-gray-300 rounded-lg font-mono text-sm focus:border-gray-400 focus:outline-none"
+                          placeholder={"Paste from Excel or CSV here...\n\nName\tEmail\nJohn Smith\tjohn@school.com\nJane Doe\tjane@school.com"}
+                          value={bulkPasteValue}
+                          onChange={(e) => setBulkPasteValue(e.target.value)}
+                        />
+                        {bulkPasteValue.trim() && (
+                          <button
+                            onClick={() => parseBulkInput(bulkPasteValue)}
+                            className="px-4 py-2 rounded-lg text-white font-medium text-sm"
+                            style={{ backgroundColor: theme.colors.brandColor }}
+                          >
+                            Parse {bulkPasteValue.split('\n').filter(l => l.trim()).length} rows
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="border border-gray-300 rounded-lg overflow-hidden">
+                        <table className="w-full">
+                          <thead className="bg-gray-100">
+                            <tr>
+                              <th className="text-left px-3 py-2 text-sm font-medium text-gray-700">Name</th>
+                              <th className="text-left px-3 py-2 text-sm font-medium text-gray-700">Email</th>
+                              <th className="text-left px-3 py-2 text-sm font-medium text-gray-700">Role</th>
+                              <th className="w-10"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {bulkStaffData.map((row, index) => (
+                              <tr key={index} className="bg-white">
+                                <td className="px-3 py-2 text-sm">{row.name}</td>
+                                <td className="px-3 py-2 text-sm text-gray-600">{row.email}</td>
+                                <td className="px-3 py-2">
+                                  <select
+                                    value={row.role}
+                                    onChange={(e) => handleBulkRoleChange(index, e.target.value as 'STAFF' | 'ADMIN')}
+                                    className="text-sm px-2 py-1 border border-gray-300 rounded"
+                                  >
+                                    <option value="STAFF">Staff</option>
+                                    <option value="ADMIN">Admin</option>
+                                  </select>
+                                </td>
+                                <td className="px-2 py-2">
+                                  <button
+                                    onClick={() => handleBulkRemoveRow(index)}
+                                    className="text-gray-400 hover:text-red-600"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {bulkImportResult && (
+                    <div className={`p-3 rounded-lg ${bulkImportResult.errors?.length ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-200'}`}>
+                      <p className="text-sm font-medium">
+                        {bulkImportResult.created} staff member{bulkImportResult.created !== 1 ? 's' : ''} imported
+                        {bulkImportResult.skipped > 0 && `, ${bulkImportResult.skipped} skipped`}
+                      </p>
+                      {bulkImportResult.errors && bulkImportResult.errors.length > 0 && (
+                        <ul className="mt-2 text-xs text-amber-700 space-y-1">
+                          {bulkImportResult.errors.slice(0, 5).map((err, i) => (
+                            <li key={i}>{err}</li>
+                          ))}
+                          {bulkImportResult.errors.length > 5 && (
+                            <li>...and {bulkImportResult.errors.length - 5} more</li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {bulkStaffData.length > 0 && (
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => {
+                          setBulkStaffData([])
+                          setBulkImportResult(null)
+                        }}
+                        className="text-sm text-gray-600 hover:text-gray-800"
+                      >
+                        Clear all
+                      </button>
+                      <button
+                        onClick={handleBulkImport}
+                        disabled={isSubmitting}
+                        className="px-4 py-2 rounded-lg text-white font-medium disabled:opacity-50"
+                        style={{ backgroundColor: theme.colors.brandColor }}
+                      >
+                        {isSubmitting ? 'Importing...' : `Import ${bulkStaffData.length} Staff`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {showStaffForm && (
                 <form onSubmit={handleCreateStaff} className="bg-gray-50 rounded-lg p-4 mb-6 space-y-4">
@@ -1593,6 +2230,7 @@ export function AdminDashboard() {
             deleteConfirm.type === 'weekly' ? 'Weekly Update' :
             deleteConfirm.type === 'termDate' ? 'Term Date' :
             deleteConfirm.type === 'pulse' ? 'Pulse Survey' :
+            deleteConfirm.type === 'class' ? 'Class' :
             'Staff Member'
           }?`}
           message={`Are you sure you want to delete "${deleteConfirm.title}"? This action cannot be undone.`}

@@ -11,12 +11,22 @@ router.get('/', isAuthenticated, async (req, res) => {
     const childClassIds = user.children?.map(c => c.classId) || []
     const now = new Date()
 
+    // Get year group IDs from children's classes
+    const childClasses = childClassIds.length > 0
+      ? await prisma.class.findMany({
+          where: { id: { in: childClassIds } },
+          select: { yearGroupId: true },
+        })
+      : []
+    const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
+
     const messages = await prisma.message.findMany({
       where: {
         schoolId: user.schoolId,
         OR: [
           { targetClass: 'Whole School' },
           { classId: { in: childClassIds } },
+          ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
         ],
         // Filter out expired messages for parents
         AND: [
@@ -48,6 +58,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       content: msg.content,
       targetClass: msg.targetClass,
       classId: msg.classId,
+      yearGroupId: msg.yearGroupId,
       schoolId: msg.schoolId,
       senderId: msg.senderId,
       senderName: msg.sender.name,
@@ -89,6 +100,7 @@ router.get('/all', isAdmin, async (req, res) => {
       content: msg.content,
       targetClass: msg.targetClass,
       classId: msg.classId,
+      yearGroupId: msg.yearGroupId,
       schoolId: msg.schoolId,
       senderId: msg.senderId,
       senderName: msg.sender.name,
@@ -114,7 +126,7 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
   try {
     const user = req.user!
-    const { title, content, targetClass, classId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt } = req.body
+    const { title, content, targetClass, classId, yearGroupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt } = req.body
 
     // Staff cannot pin messages (only admin)
     const canPin = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
@@ -125,6 +137,7 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
         content,
         targetClass,
         classId: classId || null,
+        yearGroupId: yearGroupId || null,
         schoolId: user.schoolId,
         senderId: user.id,
         senderName: user.name,
@@ -144,6 +157,7 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
       content: message.content,
       targetClass: message.targetClass,
       classId: message.classId,
+      yearGroupId: message.yearGroupId,
       schoolId: message.schoolId,
       senderId: message.senderId,
       senderName: message.senderName,
@@ -167,7 +181,7 @@ router.put('/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, content, targetClass, classId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt } = req.body
+    const { title, content, targetClass, classId, yearGroupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt } = req.body
 
     // Verify message belongs to user's school
     const existing = await prisma.message.findFirst({
@@ -185,6 +199,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         content,
         targetClass,
         classId: classId || null,
+        yearGroupId: yearGroupId || null,
         actionType: actionType || null,
         actionLabel: actionLabel || null,
         actionDueDate: actionDueDate ? new Date(actionDueDate) : null,
@@ -201,6 +216,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       content: message.content,
       targetClass: message.targetClass,
       classId: message.classId,
+      yearGroupId: message.yearGroupId,
       schoolId: message.schoolId,
       senderId: message.senderId,
       senderName: message.senderName,

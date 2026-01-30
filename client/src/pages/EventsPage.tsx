@@ -4,14 +4,7 @@ import { useApi, useMutation } from '../hooks/useApi'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import * as api from '../services/api'
-import type { Event, EventRsvpStatus } from '../types'
-
-const CLASS_COLORS: Record<string, string> = {
-  'FS1 Blue': '#3b82f6',
-  'Y2 Red': '#ef4444',
-  'Y4 Green': '#22c55e',
-  'Whole School': '#7f0029',
-}
+import type { Event, EventRsvpStatus, Class } from '../types'
 
 export function EventsPage() {
   const theme = useTheme()
@@ -22,6 +15,26 @@ export function EventsPage() {
     () => api.events.list(),
     []
   )
+
+  const { data: allClasses } = useApi<Class[]>(
+    () => api.classes.list(),
+    []
+  )
+
+  // Build class color map from actual class data
+  const classColorMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    const CLASS_COLOR_HEX: Record<string, string> = {
+      'bg-gray-600': '#4B5563', 'bg-blue-600': '#2563EB', 'bg-red-600': '#DC2626',
+      'bg-green-600': '#16A34A', 'bg-purple-600': '#9333EA', 'bg-amber-500': '#F59E0B',
+      'bg-teal-600': '#0D9488', 'bg-pink-600': '#DB2777', 'bg-orange-600': '#EA580C',
+      'bg-indigo-600': '#4F46E5', 'bg-blue-500': '#3b82f6',
+    }
+    allClasses?.forEach(c => {
+      map[c.name] = CLASS_COLOR_HEX[c.colorBg] || '#4B5563'
+    })
+    return map
+  }, [allClasses])
 
   const { mutate: submitRsvp } = useMutation(api.events.rsvp)
 
@@ -190,7 +203,9 @@ export function EventsPage() {
               <div className="space-y-4">
                 {group.events.map((event) => {
                   const dateInfo = formatDate(event.date)
-                  const classColor = CLASS_COLORS[event.targetClass] || theme.colors.brandColor
+                  const classColor = event.classId
+                    ? (classColorMap[event.targetClass] || '#4B5563')
+                    : theme.colors.brandColor
 
                   return (
                     <div

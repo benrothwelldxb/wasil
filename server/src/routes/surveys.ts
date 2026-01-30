@@ -11,6 +11,15 @@ router.get('/', isAuthenticated, async (req, res) => {
     const childClassIds = user.children?.map(c => c.classId) || []
     const now = new Date()
 
+    // Get year group IDs from children's classes
+    const childClasses = childClassIds.length > 0
+      ? await prisma.class.findMany({
+          where: { id: { in: childClassIds } },
+          select: { yearGroupId: true },
+        })
+      : []
+    const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
+
     const surveys = await prisma.survey.findMany({
       where: {
         schoolId: user.schoolId,
@@ -18,6 +27,7 @@ router.get('/', isAuthenticated, async (req, res) => {
         OR: [
           { targetClass: 'Whole School' },
           { classId: { in: childClassIds } },
+          ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
         ],
         // Filter out expired surveys for parents
         AND: [
@@ -44,6 +54,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       active: survey.active,
       targetClass: survey.targetClass,
       classId: survey.classId,
+      yearGroupId: survey.yearGroupId,
       schoolId: survey.schoolId,
       expiresAt: survey.expiresAt?.toISOString(),
       userResponse: survey.responses[0]?.response || null,
@@ -80,6 +91,7 @@ router.get('/all', isAdmin, async (req, res) => {
       active: survey.active,
       targetClass: survey.targetClass,
       classId: survey.classId,
+      yearGroupId: survey.yearGroupId,
       schoolId: survey.schoolId,
       expiresAt: survey.expiresAt?.toISOString(),
       isExpired: survey.expiresAt ? survey.expiresAt < now : false,
@@ -103,7 +115,7 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { question, options, targetClass, classId, expiresAt } = req.body
+    const { question, options, targetClass, classId, yearGroupId, expiresAt } = req.body
 
     const survey = await prisma.survey.create({
       data: {
@@ -111,6 +123,7 @@ router.post('/', isAdmin, async (req, res) => {
         options,
         targetClass,
         classId: classId || null,
+        yearGroupId: yearGroupId || null,
         schoolId: user.schoolId,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
       },
@@ -123,6 +136,7 @@ router.post('/', isAdmin, async (req, res) => {
       active: survey.active,
       targetClass: survey.targetClass,
       classId: survey.classId,
+      yearGroupId: survey.yearGroupId,
       schoolId: survey.schoolId,
       expiresAt: survey.expiresAt?.toISOString(),
       createdAt: survey.createdAt.toISOString(),
@@ -193,7 +207,7 @@ router.put('/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { question, options, targetClass, classId, active, expiresAt } = req.body
+    const { question, options, targetClass, classId, yearGroupId, active, expiresAt } = req.body
 
     // Verify survey belongs to user's school
     const existing = await prisma.survey.findFirst({
@@ -211,6 +225,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         options,
         targetClass,
         classId: classId || null,
+        yearGroupId: yearGroupId || null,
         active: active ?? existing.active,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
       },
@@ -223,6 +238,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       active: survey.active,
       targetClass: survey.targetClass,
       classId: survey.classId,
+      yearGroupId: survey.yearGroupId,
       schoolId: survey.schoolId,
       expiresAt: survey.expiresAt?.toISOString(),
       createdAt: survey.createdAt.toISOString(),

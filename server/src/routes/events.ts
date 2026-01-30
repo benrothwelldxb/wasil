@@ -10,12 +10,22 @@ router.get('/', isAuthenticated, async (req, res) => {
     const user = req.user!
     const childClassIds = user.children?.map(c => c.classId) || []
 
+    // Get year group IDs from children's classes
+    const childClasses = childClassIds.length > 0
+      ? await prisma.class.findMany({
+          where: { id: { in: childClassIds } },
+          select: { yearGroupId: true },
+        })
+      : []
+    const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
+
     const events = await prisma.event.findMany({
       where: {
         schoolId: user.schoolId,
         OR: [
           { targetClass: 'Whole School' },
           { classId: { in: childClassIds } },
+          ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
         ],
       },
       include: {
@@ -35,6 +45,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       location: event.location,
       targetClass: event.targetClass,
       classId: event.classId,
+      yearGroupId: event.yearGroupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       userRsvp: event.rsvps[0]?.status || null,
@@ -72,6 +83,7 @@ router.get('/all', isAdmin, async (req, res) => {
       location: event.location,
       targetClass: event.targetClass,
       classId: event.classId,
+      yearGroupId: event.yearGroupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       rsvps: event.rsvps.map(r => ({
@@ -94,7 +106,7 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { title, description, date, time, location, targetClass, classId, requiresRsvp } = req.body
+    const { title, description, date, time, location, targetClass, classId, yearGroupId, requiresRsvp } = req.body
 
     const event = await prisma.event.create({
       data: {
@@ -105,6 +117,7 @@ router.post('/', isAdmin, async (req, res) => {
         location: location || null,
         targetClass,
         classId: classId || null,
+        yearGroupId: yearGroupId || null,
         schoolId: user.schoolId,
         requiresRsvp: requiresRsvp || false,
       },
@@ -119,6 +132,7 @@ router.post('/', isAdmin, async (req, res) => {
       location: event.location,
       targetClass: event.targetClass,
       classId: event.classId,
+      yearGroupId: event.yearGroupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       createdAt: event.createdAt.toISOString(),
@@ -169,7 +183,7 @@ router.put('/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, description, date, time, location, targetClass, classId, requiresRsvp } = req.body
+    const { title, description, date, time, location, targetClass, classId, yearGroupId, requiresRsvp } = req.body
 
     // Verify event belongs to user's school
     const existing = await prisma.event.findFirst({
@@ -190,6 +204,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         location: location || null,
         targetClass,
         classId: classId || null,
+        yearGroupId: yearGroupId || null,
         requiresRsvp: requiresRsvp ?? existing.requiresRsvp,
       },
     })
@@ -203,6 +218,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       location: event.location,
       targetClass: event.targetClass,
       classId: event.classId,
+      yearGroupId: event.yearGroupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       createdAt: event.createdAt.toISOString(),

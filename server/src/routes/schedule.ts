@@ -11,12 +11,22 @@ router.get('/', isAuthenticated, async (req, res) => {
     const childClassIds = user.children?.map(c => c.classId) || []
     const { startDate, endDate } = req.query
 
+    // Get year group IDs from children's classes
+    const childClasses = childClassIds.length > 0
+      ? await prisma.class.findMany({
+          where: { id: { in: childClassIds } },
+          select: { yearGroupId: true },
+        })
+      : []
+    const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
+
     const scheduleItems = await prisma.scheduleItem.findMany({
       where: {
         schoolId: user.schoolId,
         OR: [
           { targetClass: 'Whole School' },
           { classId: { in: childClassIds } },
+          ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
         ],
         AND: [
           {
@@ -40,6 +50,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       id: item.id,
       targetClass: item.targetClass,
       classId: item.classId,
+      yearGroupId: item.yearGroupId,
       schoolId: item.schoolId,
       isRecurring: item.isRecurring,
       dayOfWeek: item.dayOfWeek,
@@ -71,6 +82,7 @@ router.get('/all', isAdmin, async (req, res) => {
       id: item.id,
       targetClass: item.targetClass,
       classId: item.classId,
+      yearGroupId: item.yearGroupId,
       schoolId: item.schoolId,
       isRecurring: item.isRecurring,
       dayOfWeek: item.dayOfWeek,
@@ -92,12 +104,13 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { targetClass, classId, isRecurring, dayOfWeek, date, type, label, description, icon } = req.body
+    const { targetClass, classId, yearGroupId, isRecurring, dayOfWeek, date, type, label, description, icon } = req.body
 
     const scheduleItem = await prisma.scheduleItem.create({
       data: {
         targetClass,
         classId: classId || null,
+        yearGroupId: yearGroupId || null,
         schoolId: user.schoolId,
         isRecurring: isRecurring || false,
         dayOfWeek: dayOfWeek ?? null,
@@ -135,13 +148,14 @@ router.post('/', isAdmin, async (req, res) => {
 router.put('/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
-    const { targetClass, classId, isRecurring, dayOfWeek, active, date, type, label, description, icon } = req.body
+    const { targetClass, classId, yearGroupId, isRecurring, dayOfWeek, active, date, type, label, description, icon } = req.body
 
     const scheduleItem = await prisma.scheduleItem.update({
       where: { id },
       data: {
         targetClass,
         classId: classId || null,
+        yearGroupId: yearGroupId || null,
         isRecurring,
         dayOfWeek: dayOfWeek ?? null,
         active,

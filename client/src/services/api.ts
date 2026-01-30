@@ -12,6 +12,7 @@ import type {
   Class,
   EventRsvpStatus,
   School,
+  YearGroup,
 } from '../types'
 
 const API_URL = config.apiUrl
@@ -57,6 +58,7 @@ export const messages = {
     content: string
     targetClass: string
     classId?: string
+    yearGroupId?: string
     actionType?: string
     actionLabel?: string
     actionDueDate?: string
@@ -74,6 +76,7 @@ export const messages = {
     content: string
     targetClass: string
     classId?: string
+    yearGroupId?: string
     actionType?: string
     actionLabel?: string
     actionDueDate?: string
@@ -112,6 +115,7 @@ export const surveys = {
     options: string[]
     targetClass: string
     classId?: string
+    yearGroupId?: string
     expiresAt?: string
   }) =>
     fetchApi<Survey>('/api/surveys', {
@@ -123,6 +127,7 @@ export const surveys = {
     options: string[]
     targetClass: string
     classId?: string
+    yearGroupId?: string
     active?: boolean
     expiresAt?: string
   }) =>
@@ -157,6 +162,7 @@ export const events = {
     location?: string
     targetClass: string
     classId?: string
+    yearGroupId?: string
     requiresRsvp?: boolean
   }) =>
     fetchApi<Event>('/api/events', {
@@ -171,6 +177,7 @@ export const events = {
     location?: string
     targetClass: string
     classId?: string
+    yearGroupId?: string
     requiresRsvp?: boolean
   }) =>
     fetchApi<Event>(`/api/events/${id}`, {
@@ -201,6 +208,7 @@ export const schedule = {
   create: (data: {
     targetClass: string
     classId?: string
+    yearGroupId?: string
     isRecurring?: boolean
     dayOfWeek?: number
     date?: string
@@ -387,20 +395,47 @@ export const users = {
 }
 
 // Classes
+export interface ClassWithDetails extends Class {
+  studentCount: number
+  assignedStaff: Array<{ id: string; name: string; role: string }>
+  yearGroupId?: string
+  yearGroup?: { id: string; name: string; order: number } | null
+}
+
 export const classes = {
   list: () => fetchApi<Class[]>('/api/classes'),
-  create: (data: { name: string; colorBg?: string; colorText?: string }) =>
-    fetchApi<Class>('/api/classes', {
+  listAll: () => fetchApi<ClassWithDetails[]>('/api/classes/all'),
+  create: (data: { name: string; colorBg?: string; colorText?: string; staffIds?: string[]; yearGroupId?: string }) =>
+    fetchApi<ClassWithDetails>('/api/classes', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  update: (id: string, data: Partial<Class>) =>
-    fetchApi<Class>(`/api/classes/${id}`, {
+  update: (id: string, data: { name?: string; colorBg?: string; colorText?: string; staffIds?: string[]; yearGroupId?: string }) =>
+    fetchApi<ClassWithDetails>(`/api/classes/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
   delete: (id: string) =>
     fetchApi<{ message: string }>(`/api/classes/${id}`, {
+      method: 'DELETE',
+    }),
+}
+
+// Year Groups
+export const yearGroups = {
+  list: () => fetchApi<YearGroup[]>('/api/year-groups'),
+  create: (data: { name: string; order: number }) =>
+    fetchApi<YearGroup>('/api/year-groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: { name: string; order: number }) =>
+    fetchApi<YearGroup>(`/api/year-groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/year-groups/${id}`, {
       method: 'DELETE',
     }),
 }
@@ -460,6 +495,13 @@ export interface StaffMember {
   createdAt: string
 }
 
+export interface BulkStaffResult {
+  created: number
+  skipped: number
+  errors?: string[]
+  staff: Array<{ id: string; email: string; name: string; role: string }>
+}
+
 export const staff = {
   list: () => fetchApi<StaffMember[]>('/api/staff'),
   create: (data: {
@@ -471,6 +513,11 @@ export const staff = {
     fetchApi<StaffMember>('/api/staff', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  bulkCreate: (staff: Array<{ name: string; email: string; role: 'STAFF' | 'ADMIN' }>) =>
+    fetchApi<BulkStaffResult>('/api/staff/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ staff }),
     }),
   update: (id: string, data: {
     email?: string
@@ -517,6 +564,7 @@ export default {
   pulse,
   users,
   classes,
+  yearGroups,
   policies,
   files,
   staff,

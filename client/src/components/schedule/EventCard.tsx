@@ -12,6 +12,8 @@ interface EventCardProps {
 export function EventCard({ event, onRsvp, classColors = {} }: EventCardProps) {
   const theme = useTheme()
 
+  // Brand color for whole school / year group; class chip color for single class
+  const isSingleClass = !!event.classId
   const classColor = classColors[event.targetClass] || {
     bg: 'bg-burgundy',
     text: 'text-white',
@@ -30,7 +32,7 @@ export function EventCard({ event, onRsvp, classColors = {} }: EventCardProps) {
           <span
             className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${classColor.bg} ${classColor.text}`}
             style={
-              event.targetClass === 'Whole School'
+              !isSingleClass
                 ? { backgroundColor: theme.colors.brandColor, color: 'white' }
                 : undefined
             }

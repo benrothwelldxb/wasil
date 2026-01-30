@@ -21,6 +21,7 @@ import policiesRoutes from './routes/policies.js'
 import filesRoutes from './routes/files.js'
 import schoolsRoutes from './routes/schools.js'
 import staffRoutes from './routes/staff.js'
+import yearGroupsRoutes from './routes/yearGroups.js'
 
 dotenv.config()
 
@@ -68,6 +69,7 @@ app.use('/api/policies', policiesRoutes)
 app.use('/api/files', filesRoutes)
 app.use('/api/schools', schoolsRoutes)
 app.use('/api/staff', staffRoutes)
+app.use('/api/year-groups', yearGroupsRoutes)
 
 // Health check
 app.get('/health', (_req, res) => {

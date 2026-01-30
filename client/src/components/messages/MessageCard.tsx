@@ -10,12 +10,7 @@ interface MessageCardProps {
   classColors?: Record<string, { bg: string; hex: string }>
 }
 
-const CLASS_HEX_COLORS: Record<string, string> = {
-  'FS1 Blue': '#3b82f6',
-  'Y2 Red': '#ef4444',
-  'Y4 Green': '#22c55e',
-  'Whole School': '#7f0029',
-}
+// Color is now determined by targeting type: brand for whole school / year group, class chip color for single class
 
 export function MessageCard({
   message,
@@ -55,7 +50,11 @@ export function MessageCard({
     )
   }
 
-  const headerColor = CLASS_HEX_COLORS[message.targetClass] || theme.colors.brandColor
+  // Brand color for Whole School / Year Group; class chip color for single class
+  const classHexColor = classColors[message.targetClass]?.hex
+  const headerColor = message.classId
+    ? (classHexColor || '#4B5563')
+    : theme.colors.brandColor
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)

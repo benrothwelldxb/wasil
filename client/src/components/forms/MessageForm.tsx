@@ -5,6 +5,8 @@ export interface MessageFormData {
   title: string
   content: string
   targetClass: string
+  classId?: string
+  yearGroupId?: string
   isPinned: boolean
   isUrgent: boolean
   expiresAt: string
@@ -15,11 +17,18 @@ export interface MessageFormData {
   actionAmount: string
 }
 
+export interface AudienceOption {
+  value: string // display label e.g. "Whole School", "Reception", "Foxes"
+  type: 'school' | 'yearGroup' | 'class'
+  id?: string // yearGroupId or classId
+}
+
 interface MessageFormProps {
   formData: MessageFormData
   onChange: (data: MessageFormData) => void
   onSubmit: (e: React.FormEvent) => void
-  targetClassOptions: string[]
+  audienceOptions?: AudienceOption[]
+  targetClassOptions?: string[]
   isSubmitting: boolean
   submitLabel?: string
 }
@@ -28,11 +37,32 @@ export function MessageForm({
   formData,
   onChange,
   onSubmit,
+  audienceOptions,
   targetClassOptions,
   isSubmitting,
   submitLabel = 'Send Message',
 }: MessageFormProps) {
   const theme = useTheme()
+
+  const handleAudienceChange = (value: string) => {
+    if (audienceOptions) {
+      const option = audienceOptions.find(o => o.value === value)
+      if (option) {
+        onChange({
+          ...formData,
+          targetClass: option.value,
+          classId: option.type === 'class' ? option.id : undefined,
+          yearGroupId: option.type === 'yearGroup' ? option.id : undefined,
+        })
+        return
+      }
+    }
+    onChange({ ...formData, targetClass: value, classId: undefined, yearGroupId: undefined })
+  }
+
+  const options = audienceOptions
+    ? audienceOptions.map(o => o.value)
+    : (targetClassOptions || ['Whole School'])
 
   return (
     <form onSubmit={onSubmit} className="bg-gray-50 rounded-lg p-4 mb-6">
@@ -58,15 +88,27 @@ export function MessageForm({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Target Class</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience</label>
           <select
             value={formData.targetClass}
-            onChange={(e) => onChange({ ...formData, targetClass: e.target.value })}
+            onChange={(e) => handleAudienceChange(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy focus:border-burgundy"
           >
-            {targetClassOptions.map((cls) => (
-              <option key={cls} value={cls}>{cls}</option>
-            ))}
+            {audienceOptions ? (
+              audienceOptions.map((opt) => (
+                <option
+                  key={`${opt.type}-${opt.id || opt.value}`}
+                  value={opt.value}
+                  style={opt.type === 'class' ? { paddingLeft: '1.5rem' } : undefined}
+                >
+                  {opt.type === 'class' ? `  └ ${opt.value}` : opt.value}
+                </option>
+              ))
+            ) : (
+              options.map((cls) => (
+                <option key={cls} value={cls}>{cls}</option>
+              ))
+            )}
           </select>
         </div>
         <div>

@@ -33,6 +33,15 @@ export interface School {
   logoIconUrl?: string
 }
 
+// Year Group types
+export interface YearGroup {
+  id: string
+  name: string
+  order: number
+  schoolId: string
+  classCount?: number
+}
+
 // Class types
 export interface Class {
   id: string
@@ -40,6 +49,8 @@ export interface Class {
   colorBg: string
   colorText: string
   schoolId: string
+  yearGroupId?: string
+  yearGroup?: { id: string; name: string; order: number } | null
 }
 
 // Message types
@@ -56,6 +67,7 @@ export interface Message {
   content: string
   targetClass: string
   classId?: string
+  yearGroupId?: string
   schoolId: string
   senderId: string
   senderName: string
@@ -86,6 +98,7 @@ export interface Survey {
   active: boolean
   targetClass: string
   classId?: string
+  yearGroupId?: string
   schoolId: string
   createdAt: string
   userResponse?: string
@@ -109,6 +122,7 @@ export interface Event {
   location?: string
   targetClass: string
   classId?: string
+  yearGroupId?: string
   schoolId: string
   requiresRsvp: boolean
   createdAt: string
@@ -146,6 +160,7 @@ export interface ScheduleItem {
   id: string
   targetClass: string
   classId?: string
+  yearGroupId?: string
   schoolId: string
   isRecurring: boolean
   dayOfWeek?: number
