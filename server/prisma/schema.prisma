@@ -26,7 +26,7 @@ model School {
   yearGroups          YearGroup[]
   classes             Class[]
   messages            Message[]
-  surveys             Survey[]
+  forms               Form[]
   events              Event[]
   termDates           TermDate[]
   scheduleItems       ScheduleItem[]
@@ -36,6 +36,9 @@ model School {
   policies            Policy[]
   folders             FileFolder[]
   files               SchoolFile[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  invitations         ParentInvitation[]
 }
 
 // Users (Parents, Staff & Admins)
@@ -61,13 +64,30 @@ model User {
 
   // Activity relations
   messageAcks        MessageAcknowledgment[]
-  surveyResponses    SurveyResponse[]
+  formResponses      FormResponse[]
   eventRsvps         EventRsvp[]
   pulseResponses     PulseResponse[]
   weeklyHearts       WeeklyMessageHeart[]
+  refreshTokens      RefreshToken[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  deviceTokens       DeviceToken[]
+
+  // Invitation relations
+  createdInvitations  ParentInvitation[] @relation("CreatedInvitations")
+  redeemedInvitations ParentInvitation[] @relation("RedeemedInvitations")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 enum Role {
@@ -96,7 +116,6 @@ model YearGroup {
   school    School   @relation(fields: [schoolId], references: [id])
   classes   Class[]
   messages  Message[]
-  surveys   Survey[]
   events    Event[]
   scheduleItems ScheduleItem[]
   createdAt DateTime @default(now())
@@ -115,12 +134,12 @@ model Class {
   yearGroupId String?
   yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
 
-  children         Child[]
-  messages         Message[]
-  surveys          Survey[]
-  events           Event[]
-  scheduleItems    ScheduleItem[]
-  assignedStaff    StaffClassAssignment[]
+  children             Child[]
+  messages             Message[]
+  events               Event[]
+  scheduleItems        ScheduleItem[]
+  assignedStaff        StaffClassAssignment[]
+  childInvitationLinks ChildInvitationLink[]
 
   @@unique([schoolId, name])
 }
@@ -166,6 +185,10 @@ model Message {
   // Lifecycle
   expiresAt DateTime? // Auto-archive after this date
 
+  // Attached form
+  formId  String? @unique
+  form    Form?   @relation(fields: [formId], references: [id])
+
   acknowledgments MessageAcknowledgment[]
 
   createdAt DateTime @default(now())
@@ -181,41 +204,6 @@ model MessageAcknowledgment {
   createdAt DateTime @default(now())
 
   @@unique([messageId, userId])
-}
-
-// Quick Surveys/Polls
-model Survey {
-  id          String   @id @default(cuid())
-  question    String
-  options     Json     // ["Option 1", "Option 2", ...]
-  active      Boolean  @default(true)
-  targetClass String
-  classId     String?
-  class       Class?   @relation(fields: [classId], references: [id])
-  yearGroupId String?
-  yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
-  schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id])
-
-  // Lifecycle
-  expiresAt DateTime? // Auto-close after this date
-
-  responses SurveyResponse[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model SurveyResponse {
-  id        String   @id @default(cuid())
-  surveyId  String
-  survey    Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  response  String
-  createdAt DateTime @default(now())
-
-  @@unique([surveyId, userId])
 }
 
 // Events Calendar
@@ -414,4 +402,159 @@ model SchoolFile {
   school      School     @relation(fields: [schoolId], references: [id])
   uploadedAt  DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+}
+
+// Forms (replaces Surveys)
+model Form {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  type         String   // template key: "permission-consent", "trip-consent", etc.
+  status       String   @default("DRAFT") // "DRAFT", "ACTIVE", "CLOSED"
+  fields       Json     // Array of field definitions
+  targetClass  String   // Display label: "Whole School", "Y1 Red, Y2 Blue", etc.
+  classIds     Json     @default("[]") // String[] of class IDs
+  yearGroupIds Json     @default("[]") // String[] of year group IDs
+  schoolId     String
+  school       School   @relation(fields: [schoolId], references: [id])
+  expiresAt    DateTime?
+
+  message   Message?
+
+  responses FormResponse[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FormResponse {
+  id        String   @id @default(cuid())
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers   Json     // { fieldId: value }
+  createdAt DateTime @default(now())
+
+  @@unique([formId, userId])
+}
+
+// Parent Invitations (for self-registration)
+model ParentInvitation {
+  id             String   @id @default(cuid())
+  schoolId       String
+  school         School   @relation(fields: [schoolId], references: [id])
+
+  accessCode     String   @unique  // ABC-123-XYZ format
+  magicToken     String?  @unique  // For email magic links
+
+  parentEmail    String?  // Optional: for magic link invites
+  parentName     String?  // Optional: for display
+
+  childLinks     ChildInvitationLink[]
+
+  status         String   @default("PENDING") // PENDING, REDEEMED, EXPIRED, REVOKED
+  expiresAt      DateTime?
+  redeemedAt     DateTime?
+  redeemedByUserId String?
+  redeemedByUser User?    @relation("RedeemedInvitations", fields: [redeemedByUserId], references: [id])
+
+  createdById    String
+  createdBy      User     @relation("CreatedInvitations", fields: [createdById], references: [id])
+  createdAt      DateTime @default(now())
+
+  @@index([schoolId, status])
+  @@index([accessCode])
+}
+
+model ChildInvitationLink {
+  id           String           @id @default(cuid())
+  invitationId String
+  invitation   ParentInvitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+
+  childName    String
+  classId      String
+  class        Class            @relation(fields: [classId], references: [id])
+
+  @@unique([invitationId, classId, childName])
+}
+
+// Audit Log
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum AuditResourceType {
+  MESSAGE
+  SURVEY
+  EVENT
+  WEEKLY_MESSAGE
+  TERM_DATE
+  PULSE_SURVEY
+  YEAR_GROUP
+  CLASS
+  STAFF
+  POLICY
+  FILE
+  FOLDER
+  SCHEDULE_ITEM
+  KNOWLEDGE_CATEGORY
+  KNOWLEDGE_ARTICLE
+  SCHOOL
+  FORM
+  PARENT_INVITATION
+}
+
+model AuditLog {
+  id           String            @id @default(cuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id])
+  userName     String
+  action       AuditAction
+  resourceType AuditResourceType
+  resourceId   String
+  metadata     Json?
+  schoolId     String
+  school       School            @relation(fields: [schoolId], references: [id])
+  ipAddress    String?
+  createdAt    DateTime          @default(now())
+
+  @@index([schoolId, createdAt])
+  @@index([userId])
+  @@index([resourceType])
+}
+
+// Notifications
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String   // e.g. "MESSAGE", "EVENT", "SURVEY", "PULSE", "WEEKLY_MESSAGE"
+  title        String
+  body         String
+  resourceType String?  // e.g. "MESSAGE", "EVENT"
+  resourceId   String?
+  data         Json?
+  read         Boolean  @default(false)
+  schoolId     String
+  school       School   @relation(fields: [schoolId], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([userId, read, createdAt])
+  @@index([schoolId])
+}
+
+// Device Tokens for push notifications
+model DeviceToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String
+  platform  String   // "ios", "android", "web"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, token])
 }

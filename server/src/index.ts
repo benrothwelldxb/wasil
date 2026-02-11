@@ -1,14 +1,12 @@
 import express from 'express'
 import cors from 'cors'
-import session from 'express-session'
-import cookieParser from 'cookie-parser'
 import passport from 'passport'
 import dotenv from 'dotenv'
 
 import { configurePassport } from './middleware/passport.js'
 import authRoutes from './routes/auth.js'
 import messagesRoutes from './routes/messages.js'
-import surveysRoutes from './routes/surveys.js'
+import formsRoutes from './routes/forms.js'
 import eventsRoutes from './routes/events.js'
 import scheduleRoutes from './routes/schedule.js'
 import termDatesRoutes from './routes/termDates.js'
@@ -22,6 +20,10 @@ import filesRoutes from './routes/files.js'
 import schoolsRoutes from './routes/schools.js'
 import staffRoutes from './routes/staff.js'
 import yearGroupsRoutes from './routes/yearGroups.js'
+import auditLogsRoutes from './routes/auditLogs.js'
+import notificationsRoutes from './routes/notifications.js'
+import deviceTokensRoutes from './routes/deviceTokens.js'
+import parentInvitationsRoutes from './routes/parentInvitations.js'
 
 dotenv.config()
 
@@ -30,33 +32,21 @@ const PORT = process.env.PORT || 4000
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(','),
   credentials: true,
 }))
 app.use(express.json())
-app.use(cookieParser())
 
-// Session configuration
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'wasil-secret-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  },
-}))
-
-// Passport initialization
+// Passport initialization (OAuth strategies only, no sessions)
 app.use(passport.initialize())
-app.use(passport.session())
 configurePassport()
+
+// Static file serving removed — files served from Cloudflare R2
 
 // Routes
 app.use('/auth', authRoutes)
 app.use('/api/messages', messagesRoutes)
-app.use('/api/surveys', surveysRoutes)
+app.use('/api/forms', formsRoutes)
 app.use('/api/events', eventsRoutes)
 app.use('/api/schedule', scheduleRoutes)
 app.use('/api/term-dates', termDatesRoutes)
@@ -70,6 +60,10 @@ app.use('/api/files', filesRoutes)
 app.use('/api/schools', schoolsRoutes)
 app.use('/api/staff', staffRoutes)
 app.use('/api/year-groups', yearGroupsRoutes)
+app.use('/api/audit-logs', auditLogsRoutes)
+app.use('/api/notifications', notificationsRoutes)
+app.use('/api/device-tokens', deviceTokensRoutes)
+app.use('/api/parent-invitations', parentInvitationsRoutes)
 
 // Health check
 app.get('/health', (_req, res) => {
