@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
+import { logAudit } from '../services/audit.js'
 
 const router = Router()
 
@@ -118,6 +119,8 @@ router.post('/', isAdmin, async (req, res) => {
       },
     })
 
+    logAudit({ req, action: 'CREATE', resourceType: 'CLASS', resourceId: newClass.id, metadata: { name: newClass.name } })
+
     res.status(201).json({
       id: newClass.id,
       name: newClass.name,
@@ -188,6 +191,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       })
     })
 
+    logAudit({ req, action: 'UPDATE', resourceType: 'CLASS', resourceId: updatedClass.id, metadata: { name: updatedClass.name } })
+
     res.json({
       id: updatedClass.id,
       name: updatedClass.name,
@@ -236,6 +241,8 @@ router.delete('/:id', isAdmin, async (req, res) => {
     await prisma.class.delete({
       where: { id },
     })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'CLASS', resourceId: id, metadata: { name: existing.name } })
 
     res.json({ message: 'Class deleted successfully' })
   } catch (error) {

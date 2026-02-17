@@ -1,4 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
+import { verifyAccessToken } from '../services/jwt.js'
+import prisma from '../services/prisma.js'
 
 // Extend Express Request to include user
 declare global {
@@ -29,34 +31,68 @@ declare global {
   }
 }
 
-export function isAuthenticated(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated() && req.user) {
-    return next()
+export async function isAuthenticated(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' })
   }
-  res.status(401).json({ error: 'Unauthorized' })
+
+  try {
+    const token = authHeader.slice(7)
+    const payload = verifyAccessToken(token)
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      include: {
+        children: { include: { class: true } },
+        assignedClasses: { include: { class: true } },
+      },
+    })
+
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    req.user = user as Express.User
+    next()
+  } catch {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+}
+
+// Helper: ensure JWT is parsed before role checks
+function ensureAuthenticated(req: Request, res: Response, next: NextFunction) {
+  if (req.user) return next()
+  isAuthenticated(req, res, next)
 }
 
 // Staff or higher (STAFF, ADMIN, SUPER_ADMIN)
 export function isStaff(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated() && req.user && ['STAFF', 'ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
-    return next()
-  }
-  res.status(403).json({ error: 'Forbidden - Staff access required' })
+  ensureAuthenticated(req, res, () => {
+    if (req.user && ['STAFF', 'ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+      return next()
+    }
+    res.status(403).json({ error: 'Forbidden - Staff access required' })
+  })
 }
 
 // Admin or higher (ADMIN, SUPER_ADMIN)
 export function isAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated() && req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN')) {
-    return next()
-  }
-  res.status(403).json({ error: 'Forbidden - Admin access required' })
+  ensureAuthenticated(req, res, () => {
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN')) {
+      return next()
+    }
+    res.status(403).json({ error: 'Forbidden - Admin access required' })
+  })
 }
 
 export function isSuperAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated() && req.user && req.user.role === 'SUPER_ADMIN') {
-    return next()
-  }
-  res.status(403).json({ error: 'Forbidden - Super Admin access required' })
+  ensureAuthenticated(req, res, () => {
+    if (req.user && req.user.role === 'SUPER_ADMIN') {
+      return next()
+    }
+    res.status(403).json({ error: 'Forbidden - Super Admin access required' })
+  })
 }
 
 // Check if user can send to a specific class or whole school
@@ -68,19 +104,15 @@ export function canSendToTarget(req: Request, res: Response, next: NextFunction)
 
   const { targetClass, classId } = req.body
 
-  // Admins can send to anyone
   if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
     return next()
   }
 
-  // Staff can only send to Whole School if they have no class restrictions (unlikely)
-  // or to their assigned classes
   if (user.role === 'STAFF') {
     if (targetClass === 'Whole School') {
       return res.status(403).json({ error: 'Only admins can send whole-school messages' })
     }
 
-    // Check if staff is assigned to this class
     const assignedClassIds = user.assignedClasses?.map(ac => ac.classId) || []
     if (classId && !assignedClassIds.includes(classId)) {
       return res.status(403).json({ error: 'You can only send messages to your assigned classes' })
@@ -89,7 +121,6 @@ export function canSendToTarget(req: Request, res: Response, next: NextFunction)
     return next()
   }
 
-  // Parents cannot send messages
   return res.status(403).json({ error: 'Forbidden - Staff access required' })
 }
 
@@ -102,12 +133,10 @@ export function canMarkUrgent(req: Request, res: Response, next: NextFunction) {
 
   const { isUrgent } = req.body
 
-  // If not marking as urgent, allow through
   if (!isUrgent) {
     return next()
   }
 
-  // Only admins can mark as urgent
   if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
     return next()
   }

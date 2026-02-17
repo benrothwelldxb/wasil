@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated } from '../middleware/auth.js'
+import { logAudit } from '../services/audit.js'
 
 const router = Router()
 
@@ -123,6 +124,8 @@ router.patch('/:id/branding', isAuthenticated, isSuperAdmin, async (req, res) =>
         updatedAt: true,
       },
     })
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'SCHOOL', resourceId: id, metadata: { name: school.name } })
 
     res.json(school)
   } catch (error) {

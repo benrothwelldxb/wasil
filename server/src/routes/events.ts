@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
+import { logAudit } from '../services/audit.js'
+import { sendNotification } from '../services/notify.js'
 
 const router = Router()
 
@@ -123,6 +125,9 @@ router.post('/', isAdmin, async (req, res) => {
       },
     })
 
+    logAudit({ req, action: 'CREATE', resourceType: 'EVENT', resourceId: event.id, metadata: { title: event.title } })
+    sendNotification({ req, type: 'EVENT', title: event.title, body: event.description || 'New event', resourceType: 'EVENT', resourceId: event.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, schoolId: user.schoolId } })
+
     res.status(201).json({
       id: event.id,
       title: event.title,
@@ -224,6 +229,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       createdAt: event.createdAt.toISOString(),
       updatedAt: event.updatedAt.toISOString(),
     })
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'EVENT', resourceId: event.id, metadata: { title: event.title } })
   } catch (error) {
     console.error('Error updating event:', error)
     res.status(500).json({ error: 'Failed to update event' })
@@ -248,6 +255,8 @@ router.delete('/:id', isAdmin, async (req, res) => {
     await prisma.event.delete({
       where: { id },
     })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'EVENT', resourceId: id, metadata: { title: existing.title } })
 
     res.json({ message: 'Event deleted successfully' })
   } catch (error) {

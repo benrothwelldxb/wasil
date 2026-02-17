@@ -7,9 +7,9 @@ import * as api from '../services/api'
 interface Policy {
   id: string
   name: string
-  description?: string
+  description: string | null
   fileUrl: string
-  fileSize?: number
+  fileSize: number | null
   updatedAt: string
 }
 

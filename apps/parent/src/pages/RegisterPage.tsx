@@ -1,46 +1,27 @@
 import React, { useState, useEffect } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import { api, useAuth, useTheme, config } from '@wasil/shared'
+import { useSearchParams } from 'react-router-dom'
+import { api, useTheme, config } from '@wasil/shared'
 import type { InvitationValidationResponse } from '@wasil/shared'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export function RegisterPage() {
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const { isAuthenticated, user } = useAuth()
   const theme = useTheme()
   const { defaultSchool } = config
 
   const [code, setCode] = useState(searchParams.get('code') || '')
-  const [token] = useState(searchParams.get('token') || '')
+  const [email, setEmail] = useState('')
   const [error, setError] = useState(searchParams.get('error') || '')
   const [isValidating, setIsValidating] = useState(false)
   const [validationResult, setValidationResult] = useState<InvitationValidationResponse | null>(null)
-  const [isRedeeming, setIsRedeeming] = useState(false)
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const [emailSent, setEmailSent] = useState(false)
 
-  // Check for stored invitation after OAuth callback
-  useEffect(() => {
-    const storedCode = sessionStorage.getItem('pendingInvitationCode')
-    const storedToken = sessionStorage.getItem('pendingInvitationToken')
-
-    if (isAuthenticated && (storedCode || storedToken)) {
-      redeemInvitation(storedCode || undefined, storedToken || undefined)
-    }
-  }, [isAuthenticated])
-
-  // Auto-validate if code or token is provided in URL
-  useEffect(() => {
-    if (token && !validationResult) {
-      validateInvitation(undefined, token)
-    }
-  }, [token])
-
-  const validateInvitation = async (codeToValidate?: string, tokenToValidate?: string) => {
+  const validateInvitation = async (codeToValidate?: string) => {
     const validateCode = codeToValidate || code
-    const validateToken = tokenToValidate || token
 
-    if (!validateCode && !validateToken) {
+    if (!validateCode) {
       setError('Please enter an access code')
       return
     }
@@ -50,46 +31,58 @@ export function RegisterPage() {
 
     try {
       const result = await api.parentInvitations.validate({
-        code: validateCode || undefined,
-        token: validateToken || undefined,
+        code: validateCode,
       })
       setValidationResult(result)
-
-      // Store for after OAuth
-      if (validateCode) {
-        sessionStorage.setItem('pendingInvitationCode', validateCode)
-      }
-      if (validateToken) {
-        sessionStorage.setItem('pendingInvitationToken', validateToken)
+      // Pre-fill email if provided in invitation
+      if (result.parentEmail) {
+        setEmail(result.parentEmail)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid access code or link')
+      setError(err instanceof Error ? err.message : 'Invalid access code')
       setValidationResult(null)
     } finally {
       setIsValidating(false)
     }
   }
 
-  const redeemInvitation = async (codeToRedeem?: string, tokenToRedeem?: string) => {
-    setIsRedeeming(true)
+  const sendMagicLink = async () => {
+    if (!email || !validationResult?.invitationId) {
+      setError('Please enter your email address')
+      return
+    }
+
+    // Basic email validation
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Please enter a valid email address')
+      return
+    }
+
+    setIsSendingEmail(true)
     setError('')
 
     try {
-      await api.parentInvitations.redeem({
-        code: codeToRedeem,
-        token: tokenToRedeem,
+      // First, update the invitation with the email if different
+      // Then send the magic link
+      const response = await fetch(`${API_URL}/auth/magic-link/send-registration`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invitationId: validationResult.invitationId,
+          email: email.toLowerCase(),
+        }),
       })
 
-      // Clear stored invitation
-      sessionStorage.removeItem('pendingInvitationCode')
-      sessionStorage.removeItem('pendingInvitationToken')
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to send email')
+      }
 
-      // Redirect to dashboard
-      navigate('/', { replace: true })
+      setEmailSent(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to complete registration')
+      setError(err instanceof Error ? err.message : 'Failed to send magic link')
     } finally {
-      setIsRedeeming(false)
+      setIsSendingEmail(false)
     }
   }
 
@@ -115,18 +108,14 @@ export function RegisterPage() {
     validateInvitation()
   }
 
-  const handleOAuth = (provider: 'google' | 'microsoft') => {
-    // Store invitation code/token before OAuth redirect
-    if (code) sessionStorage.setItem('pendingInvitationCode', code)
-    if (token) sessionStorage.setItem('pendingInvitationToken', token)
-
-    // Redirect to OAuth with a special callback that will return to register
-    window.location.href = `${API_URL}/auth/${provider}?returnTo=register`
+  const handleEmailSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    sendMagicLink()
   }
 
   const getErrorMessage = (errorCode: string) => {
     switch (errorCode) {
-      case 'invalid': return 'This invitation link is invalid.'
+      case 'invalid': return 'This invitation code is invalid.'
       case 'expired': return 'This invitation has expired.'
       case 'revoked': return 'This invitation has been revoked.'
       case 'redeemed': return 'This invitation has already been used.'
@@ -135,13 +124,44 @@ export function RegisterPage() {
     }
   }
 
-  // Show loading while redeeming after OAuth
-  if (isRedeeming) {
+  // Show success message after email is sent
+  if (emailSent) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: theme.colors.brandColor }} />
-          <p className="text-gray-600">Completing registration...</p>
+          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Check your email</h2>
+          <p className="text-gray-600 mb-6">
+            We've sent a magic link to<br />
+            <span className="font-medium text-gray-900">{email}</span>
+          </p>
+          <p className="text-sm text-gray-500 mb-6">
+            Click the link in the email to complete your registration. The link will expire in 15 minutes.
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => sendMagicLink()}
+              disabled={isSendingEmail}
+              className="text-sm font-medium hover:underline"
+              style={{ color: theme.colors.brandColor }}
+            >
+              {isSendingEmail ? 'Sending...' : 'Resend email'}
+            </button>
+            <div className="text-sm text-gray-400">or</div>
+            <button
+              onClick={() => {
+                setEmailSent(false)
+                setEmail('')
+              }}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              Use a different email
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -245,44 +265,43 @@ export function RegisterPage() {
               </ul>
             </div>
 
-            <div className="space-y-3">
-              <p className="text-sm text-center text-gray-600 mb-4">
-                Sign in with your account to complete registration
-              </p>
+            <form onSubmit={handleEmailSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Enter your email address
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    setError('')
+                  }}
+                  placeholder="your.email@example.com"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  autoFocus
+                  disabled={isSendingEmail}
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  We'll send you a magic link to complete registration
+                </p>
+              </div>
 
               <button
-                onClick={() => handleOAuth('google')}
-                className="w-full flex items-center justify-center space-x-3 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                type="submit"
+                disabled={isSendingEmail || !email}
+                className="w-full py-3 rounded-lg font-semibold text-white transition-colors disabled:opacity-50"
+                style={{ backgroundColor: theme.colors.brandColor }}
               >
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                </svg>
-                <span className="text-gray-700 font-medium">Continue with Google</span>
+                {isSendingEmail ? 'Sending...' : 'Send Magic Link'}
               </button>
-
-              <button
-                onClick={() => handleOAuth('microsoft')}
-                className="w-full flex items-center justify-center space-x-3 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 23 23">
-                  <path fill="#f35325" d="M1 1h10v10H1z" />
-                  <path fill="#81bc06" d="M12 1h10v10H12z" />
-                  <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                  <path fill="#ffba08" d="M12 12h10v10H12z" />
-                </svg>
-                <span className="text-gray-700 font-medium">Continue with Microsoft</span>
-              </button>
-            </div>
+            </form>
 
             <button
               onClick={() => {
                 setValidationResult(null)
                 setCode('')
-                sessionStorage.removeItem('pendingInvitationCode')
-                sessionStorage.removeItem('pendingInvitationToken')
+                setEmail('')
               }}
               className="w-full text-sm text-gray-500 hover:text-gray-700"
             >

@@ -4,36 +4,6 @@ import { OIDCStrategy } from 'passport-azure-ad'
 import prisma from '../services/prisma.js'
 
 export function configurePassport() {
-  // Serialize user for session
-  passport.serializeUser((user: Express.User, done) => {
-    done(null, (user as { id: string }).id)
-  })
-
-  // Deserialize user from session
-  passport.deserializeUser(async (id: string, done) => {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id },
-        include: {
-          children: {
-            include: {
-              class: true,
-            },
-          },
-          assignedClasses: {
-            include: {
-              class: true,
-            },
-          },
-          school: true,
-        },
-      })
-      done(null, user)
-    } catch (err) {
-      done(err, null)
-    }
-  })
-
   // Google OAuth Strategy
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     passport.use(new GoogleStrategy({
@@ -42,7 +12,6 @@ export function configurePassport() {
       callbackURL: '/auth/google/callback',
     }, async (_accessToken, _refreshToken, profile, done) => {
       try {
-        // Find or create user
         let user = await prisma.user.findUnique({
           where: { googleId: profile.id },
           include: {
@@ -52,7 +21,6 @@ export function configurePassport() {
         })
 
         if (!user) {
-          // Check if user exists by email
           const email = profile.emails?.[0]?.value
           if (email) {
             user = await prisma.user.findUnique({
@@ -64,7 +32,6 @@ export function configurePassport() {
             })
 
             if (user) {
-              // Link Google account to existing user
               user = await prisma.user.update({
                 where: { id: user.id },
                 data: {
@@ -81,7 +48,6 @@ export function configurePassport() {
         }
 
         if (!user) {
-          // User not found and not pre-registered - reject login
           return done(null, false, { message: 'User not registered. Please contact school admin.' })
         }
 
@@ -108,13 +74,11 @@ export function configurePassport() {
       try {
         const microsoftId = profile.oid
         const email = profile.emails?.[0]
-        const name = profile.displayName
 
         if (!microsoftId) {
           return done(null, false)
         }
 
-        // Find or create user
         let user = await prisma.user.findUnique({
           where: { microsoftId },
           include: {
@@ -124,7 +88,6 @@ export function configurePassport() {
         })
 
         if (!user && email) {
-          // Check if user exists by email
           user = await prisma.user.findUnique({
             where: { email },
             include: {
@@ -134,7 +97,6 @@ export function configurePassport() {
           })
 
           if (user) {
-            // Link Microsoft account to existing user
             user = await prisma.user.update({
               where: { id: user.id },
               data: { microsoftId },
@@ -147,7 +109,6 @@ export function configurePassport() {
         }
 
         if (!user) {
-          // User not found and not pre-registered - reject login
           return done(null, false)
         }
 

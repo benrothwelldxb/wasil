@@ -11,10 +11,12 @@ import { TermDatesPage } from './pages/TermDatesPage'
 import { PulsePage } from './pages/PulsePage'
 import { YearGroupsPage } from './pages/YearGroupsPage'
 import { ClassesPage } from './pages/ClassesPage'
+import { StudentsPage } from './pages/StudentsPage'
 import { StaffPage } from './pages/StaffPage'
 import { ParentsPage } from './pages/ParentsPage'
 import { PoliciesPage } from './pages/PoliciesPage'
 import { FilesPage } from './pages/FilesPage'
+import { KnowledgeBasePage } from './pages/KnowledgeBasePage'
 import { SchoolsPage } from './pages/SchoolsPage'
 import { AuditLogPage } from './pages/AuditLogPage'
 
@@ -101,10 +103,12 @@ export default function App() {
         <Route path="/pulse" element={<PulsePage />} />
         <Route path="/year-groups" element={<YearGroupsPage />} />
         <Route path="/classes" element={<ClassesPage />} />
+        <Route path="/students" element={<StudentsPage />} />
         <Route path="/staff" element={<StaffPage />} />
         <Route path="/parents" element={<ParentsPage />} />
         <Route path="/policies" element={<PoliciesPage />} />
         <Route path="/files" element={<FilesPage />} />
+        <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
         <Route path="/audit-log" element={<AuditLogPage />} />
         <Route
           path="/schools"

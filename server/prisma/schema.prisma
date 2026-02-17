@@ -25,6 +25,7 @@ model School {
   users               User[]
   yearGroups          YearGroup[]
   classes             Class[]
+  students            Student[]
   messages            Message[]
   forms               Form[]
   events              Event[]
@@ -57,6 +58,7 @@ model User {
 
   // Parent relations
   children           Child[]
+  studentLinks       ParentStudentLink[]
 
   // Staff relations - classes they can manage/message
   assignedClasses    StaffClassAssignment[]
@@ -97,7 +99,7 @@ enum Role {
   SUPER_ADMIN
 }
 
-// Children linked to parents
+// Children linked to parents (deprecated - use Student + ParentStudentLink)
 model Child {
   id       String @id @default(cuid())
   name     String
@@ -105,6 +107,50 @@ model Child {
   parent   User   @relation(fields: [parentId], references: [id], onDelete: Cascade)
   classId  String
   class    Class  @relation(fields: [classId], references: [id])
+}
+
+// Students exist independently, managed by school admins
+model Student {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  externalId  String?  // Optional: Student ID from school MIS
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id])
+  classId     String
+  class       Class    @relation(fields: [classId], references: [id])
+
+  parentLinks     ParentStudentLink[]
+  invitationLinks StudentInvitationLink[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([schoolId, externalId])
+  @@index([schoolId, classId])
+}
+
+// Junction table: Parent-Student link
+model ParentStudentLink {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, studentId])
+}
+
+// Invitation references existing students
+model StudentInvitationLink {
+  id           String           @id @default(cuid())
+  invitationId String
+  invitation   ParentInvitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student          @relation(fields: [studentId], references: [id])
+
+  @@unique([invitationId, studentId])
 }
 
 // Year Groups
@@ -135,6 +181,7 @@ model Class {
   yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
 
   children             Child[]
+  students             Student[]
   messages             Message[]
   events               Event[]
   scheduleItems        ScheduleItem[]
@@ -334,13 +381,14 @@ model KnowledgeArticle {
 
 // Parent Pulse Surveys
 model PulseSurvey {
-  id           String   @id @default(cuid())
-  halfTermName String
-  status       String   // "DRAFT", "OPEN", "CLOSED"
-  opensAt      DateTime
-  closesAt     DateTime
-  schoolId     String
-  school       School   @relation(fields: [schoolId], references: [id])
+  id                    String   @id @default(cuid())
+  halfTermName          String
+  status                String   // "DRAFT", "OPEN", "CLOSED"
+  opensAt               DateTime
+  closesAt              DateTime
+  additionalQuestionKey String?  // Key from OPTIONAL_QUESTIONS list
+  schoolId              String
+  school                School   @relation(fields: [schoolId], references: [id])
 
   responses PulseResponse[]
 
@@ -452,6 +500,7 @@ model ParentInvitation {
   parentName     String?  // Optional: for display
 
   childLinks     ChildInvitationLink[]
+  studentLinks   StudentInvitationLink[]
 
   status         String   @default("PENDING") // PENDING, REDEEMED, EXPIRED, REVOKED
   expiresAt      DateTime?
@@ -496,6 +545,7 @@ enum AuditResourceType {
   YEAR_GROUP
   CLASS
   STAFF
+  STUDENT
   POLICY
   FILE
   FOLDER
@@ -557,4 +607,20 @@ model DeviceToken {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, token])
+}
+
+// Magic Link Tokens for passwordless authentication
+model MagicLinkToken {
+  id           String   @id @default(cuid())
+  token        String   @unique
+  email        String
+  schoolId     String
+  type         String   // "LOGIN" or "REGISTRATION"
+  invitationId String?  // For registration flow, links to ParentInvitation
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([email])
+  @@index([token])
 }

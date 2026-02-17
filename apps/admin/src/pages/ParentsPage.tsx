@@ -2,10 +2,17 @@ import React, { useState } from 'react'
 import { Plus, X, Trash2, Upload, Users, RefreshCw, Mail, Copy, QrCode, CheckCircle, XCircle, Clock, Eye } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
 import type { Class, ParentInvitation, InvitationStatus } from '@wasil/shared'
+import { StudentSearchSelect } from '../components/StudentSearchSelect'
 
 interface ChildEntry {
   childName: string
   classId: string
+}
+
+interface SelectedStudent {
+  id: string
+  fullName: string
+  className: string
 }
 
 interface BulkImportResult {
@@ -39,6 +46,8 @@ export function ParentsPage() {
   const [includeMagicLink, setIncludeMagicLink] = useState(true)
   const [children, setChildren] = useState<ChildEntry[]>([{ childName: '', classId: '' }])
   const [expiresInDays, setExpiresInDays] = useState(90)
+  const [useStudentSearch, setUseStudentSearch] = useState(true)
+  const [selectedStudents, setSelectedStudents] = useState<SelectedStudent[]>([])
 
   // Bulk import
   const [bulkText, setBulkText] = useState('')
@@ -56,6 +65,7 @@ export function ParentsPage() {
     setExpiresInDays(90)
     setBulkText('')
     setBulkResult(null)
+    setSelectedStudents([])
   }
 
   const addChild = () => {
@@ -74,26 +84,52 @@ export function ParentsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const validChildren = children.filter(c => c.childName.trim() && c.classId)
-    if (validChildren.length === 0) {
-      alert('Please add at least one child with a name and class')
-      return
-    }
-    setIsSubmitting(true)
-    try {
-      await api.parentInvitations.create({
-        parentName: parentName.trim() || undefined,
-        parentEmail: parentEmail.trim() || undefined,
-        children: validChildren,
-        includeMagicLink,
-        expiresInDays,
-      })
-      resetForm()
-      refetchInvitations()
-    } catch (error) {
-      alert(`Failed to create invitation: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
-      setIsSubmitting(false)
+
+    if (useStudentSearch) {
+      // New approach: use selected students
+      if (selectedStudents.length === 0) {
+        alert('Please select at least one student')
+        return
+      }
+      setIsSubmitting(true)
+      try {
+        await api.parentInvitations.create({
+          parentName: parentName.trim() || undefined,
+          parentEmail: parentEmail.trim() || undefined,
+          studentIds: selectedStudents.map(s => s.id),
+          includeMagicLink,
+          expiresInDays,
+        })
+        resetForm()
+        refetchInvitations()
+      } catch (error) {
+        alert(`Failed to create invitation: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      } finally {
+        setIsSubmitting(false)
+      }
+    } else {
+      // Legacy approach: use child names
+      const validChildren = children.filter(c => c.childName.trim() && c.classId)
+      if (validChildren.length === 0) {
+        alert('Please add at least one child with a name and class')
+        return
+      }
+      setIsSubmitting(true)
+      try {
+        await api.parentInvitations.create({
+          parentName: parentName.trim() || undefined,
+          parentEmail: parentEmail.trim() || undefined,
+          children: validChildren,
+          includeMagicLink,
+          expiresInDays,
+        })
+        resetForm()
+        refetchInvitations()
+      } catch (error) {
+        alert(`Failed to create invitation: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      } finally {
+        setIsSubmitting(false)
+      }
     }
   }
 
@@ -291,46 +327,75 @@ export function ParentsPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Children</label>
-            <div className="space-y-2">
-              {children.map((child, index) => (
-                <div key={index} className="flex items-center space-x-2">
-                  <input
-                    type="text"
-                    value={child.childName}
-                    onChange={e => updateChild(index, 'childName', e.target.value)}
-                    placeholder="Child's name"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                  <select
-                    value={child.classId}
-                    onChange={e => updateChild(index, 'classId', e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select class...</option>
-                    {classes?.map(cls => (
-                      <option key={cls.id} value={cls.id}>{cls.name}</option>
-                    ))}
-                  </select>
-                  {children.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeChild(index)}
-                      className="p-2 text-gray-400 hover:text-red-600"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">Children</label>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setUseStudentSearch(true)}
+                  className={`text-xs px-2 py-1 rounded ${useStudentSearch ? 'bg-blue-100 text-blue-800' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  Search Students
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUseStudentSearch(false)}
+                  className={`text-xs px-2 py-1 rounded ${!useStudentSearch ? 'bg-blue-100 text-blue-800' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  Manual Entry
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={addChild}
-              className="mt-2 text-sm text-blue-600 hover:text-blue-800"
-            >
-              + Add another child
-            </button>
+
+            {useStudentSearch ? (
+              <StudentSearchSelect
+                selectedStudents={selectedStudents}
+                onChange={setSelectedStudents}
+                placeholder="Search for students by name..."
+              />
+            ) : (
+              <>
+                <div className="space-y-2">
+                  {children.map((child, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={child.childName}
+                        onChange={e => updateChild(index, 'childName', e.target.value)}
+                        placeholder="Child's name"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                      <select
+                        value={child.classId}
+                        onChange={e => updateChild(index, 'classId', e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select class...</option>
+                        {classes?.map(cls => (
+                          <option key={cls.id} value={cls.id}>{cls.name}</option>
+                        ))}
+                      </select>
+                      {children.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeChild(index)}
+                          className="p-2 text-gray-400 hover:text-red-600"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={addChild}
+                  className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                >
+                  + Add another child
+                </button>
+              </>
+            )}
           </div>
 
           <div className="flex items-center space-x-6">
@@ -406,8 +471,13 @@ export function ParentsPage() {
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
                     {inv.children.map((child, i) => (
-                      <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                      <span key={`child-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
                         {child.childName} ({child.className})
+                      </span>
+                    ))}
+                    {inv.students?.map((student, i) => (
+                      <span key={`student-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">
+                        {student.studentName} ({student.className})
                       </span>
                     ))}
                   </div>
@@ -566,16 +636,31 @@ export function ParentsPage() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Children</label>
-                <div className="space-y-1">
-                  {showDetails.children.map((child, i) => (
-                    <div key={i} className="text-sm text-gray-900">
-                      {child.childName} - {child.className}
-                    </div>
-                  ))}
+              {showDetails.children.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Children (Manual Entry)</label>
+                  <div className="space-y-1">
+                    {showDetails.children.map((child, i) => (
+                      <div key={i} className="text-sm text-gray-900">
+                        {child.childName} - {child.className}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {showDetails.students && showDetails.students.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Students</label>
+                  <div className="space-y-1">
+                    {showDetails.students.map((student, i) => (
+                      <div key={i} className="text-sm text-gray-900">
+                        {student.studentName} - {student.className}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {showDetails.expiresAt && (
                 <div>

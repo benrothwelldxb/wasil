@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
+import { logAudit } from '../services/audit.js'
+import { sendNotification } from '../services/notify.js'
 
 const router = Router()
 
@@ -100,6 +102,9 @@ router.post('/', isAdmin, async (req, res) => {
       },
     })
 
+    logAudit({ req, action: 'CREATE', resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, metadata: { title: message.title } })
+    sendNotification({ req, type: 'WEEKLY_MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, target: { targetClass: 'Whole School', schoolId: user.schoolId } })
+
     res.status(201).json({
       id: message.id,
       title: message.title,
@@ -155,6 +160,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       heartCount: message._count.hearts,
       createdAt: message.createdAt.toISOString(),
     })
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, metadata: { title: message.title } })
   } catch (error) {
     console.error('Error updating weekly message:', error)
     res.status(500).json({ error: 'Failed to update weekly message' })
@@ -179,6 +186,8 @@ router.delete('/:id', isAdmin, async (req, res) => {
     await prisma.weeklyMessage.delete({
       where: { id },
     })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'WEEKLY_MESSAGE', resourceId: id, metadata: { title: existing.title } })
 
     res.json({ message: 'Weekly message deleted successfully' })
   } catch (error) {

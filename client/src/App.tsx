@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import { Header, Footer, SideMenu, LoadingScreen, LoginView } from './components'
 import { ParentDashboard } from './pages/ParentDashboard'
@@ -44,6 +44,26 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   )
 }
 
+function AuthCallback() {
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { handleOAuthCallback } = useAuth()
+
+  useEffect(() => {
+    const token = searchParams.get('token')
+    const refresh = searchParams.get('refresh')
+    if (token && refresh) {
+      handleOAuthCallback(token, refresh).then(() => {
+        navigate('/', { replace: true })
+      })
+    } else {
+      navigate('/login', { replace: true })
+    }
+  }, [searchParams, navigate, handleOAuthCallback])
+
+  return <LoadingScreen />
+}
+
 export default function App() {
   const { isLoading, isAuthenticated, user } = useAuth()
 
@@ -53,6 +73,10 @@ export default function App() {
 
   return (
     <Routes>
+      <Route
+        path="/auth/callback"
+        element={<AuthCallback />}
+      />
       <Route
         path="/login"
         element={

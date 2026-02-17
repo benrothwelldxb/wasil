@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useApi, useMutation } from '../hooks/useApi'
 import * as api from '../services/api'
-import type { Message, Survey, PulseSurvey, WeeklyMessage, ScheduleItem } from '../types'
+import type { Message, Survey, PulseSurvey, WeeklyMessage, ScheduleItem, Class } from '../types'
 
 export function ParentDashboard() {
   const { user } = useAuth()
@@ -37,6 +37,26 @@ export function ParentDashboard() {
     () => api.schedule.list(),
     []
   )
+  const { data: allClasses } = useApi<Class[]>(
+    () => api.classes.list(),
+    []
+  )
+
+  // Build class color map from actual class data
+  const classColorMap = useMemo(() => {
+    const map: Record<string, { bg: string; hex: string }> = {}
+    const CLASS_COLOR_HEX: Record<string, string> = {
+      'bg-gray-600': '#4B5563', 'bg-blue-600': '#2563EB', 'bg-red-600': '#DC2626',
+      'bg-green-600': '#16A34A', 'bg-purple-600': '#9333EA', 'bg-amber-500': '#F59E0B',
+      'bg-teal-600': '#0D9488', 'bg-pink-600': '#DB2777', 'bg-orange-600': '#EA580C',
+      'bg-indigo-600': '#4F46E5', 'bg-blue-500': '#3b82f6',
+    }
+    allClasses?.forEach(c => {
+      const hex = CLASS_COLOR_HEX[c.colorBg] || '#4B5563'
+      map[c.name] = { bg: c.colorBg, hex }
+    })
+    return map
+  }, [allClasses])
 
   // Mutations
   const { mutate: acknowledgeMessage } = useMutation(api.messages.acknowledge)
@@ -179,6 +199,7 @@ export function ParentDashboard() {
                 key={message.id}
                 message={message}
                 onAcknowledge={handleAcknowledge}
+                classColors={classColorMap}
               />
             ))
           ) : (

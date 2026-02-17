@@ -17,15 +17,104 @@ import type {
 
 const API_URL = config.apiUrl
 
+// Token state
+let accessToken: string | null = null
+let refreshTokenValue: string | null = localStorage.getItem('refreshToken')
+
+export function setTokens(access: string, refresh: string) {
+  accessToken = access
+  refreshTokenValue = refresh
+  localStorage.setItem('refreshToken', refresh)
+}
+
+export function clearTokens() {
+  accessToken = null
+  refreshTokenValue = null
+  localStorage.removeItem('refreshToken')
+}
+
+export function getRefreshToken(): string | null {
+  return refreshTokenValue
+}
+
+export function getAccessToken(): string | null {
+  return accessToken
+}
+
+let isRefreshing = false
+let refreshPromise: Promise<boolean> | null = null
+
+async function tryRefresh(): Promise<boolean> {
+  if (!refreshTokenValue) return false
+  if (isRefreshing && refreshPromise) return refreshPromise
+
+  isRefreshing = true
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_URL}/auth/token/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: refreshTokenValue }),
+      })
+
+      if (!response.ok) {
+        clearTokens()
+        return false
+      }
+
+      const data = await response.json()
+      setTokens(data.accessToken, data.refreshToken)
+      return true
+    } catch {
+      clearTokens()
+      return false
+    } finally {
+      isRefreshing = false
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
+}
+
 async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${url}`, {
+  const isFormData = options?.body instanceof FormData
+  const headers: Record<string, string> = isFormData
+    ? {}
+    : { 'Content-Type': 'application/json' }
+
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`
+  }
+
+  let response = await fetch(`${API_URL}${url}`, {
     ...options,
-    credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      ...headers,
       ...options?.headers,
     },
   })
+
+  // On 401, try refresh and retry once
+  if (response.status === 401 && refreshTokenValue) {
+    const refreshed = await tryRefresh()
+    if (refreshed) {
+      const retryHeaders: Record<string, string> = isFormData
+        ? {}
+        : { 'Content-Type': 'application/json' }
+      if (accessToken) {
+        retryHeaders['Authorization'] = `Bearer ${accessToken}`
+      }
+
+      response = await fetch(`${API_URL}${url}`, {
+        ...options,
+        headers: {
+          ...retryHeaders,
+          ...options?.headers,
+        },
+      })
+    }
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }))
@@ -38,15 +127,25 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 // Auth
 export const auth = {
   me: () => fetchApi<User>('/auth/me'),
-  demoLogin: (email: string, role?: string) =>
-    fetchApi<User>('/auth/demo-login', {
+  demoLogin: async (email: string, role?: string) => {
+    const result = await fetchApi<{ user: User; accessToken: string; refreshToken: string }>('/auth/demo-login', {
       method: 'POST',
       body: JSON.stringify({ email, role }),
-    }),
-  logout: () =>
-    fetchApi<{ message: string }>('/auth/logout', {
+    })
+    setTokens(result.accessToken, result.refreshToken)
+    return result.user
+  },
+  logout: async () => {
+    const token = refreshTokenValue
+    clearTokens()
+    await fetchApi<{ message: string }>('/auth/logout', {
       method: 'POST',
-    }),
+      body: JSON.stringify({ refreshToken: token }),
+    }).catch(() => {})
+  },
+  refreshToken: async (): Promise<boolean> => {
+    return tryRefresh()
+  },
 }
 
 // Messages
@@ -438,20 +537,34 @@ export const yearGroups = {
     fetchApi<{ message: string }>(`/api/year-groups/${id}`, {
       method: 'DELETE',
     }),
+  reorder: (ids: string[]) =>
+    fetchApi<{ message: string }>('/api/year-groups/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
+    }),
 }
 
 // Policies
+export interface Policy {
+  id: string
+  name: string
+  description: string | null
+  fileUrl: string
+  fileSize: number | null
+  updatedAt: string
+}
+
 export const policies = {
-  list: () => fetchApi<any[]>('/api/policies'),
-  create: (data: { name: string; description?: string; fileUrl: string; fileSize?: number }) =>
-    fetchApi<any>('/api/policies', {
+  list: () => fetchApi<Policy[]>('/api/policies'),
+  create: (data: FormData) =>
+    fetchApi<Policy>('/api/policies', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: data,
     }),
-  update: (id: string, data: { name?: string; description?: string; fileUrl?: string; fileSize?: number }) =>
-    fetchApi<any>(`/api/policies/${id}`, {
+  update: (id: string, data: FormData) =>
+    fetchApi<Policy>(`/api/policies/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: data,
     }),
   delete: (id: string) =>
     fetchApi<{ message: string }>(`/api/policies/${id}`, {

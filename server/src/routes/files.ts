@@ -1,6 +1,14 @@
 import { Router } from 'express'
+import multer from 'multer'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
+import { logAudit } from '../services/audit.js'
+import { uploadFile, deleteFile as deleteR2File, generateKey } from '../services/storage.js'
+
+const fileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+})
 
 const router = Router()
 
@@ -189,6 +197,8 @@ router.post('/folder', isAdmin, async (req, res) => {
       },
     })
 
+    logAudit({ req, action: 'CREATE', resourceType: 'FOLDER', resourceId: folder.id, metadata: { name: folder.name } })
+
     res.status(201).json({
       id: folder.id,
       name: folder.name,
@@ -201,23 +211,33 @@ router.post('/folder', isAdmin, async (req, res) => {
   }
 })
 
-// Upload/Create file record (admin only)
-router.post('/file', isAdmin, async (req, res) => {
+// Upload file to R2 and create record (admin only)
+router.post('/file', isAdmin, fileUpload.single('file'), async (req, res) => {
   try {
     const user = req.user!
-    const { name, fileName, fileUrl, fileType, fileSize, folderId } = req.body
+    const { name, folderId } = req.body
+    const uploaded = req.file
+
+    if (!uploaded) {
+      return res.status(400).json({ error: 'File is required' })
+    }
+
+    const key = generateKey('files', uploaded.originalname)
+    const fileUrl = await uploadFile(uploaded.buffer, key, uploaded.mimetype)
 
     const file = await prisma.schoolFile.create({
       data: {
-        name,
-        fileName,
+        name: name || uploaded.originalname,
+        fileName: uploaded.originalname,
         fileUrl,
-        fileType,
-        fileSize,
+        fileType: uploaded.mimetype,
+        fileSize: uploaded.size,
         folderId: folderId || null,
         schoolId: user.schoolId,
       },
     })
+
+    logAudit({ req, action: 'CREATE', resourceType: 'FILE', resourceId: file.id, metadata: { name: file.name } })
 
     res.status(201).json({
       id: file.id,
@@ -239,9 +259,21 @@ router.delete('/file/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
 
+    const file = await prisma.schoolFile.findUnique({ where: { id } })
+    if (file) {
+      try {
+        const key = new URL(file.fileUrl).pathname.replace(/^\//, '')
+        await deleteR2File(key)
+      } catch {
+        // Ignore R2 deletion errors (legacy local files)
+      }
+    }
+
     await prisma.schoolFile.delete({
       where: { id },
     })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'FILE', resourceId: id, metadata: { name: file?.name } })
 
     res.json({ message: 'File deleted successfully' })
   } catch (error) {
@@ -260,6 +292,8 @@ router.delete('/folder/:id', isAdmin, async (req, res) => {
     await prisma.fileFolder.delete({
       where: { id },
     })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'FOLDER', resourceId: id })
 
     res.json({ message: 'Folder deleted successfully' })
   } catch (error) {

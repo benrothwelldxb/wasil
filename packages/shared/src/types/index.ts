@@ -9,6 +9,7 @@ export interface User {
   schoolId: string
   avatarUrl?: string
   children?: Child[]
+  studentLinks?: ParentStudentLinkInfo[]
   school?: School
 }
 
@@ -260,6 +261,7 @@ export interface PulseSurvey {
   opensAt: string
   closesAt: string
   schoolId: string
+  additionalQuestionKey?: string | null
   questions: PulseQuestion[]
   userResponse?: PulseResponse
   responseCount?: number
@@ -281,12 +283,33 @@ export interface PulseResponse {
   createdAt: string
 }
 
+export interface PulseOptionalQuestion {
+  key: string
+  text: string
+  type: 'LIKERT_5' | 'TEXT_OPTIONAL'
+}
+
+export interface PulseQuestionStat {
+  question: string
+  type: 'LIKERT_5' | 'TEXT_OPTIONAL'
+  average?: number
+  distribution?: { 1: number; 2: number; 3: number; 4: number; 5: number }
+  responses?: string[]
+}
+
+export interface PulseAnalytics {
+  responseCount: number
+  totalParents: number
+  responseRate: number
+  questionStats: Record<string, PulseQuestionStat>
+}
+
 // Audit Log types
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE'
 
 export type AuditResourceType =
   | 'MESSAGE' | 'SURVEY' | 'EVENT' | 'WEEKLY_MESSAGE' | 'TERM_DATE'
-  | 'PULSE_SURVEY' | 'YEAR_GROUP' | 'CLASS' | 'STAFF' | 'POLICY'
+  | 'PULSE_SURVEY' | 'YEAR_GROUP' | 'CLASS' | 'STAFF' | 'STUDENT' | 'POLICY'
   | 'FILE' | 'FOLDER' | 'SCHEDULE_ITEM' | 'KNOWLEDGE_CATEGORY'
   | 'KNOWLEDGE_ARTICLE' | 'SCHOOL' | 'FORM' | 'PARENT_INVITATION'
 
@@ -321,6 +344,12 @@ export interface ChildInvitationLink {
   classId: string
 }
 
+export interface StudentInvitationLink {
+  studentId: string
+  studentName: string
+  className: string
+}
+
 export interface ParentInvitation {
   id: string
   accessCode: string
@@ -328,6 +357,7 @@ export interface ParentInvitation {
   parentEmail?: string
   parentName?: string
   children: ChildInvitationLink[]
+  students?: StudentInvitationLink[]
   status: InvitationStatus
   expiresAt?: string
   redeemedAt?: string
@@ -369,6 +399,11 @@ export interface InvitationValidationResponse {
     childName: string
     className: string
   }>
+  students?: Array<{
+    studentId: string
+    studentName: string
+    className: string
+  }>
   parentName?: string
 }
 
@@ -380,6 +415,11 @@ export interface InvitationRedeemResponse {
   }
   children: Array<{
     childName: string
+    className: string
+  }>
+  students?: Array<{
+    studentId: string
+    studentName: string
     className: string
   }>
 }
@@ -426,4 +466,46 @@ export interface ClassColors {
     bg: string
     text: string
   }
+}
+
+// Student types
+export interface Student {
+  id: string
+  firstName: string
+  lastName: string
+  fullName: string
+  externalId?: string
+  classId: string
+  className: string
+  parentCount: number
+}
+
+export interface StudentSearchResult {
+  id: string
+  fullName: string
+  className: string
+  hasParent: boolean
+}
+
+export interface ParentStudentLinkInfo {
+  studentId: string
+  studentName: string
+  className: string
+}
+
+export interface StudentListResponse {
+  students: Student[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+export interface BulkStudentResult {
+  created: number
+  skipped: number
+  errors?: string[]
+  students: Array<{ id: string; firstName: string; lastName: string; className: string }>
 }

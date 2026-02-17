@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Send, BarChart3, Users, Plus, X, Pencil, Trash2, UserCog, Shield, GraduationCap, Calendar, MessageSquare, MapPin, Clock, CheckCircle, CalendarDays, ClipboardList, Play, Square, Upload, BookOpen } from 'lucide-react'
+import { Send, BarChart3, Users, Plus, X, Pencil, Trash2, UserCog, Shield, GraduationCap, Calendar, MessageSquare, MapPin, Clock, CheckCircle, CalendarDays, ClipboardList, Play, Square, Upload, BookOpen, FileText, GripVertical } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useApi } from '../hooks/useApi'
@@ -7,14 +7,14 @@ import { MessageForm, SurveyForm } from '../components/forms'
 import { ConfirmModal } from '../components/ui'
 import type { MessageFormData, SurveyFormData, AudienceOption } from '../components/forms'
 import * as api from '../services/api'
-import type { StaffMember, SurveyWithResponses, ClassWithDetails } from '../services/api'
+import type { StaffMember, SurveyWithResponses, ClassWithDetails, Policy } from '../services/api'
 import type { Class, Message, Event, WeeklyMessage, TermDate, TermDateType, PulseSurvey, YearGroup } from '../types'
 
 export function AdminDashboard() {
   const { user } = useAuth()
   const theme = useTheme()
 
-  const [activeTab, setActiveTab] = useState<'messages' | 'surveys' | 'events' | 'weekly' | 'termDates' | 'pulse' | 'yearGroups' | 'classes' | 'staff' | 'analytics'>('messages')
+  const [activeTab, setActiveTab] = useState<'messages' | 'surveys' | 'events' | 'weekly' | 'termDates' | 'pulse' | 'yearGroups' | 'classes' | 'staff' | 'policies' | 'analytics'>('messages')
   const [showMessageForm, setShowMessageForm] = useState(false)
   const [showSurveyForm, setShowSurveyForm] = useState(false)
   const [showStaffForm, setShowStaffForm] = useState(false)
@@ -33,7 +33,12 @@ export function AdminDashboard() {
   const [editingClass, setEditingClass] = useState<ClassWithDetails | null>(null)
   const [showYearGroupForm, setShowYearGroupForm] = useState(false)
   const [editingYearGroup, setEditingYearGroup] = useState<YearGroup | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'message' | 'survey' | 'staff' | 'event' | 'weekly' | 'termDate' | 'pulse' | 'class' | 'yearGroup'; id: string; title: string } | null>(null)
+  const [showPolicyForm, setShowPolicyForm] = useState(false)
+  const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null)
+  const [policyName, setPolicyName] = useState('')
+  const [policyDescription, setPolicyDescription] = useState('')
+  const [policyFile, setPolicyFile] = useState<File | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'message' | 'survey' | 'staff' | 'event' | 'weekly' | 'termDate' | 'pulse' | 'class' | 'yearGroup' | 'policy'; id: string; title: string } | null>(null)
 
   // Fetch data
   const { data: messages, refetch: refetchMessages } = useApi<Message[]>(
@@ -76,6 +81,21 @@ export function AdminDashboard() {
     () => api.yearGroups.list(),
     []
   )
+  const { data: policiesList, refetch: refetchPolicies } = useApi<Policy[]>(
+    () => api.policies.list(),
+    []
+  )
+
+  // CSV import state
+  const csvFileRef = React.useRef<HTMLInputElement>(null)
+  const [csvPreview, setCsvPreview] = useState<Array<{
+    title: string; description: string; date: string; time: string; location: string
+    targetClass: string; classId: string; yearGroupId: string; requiresRsvp: boolean
+    error?: string
+  }>>([])
+  const [csvImporting, setCsvImporting] = useState(false)
+  const [csvProgress, setCsvProgress] = useState<{ done: number; total: number; errors: string[] }>({ done: 0, total: 0, errors: [] })
+  const [showCsvModal, setShowCsvModal] = useState(false)
 
   // Loading states
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -167,9 +187,9 @@ export function AdminDashboard() {
   })
 
   // Year group form state
+  const [draggedYearGroupId, setDraggedYearGroupId] = useState<string | null>(null)
   const [yearGroupForm, setYearGroupForm] = useState({
     name: '',
-    order: 0,
   })
 
   const CLASS_COLOR_PRESETS = [
@@ -284,6 +304,9 @@ export function AdminDashboard() {
       } else if (deleteConfirm.type === 'yearGroup') {
         await api.yearGroups.delete(deleteConfirm.id)
         refetchYearGroups()
+      } else if (deleteConfirm.type === 'policy') {
+        await api.policies.delete(deleteConfirm.id)
+        refetchPolicies()
       }
       setDeleteConfirm(null)
     } catch (error) {
@@ -537,6 +560,110 @@ export function AdminDashboard() {
     setEventForm({ title: '', description: '', date: '', time: '', location: '', targetClass: 'Whole School', classId: '', yearGroupId: '', requiresRsvp: false })
   }
 
+  // CSV import handlers
+  const parseCsvLine = (line: string): string[] => {
+    const fields: string[] = []
+    let current = ''
+    let inQuotes = false
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (inQuotes) {
+        if (ch === '"' && line[i + 1] === '"') { current += '"'; i++ }
+        else if (ch === '"') { inQuotes = false }
+        else { current += ch }
+      } else {
+        if (ch === '"') { inQuotes = true }
+        else if (ch === ',') { fields.push(current.trim()); current = '' }
+        else { current += ch }
+      }
+    }
+    fields.push(current.trim())
+    return fields
+  }
+
+  const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string
+      const lines = text.split(/\r?\n/).filter(l => l.trim())
+      if (lines.length < 2) { alert('CSV must have a header row and at least one data row.'); return }
+      // Skip header
+      const rows = lines.slice(1).map(parseCsvLine)
+      const parsed = rows.map(cols => {
+        const [title, description, date, time, location, target, rsvp] = cols
+        const targetName = target || 'Whole School'
+        let resolvedTarget = 'Whole School'
+        let classId = ''
+        let yearGroupId = ''
+        let error = ''
+
+        if (!title) error = 'Missing title'
+        else if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) error = 'Invalid or missing date (need YYYY-MM-DD)'
+
+        if (targetName !== 'Whole School') {
+          const ygMatch = yearGroups?.find(yg => yg.name.toLowerCase() === targetName.toLowerCase())
+          const clsMatch = classes?.find(c => c.name.toLowerCase() === targetName.toLowerCase())
+          if (ygMatch) { resolvedTarget = ygMatch.name; yearGroupId = ygMatch.id }
+          else if (clsMatch) { resolvedTarget = clsMatch.name; classId = clsMatch.id }
+          else { error = error || `Unrecognised target: "${targetName}"` }
+        }
+
+        return {
+          title: title || '',
+          description: description || '',
+          date: date || '',
+          time: time || '',
+          location: location || '',
+          targetClass: resolvedTarget,
+          classId,
+          yearGroupId,
+          requiresRsvp: rsvp?.toLowerCase() === 'yes',
+          error,
+        }
+      })
+      setCsvPreview(parsed)
+      setCsvProgress({ done: 0, total: 0, errors: [] })
+    }
+    reader.readAsText(file)
+    // Reset so the same file can be re-selected
+    e.target.value = ''
+  }
+
+  const handleCsvImport = async () => {
+    const valid = csvPreview.filter(r => !r.error)
+    if (valid.length === 0) return
+    setCsvImporting(true)
+    const progress = { done: 0, total: valid.length, errors: [] as string[] }
+    setCsvProgress({ ...progress })
+    for (const row of valid) {
+      try {
+        await api.events.create({
+          title: row.title,
+          description: row.description || undefined,
+          date: row.date,
+          time: row.time || undefined,
+          location: row.location || undefined,
+          targetClass: row.targetClass,
+          classId: row.classId || undefined,
+          yearGroupId: row.yearGroupId || undefined,
+          requiresRsvp: row.requiresRsvp,
+        })
+      } catch (err) {
+        progress.errors.push(`"${row.title}": ${err instanceof Error ? err.message : 'Unknown error'}`)
+      }
+      progress.done++
+      setCsvProgress({ ...progress })
+    }
+    setCsvImporting(false)
+    refetchEvents()
+    if (progress.errors.length === 0) {
+      setCsvPreview([])
+      alert(`Successfully imported ${progress.done} event${progress.done !== 1 ? 's' : ''}.`)
+    }
+  }
+
   // Weekly message handlers
   const handleCreateWeekly = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -754,14 +881,13 @@ export function AdminDashboard() {
     e.preventDefault()
     setIsSubmitting(true)
     try {
-      const data = { name: yearGroupForm.name, order: yearGroupForm.order }
       if (editingYearGroup) {
-        await api.yearGroups.update(editingYearGroup.id, data)
+        await api.yearGroups.update(editingYearGroup.id, { name: yearGroupForm.name, order: editingYearGroup.order })
         setEditingYearGroup(null)
       } else {
-        await api.yearGroups.create(data)
+        await api.yearGroups.create({ name: yearGroupForm.name, order: yearGroups?.length ?? 0 })
       }
-      setYearGroupForm({ name: '', order: 0 })
+      setYearGroupForm({ name: '' })
       setShowYearGroupForm(false)
       refetchYearGroups()
     } catch (error) {
@@ -774,7 +900,7 @@ export function AdminDashboard() {
   }
 
   const handleEditYearGroup = (yg: YearGroup) => {
-    setYearGroupForm({ name: yg.name, order: yg.order })
+    setYearGroupForm({ name: yg.name })
     setEditingYearGroup(yg)
     setShowYearGroupForm(true)
   }
@@ -782,7 +908,7 @@ export function AdminDashboard() {
   const handleCancelYearGroupForm = () => {
     setShowYearGroupForm(false)
     setEditingYearGroup(null)
-    setYearGroupForm({ name: '', order: 0 })
+    setYearGroupForm({ name: '' })
   }
 
   // Build audience options: Whole School, then year groups with nested classes
@@ -870,6 +996,7 @@ export function AdminDashboard() {
               { key: 'yearGroups', label: 'Year Groups' },
               { key: 'classes', label: 'Classes' },
               { key: 'staff', label: 'Staff' },
+              { key: 'policies', label: 'Policies' },
               { key: 'analytics', label: 'Analytics' },
             ] as const).map((tab) => (
               <button
@@ -1051,15 +1178,108 @@ export function AdminDashboard() {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">Events</h3>
-                <button
-                  onClick={() => showEventForm ? handleCancelEventForm() : setShowEventForm(true)}
-                  className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
-                  style={{ backgroundColor: theme.colors.brandColor }}
-                >
-                  {showEventForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                  <span>{showEventForm ? 'Cancel' : 'New Event'}</span>
-                </button>
+                <div className="flex items-center space-x-2">
+                  <input type="file" ref={csvFileRef} accept=".csv" className="hidden" onChange={(e) => { handleCsvFile(e); setShowCsvModal(false) }} />
+                  <button
+                    onClick={() => setShowCsvModal(true)}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span>Import CSV</span>
+                  </button>
+                  <button
+                    onClick={() => showEventForm ? handleCancelEventForm() : setShowEventForm(true)}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
+                    style={{ backgroundColor: theme.colors.brandColor }}
+                  >
+                    {showEventForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                    <span>{showEventForm ? 'Cancel' : 'New Event'}</span>
+                  </button>
+                </div>
               </div>
+
+              {showCsvModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowCsvModal(false)}>
+                  <div className="bg-white rounded-xl shadow-lg max-w-lg w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">Import Events from CSV</h3>
+                      <button onClick={() => setShowCsvModal(false)} className="text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></button>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3">Your CSV file should have a header row with the following columns:</p>
+                    <div className="bg-gray-50 rounded-lg p-3 mb-4 overflow-x-auto">
+                      <code className="text-xs text-gray-700 whitespace-pre">Title,Description,Date,Time,Location,Target,Requires RSVP</code>
+                    </div>
+                    <div className="text-sm text-gray-600 space-y-1.5 mb-4">
+                      <p><span className="font-medium">Title</span> — required</p>
+                      <p><span className="font-medium">Description</span> — optional</p>
+                      <p><span className="font-medium">Date</span> — required, YYYY-MM-DD format</p>
+                      <p><span className="font-medium">Time</span> — optional, e.g. 09:00-15:00</p>
+                      <p><span className="font-medium">Location</span> — optional</p>
+                      <p><span className="font-medium">Target</span> — optional, must match a year group or class name (defaults to Whole School)</p>
+                      <p><span className="font-medium">Requires RSVP</span> — Yes or No (defaults to No)</p>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-4">Example row: <code className="bg-gray-100 px-1 rounded">Sports Day,Annual competition,2026-01-24,09:00-15:00,School Field,Whole School,Yes</code></p>
+                    <button
+                      onClick={() => csvFileRef.current?.click()}
+                      className="w-full py-2.5 rounded-lg text-white font-medium flex items-center justify-center space-x-2"
+                      style={{ backgroundColor: theme.colors.brandColor }}
+                    >
+                      <Upload className="h-4 w-4" />
+                      <span>Choose CSV File</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {csvPreview.length > 0 && (
+                <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium">CSV Preview — {csvPreview.length} row{csvPreview.length !== 1 ? 's' : ''}</h4>
+                    <div className="flex items-center space-x-2">
+                      {csvImporting && <span className="text-sm text-gray-500">Importing {csvProgress.done}/{csvProgress.total}...</span>}
+                      {!csvImporting && csvProgress.errors.length > 0 && (
+                        <span className="text-sm text-red-600">{csvProgress.errors.length} failed</span>
+                      )}
+                      <button onClick={() => setCsvPreview([])} className="text-sm text-gray-500 hover:text-gray-700">Dismiss</button>
+                      <button
+                        onClick={handleCsvImport}
+                        disabled={csvImporting || csvPreview.filter(r => !r.error).length === 0}
+                        className="px-4 py-1.5 rounded-lg text-white text-sm font-medium disabled:opacity-50"
+                        style={{ backgroundColor: theme.colors.brandColor }}
+                      >
+                        Confirm Import ({csvPreview.filter(r => !r.error).length})
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead><tr className="text-left text-gray-500 border-b">
+                        <th className="pb-2 pr-3">Title</th><th className="pb-2 pr-3">Date</th><th className="pb-2 pr-3">Time</th>
+                        <th className="pb-2 pr-3">Location</th><th className="pb-2 pr-3">Target</th><th className="pb-2 pr-3">RSVP</th><th className="pb-2">Status</th>
+                      </tr></thead>
+                      <tbody>
+                        {csvPreview.map((row, i) => (
+                          <tr key={i} className={row.error ? 'text-red-600' : ''}>
+                            <td className="py-1 pr-3">{row.title || '—'}</td>
+                            <td className="py-1 pr-3">{row.date || '—'}</td>
+                            <td className="py-1 pr-3">{row.time || '—'}</td>
+                            <td className="py-1 pr-3">{row.location || '—'}</td>
+                            <td className="py-1 pr-3">{row.targetClass}</td>
+                            <td className="py-1 pr-3">{row.requiresRsvp ? 'Yes' : 'No'}</td>
+                            <td className="py-1">{row.error ? <span title={row.error}>⚠ {row.error}</span> : <CheckCircle className="h-4 w-4 text-green-500" />}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {csvProgress.errors.length > 0 && (
+                    <div className="mt-3 text-sm text-red-600">
+                      <p className="font-medium">Import errors:</p>
+                      {csvProgress.errors.map((e, i) => <p key={i}>{e}</p>)}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {showEventForm && (
                 <form onSubmit={handleCreateEvent} className="bg-gray-50 rounded-lg p-4 mb-6 space-y-4">
@@ -1696,17 +1916,6 @@ export function AdminDashboard() {
                       required
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Order</label>
-                    <input
-                      type="number"
-                      value={yearGroupForm.order}
-                      onChange={(e) => setYearGroupForm({ ...yearGroupForm, order: parseInt(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="0 = first"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Controls display order (0 = first)</p>
-                  </div>
                   <button
                     type="submit"
                     disabled={isSubmitting}
@@ -1718,15 +1927,48 @@ export function AdminDashboard() {
                 </form>
               )}
 
-              <div className="space-y-3">
+              <div className="space-y-1">
                 {yearGroups?.map((yg) => (
-                  <div key={yg.id} className="bg-gray-50 rounded-lg p-4">
+                  <div
+                    key={yg.id}
+                    draggable
+                    onDragStart={(e) => {
+                      setDraggedYearGroupId(yg.id)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      e.currentTarget.classList.add('ring-2', 'ring-blue-400')
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('ring-2', 'ring-blue-400')
+                    }}
+                    onDrop={async (e) => {
+                      e.preventDefault()
+                      e.currentTarget.classList.remove('ring-2', 'ring-blue-400')
+                      if (!draggedYearGroupId || draggedYearGroupId === yg.id || !yearGroups) return
+                      const fromIndex = yearGroups.findIndex(y => y.id === draggedYearGroupId)
+                      const toIndex = yearGroups.findIndex(y => y.id === yg.id)
+                      if (fromIndex === -1 || toIndex === -1) return
+                      const reordered = [...yearGroups]
+                      const [moved] = reordered.splice(fromIndex, 1)
+                      reordered.splice(toIndex, 0, moved)
+                      try {
+                        await api.yearGroups.reorder(reordered.map(y => y.id))
+                        refetchYearGroups()
+                      } catch (err) {
+                        console.error('Failed to reorder year groups:', err)
+                      }
+                      setDraggedYearGroupId(null)
+                    }}
+                    onDragEnd={() => setDraggedYearGroupId(null)}
+                    className={`bg-gray-50 rounded-lg p-4 cursor-grab active:cursor-grabbing transition-opacity ${draggedYearGroupId === yg.id ? 'opacity-50' : ''}`}
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
+                        <GripVertical className="h-4 w-4 text-gray-400 flex-shrink-0" />
                         <span className="font-medium text-gray-900">{yg.name}</span>
-                        <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">
-                          Order: {yg.order}
-                        </span>
                         <span className="text-sm text-gray-500">
                           {yg.classCount || 0} {(yg.classCount || 0) === 1 ? 'class' : 'classes'}
                         </span>
@@ -2211,6 +2453,154 @@ export function AdminDashboard() {
             </div>
           )}
 
+          {activeTab === 'policies' && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Policies</h3>
+                <button
+                  onClick={() => {
+                    if (showPolicyForm) {
+                      setShowPolicyForm(false)
+                      setEditingPolicy(null)
+                      setPolicyName('')
+                      setPolicyDescription('')
+                      setPolicyFile(null)
+                    } else {
+                      setShowPolicyForm(true)
+                    }
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
+                  style={{ backgroundColor: theme.colors.brandColor }}
+                >
+                  {showPolicyForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  <span>{showPolicyForm ? 'Cancel' : 'New Policy'}</span>
+                </button>
+              </div>
+
+              {showPolicyForm && (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    setIsSubmitting(true)
+                    try {
+                      const formData = new FormData()
+                      formData.append('name', policyName)
+                      if (policyDescription) formData.append('description', policyDescription)
+                      if (policyFile) formData.append('file', policyFile)
+
+                      if (editingPolicy) {
+                        await api.policies.update(editingPolicy.id, formData)
+                      } else {
+                        await api.policies.create(formData)
+                      }
+                      refetchPolicies()
+                      setShowPolicyForm(false)
+                      setEditingPolicy(null)
+                      setPolicyName('')
+                      setPolicyDescription('')
+                      setPolicyFile(null)
+                    } catch (error) {
+                      console.error('Error saving policy:', error)
+                      alert(error instanceof Error ? error.message : 'Failed to save policy')
+                    } finally {
+                      setIsSubmitting(false)
+                    }
+                  }}
+                  className="bg-gray-50 rounded-lg p-4 mb-4 space-y-4"
+                >
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Policy Name</label>
+                    <input
+                      type="text"
+                      value={policyName}
+                      onChange={(e) => setPolicyName(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-burgundy"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
+                    <input
+                      type="text"
+                      value={policyDescription}
+                      onChange={(e) => setPolicyDescription(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-burgundy"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      PDF File {editingPolicy ? '(leave empty to keep current)' : ''}
+                    </label>
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      onChange={(e) => setPolicyFile(e.target.files?.[0] || null)}
+                      required={!editingPolicy}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-4 py-2 rounded-lg text-white disabled:opacity-50"
+                    style={{ backgroundColor: theme.colors.brandColor }}
+                  >
+                    {isSubmitting ? 'Saving...' : editingPolicy ? 'Update Policy' : 'Create Policy'}
+                  </button>
+                </form>
+              )}
+
+              <div className="space-y-4">
+                {policiesList?.map((policy) => (
+                  <div key={policy.id} className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <FileText className="h-4 w-4 text-gray-500" />
+                          <h4 className="font-medium">{policy.name}</h4>
+                        </div>
+                        {policy.description && (
+                          <p className="text-sm text-gray-600 mt-1">{policy.description}</p>
+                        )}
+                        <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
+                          {policy.fileSize && (
+                            <span>{(policy.fileSize / 1024).toFixed(0)} KB</span>
+                          )}
+                          <span>Updated {new Date(policy.updatedAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2 ml-4">
+                        <button
+                          onClick={() => {
+                            setEditingPolicy(policy)
+                            setPolicyName(policy.name)
+                            setPolicyDescription(policy.description || '')
+                            setPolicyFile(null)
+                            setShowPolicyForm(true)
+                          }}
+                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                          title="Edit policy"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm({ type: 'policy', id: policy.id, title: policy.name })}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete policy"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(!policiesList || policiesList.length === 0) && (
+                  <p className="text-gray-500 text-center py-8">No policies yet. Click "New Policy" to add one.</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'analytics' && (
             <div className="text-center py-12 text-gray-500">
               <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -2231,6 +2621,7 @@ export function AdminDashboard() {
             deleteConfirm.type === 'termDate' ? 'Term Date' :
             deleteConfirm.type === 'pulse' ? 'Pulse Survey' :
             deleteConfirm.type === 'class' ? 'Class' :
+            deleteConfirm.type === 'policy' ? 'Policy' :
             'Staff Member'
           }?`}
           message={`Are you sure you want to delete "${deleteConfirm.title}"? This action cannot be undone.`}

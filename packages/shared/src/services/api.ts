@@ -14,6 +14,8 @@ import type {
   WeeklyMessage,
   KnowledgeCategory,
   PulseSurvey,
+  PulseAnalytics,
+  PulseOptionalQuestion,
   Class,
   EventRsvpStatus,
   School,
@@ -27,6 +29,10 @@ import type {
   InvitationRedeemResponse,
   BulkInvitationResult,
   InvitationStatus,
+  Student,
+  StudentListResponse,
+  StudentSearchResult,
+  BulkStudentResult,
 } from '../types'
 
 const API_URL = config.apiUrl
@@ -264,6 +270,8 @@ export const forms = {
     fetchApi<{ id: string; status: string }>(`/api/forms/${id}/close`, {
       method: 'PATCH',
     }),
+  exportCSV: (id: string, title: string) =>
+    downloadCSV(`/api/forms/${id}/export`, `${title.replace(/[^a-zA-Z0-9]/g, '_')}_responses.csv`),
 }
 
 // Events
@@ -443,16 +451,58 @@ export const knowledge = {
     }),
 }
 
+// Helper to download CSV with auth
+async function downloadCSV(url: string, filename: string): Promise<void> {
+  const headers: Record<string, string> = {}
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`
+  }
+
+  const response = await fetch(`${API_URL}${url}`, { headers })
+
+  if (response.status === 401 && refreshTokenValue) {
+    const refreshed = await tryRefresh()
+    if (refreshed) {
+      headers['Authorization'] = `Bearer ${accessToken}`
+      const retryResponse = await fetch(`${API_URL}${url}`, { headers })
+      if (!retryResponse.ok) throw new Error('Export failed')
+      const blob = await retryResponse.blob()
+      triggerDownload(blob, filename)
+      return
+    }
+  }
+
+  if (!response.ok) throw new Error('Export failed')
+  const blob = await response.blob()
+  triggerDownload(blob, filename)
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(url)
+}
+
 // Pulse Surveys
 export const pulse = {
   list: () => fetchApi<PulseSurvey[]>('/api/pulse'),
   listAll: () => fetchApi<PulseSurvey[]>('/api/pulse/all'),
   get: (id: string) => fetchApi<PulseSurvey>(`/api/pulse/${id}`),
+  analytics: (id: string) => fetchApi<PulseAnalytics>(`/api/pulse/${id}/analytics`),
+  optionalQuestions: () => fetchApi<PulseOptionalQuestion[]>('/api/pulse/optional-questions'),
+  exportCSV: (id: string, halfTermName: string) =>
+    downloadCSV(`/api/pulse/${id}/export`, `pulse_${halfTermName.replace(/[^a-zA-Z0-9]/g, '_')}.csv`),
   create: (data: {
     halfTermName: string
     status?: string
     opensAt: string
     closesAt: string
+    additionalQuestionKey?: string | null
   }) =>
     fetchApi<PulseSurvey>('/api/pulse', {
       method: 'POST',
@@ -462,6 +512,7 @@ export const pulse = {
     halfTermName: string
     opensAt: string
     closesAt: string
+    additionalQuestionKey?: string | null
   }) =>
     fetchApi<PulseSurvey>(`/api/pulse/${id}`, {
       method: 'PUT',
@@ -761,7 +812,8 @@ export const parentInvitations = {
   create: (data: {
     parentEmail?: string
     parentName?: string
-    children: Array<{ childName: string; classId: string }>
+    children?: Array<{ childName: string; classId: string }>
+    studentIds?: string[]
     includeMagicLink?: boolean
     expiresInDays?: number
   }) =>
@@ -801,6 +853,44 @@ export const parentInvitations = {
     }),
 }
 
+// Students
+export const students = {
+  list: (params?: { search?: string; classId?: string; page?: number; limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.search) searchParams.append('search', params.search)
+    if (params?.classId) searchParams.append('classId', params.classId)
+    if (params?.page) searchParams.append('page', params.page.toString())
+    if (params?.limit) searchParams.append('limit', params.limit.toString())
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
+    return fetchApi<StudentListResponse>(`/api/students${query}`)
+  },
+  search: (q: string, classId?: string) => {
+    const searchParams = new URLSearchParams({ q })
+    if (classId) searchParams.append('classId', classId)
+    return fetchApi<StudentSearchResult[]>(`/api/students/search?${searchParams.toString()}`)
+  },
+  get: (id: string) => fetchApi<Student>(`/api/students/${id}`),
+  create: (data: { firstName: string; lastName: string; classId: string; externalId?: string }) =>
+    fetchApi<Student>('/api/students', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  bulkCreate: (students: Array<{ firstName: string; lastName: string; className: string; externalId?: string }>) =>
+    fetchApi<BulkStudentResult>('/api/students/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ students }),
+    }),
+  update: (id: string, data: { firstName?: string; lastName?: string; classId?: string; externalId?: string }) =>
+    fetchApi<Student>(`/api/students/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/students/${id}`, {
+      method: 'DELETE',
+    }),
+}
+
 export default {
   auth,
   messages,
@@ -822,4 +912,5 @@ export default {
   notifications,
   deviceTokens,
   parentInvitations,
+  students,
 }

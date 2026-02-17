@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff, canSendToTarget, canMarkUrgent } from '../middleware/auth.js'
+import { logAudit } from '../services/audit.js'
+import { sendNotification } from '../services/notify.js'
 
 const router = Router()
 
@@ -44,6 +46,13 @@ router.get('/', isAuthenticated, async (req, res) => {
           where: { userId: user.id },
         },
         _count: { select: { acknowledgments: true } },
+        form: {
+          include: {
+            responses: {
+              where: { userId: user.id },
+            },
+          },
+        },
       },
       orderBy: [
         { isPinned: 'desc' },
@@ -69,6 +78,29 @@ router.get('/', isAuthenticated, async (req, res) => {
       isPinned: msg.isPinned,
       isUrgent: msg.isUrgent,
       expiresAt: msg.expiresAt?.toISOString(),
+      formId: msg.formId,
+      form: msg.form ? {
+        id: msg.form.id,
+        title: msg.form.title,
+        description: msg.form.description,
+        type: msg.form.type,
+        status: msg.form.status,
+        fields: msg.form.fields,
+        targetClass: msg.form.targetClass,
+        classIds: msg.form.classIds as string[],
+        yearGroupIds: msg.form.yearGroupIds as string[],
+        schoolId: msg.form.schoolId,
+        expiresAt: msg.form.expiresAt?.toISOString() || null,
+        createdAt: msg.form.createdAt.toISOString(),
+        updatedAt: msg.form.updatedAt.toISOString(),
+        userResponse: msg.form.responses[0] ? {
+          id: msg.form.responses[0].id,
+          formId: msg.form.responses[0].formId,
+          userId: msg.form.responses[0].userId,
+          answers: msg.form.responses[0].answers,
+          createdAt: msg.form.responses[0].createdAt.toISOString(),
+        } : null,
+      } : undefined,
       acknowledged: msg.acknowledgments.length > 0,
       acknowledgmentCount: msg._count.acknowledgments,
       createdAt: msg.createdAt.toISOString(),
@@ -89,6 +121,11 @@ router.get('/all', isAdmin, async (req, res) => {
       include: {
         sender: { select: { id: true, name: true } },
         _count: { select: { acknowledgments: true } },
+        form: {
+          include: {
+            _count: { select: { responses: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -112,6 +149,15 @@ router.get('/all', isAdmin, async (req, res) => {
       isUrgent: msg.isUrgent,
       expiresAt: msg.expiresAt?.toISOString(),
       isExpired: msg.expiresAt ? msg.expiresAt < now : false,
+      formId: msg.formId,
+      form: msg.form ? {
+        id: msg.form.id,
+        title: msg.form.title,
+        type: msg.form.type,
+        status: msg.form.status,
+        fields: msg.form.fields,
+        responseCount: msg.form._count.responses,
+      } : undefined,
       acknowledgmentCount: msg._count.acknowledgments,
       createdAt: msg.createdAt.toISOString(),
       updatedAt: msg.updatedAt.toISOString(),
@@ -126,7 +172,7 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
   try {
     const user = req.user!
-    const { title, content, targetClass, classId, yearGroupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt } = req.body
+    const { title, content, targetClass, classId, yearGroupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt, formId } = req.body
 
     // Staff cannot pin messages (only admin)
     const canPin = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
@@ -148,8 +194,20 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
         isPinned: canPin ? (isPinned || false) : false,
         isUrgent: isUrgent || false,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
+        formId: formId || null,
       },
     })
+
+    // Auto-activate attached form
+    if (formId) {
+      await prisma.form.update({
+        where: { id: formId },
+        data: { status: 'ACTIVE' },
+      })
+    }
+
+    logAudit({ req, action: 'CREATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title } })
+    sendNotification({ req, type: 'MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'MESSAGE', resourceId: message.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, schoolId: user.schoolId } })
 
     res.status(201).json({
       id: message.id,
@@ -168,6 +226,7 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
       isPinned: message.isPinned,
       isUrgent: message.isUrgent,
       expiresAt: message.expiresAt?.toISOString(),
+      formId: message.formId,
       createdAt: message.createdAt.toISOString(),
     })
   } catch (error) {
@@ -181,7 +240,7 @@ router.put('/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, content, targetClass, classId, yearGroupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt } = req.body
+    const { title, content, targetClass, classId, yearGroupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt, formId } = req.body
 
     // Verify message belongs to user's school
     const existing = await prisma.message.findFirst({
@@ -207,8 +266,19 @@ router.put('/:id', isAdmin, async (req, res) => {
         isPinned: isPinned ?? existing.isPinned,
         isUrgent: isUrgent ?? existing.isUrgent,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
+        formId: formId !== undefined ? (formId || null) : existing.formId,
       },
     })
+
+    // Auto-activate newly attached form
+    if (formId && formId !== existing.formId) {
+      await prisma.form.update({
+        where: { id: formId },
+        data: { status: 'ACTIVE' },
+      })
+    }
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title } })
 
     res.json({
       id: message.id,
@@ -227,6 +297,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       isPinned: message.isPinned,
       isUrgent: message.isUrgent,
       expiresAt: message.expiresAt?.toISOString(),
+      formId: message.formId,
       createdAt: message.createdAt.toISOString(),
       updatedAt: message.updatedAt.toISOString(),
     })
@@ -254,6 +325,8 @@ router.delete('/:id', isAdmin, async (req, res) => {
     await prisma.message.delete({
       where: { id },
     })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'MESSAGE', resourceId: id, metadata: { title: existing.title } })
 
     res.json({ message: 'Message deleted successfully' })
   } catch (error) {

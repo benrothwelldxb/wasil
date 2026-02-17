@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
+import { logAudit } from '../services/audit.js'
 
 const router = Router()
 
@@ -52,6 +53,8 @@ router.post('/', isAdmin, async (req, res) => {
       },
     })
 
+    logAudit({ req, action: 'CREATE', resourceType: 'TERM_DATE', resourceId: termDate.id, metadata: { label: termDate.label } })
+
     res.status(201).json({
       id: termDate.id,
       term: termDate.term,
@@ -102,6 +105,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       color: termDate.color,
       schoolId: termDate.schoolId,
     })
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'TERM_DATE', resourceId: termDate.id, metadata: { label: termDate.label } })
   } catch (error) {
     console.error('Error updating term date:', error)
     res.status(500).json({ error: 'Failed to update term date' })
@@ -116,6 +121,8 @@ router.delete('/:id', isAdmin, async (req, res) => {
     await prisma.termDate.delete({
       where: { id },
     })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'TERM_DATE', resourceId: id })
 
     res.json({ message: 'Term date deleted successfully' })
   } catch (error) {

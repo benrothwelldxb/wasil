@@ -71,6 +71,15 @@ router.get('/', isAdmin, async (req: Request, res: Response) => {
               class: { select: { id: true, name: true } },
             },
           },
+          studentLinks: {
+            include: {
+              student: {
+                include: {
+                  class: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
           createdBy: { select: { id: true, name: true } },
           redeemedByUser: { select: { id: true, name: true, email: true } },
         },
@@ -91,6 +100,11 @@ router.get('/', isAdmin, async (req: Request, res: Response) => {
           childName: cl.childName,
           className: cl.class.name,
           classId: cl.classId,
+        })),
+        students: inv.studentLinks.map(sl => ({
+          studentId: sl.student.id,
+          studentName: `${sl.student.firstName} ${sl.student.lastName}`,
+          className: sl.student.class.name,
         })),
         status: inv.status,
         expiresAt: inv.expiresAt?.toISOString(),
@@ -128,6 +142,15 @@ router.get('/:id', isAdmin, async (req: Request, res: Response) => {
             class: { select: { id: true, name: true } },
           },
         },
+        studentLinks: {
+          include: {
+            student: {
+              include: {
+                class: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
         createdBy: { select: { id: true, name: true } },
         redeemedByUser: { select: { id: true, name: true, email: true } },
         school: { select: { name: true } },
@@ -152,6 +175,11 @@ router.get('/:id', isAdmin, async (req: Request, res: Response) => {
         childName: cl.childName,
         className: cl.class.name,
         classId: cl.classId,
+      })),
+      students: invitation.studentLinks.map(sl => ({
+        studentId: sl.student.id,
+        studentName: `${sl.student.firstName} ${sl.student.lastName}`,
+        className: sl.student.class.name,
       })),
       status: invitation.status,
       expiresAt: invitation.expiresAt?.toISOString(),
@@ -178,20 +206,37 @@ router.get('/:id', isAdmin, async (req: Request, res: Response) => {
 router.post('/', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const { parentEmail, parentName, children, includeMagicLink, expiresInDays } = req.body
+    const { parentEmail, parentName, children, studentIds, includeMagicLink, expiresInDays } = req.body
 
-    if (!children || !Array.isArray(children) || children.length === 0) {
-      return res.status(400).json({ error: 'At least one child must be specified' })
+    // Support both old (children) and new (studentIds) approach
+    const hasChildren = children && Array.isArray(children) && children.length > 0
+    const hasStudents = studentIds && Array.isArray(studentIds) && studentIds.length > 0
+
+    if (!hasChildren && !hasStudents) {
+      return res.status(400).json({ error: 'At least one child or student must be specified' })
     }
 
-    // Validate all class IDs belong to this school
-    const classIds = [...new Set(children.map((c: { classId: string }) => c.classId))]
-    const classes = await prisma.class.findMany({
-      where: { id: { in: classIds }, schoolId: user.schoolId },
-    })
+    // Validate class IDs if using children approach
+    if (hasChildren) {
+      const classIds = [...new Set(children.map((c: { classId: string }) => c.classId))]
+      const classes = await prisma.class.findMany({
+        where: { id: { in: classIds }, schoolId: user.schoolId },
+      })
+      if (classes.length !== classIds.length) {
+        return res.status(400).json({ error: 'One or more class IDs are invalid' })
+      }
+    }
 
-    if (classes.length !== classIds.length) {
-      return res.status(400).json({ error: 'One or more class IDs are invalid' })
+    // Validate student IDs if using students approach
+    let validStudents: Array<{ id: string; firstName: string; lastName: string; class: { id: string; name: string } }> = []
+    if (hasStudents) {
+      validStudents = await prisma.student.findMany({
+        where: { id: { in: studentIds }, schoolId: user.schoolId },
+        include: { class: { select: { id: true, name: true } } },
+      })
+      if (validStudents.length !== studentIds.length) {
+        return res.status(400).json({ error: 'One or more student IDs are invalid' })
+      }
     }
 
     // Generate codes
@@ -224,17 +269,35 @@ router.post('/', isAdmin, async (req: Request, res: Response) => {
         parentName: parentName || null,
         expiresAt,
         createdById: user.id,
-        childLinks: {
-          create: children.map((c: { childName: string; classId: string }) => ({
-            childName: c.childName,
-            classId: c.classId,
-          })),
-        },
+        childLinks: hasChildren
+          ? {
+              create: children.map((c: { childName: string; classId: string }) => ({
+                childName: c.childName,
+                classId: c.classId,
+              })),
+            }
+          : undefined,
+        studentLinks: hasStudents
+          ? {
+              create: studentIds.map((studentId: string) => ({
+                studentId,
+              })),
+            }
+          : undefined,
       },
       include: {
         childLinks: {
           include: {
             class: { select: { id: true, name: true } },
+          },
+        },
+        studentLinks: {
+          include: {
+            student: {
+              include: {
+                class: { select: { id: true, name: true } },
+              },
+            },
           },
         },
       },
@@ -245,7 +308,11 @@ router.post('/', isAdmin, async (req: Request, res: Response) => {
       action: 'CREATE',
       resourceType: 'PARENT_INVITATION',
       resourceId: invitation.id,
-      metadata: { parentEmail, childCount: children.length },
+      metadata: {
+        parentEmail,
+        childCount: hasChildren ? children.length : 0,
+        studentCount: hasStudents ? studentIds.length : 0,
+      },
     })
 
     res.status(201).json({
@@ -258,6 +325,11 @@ router.post('/', isAdmin, async (req: Request, res: Response) => {
         childName: cl.childName,
         className: cl.class.name,
         classId: cl.classId,
+      })),
+      students: invitation.studentLinks.map(sl => ({
+        studentId: sl.student.id,
+        studentName: `${sl.student.firstName} ${sl.student.lastName}`,
+        className: sl.student.class.name,
       })),
       status: invitation.status,
       expiresAt: invitation.expiresAt?.toISOString(),
@@ -550,6 +622,15 @@ router.post('/validate', async (req: Request, res: Response) => {
               class: { select: { id: true, name: true } },
             },
           },
+          studentLinks: {
+            include: {
+              student: {
+                include: {
+                  class: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
           school: { select: { id: true, name: true, logoUrl: true, brandColor: true } },
         },
       })
@@ -567,6 +648,15 @@ router.post('/validate', async (req: Request, res: Response) => {
           childLinks: {
             include: {
               class: { select: { id: true, name: true } },
+            },
+          },
+          studentLinks: {
+            include: {
+              student: {
+                include: {
+                  class: { select: { id: true, name: true } },
+                },
+              },
             },
           },
           school: { select: { id: true, name: true, logoUrl: true, brandColor: true } },
@@ -602,6 +692,11 @@ router.post('/validate', async (req: Request, res: Response) => {
         childName: cl.childName,
         className: cl.class.name,
       })),
+      students: invitation.studentLinks.map(sl => ({
+        studentId: sl.student.id,
+        studentName: `${sl.student.firstName} ${sl.student.lastName}`,
+        className: sl.student.class.name,
+      })),
       parentName: invitation.parentName,
     })
   } catch (error) {
@@ -631,6 +726,15 @@ router.post('/redeem', isAuthenticated, async (req: Request, res: Response) => {
               class: { select: { id: true, name: true } },
             },
           },
+          studentLinks: {
+            include: {
+              student: {
+                include: {
+                  class: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
           school: true,
         },
       })
@@ -647,6 +751,15 @@ router.post('/redeem', isAuthenticated, async (req: Request, res: Response) => {
           childLinks: {
             include: {
               class: { select: { id: true, name: true } },
+            },
+          },
+          studentLinks: {
+            include: {
+              student: {
+                include: {
+                  class: { select: { id: true, name: true } },
+                },
+              },
             },
           },
           school: true,
@@ -670,7 +783,7 @@ router.post('/redeem', isAuthenticated, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'This invitation has expired' })
     }
 
-    // Update user's school and role if needed, create children
+    // Update user's school and role if needed, create children/student links
     await prisma.$transaction(async (tx) => {
       // Update user to be a parent at this school
       await tx.user.update({
@@ -681,7 +794,7 @@ router.post('/redeem', isAuthenticated, async (req: Request, res: Response) => {
         },
       })
 
-      // Create children
+      // Create children (legacy approach)
       for (const childLink of invitation.childLinks) {
         await tx.child.create({
           data: {
@@ -690,6 +803,27 @@ router.post('/redeem', isAuthenticated, async (req: Request, res: Response) => {
             classId: childLink.classId,
           },
         })
+      }
+
+      // Create ParentStudentLink records (new approach)
+      for (const studentLink of invitation.studentLinks) {
+        // Check if link already exists (avoid duplicates)
+        const existingLink = await tx.parentStudentLink.findUnique({
+          where: {
+            userId_studentId: {
+              userId: user.id,
+              studentId: studentLink.studentId,
+            },
+          },
+        })
+        if (!existingLink) {
+          await tx.parentStudentLink.create({
+            data: {
+              userId: user.id,
+              studentId: studentLink.studentId,
+            },
+          })
+        }
       }
 
       // Mark invitation as redeemed
@@ -712,6 +846,11 @@ router.post('/redeem', isAuthenticated, async (req: Request, res: Response) => {
       children: invitation.childLinks.map(cl => ({
         childName: cl.childName,
         className: cl.class.name,
+      })),
+      students: invitation.studentLinks.map(sl => ({
+        studentId: sl.student.id,
+        studentName: `${sl.student.firstName} ${sl.student.lastName}`,
+        className: sl.student.class.name,
       })),
     })
   } catch (error) {

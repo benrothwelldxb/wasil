@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
+import { logAudit } from '../services/audit.js'
 
 const router = Router()
 
@@ -47,6 +48,8 @@ router.post('/', isAdmin, async (req, res) => {
       },
     })
 
+    logAudit({ req, action: 'CREATE', resourceType: 'YEAR_GROUP', resourceId: yearGroup.id, metadata: { name: yearGroup.name } })
+
     res.status(201).json({
       id: yearGroup.id,
       name: yearGroup.name,
@@ -83,6 +86,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       },
     })
 
+    logAudit({ req, action: 'UPDATE', resourceType: 'YEAR_GROUP', resourceId: yearGroup.id, metadata: { name: yearGroup.name } })
+
     res.json({
       id: yearGroup.id,
       name: yearGroup.name,
@@ -93,6 +98,34 @@ router.put('/:id', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error updating year group:', error)
     res.status(500).json({ error: 'Failed to update year group' })
+  }
+})
+
+// Bulk reorder year groups (admin only)
+router.put('/reorder', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { ids } = req.body as { ids: string[] }
+
+    if (!Array.isArray(ids)) {
+      return res.status(400).json({ error: 'ids must be an array' })
+    }
+
+    await prisma.$transaction(
+      ids.map((id, index) =>
+        prisma.yearGroup.updateMany({
+          where: { id, schoolId: user.schoolId },
+          data: { order: index },
+        })
+      )
+    )
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'YEAR_GROUP', resourceId: 'bulk', metadata: { action: 'reorder', count: ids.length } })
+
+    res.json({ message: 'Year groups reordered' })
+  } catch (error) {
+    console.error('Error reordering year groups:', error)
+    res.status(500).json({ error: 'Failed to reorder year groups' })
   }
 })
 
@@ -121,6 +154,8 @@ router.delete('/:id', isAdmin, async (req, res) => {
     await prisma.yearGroup.delete({
       where: { id },
     })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'YEAR_GROUP', resourceId: id, metadata: { name: existing.name } })
 
     res.json({ message: 'Year group deleted successfully' })
   } catch (error) {
