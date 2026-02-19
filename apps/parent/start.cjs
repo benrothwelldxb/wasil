@@ -18,6 +18,17 @@ console.log('=== PARENT APP STARTING ===');
 console.log('Serving files from:', distPath);
 console.log('dist contents:', fs.readdirSync(distPath));
 
+// Log all requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
 // Serve static files from dist
 app.use(express.static(distPath));
 
