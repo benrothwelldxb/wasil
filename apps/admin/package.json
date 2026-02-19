@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "npx serve dist -s -l tcp://0.0.0.0:${PORT:-3000}"
   },
   "dependencies": {
     "@wasil/shared": "*",
@@ -14,7 +15,8 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.0",
     "lucide-react": "^0.303.0",
-    "date-fns": "^3.2.0"
+    "date-fns": "^3.2.0",
+    "serve": "^14.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
