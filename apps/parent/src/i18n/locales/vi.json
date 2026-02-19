@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "Đang tải...",
+    "error": "Đã xảy ra lỗi",
+    "save": "Cứu",
+    "cancel": "Hủy bỏ",
+    "submit": "Nộp",
+    "done": "Xong",
+    "next": "Kế tiếp",
+    "back": "Mặt sau",
+    "close": "Đóng",
+    "search": "Tìm kiếm",
+    "noResults": "Không tìm thấy kết quả nào.",
+    "required": "Yêu cầu"
+  },
+  "nav": {
+    "menu": "Thực đơn",
+    "home": "Trang chủ",
+    "eventsCalendar": "Lịch sự kiện",
+    "termDates": "Lịch học kỳ",
+    "principalUpdates": "Thông báo từ Hiệu trưởng",
+    "schoolInfo": "Thông tin trường học",
+    "policies": "Chính sách",
+    "files": "Tệp tin",
+    "superAdmin": "Quản trị viên cấp cao",
+    "logout": "Đăng xuất"
+  },
+  "auth": {
+    "login": "Đăng nhập",
+    "signIn": "Đăng nhập",
+    "signOut": "Đăng xuất",
+    "email": "E-mail",
+    "password": "Mật khẩu",
+    "forgotPassword": "Quên mật khẩu?",
+    "welcomeBack": "Chào mừng trở lại!",
+    "enterEmail": "Nhập email của bạn để đăng nhập",
+    "sendMagicLink": "Gửi liên kết ma thuật",
+    "checkEmail": "Kiểm tra email của bạn",
+    "magicLinkSent": "Chúng tôi đã gửi một đường dẫn thần kỳ đến email của bạn.",
+    "continueWithGoogle": "Tiếp tục với Google",
+    "continueWithMicrosoft": "Tiếp tục với Microsoft",
+    "orContinueWith": "Hoặc tiếp tục với",
+    "haveAccessCode": "Bạn có mã truy cập không?",
+    "enterAccessCode": "Nhập mã truy cập",
+    "accessCode": "Mã truy cập",
+    "invalidCode": "Mã truy cập không hợp lệ",
+    "loggedInAs": "Đăng nhập với tư cách"
+  },
+  "dashboard": {
+    "welcomeMessage": "Chào mừng, {{name}}!",
+    "latestMessages": "Tin nhắn mới nhất",
+    "upcomingEvents": "Các sự kiện sắp tới",
+    "quickLinks": "Liên kết nhanh",
+    "viewAll": "Xem tất cả",
+    "noMessages": "Không có thông báo nào để hiển thị.",
+    "noEvents": "Không có sự kiện nào sắp diễn ra",
+    "todaySchedule": "Lịch trình hôm nay",
+    "nothingScheduled": "Không có gì được lên lịch cho hôm nay.",
+    "parentPulse": "Xung lực của cha mẹ",
+    "pulseAvailable": "Khảo sát có sẵn",
+    "completePulse": "Hãy chia sẻ phản hồi của bạn",
+    "principalMessage": "Lời nhắn nhủ của Hiệu trưởng",
+    "readMore": "Đọc thêm",
+    "allMessages": "Tất cả tin nhắn",
+    "formsUrgent": "Bạn còn {{count}} biểu mẫu chưa thanh toán, hạn chót là trong vòng 3 ngày."
+  },
+  "messages": {
+    "title": "Tin nhắn",
+    "acknowledge": "Thừa nhận",
+    "acknowledged": "Đã xác nhận",
+    "urgent": "Thông báo khẩn cấp",
+    "pinned": "Đã ghim",
+    "actionRequired": "Cần hành động",
+    "dueDate": "Hạn chót: {{date}}",
+    "formExpired": "Mẫu đơn đã hết hạn",
+    "formDueToday": "Mẫu đơn cần bạn điền thông tin — hạn nộp hôm nay",
+    "formDaysRemaining": "Biểu mẫu cần bạn điền thông tin — {{days}} ngày còn lại",
+    "completed": "Hoàn thành",
+    "wholeSchool": "Toàn trường"
+  },
+  "events": {
+    "title": "Lịch sự kiện",
+    "subtitle": "Các sự kiện và hoạt động sắp tới của trường",
+    "allEvents": "Tất cả sự kiện",
+    "noEvents": "Không có sự kiện nào sắp diễn ra.",
+    "rsvp": "Vui lòng xác nhận tham dự:",
+    "rsvpRequired": "Cần đăng ký trước.",
+    "attending": "Đúng",
+    "maybe": "Có lẽ",
+    "notAttending": "KHÔNG"
+  },
+  "termDates": {
+    "title": "Lịch học kỳ",
+    "subtitle": "Các mốc thời gian quan trọng trong năm học",
+    "term": "Thuật ngữ {{number}}",
+    "termStart": "Học kỳ bắt đầu",
+    "termEnd": "Kết thúc nhiệm kỳ",
+    "halfTerm": "Kỳ nghỉ giữa kỳ",
+    "holiday": "Ngày lễ",
+    "induction": "Cảm ứng"
+  },
+  "principal": {
+    "title": "Thông báo từ Hiệu trưởng",
+    "subtitle": "Thông điệp hàng tuần từ Hiệu trưởng",
+    "weekOf": "Tuần của {{date}}",
+    "current": "Hiện hành",
+    "hearts": "{{count}} trái tim",
+    "noUpdates": "Chưa có bản cập nhật nào."
+  },
+  "pulse": {
+    "title": "Xung lực của cha mẹ",
+    "subtitle": "Hãy chia sẻ phản hồi của bạn",
+    "question": "Câu hỏi {{current}} trong số {{total}}",
+    "stronglyDisagree": "Hoàn toàn không đồng ý",
+    "stronglyAgree": "Hoàn toàn đồng ý",
+    "yourFeedback": "Ý kiến phản hồi của bạn (tùy chọn)",
+    "submitting": "Đang gửi...",
+    "thankYou": "Cảm ơn!",
+    "feedbackSubmitted": "Phản hồi của bạn đã được gửi thành công. Chúng tôi rất cảm ơn bạn đã dành thời gian giúp chúng tôi cải thiện."
+  },
+  "policies": {
+    "title": "Chính sách",
+    "subtitle": "Chính sách và tài liệu của trường",
+    "noPolicies": "Hiện không có chính sách nào.",
+    "download": "Tải xuống",
+    "lastUpdated": "Cập nhật lần cuối: {{date}}"
+  },
+  "files": {
+    "title": "Tệp tin",
+    "subtitle": "Tài liệu và nguồn lực",
+    "noFiles": "Không có tệp nào khả dụng",
+    "download": "Tải xuống",
+    "folder": "Thư mục",
+    "file": "Tài liệu"
+  },
+  "knowledge": {
+    "title": "Thông tin trường học",
+    "subtitle": "Thông tin hữu ích về trường chúng tôi",
+    "searchPlaceholder": "Tìm kiếm bài viết...",
+    "noArticles": "Không tìm thấy bài viết nào.",
+    "backToCategories": "Quay lại các danh mục"
+  },
+  "settings": {
+    "language": "Ngôn ngữ",
+    "myChildren": "Con cái của tôi",
+    "notifications": "Thông báo",
+    "account": "Tài khoản"
+  },
+  "form": {
+    "submit": "Nộp",
+    "required": "{{field}} là bắt buộc",
+    "selectOption": "Chọn một tùy chọn",
+    "consent": "Cần điền mẫu đơn y tế.",
+    "payment": "Khoản thanh toán đến hạn",
+    "rsvpRequired": "Cần đăng ký trước."
+  },
+  "dates": {
+    "today": "Hôm nay",
+    "tomorrow": "Ngày mai",
+    "yesterday": "Hôm qua"
+  }
+}

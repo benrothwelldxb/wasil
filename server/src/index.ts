@@ -25,8 +25,12 @@ import notificationsRoutes from './routes/notifications.js'
 import deviceTokensRoutes from './routes/deviceTokens.js'
 import parentInvitationsRoutes from './routes/parentInvitations.js'
 import studentsRoutes from './routes/students.js'
+import { initFirebase } from './services/firebase.js'
 
 dotenv.config()
+
+// Initialize Firebase for push notifications (optional)
+initFirebase()
 
 const app = express()
 const PORT = process.env.PORT || 4000

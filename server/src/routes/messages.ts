@@ -3,6 +3,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff, canSendToTarget, canMarkUrgent } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
+import { translateTexts } from '../services/translation.js'
 
 const router = Router()
 
@@ -61,10 +62,36 @@ router.get('/', isAuthenticated, async (req, res) => {
       ],
     })
 
+    // Translate messages if user has non-English language preference
+    const targetLang = user.preferredLanguage || 'en'
+
+    // Build translation map for titles and contents
+    const translationMap = new Map<string, string>()
+    if (targetLang !== 'en') {
+      const textsToTranslate: string[] = []
+      messages.forEach(msg => {
+        textsToTranslate.push(msg.title, msg.content)
+        if (msg.form?.title) textsToTranslate.push(msg.form.title)
+        if (msg.form?.description) textsToTranslate.push(msg.form.description)
+      })
+
+      const translations = await translateTexts(textsToTranslate, targetLang)
+
+      let translationIndex = 0
+      messages.forEach(msg => {
+        translationMap.set(msg.title, translations[translationIndex++])
+        translationMap.set(msg.content, translations[translationIndex++])
+        if (msg.form?.title) translationMap.set(msg.form.title, translations[translationIndex++])
+        if (msg.form?.description) translationMap.set(msg.form.description, translations[translationIndex++])
+      })
+    }
+
+    const getTranslated = (text: string) => translationMap.get(text) || text
+
     res.json(messages.map(msg => ({
       id: msg.id,
-      title: msg.title,
-      content: msg.content,
+      title: getTranslated(msg.title),
+      content: getTranslated(msg.content),
       targetClass: msg.targetClass,
       classId: msg.classId,
       yearGroupId: msg.yearGroupId,
@@ -81,8 +108,8 @@ router.get('/', isAuthenticated, async (req, res) => {
       formId: msg.formId,
       form: msg.form ? {
         id: msg.form.id,
-        title: msg.form.title,
-        description: msg.form.description,
+        title: getTranslated(msg.form.title),
+        description: msg.form.description ? getTranslated(msg.form.description) : null,
         type: msg.form.type,
         status: msg.form.status,
         fields: msg.form.fields,

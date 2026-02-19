@@ -1,5 +1,6 @@
 import { Request } from 'express'
 import prisma from './prisma.js'
+import { sendPushNotification, removeInvalidTokens } from './firebase.js'
 
 interface NotificationTarget {
   targetClass: string
@@ -41,14 +42,14 @@ export async function sendNotification({ req, type, title, body, resourceType, r
         },
         select: { parentId: true },
       })
-      parentUserIds = [...new Set(children.map(c => c.parentId))]
+      parentUserIds = Array.from(new Set(children.map(c => c.parentId)))
     } else if (classId) {
       // Parents with children in this specific class
       const children = await prisma.child.findMany({
         where: { classId },
         select: { parentId: true },
       })
-      parentUserIds = [...new Set(children.map(c => c.parentId))]
+      parentUserIds = Array.from(new Set(children.map(c => c.parentId)))
     }
 
     if (parentUserIds.length === 0) return
@@ -67,7 +68,33 @@ export async function sendNotification({ req, type, title, body, resourceType, r
       })),
     })
 
-    // TODO: read DeviceToken rows and dispatch push via FCM/APNs
+    // Dispatch push notifications via FCM
+    const deviceTokens = await prisma.deviceToken.findMany({
+      where: { userId: { in: parentUserIds } },
+      select: { token: true },
+    })
+
+    if (deviceTokens.length > 0) {
+      const tokens = deviceTokens.map(dt => dt.token)
+      const result = await sendPushNotification(tokens, {
+        title,
+        body,
+        data: {
+          type,
+          ...(resourceType && { resourceType }),
+          ...(resourceId && { resourceId }),
+          ...(data && Object.fromEntries(
+            Object.entries(data).map(([k, v]) => [k, String(v)])
+          )),
+        },
+      })
+
+      if (result.failedTokens.length > 0) {
+        await removeInvalidTokens(result.failedTokens)
+      }
+
+      console.log(`Push sent: ${result.successCount} success, ${result.failureCount} failed`)
+    }
   } catch (error) {
     console.error('Failed to send notification:', error)
   }

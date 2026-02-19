@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
+import { translateTexts } from '../services/translation.js'
 
 const router = Router()
 
@@ -46,6 +47,28 @@ router.get('/', isAuthenticated, async (req, res) => {
       orderBy: [{ isRecurring: 'desc' }, { dayOfWeek: 'asc' }, { date: 'asc' }],
     })
 
+    // Translate if user has non-English language preference
+    const targetLang = user.preferredLanguage || 'en'
+    const translationMap = new Map<string, string>()
+
+    if (targetLang !== 'en') {
+      const textsToTranslate: string[] = []
+      scheduleItems.forEach(item => {
+        textsToTranslate.push(item.label)
+        if (item.description) textsToTranslate.push(item.description)
+      })
+
+      const translations = await translateTexts(textsToTranslate, targetLang)
+
+      let translationIndex = 0
+      scheduleItems.forEach(item => {
+        translationMap.set(item.label, translations[translationIndex++])
+        if (item.description) translationMap.set(item.description, translations[translationIndex++])
+      })
+    }
+
+    const getTranslated = (text: string | null) => text ? (translationMap.get(text) || text) : null
+
     res.json(scheduleItems.map(item => ({
       id: item.id,
       targetClass: item.targetClass,
@@ -57,8 +80,8 @@ router.get('/', isAuthenticated, async (req, res) => {
       active: item.active,
       date: item.date?.toISOString().split('T')[0] || null,
       type: item.type,
-      label: item.label,
-      description: item.description,
+      label: getTranslated(item.label) || item.label,
+      description: getTranslated(item.description),
       icon: item.icon,
       createdAt: item.createdAt.toISOString(),
     })))

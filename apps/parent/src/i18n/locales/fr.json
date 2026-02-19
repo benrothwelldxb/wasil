@@ -1,0 +1,166 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "error": "Une erreur s'est produite.",
+    "save": "Sauvegarder",
+    "cancel": "Annuler",
+    "submit": "Soumettre",
+    "done": "Fait",
+    "next": "Suivant",
+    "back": "Dos",
+    "close": "Fermer",
+    "search": "Recherche",
+    "noResults": "Aucun résultat trouvé",
+    "required": "Requis"
+  },
+  "nav": {
+    "menu": "Menu",
+    "home": "Maison",
+    "eventsCalendar": "Calendrier des événements",
+    "termDates": "Dates des trimestres",
+    "principalUpdates": "Messages du directeur",
+    "schoolInfo": "Informations scolaires",
+    "policies": "Politiques",
+    "files": "Fichiers",
+    "superAdmin": "Super Administrateur",
+    "logout": "Déconnexion"
+  },
+  "auth": {
+    "login": "Se connecter",
+    "signIn": "Se connecter",
+    "signOut": "Se déconnecter",
+    "email": "E-mail",
+    "password": "Mot de passe",
+    "forgotPassword": "Mot de passe oublié ?",
+    "welcomeBack": "Content de te revoir",
+    "enterEmail": "Saisissez votre adresse e-mail pour vous connecter",
+    "sendMagicLink": "Envoyer le lien magique",
+    "checkEmail": "Consultez votre boîte mail",
+    "magicLinkSent": "Nous avons envoyé un lien magique à votre adresse e-mail.",
+    "continueWithGoogle": "Continuer avec Google",
+    "continueWithMicrosoft": "Continuez avec Microsoft",
+    "orContinueWith": "Ou continuez avec",
+    "haveAccessCode": "Vous avez un code d'accès ?",
+    "enterAccessCode": "Saisissez le code d'accès",
+    "accessCode": "Code d'accès",
+    "invalidCode": "Code d'accès invalide",
+    "loggedInAs": "Connecté en tant que"
+  },
+  "dashboard": {
+    "welcomeMessage": "Bienvenue, {{name}} !",
+    "latestMessages": "Derniers messages",
+    "upcomingEvents": "Événements à venir",
+    "quickLinks": "Liens rapides",
+    "viewAll": "Afficher tout",
+    "noMessages": "Aucun message à afficher.",
+    "noEvents": "Aucun événement à venir",
+    "todaySchedule": "Programme du jour",
+    "nothingScheduled": "Rien de prévu aujourd'hui",
+    "parentPulse": "Parent Pulse",
+    "pulseAvailable": "Sondage disponible",
+    "completePulse": "Partagez vos commentaires",
+    "principalMessage": "Message du directeur",
+    "readMore": "En savoir plus",
+    "allMessages": "Tous les messages",
+    "formsUrgent": "Vous avez {{count}} formulaire(s) en attente à rendre dans les 3 jours"
+  },
+  "messages": {
+    "title": "Messages",
+    "acknowledge": "Reconnaître",
+    "acknowledged": "Reconnu",
+    "urgent": "Message urgent",
+    "pinned": "Épinglé",
+    "actionRequired": "Action requise",
+    "dueDate": "Date limite : {{date}}",
+    "formExpired": "Formulaire expiré",
+    "formDueToday": "Formulaire nécessitant votre contribution — à remettre aujourd'hui",
+    "formDaysRemaining": "Formulaire nécessitant votre saisie — {{days}} jour(s) restant(s)",
+    "completed": "Complété",
+    "wholeSchool": "École entière"
+  },
+  "events": {
+    "title": "Calendrier des événements",
+    "subtitle": "Événements et activités scolaires à venir",
+    "allEvents": "Tous les événements",
+    "noEvents": "Aucun événement à venir.",
+    "rsvp": "RSVP :",
+    "rsvpRequired": "RSVP requis",
+    "attending": "Oui",
+    "maybe": "Peut être",
+    "notAttending": "Non"
+  },
+  "termDates": {
+    "title": "Dates des trimestres",
+    "subtitle": "Dates clés de l'année universitaire",
+    "term": "Terme {{number}}",
+    "termStart": "Début du semestre",
+    "termEnd": "Fin du mandat",
+    "halfTerm": "Vacances de mi-trimestre",
+    "holiday": "Vacances",
+    "induction": "Induction"
+  },
+  "principal": {
+    "title": "Messages du directeur",
+    "subtitle": "Messages hebdomadaires du directeur",
+    "weekOf": "Semaine du {{date}}",
+    "clickToRead": "Cliquez pour lire le message de cette semaine",
+    "current": "Actuel",
+    "hearts": "{{count}} cœurs",
+    "noUpdates": "Aucune mise à jour pour le moment"
+  },
+  "schedule": {
+    "daySchedule": "Programme du {{day}}"
+  },
+  "pulse": {
+    "title": "Parent Pulse",
+    "subtitle": "Partagez vos commentaires",
+    "question": "Question {{current}} sur {{total}}",
+    "stronglyDisagree": "Je suis totalement en désaccord.",
+    "stronglyAgree": "Tout à fait d'accord",
+    "yourFeedback": "Vos commentaires (facultatifs)",
+    "submitting": "Soumission...",
+    "thankYou": "Merci!",
+    "feedbackSubmitted": "Votre commentaire a bien été enregistré. Nous vous remercions d'avoir pris le temps de nous aider à nous améliorer."
+  },
+  "policies": {
+    "title": "Politiques",
+    "subtitle": "Politiques et documents scolaires",
+    "noPolicies": "Aucune police d'assurance disponible",
+    "download": "Télécharger",
+    "lastUpdated": "Dernière mise à jour : {{date}}"
+  },
+  "files": {
+    "title": "Fichiers",
+    "subtitle": "Documents et ressources",
+    "noFiles": "Aucun fichier disponible",
+    "download": "Télécharger",
+    "folder": "Dossier",
+    "file": "Déposer"
+  },
+  "knowledge": {
+    "title": "Informations scolaires",
+    "subtitle": "Informations utiles sur notre école",
+    "searchPlaceholder": "Rechercher des articles...",
+    "noArticles": "Aucun article trouvé",
+    "backToCategories": "Retour aux catégories"
+  },
+  "settings": {
+    "language": "Langue",
+    "myChildren": "Mes enfants",
+    "notifications": "Notifications",
+    "account": "Compte"
+  },
+  "form": {
+    "submit": "Soumettre",
+    "required": "{{field}} est requis",
+    "selectOption": "Sélectionnez une option",
+    "consent": "Formulaire médical requis",
+    "payment": "Paiement dû",
+    "rsvpRequired": "RSVP requis"
+  },
+  "dates": {
+    "today": "Aujourd'hui",
+    "tomorrow": "Demain",
+    "yesterday": "Hier"
+  }
+}

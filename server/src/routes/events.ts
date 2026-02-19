@@ -3,6 +3,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
+import { translateTexts } from '../services/translation.js'
 
 const router = Router()
 
@@ -38,10 +39,32 @@ router.get('/', isAuthenticated, async (req, res) => {
       orderBy: { date: 'asc' },
     })
 
+    // Translate events if user has non-English language preference
+    const targetLang = user.preferredLanguage || 'en'
+    const translationMap = new Map<string, string>()
+
+    if (targetLang !== 'en') {
+      const textsToTranslate: string[] = []
+      events.forEach(event => {
+        textsToTranslate.push(event.title)
+        if (event.description) textsToTranslate.push(event.description)
+      })
+
+      const translations = await translateTexts(textsToTranslate, targetLang)
+
+      let translationIndex = 0
+      events.forEach(event => {
+        translationMap.set(event.title, translations[translationIndex++])
+        if (event.description) translationMap.set(event.description, translations[translationIndex++])
+      })
+    }
+
+    const getTranslated = (text: string) => translationMap.get(text) || text
+
     res.json(events.map(event => ({
       id: event.id,
-      title: event.title,
-      description: event.description,
+      title: getTranslated(event.title),
+      description: event.description ? getTranslated(event.description) : null,
       date: event.date.toISOString().split('T')[0],
       time: event.time,
       location: event.location,

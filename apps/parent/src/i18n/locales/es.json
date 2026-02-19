@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "Cargando...",
+    "error": "Se produjo un error",
+    "save": "Ahorrar",
+    "cancel": "Cancelar",
+    "submit": "Entregar",
+    "done": "Hecho",
+    "next": "Próximo",
+    "back": "Atrás",
+    "close": "Cerca",
+    "search": "Buscar",
+    "noResults": "No se encontraron resultados",
+    "required": "Requerido"
+  },
+  "nav": {
+    "menu": "Menú",
+    "home": "Hogar",
+    "eventsCalendar": "Calendario de eventos",
+    "termDates": "Fechas del trimestre",
+    "principalUpdates": "Actualizaciones del director",
+    "schoolInfo": "Información de la escuela",
+    "policies": "Políticas",
+    "files": "Archivos",
+    "superAdmin": "Superadministrador",
+    "logout": "Cerrar sesión"
+  },
+  "auth": {
+    "login": "Acceso",
+    "signIn": "Iniciar sesión",
+    "signOut": "Desconectar",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "forgotPassword": "¿Has olvidado tu contraseña?",
+    "welcomeBack": "Bienvenido de nuevo",
+    "enterEmail": "Introduce tu correo electrónico para iniciar sesión",
+    "sendMagicLink": "Enviar enlace mágico",
+    "checkEmail": "Revisa tu correo electrónico",
+    "magicLinkSent": "Hemos enviado un enlace mágico a tu correo electrónico.",
+    "continueWithGoogle": "Continuar con Google",
+    "continueWithMicrosoft": "Continuar con Microsoft",
+    "orContinueWith": "O continuar con",
+    "haveAccessCode": "¿Tienes un código de acceso?",
+    "enterAccessCode": "Introduzca el código de acceso",
+    "accessCode": "Código de acceso",
+    "invalidCode": "Código de acceso no válido",
+    "loggedInAs": "Inició sesión como"
+  },
+  "dashboard": {
+    "welcomeMessage": "¡Bienvenido, {{name}}!",
+    "latestMessages": "Últimos mensajes",
+    "upcomingEvents": "Próximos eventos",
+    "quickLinks": "Enlaces rápidos",
+    "viewAll": "Ver todo",
+    "noMessages": "No hay mensajes para mostrar.",
+    "noEvents": "No hay eventos próximos",
+    "todaySchedule": "Horario de hoy",
+    "nothingScheduled": "No hay nada programado para hoy",
+    "parentPulse": "Pulso de los padres",
+    "pulseAvailable": "Encuesta disponible",
+    "completePulse": "Comparte tus comentarios",
+    "principalMessage": "Mensaje del director",
+    "readMore": "Leer más",
+    "allMessages": "Todos los mensajes",
+    "formsUrgent": "Tiene {{count}} formularios pendientes que vencen dentro de 3 días"
+  },
+  "messages": {
+    "title": "Mensajes",
+    "acknowledge": "Reconocer",
+    "acknowledged": "Admitido",
+    "urgent": "Mensaje urgente",
+    "pinned": "Fijado",
+    "actionRequired": "Acción requerida",
+    "dueDate": "Vencimiento: {{date}}",
+    "formExpired": "Formulario vencido",
+    "formDueToday": "Formulario que requiere su participación: debe entregarse hoy",
+    "formDaysRemaining": "Formulario que requiere su participación — {{days}} día(s) restantes",
+    "completed": "Terminado",
+    "wholeSchool": "Toda la escuela"
+  },
+  "events": {
+    "title": "Calendario de eventos",
+    "subtitle": "Próximos eventos y actividades escolares",
+    "allEvents": "Todos los eventos",
+    "noEvents": "No hay eventos próximos.",
+    "rsvp": "RSVP:",
+    "rsvpRequired": "Se requiere RSVP",
+    "attending": "Sí",
+    "maybe": "Tal vez",
+    "notAttending": "No"
+  },
+  "termDates": {
+    "title": "Fechas del trimestre",
+    "subtitle": "Fechas clave del año académico",
+    "term": "Término {{number}}",
+    "termStart": "Comienza el trimestre",
+    "termEnd": "Fin del mandato",
+    "halfTerm": "Mitad de trimestre",
+    "holiday": "Día festivo",
+    "induction": "Inducción"
+  },
+  "principal": {
+    "title": "Actualizaciones del director",
+    "subtitle": "Mensajes semanales del Director",
+    "weekOf": "Semana de {{date}}",
+    "current": "Actual",
+    "hearts": "{{count}} corazones",
+    "noUpdates": "No hay actualizaciones todavía"
+  },
+  "pulse": {
+    "title": "Pulso de los padres",
+    "subtitle": "Comparte tus comentarios",
+    "question": "Pregunta {{current}} de {{total}}",
+    "stronglyDisagree": "Totalmente en desacuerdo",
+    "stronglyAgree": "Estoy totalmente de acuerdo",
+    "yourFeedback": "Tu opinión (opcional)",
+    "submitting": "Sumisión...",
+    "thankYou": "¡Gracias!",
+    "feedbackSubmitted": "Tus comentarios se han enviado correctamente. Agradecemos que te tomes el tiempo para ayudarnos a mejorar."
+  },
+  "policies": {
+    "title": "Políticas",
+    "subtitle": "Políticas y documentos escolares",
+    "noPolicies": "No hay políticas disponibles",
+    "download": "Descargar",
+    "lastUpdated": "Última actualización: {{date}}"
+  },
+  "files": {
+    "title": "Archivos",
+    "subtitle": "Documentos y recursos",
+    "noFiles": "No hay archivos disponibles",
+    "download": "Descargar",
+    "folder": "Carpeta",
+    "file": "Archivo"
+  },
+  "knowledge": {
+    "title": "Información de la escuela",
+    "subtitle": "Información útil sobre nuestra escuela",
+    "searchPlaceholder": "Buscar artículos...",
+    "noArticles": "No se encontraron artículos",
+    "backToCategories": "Volver a categorías"
+  },
+  "settings": {
+    "language": "Idioma",
+    "myChildren": "Mis hijos",
+    "notifications": "Notificaciones",
+    "account": "Cuenta"
+  },
+  "form": {
+    "submit": "Entregar",
+    "required": "{{field}} es obligatorio",
+    "selectOption": "Seleccione una opción",
+    "consent": "Formulario médico requerido",
+    "payment": "Pago vencido",
+    "rsvpRequired": "Se requiere RSVP"
+  },
+  "dates": {
+    "today": "Hoy",
+    "tomorrow": "Mañana",
+    "yesterday": "Ayer"
+  }
+}

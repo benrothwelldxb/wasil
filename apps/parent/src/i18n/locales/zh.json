@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "error": "发生错误",
+    "save": "节省",
+    "cancel": "取消",
+    "submit": "提交",
+    "done": "完毕",
+    "next": "下一个",
+    "back": "后退",
+    "close": "关闭",
+    "search": "搜索",
+    "noResults": "未找到结果",
+    "required": "必需的"
+  },
+  "nav": {
+    "menu": "菜单",
+    "home": "家",
+    "eventsCalendar": "活动日历",
+    "termDates": "学期日期",
+    "principalUpdates": "校长最新动态",
+    "schoolInfo": "学校信息",
+    "policies": "政策",
+    "files": "文件",
+    "superAdmin": "超级管理员",
+    "logout": "注销"
+  },
+  "auth": {
+    "login": "登录",
+    "signIn": "登入",
+    "signOut": "登出",
+    "email": "电子邮件",
+    "password": "密码",
+    "forgotPassword": "忘记密码？",
+    "welcomeBack": "欢迎回来",
+    "enterEmail": "请输入您的邮箱地址以登录。",
+    "sendMagicLink": "发送魔法链接",
+    "checkEmail": "请查看您的电子邮件",
+    "magicLinkSent": "我们已向您的邮箱发送了一个神奇链接。",
+    "continueWithGoogle": "继续使用 Google",
+    "continueWithMicrosoft": "继续使用 Microsoft",
+    "orContinueWith": "或者继续",
+    "haveAccessCode": "有访问码吗？",
+    "enterAccessCode": "输入访问代码",
+    "accessCode": "访问码",
+    "invalidCode": "无效的访问代码",
+    "loggedInAs": "已登录"
+  },
+  "dashboard": {
+    "welcomeMessage": "欢迎，{{name}}！",
+    "latestMessages": "最新消息",
+    "upcomingEvents": "即将举行的活动",
+    "quickLinks": "快速链接",
+    "viewAll": "查看全部",
+    "noMessages": "暂无消息显示。",
+    "noEvents": "暂无活动",
+    "todaySchedule": "今日日程",
+    "nothingScheduled": "今天没有安排。",
+    "parentPulse": "父母脉搏",
+    "pulseAvailable": "调查问卷已发布",
+    "completePulse": "分享您的反馈",
+    "principalMessage": "校长致辞",
+    "readMore": "阅读更多",
+    "allMessages": "所有消息",
+    "formsUrgent": "您有{{count}}份未提交的表格，应在3天内提交。"
+  },
+  "messages": {
+    "title": "消息",
+    "acknowledge": "承认",
+    "acknowledged": "已确认",
+    "urgent": "紧急消息",
+    "pinned": "置顶",
+    "actionRequired": "需要采取的行动",
+    "dueDate": "截止日期：{{date}}",
+    "formExpired": "表格已过期",
+    "formDueToday": "需要您填写的表格——今天截止",
+    "formDaysRemaining": "需要您填写的表格 — 剩余天数：{{days}}",
+    "completed": "完全的",
+    "wholeSchool": "全校"
+  },
+  "events": {
+    "title": "活动日历",
+    "subtitle": "即将举行的学校活动",
+    "allEvents": "所有活动",
+    "noEvents": "暂无活动安排。",
+    "rsvp": "敬请回复：",
+    "rsvpRequired": "请回复确认参加",
+    "attending": "是的",
+    "maybe": "或许",
+    "notAttending": "不"
+  },
+  "termDates": {
+    "title": "学期日期",
+    "subtitle": "学年重要日期",
+    "term": "术语 {{number}}",
+    "termStart": "学期开始",
+    "termEnd": "任期结束",
+    "halfTerm": "期中假期",
+    "holiday": "假期",
+    "induction": "就职"
+  },
+  "principal": {
+    "title": "校长最新动态",
+    "subtitle": "校长每周寄语",
+    "weekOf": "第 {{date}} 周",
+    "current": "当前的",
+    "hearts": "{{count}} 心形",
+    "noUpdates": "暂无更新"
+  },
+  "pulse": {
+    "title": "父母脉搏",
+    "subtitle": "分享您的反馈",
+    "question": "问题 {{current}} （共 {{total}} 一个）",
+    "stronglyDisagree": "强烈反对",
+    "stronglyAgree": "非常同意",
+    "yourFeedback": "您的反馈（可选）",
+    "submitting": "正在提交……",
+    "thankYou": "谢谢你！",
+    "feedbackSubmitted": "您的反馈已成功提交。感谢您抽出时间帮助我们改进。"
+  },
+  "policies": {
+    "title": "政策",
+    "subtitle": "学校政策和文件",
+    "noPolicies": "暂无相关政策",
+    "download": "下载",
+    "lastUpdated": "最后更新时间：{{date}}"
+  },
+  "files": {
+    "title": "文件",
+    "subtitle": "文件和资源",
+    "noFiles": "没有可用文件",
+    "download": "下载",
+    "folder": "文件夹",
+    "file": "文件"
+  },
+  "knowledge": {
+    "title": "学校信息",
+    "subtitle": "关于我们学校的实用信息",
+    "searchPlaceholder": "搜索文章……",
+    "noArticles": "未找到文章",
+    "backToCategories": "返回分类"
+  },
+  "settings": {
+    "language": "语言",
+    "myChildren": "我的孩子们",
+    "notifications": "通知",
+    "account": "帐户"
+  },
+  "form": {
+    "submit": "提交",
+    "required": "{{field}} 为必填项",
+    "selectOption": "选择一个选项",
+    "consent": "需要填写医疗表格",
+    "payment": "应付款项",
+    "rsvpRequired": "请回复确认参加"
+  },
+  "dates": {
+    "today": "今天",
+    "tomorrow": "明天",
+    "yesterday": "昨天"
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "تحميل...",
+    "error": "حدث خطأ",
+    "save": "يحفظ",
+    "cancel": "يلغي",
+    "submit": "يُقدِّم",
+    "done": "منتهي",
+    "next": "التالي",
+    "back": "خلف",
+    "close": "يغلق",
+    "search": "يبحث",
+    "noResults": "لم يتم العثور على نتائج",
+    "required": "مطلوب"
+  },
+  "nav": {
+    "menu": "قائمة طعام",
+    "home": "بيت",
+    "eventsCalendar": "تقويم الفعاليات",
+    "termDates": "مواعيد الفصل الدراسي",
+    "principalUpdates": "تحديثات مدير المدرسة",
+    "schoolInfo": "معلومات المدرسة",
+    "policies": "السياسات",
+    "files": "الملفات",
+    "superAdmin": "المشرف الرئيسي",
+    "logout": "تسجيل الخروج"
+  },
+  "auth": {
+    "login": "تسجيل الدخول",
+    "signIn": "تسجيل الدخول",
+    "signOut": "تسجيل الخروج",
+    "email": "بريد إلكتروني",
+    "password": "كلمة المرور",
+    "forgotPassword": "هل نسيت كلمة السر؟",
+    "welcomeBack": "مرحبًا بعودتك",
+    "enterEmail": "أدخل بريدك الإلكتروني لتسجيل الدخول",
+    "sendMagicLink": "أرسل الرابط السحري",
+    "checkEmail": "تحقق من بريدك الإلكتروني",
+    "magicLinkSent": "لقد أرسلنا رابطًا سحريًا إلى بريدك الإلكتروني",
+    "continueWithGoogle": "تابع مع جوجل",
+    "continueWithMicrosoft": "تابع مع مايكروسوفت",
+    "orContinueWith": "أو تابع مع",
+    "haveAccessCode": "هل لديك رمز دخول؟",
+    "enterAccessCode": "أدخل رمز الوصول",
+    "accessCode": "رمز الوصول",
+    "invalidCode": "رمز وصول غير صالح",
+    "loggedInAs": "تم تسجيل الدخول باسم"
+  },
+  "dashboard": {
+    "welcomeMessage": "أهلاً بك، {{name}}!",
+    "latestMessages": "أحدث الرسائل",
+    "upcomingEvents": "الفعاليات القادمة",
+    "quickLinks": "روابط سريعة",
+    "viewAll": "عرض الكل",
+    "noMessages": "لا توجد رسائل لعرضها.",
+    "noEvents": "لا توجد فعاليات قادمة",
+    "todaySchedule": "جدول أعمال اليوم",
+    "nothingScheduled": "لا يوجد أي شيء مقرر اليوم",
+    "parentPulse": "نبض الوالدين",
+    "pulseAvailable": "استطلاع رأي متاح",
+    "completePulse": "شاركنا رأيك",
+    "principalMessage": "رسالة المدير",
+    "readMore": "اقرأ المزيد",
+    "allMessages": "جميع الرسائل",
+    "formsUrgent": "لديك {{count}} نموذجًا غير مكتمل مستحقًا خلال 3 أيام"
+  },
+  "messages": {
+    "title": "رسائل",
+    "acknowledge": "يُقرّ",
+    "acknowledged": "مُعترف به",
+    "urgent": "رسالة عاجلة",
+    "pinned": "مثبت",
+    "actionRequired": "الإجراء المطلوب",
+    "dueDate": "تاريخ الاستحقاق: {{date}}",
+    "formExpired": "انتهت صلاحية النموذج",
+    "formDueToday": "نموذج يتطلب إدخال بياناتك - الموعد النهائي اليوم",
+    "formDaysRemaining": "نموذج يتطلب إدخال بياناتك — {{days}} يومًا متبقيًا",
+    "completed": "مكتمل",
+    "wholeSchool": "المدرسة بأكملها"
+  },
+  "events": {
+    "title": "تقويم الفعاليات",
+    "subtitle": "الفعاليات والأنشطة المدرسية القادمة",
+    "allEvents": "جميع الفعاليات",
+    "noEvents": "لا توجد فعاليات قادمة.",
+    "rsvp": "من فضلك، أرسل رد:",
+    "rsvpRequired": "يلزم تأكيد الحضور",
+    "attending": "نعم",
+    "maybe": "ربما",
+    "notAttending": "لا"
+  },
+  "termDates": {
+    "title": "مواعيد الفصل الدراسي",
+    "subtitle": "أهم التواريخ للعام الدراسي",
+    "term": "المصطلح {{number}}",
+    "termStart": "بداية الفصل الدراسي",
+    "termEnd": "انتهاء الولاية",
+    "halfTerm": "عطلة منتصف الفصل الدراسي",
+    "holiday": "عطلة",
+    "induction": "تعريفي"
+  },
+  "principal": {
+    "title": "تحديثات مدير المدرسة",
+    "subtitle": "رسائل أسبوعية من مدير المدرسة",
+    "weekOf": "أسبوع {{date}}",
+    "current": "حاضِر",
+    "hearts": "{{count}} قلوب",
+    "noUpdates": "لا توجد تحديثات حتى الآن"
+  },
+  "pulse": {
+    "title": "نبض الوالدين",
+    "subtitle": "شاركنا رأيك",
+    "question": "السؤال {{current}} من {{total}}",
+    "stronglyDisagree": "أرفض بشدة",
+    "stronglyAgree": "أوافق بشدة",
+    "yourFeedback": "ملاحظاتك (اختياري)",
+    "submitting": "تقديم...",
+    "thankYou": "شكرًا لك!",
+    "feedbackSubmitted": "تم إرسال ملاحظاتك بنجاح. نشكرك على تخصيص وقتك لمساعدتنا على التحسين."
+  },
+  "policies": {
+    "title": "السياسات",
+    "subtitle": "سياسات ووثائق المدرسة",
+    "noPolicies": "لا توجد سياسات متاحة",
+    "download": "تحميل",
+    "lastUpdated": "آخر تحديث: {{date}}"
+  },
+  "files": {
+    "title": "الملفات",
+    "subtitle": "الوثائق والموارد",
+    "noFiles": "لا توجد ملفات متاحة",
+    "download": "تحميل",
+    "folder": "مجلد",
+    "file": "ملف"
+  },
+  "knowledge": {
+    "title": "معلومات المدرسة",
+    "subtitle": "معلومات مفيدة عن مدرستنا",
+    "searchPlaceholder": "ابحث عن المقالات...",
+    "noArticles": "لم يتم العثور على أي مقالات",
+    "backToCategories": "العودة إلى التصنيفات"
+  },
+  "settings": {
+    "language": "لغة",
+    "myChildren": "أبنائي",
+    "notifications": "إشعارات",
+    "account": "حساب"
+  },
+  "form": {
+    "submit": "يُقدِّم",
+    "required": "{{field}} مطلوب",
+    "selectOption": "اختر خيارًا",
+    "consent": "النموذج الطبي مطلوب",
+    "payment": "الدفعة المستحقة",
+    "rsvpRequired": "يلزم تأكيد الحضور"
+  },
+  "dates": {
+    "today": "اليوم",
+    "tomorrow": "غداً",
+    "yesterday": "أمس"
+  }
+}

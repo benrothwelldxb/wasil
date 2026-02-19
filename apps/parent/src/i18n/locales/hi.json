@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "लोड हो रहा है...",
+    "error": "एक त्रुटि पाई गई",
+    "save": "बचाना",
+    "cancel": "रद्द करना",
+    "submit": "जमा करना",
+    "done": "हो गया",
+    "next": "अगला",
+    "back": "पीछे",
+    "close": "बंद करना",
+    "search": "खोज",
+    "noResults": "कोई परिणाम नहीं मिला",
+    "required": "आवश्यक"
+  },
+  "nav": {
+    "menu": "मेनू",
+    "home": "घर",
+    "eventsCalendar": "घटनाक्रम का कैलेंडर",
+    "termDates": "अवधि तिथियाँ",
+    "principalUpdates": "प्रधानाचार्य के अपडेट",
+    "schoolInfo": "स्कूल की जानकारी",
+    "policies": "नीतियों",
+    "files": "फ़ाइलें",
+    "superAdmin": "सुपर एडमिन",
+    "logout": "लॉग आउट"
+  },
+  "auth": {
+    "login": "लॉग इन करें",
+    "signIn": "दाखिल करना",
+    "signOut": "साइन आउट",
+    "email": "ईमेल",
+    "password": "पासवर्ड",
+    "forgotPassword": "पासवर्ड भूल गए?",
+    "welcomeBack": "वापसी पर स्वागत है",
+    "enterEmail": "लॉग इन करने के लिए अपना ईमेल दर्ज करें",
+    "sendMagicLink": "मैजिक लिंक भेजें",
+    "checkEmail": "अपने ईमेल की जाँच करें",
+    "magicLinkSent": "हमने आपके ईमेल पर एक जादुई लिंक भेजा है।",
+    "continueWithGoogle": "Google के साथ जारी रखें",
+    "continueWithMicrosoft": "Microsoft के साथ जारी रखें",
+    "orContinueWith": "या जारी रखें",
+    "haveAccessCode": "क्या आपके पास एक्सेस कोड है?",
+    "enterAccessCode": "एक्सेस कोड दर्ज करें",
+    "accessCode": "एक्सेस कोड",
+    "invalidCode": "अमान्य एक्सेस कोड",
+    "loggedInAs": "के रूप में लॉग इन किया गया"
+  },
+  "dashboard": {
+    "welcomeMessage": "आपका स्वागत है, {{name}}!",
+    "latestMessages": "नवीनतम संदेश",
+    "upcomingEvents": "आगामी कार्यक्रम",
+    "quickLinks": "त्वरित सम्पक",
+    "viewAll": "सभी को देखें",
+    "noMessages": "प्रदर्शित करने के लिए कोई संदेश नहीं हैं।",
+    "noEvents": "कोई आगामी कार्यक्रम नहीं",
+    "todaySchedule": "आज का कार्यक्रम",
+    "nothingScheduled": "आज के लिए कोई कार्यक्रम निर्धारित नहीं है",
+    "parentPulse": "माता-पिता की धड़कन",
+    "pulseAvailable": "सर्वेक्षण उपलब्ध है",
+    "completePulse": "अपनी प्रतिक्रिया साझा करें",
+    "principalMessage": "प्रधानाचार्य का संदेश",
+    "readMore": "और पढ़ें",
+    "allMessages": "सभी संदेश",
+    "formsUrgent": "आपके पास {{count}} बकाया फॉर्म हैं जिन्हें 3 दिनों के भीतर जमा करना है।"
+  },
+  "messages": {
+    "title": "संदेशों",
+    "acknowledge": "स्वीकार करना",
+    "acknowledged": "स्वीकार किया",
+    "urgent": "अत्यावश्यक संदेश",
+    "pinned": "पिन की गई",
+    "actionRequired": "कार्रवाई आवश्यक है",
+    "dueDate": "देय तिथि: {{date}}",
+    "formExpired": "फॉर्म की समय सीमा समाप्त हो गई है",
+    "formDueToday": "फॉर्म जिसमें आपकी जानकारी मांगी गई है — आज ही जमा करें",
+    "formDaysRemaining": "फॉर्म में आपकी जानकारी मांगी जा रही है — शेष दिन: 0 दिन",
+    "completed": "पुरा होना।",
+    "wholeSchool": "पूरे स्कूल"
+  },
+  "events": {
+    "title": "घटनाक्रम का कैलेंडर",
+    "subtitle": "आगामी विद्यालय कार्यक्रम और गतिविधियाँ",
+    "allEvents": "सभी कार्यक्रम",
+    "noEvents": "कोई आगामी कार्यक्रम नहीं हैं।",
+    "rsvp": "RSVP:",
+    "rsvpRequired": "RSVP आवश्यक है",
+    "attending": "हाँ",
+    "maybe": "शायद",
+    "notAttending": "नहीं"
+  },
+  "termDates": {
+    "title": "अवधि तिथियाँ",
+    "subtitle": "शैक्षणिक वर्ष की महत्वपूर्ण तिथियां",
+    "term": "टर्म __प्लेसहोल्डर_0__",
+    "termStart": "सत्र शुरू होता है",
+    "termEnd": "कार्यकाल समाप्त",
+    "halfTerm": "मध्यावधि",
+    "holiday": "छुट्टी",
+    "induction": "प्रेरण"
+  },
+  "principal": {
+    "title": "प्रधानाचार्य के अपडेट",
+    "subtitle": "प्रधानाचार्य के साप्ताहिक संदेश",
+    "weekOf": "सप्ताह {{date}}",
+    "current": "मौजूदा",
+    "hearts": "{{count}} दिल",
+    "noUpdates": "अभी तक कोई अपडेट नहीं है"
+  },
+  "pulse": {
+    "title": "माता-पिता की धड़कन",
+    "subtitle": "अपनी प्रतिक्रिया साझा करें",
+    "question": "प्रश्न {{current}} का {{total}}",
+    "stronglyDisagree": "दृढ़तापूर्वक असहमत",
+    "stronglyAgree": "दृढ़तापूर्वक सहमत",
+    "yourFeedback": "आपकी प्रतिक्रिया (वैकल्पिक)",
+    "submitting": "सबमिट किया जा रहा है...",
+    "thankYou": "धन्यवाद!",
+    "feedbackSubmitted": "आपकी प्रतिक्रिया सफलतापूर्वक सबमिट हो गई है। हमें बेहतर बनाने में मदद करने के लिए समय निकालने के लिए हम आपके आभारी हैं।"
+  },
+  "policies": {
+    "title": "नीतियों",
+    "subtitle": "स्कूल की नीतियां और दस्तावेज",
+    "noPolicies": "कोई पॉलिसी उपलब्ध नहीं है",
+    "download": "डाउनलोड करना",
+    "lastUpdated": "अंतिम अद्यतन: {{date}}"
+  },
+  "files": {
+    "title": "फ़ाइलें",
+    "subtitle": "दस्तावेज़ और संसाधन",
+    "noFiles": "कोई फ़ाइल उपलब्ध नहीं है",
+    "download": "डाउनलोड करना",
+    "folder": "फ़ोल्डर",
+    "file": "फ़ाइल"
+  },
+  "knowledge": {
+    "title": "स्कूल की जानकारी",
+    "subtitle": "हमारे स्कूल के बारे में उपयोगी जानकारी",
+    "searchPlaceholder": "लेख खोजें...",
+    "noArticles": "कोई लेख नहीं मिला",
+    "backToCategories": "श्रेणियों पर वापस जाएँ"
+  },
+  "settings": {
+    "language": "भाषा",
+    "myChildren": "मेरे बच्चे",
+    "notifications": "सूचनाएं",
+    "account": "खाता"
+  },
+  "form": {
+    "submit": "जमा करना",
+    "required": "{{field}} आवश्यक है",
+    "selectOption": "कोई विकल्प चुनें",
+    "consent": "चिकित्सा प्रपत्र आवश्यक है",
+    "payment": "भुगतान राशि",
+    "rsvpRequired": "RSVP आवश्यक है"
+  },
+  "dates": {
+    "today": "आज",
+    "tomorrow": "कल",
+    "yesterday": "कल"
+  }
+}

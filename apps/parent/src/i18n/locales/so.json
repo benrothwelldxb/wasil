@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "Waa la soo rarayaa...",
+    "error": "Khalad ayaa dhacay",
+    "save": "Keydi",
+    "cancel": "Jooji",
+    "submit": "Gudbi",
+    "done": "La dhammeeyay",
+    "next": "Xiga",
+    "back": "Dib u noqo",
+    "close": "Xidh",
+    "search": "Raadi",
+    "noResults": "Natiijooyin lama helin",
+    "required": "Loo baahan yahay"
+  },
+  "nav": {
+    "menu": "Liiska",
+    "home": "Bogga Hore",
+    "eventsCalendar": "Jadwalka Dhacdooyinka",
+    "termDates": "Taariikhaha Muddada",
+    "principalUpdates": "Cusbooneysiinta Maamulaha",
+    "schoolInfo": "Macluumaadka Dugsiga",
+    "policies": "Siyaasadaha",
+    "files": "Faylasha",
+    "superAdmin": "Maamul Sare",
+    "logout": "Ka bax"
+  },
+  "auth": {
+    "login": "Soo gal",
+    "signIn": "Soo gal",
+    "signOut": "Ka bax",
+    "email": "Iimaylka",
+    "password": "Furaha sirta ah",
+    "forgotPassword": "Ma Ilowday Furaha Sirta ah?",
+    "welcomeBack": "Soo dhawoow dib u soo noqo",
+    "enterEmail": "Geli emaylkaaga si aad u gasho",
+    "sendMagicLink": "Soo dir Xiriir Sixir ah",
+    "checkEmail": "Hubi iimaylkaaga",
+    "magicLinkSent": "Waxaan kuu soo dirnay xiriiriye sixir ah emaylkaaga",
+    "continueWithGoogle": "Sii wad Google",
+    "continueWithMicrosoft": "Sii wad Microsoft",
+    "orContinueWith": "Ama sii wad",
+    "haveAccessCode": "Ma haysataa kood marin u helid ah?",
+    "enterAccessCode": "Geli koodka gelitaanka",
+    "accessCode": "Koodhka Helitaanka",
+    "invalidCode": "Koodhka gelitaanka aan ansax ahayn",
+    "loggedInAs": "Soo galay sidii"
+  },
+  "dashboard": {
+    "welcomeMessage": "Soo dhawoow, {{name}}!",
+    "latestMessages": "Farriimaha ugu dambeeyay",
+    "upcomingEvents": "Dhacdooyinka soo socda",
+    "quickLinks": "Xiriirin Degdeg ah",
+    "viewAll": "Arag Dhammaantood",
+    "noMessages": "Ma jiraan wax fariimo ah oo la muujinayo.",
+    "noEvents": "Ma jiraan dhacdooyin soo socda",
+    "todaySchedule": "Jadwalka Maanta",
+    "nothingScheduled": "Maanta waxba looma qorsheyn",
+    "parentPulse": "Garaaca Waalidka",
+    "pulseAvailable": "Sahan ayaa diyaar ah",
+    "completePulse": "La wadaag ra'yigaaga",
+    "principalMessage": "Fariinta Maamulaha",
+    "readMore": "Akhriso wax dheeraad ah",
+    "allMessages": "Dhammaan Farriimaha",
+    "formsUrgent": "Waxaad haysataa {{count}} foomam aan la bixin 3 maalmood gudahood"
+  },
+  "messages": {
+    "title": "Farriimaha",
+    "acknowledge": "Aqoonso",
+    "acknowledged": "La aqoonsaday",
+    "urgent": "Farriin Degdeg ah",
+    "pinned": "La dhejiyay",
+    "actionRequired": "Ficil Loo Baahan Yahay",
+    "dueDate": "La filayo: {{date}}",
+    "formExpired": "Foomka wuu dhacay",
+    "formDueToday": "Foomka u baahan ra'yigaaga - maanta waa la soo gudbin doonaa",
+    "formDaysRemaining": "Foomka u baahan ra'yigaaga — {{days}} maalmood oo harsan",
+    "completed": "La dhammeeyay",
+    "wholeSchool": "Dugsiga oo Dhan"
+  },
+  "events": {
+    "title": "Jadwalka Dhacdooyinka",
+    "subtitle": "Dhacdooyinka iyo hawlaha dugsiga ee soo socda",
+    "allEvents": "Dhammaan Dhacdooyinka",
+    "noEvents": "Ma jiraan dhacdooyin soo socda.",
+    "rsvp": "RSVP:",
+    "rsvpRequired": "RSVP ayaa loo baahan yahay",
+    "attending": "Haa",
+    "maybe": "Malaha",
+    "notAttending": "Maya"
+  },
+  "termDates": {
+    "title": "Taariikhaha Muddada",
+    "subtitle": "Taariikhaha muhiimka ah ee sannad-dugsiyeedka",
+    "term": "Muddada {{number}}",
+    "termStart": "Bilowga Muddada",
+    "termEnd": "Dhammaadka Muddada",
+    "halfTerm": "Badhkii Muddada",
+    "holiday": "Fasax",
+    "induction": "Horumarin"
+  },
+  "principal": {
+    "title": "Cusbooneysiinta Maamulaha",
+    "subtitle": "Farriimaha toddobaadlaha ah ee ka imanaya Maamulaha",
+    "weekOf": "Todobaadka {{date}}",
+    "current": "Hadda",
+    "hearts": "{{count}} quluub",
+    "noUpdates": "Wali wax cusbooneysiin ah ma jiraan"
+  },
+  "pulse": {
+    "title": "Garaaca Waalidka",
+    "subtitle": "La wadaag ra'yigaaga",
+    "question": "Su'aal {{current}} ee {{total}}",
+    "stronglyDisagree": "Aad ayaan u diidanahay",
+    "stronglyAgree": "Aad baan ugu raacsanahay",
+    "yourFeedback": "Jawaab celintaada (ikhtiyaar)",
+    "submitting": "Gudbinta...",
+    "thankYou": "Mahadsanid!",
+    "feedbackSubmitted": "Jawaab celintaada si guul leh ayaa loo gudbiyay. Waan kaaga mahadcelineynaa inaad waqti siisay si aad nooga caawiso inaan horumarino."
+  },
+  "policies": {
+    "title": "Siyaasadaha",
+    "subtitle": "Siyaasadaha iyo dukumentiyada dugsiga",
+    "noPolicies": "Ma jiraan siyaasado la heli karo",
+    "download": "Soo dejiso",
+    "lastUpdated": "Markii ugu dambeysay ee la cusbooneysiiyay: {{date}}"
+  },
+  "files": {
+    "title": "Faylasha",
+    "subtitle": "Dukumentiyada iyo agabka",
+    "noFiles": "Faylal ma jiraan",
+    "download": "Soo dejiso",
+    "folder": "Faylka",
+    "file": "Faylka"
+  },
+  "knowledge": {
+    "title": "Macluumaadka Dugsiga",
+    "subtitle": "Macluumaad waxtar leh oo ku saabsan dugsigeenna",
+    "searchPlaceholder": "Raadi maqaallo...",
+    "noArticles": "Ma jiraan maqaallo la helay",
+    "backToCategories": "Ku laabo qaybaha"
+  },
+  "settings": {
+    "language": "Luqadda",
+    "myChildren": "Carruurtayda",
+    "notifications": "Ogeysiisyada",
+    "account": "Akoon"
+  },
+  "form": {
+    "submit": "Gudbi",
+    "required": "{{field}} waa loo baahan yahay",
+    "selectOption": "Xullo ikhtiyaar",
+    "consent": "Foomka Caafimaadka ayaa Loo Baahan Yahay",
+    "payment": "Lacag-bixinta Waa La Bixinayaa",
+    "rsvpRequired": "RSVP ayaa loo baahan yahay"
+  },
+  "dates": {
+    "today": "Maanta",
+    "tomorrow": "Berri",
+    "yesterday": "Shalay"
+  }
+}

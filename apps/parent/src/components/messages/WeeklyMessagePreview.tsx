@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { Heart, ArrowRight } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { WeeklyMessage } from '@wasil/shared'
@@ -10,7 +11,9 @@ interface WeeklyMessagePreviewProps {
 }
 
 export function WeeklyMessagePreview({ message, onHeart, onClick }: WeeklyMessagePreviewProps) {
+  const { t, i18n } = useTranslation()
   const theme = useTheme()
+  const locale = i18n.language || 'en'
 
   // Principal photo URL - can be made configurable via backend later
   const principalPhotoUrl = '/principal-photo.png'
@@ -57,17 +60,17 @@ export function WeeklyMessagePreview({ message, onHeart, onClick }: WeeklyMessag
             {message.title}
           </h3>
           <p className="text-sm text-gray-600">
-            Week of {new Date(message.weekOf).toLocaleDateString('en-GB', {
+            {t('principal.weekOf', { date: new Date(message.weekOf).toLocaleDateString(locale, {
               day: 'numeric',
               month: 'long',
               year: 'numeric',
-            })}
+            }) })}
           </p>
           <button
             onClick={onClick}
             className="text-sm text-gray-500 hover:text-gray-700 flex items-center space-x-1 mt-1"
           >
-            <span>Click to read this week's message</span>
+            <span>{t('principal.clickToRead')}</span>
             <ArrowRight className="h-3 w-3" />
           </button>
         </div>

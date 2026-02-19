@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "Încărcare...",
+    "error": "A apărut o eroare",
+    "save": "Salva",
+    "cancel": "Anula",
+    "submit": "Trimite",
+    "done": "Făcut",
+    "next": "Următorul",
+    "back": "Spate",
+    "close": "Aproape",
+    "search": "Căutare",
+    "noResults": "Nu s-au găsit rezultate",
+    "required": "Necesar"
+  },
+  "nav": {
+    "menu": "Meniu",
+    "home": "Acasă",
+    "eventsCalendar": "Calendarul evenimentelor",
+    "termDates": "Datele semestrului",
+    "principalUpdates": "Actualizări ale directorului",
+    "schoolInfo": "Informații despre școală",
+    "policies": "Politici",
+    "files": "Fișiere",
+    "superAdmin": "Superadministrator",
+    "logout": "Deconectare"
+  },
+  "auth": {
+    "login": "Log in",
+    "signIn": "Conectare",
+    "signOut": "Sign out",
+    "email": "E-mail",
+    "password": "Parolă",
+    "forgotPassword": "Aţi uitat parola?",
+    "welcomeBack": "Bine ai revenit",
+    "enterEmail": "Introdu adresa ta de e-mail pentru a te autentifica",
+    "sendMagicLink": "Trimiteți linkul magic",
+    "checkEmail": "Verifică-ți e-mailul",
+    "magicLinkSent": "Ți-am trimis un link magic la adresa de e-mail",
+    "continueWithGoogle": "Continuă cu Google",
+    "continueWithMicrosoft": "Continuați cu Microsoft",
+    "orContinueWith": "Sau continuați cu",
+    "haveAccessCode": "Ai un cod de acces?",
+    "enterAccessCode": "Introduceți codul de acces",
+    "accessCode": "Cod de acces",
+    "invalidCode": "Cod de acces nevalid",
+    "loggedInAs": "Conectat ca"
+  },
+  "dashboard": {
+    "welcomeMessage": "Bun venit, {{name}}!",
+    "latestMessages": "Ultimele mesaje",
+    "upcomingEvents": "Evenimente viitoare",
+    "quickLinks": "Linkuri rapide",
+    "viewAll": "Vezi toate",
+    "noMessages": "Niciun mesaj de afișat.",
+    "noEvents": "Niciun eveniment viitor",
+    "todaySchedule": "Programul de astăzi",
+    "nothingScheduled": "Nimic programat pentru astăzi",
+    "parentPulse": "Pulsul părintelui",
+    "pulseAvailable": "Sondaj disponibil",
+    "completePulse": "Împărtășește-ți feedback-ul",
+    "principalMessage": "Mesajul directorului",
+    "readMore": "Citeşte mai mult",
+    "allMessages": "Toate mesajele",
+    "formsUrgent": "Aveți {{count}} formular(e) restant(e) cu termen de predare de 3 zile"
+  },
+  "messages": {
+    "title": "Mesaje",
+    "acknowledge": "Recunoaște",
+    "acknowledged": "Recunoscut",
+    "urgent": "Mesaj urgent",
+    "pinned": "Fixat",
+    "actionRequired": "Acțiune necesară",
+    "dueDate": "Scadent: {{date}}",
+    "formExpired": "Formularul a expirat",
+    "formDueToday": "Formular care necesită informațiile dumneavoastră — termen limită astăzi",
+    "formDaysRemaining": "Formular care necesită informațiile dumneavoastră — {{days}} zi(le) rămas(e)",
+    "completed": "Finalizat",
+    "wholeSchool": "Întreaga școală"
+  },
+  "events": {
+    "title": "Calendarul evenimentelor",
+    "subtitle": "Evenimente și activități școlare viitoare",
+    "allEvents": "Toate evenimentele",
+    "noEvents": "Niciun eveniment viitor.",
+    "rsvp": "RSVP:",
+    "rsvpRequired": "RSVP obligatoriu",
+    "attending": "Da",
+    "maybe": "Pot fi",
+    "notAttending": "Nu"
+  },
+  "termDates": {
+    "title": "Datele semestrului",
+    "subtitle": "Date cheie pentru anul universitar",
+    "term": "Termenul {{number}}",
+    "termStart": "Începuturi semestriale",
+    "termEnd": "Sfârșitul mandatului",
+    "halfTerm": "semestru",
+    "holiday": "Vacanţă",
+    "induction": "Inducţie"
+  },
+  "principal": {
+    "title": "Actualizări ale directorului",
+    "subtitle": "Mesaje săptămânale de la director",
+    "weekOf": "Săptămâna lui {{date}}",
+    "current": "Actual",
+    "hearts": "{{count}} inimioare",
+    "noUpdates": "Nicio actualizare încă"
+  },
+  "pulse": {
+    "title": "Pulsul părintelui",
+    "subtitle": "Împărtășește-ți feedback-ul",
+    "question": "Întrebarea {{current}} din {{total}}",
+    "stronglyDisagree": "Nu sunt deloc de acord",
+    "stronglyAgree": "Sunt întru totul de acord",
+    "yourFeedback": "Feedback-ul dumneavoastră (opțional)",
+    "submitting": "Se trimite...",
+    "thankYou": "Mulțumesc!",
+    "feedbackSubmitted": "Feedback-ul dumneavoastră a fost trimis cu succes. Vă mulțumim că v-ați făcut timp să ne ajutați să îmbunătățim."
+  },
+  "policies": {
+    "title": "Politici",
+    "subtitle": "Politicile și documentele școlare",
+    "noPolicies": "Nu sunt disponibile politici",
+    "download": "Descărcare",
+    "lastUpdated": "Ultima actualizare: {{date}}"
+  },
+  "files": {
+    "title": "Fișiere",
+    "subtitle": "Documente și resurse",
+    "noFiles": "Niciun fișier disponibil",
+    "download": "Descărcare",
+    "folder": "Pliant",
+    "file": "Fişier"
+  },
+  "knowledge": {
+    "title": "Informații despre școală",
+    "subtitle": "Informații utile despre școala noastră",
+    "searchPlaceholder": "Căutați articole...",
+    "noArticles": "Nu s-au găsit articole",
+    "backToCategories": "Înapoi la categorii"
+  },
+  "settings": {
+    "language": "Limbă",
+    "myChildren": "Copiii mei",
+    "notifications": "Notificări",
+    "account": "Cont"
+  },
+  "form": {
+    "submit": "Trimite",
+    "required": "{{field}} este obligatoriu",
+    "selectOption": "Selectați o opțiune",
+    "consent": "Formular medical necesar",
+    "payment": "Plată datorată",
+    "rsvpRequired": "RSVP obligatoriu"
+  },
+  "dates": {
+    "today": "Astăzi",
+    "tomorrow": "Mâine",
+    "yesterday": "Ieri"
+  }
+}

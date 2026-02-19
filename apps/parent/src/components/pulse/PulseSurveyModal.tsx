@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '@wasil/shared'
 import { useMutation } from '@wasil/shared'
 import * as api from '@wasil/shared'
@@ -11,6 +12,7 @@ interface PulseSurveyModalProps {
 }
 
 export function PulseSurveyModal({ pulse, onClose, onComplete }: PulseSurveyModalProps) {
+  const { t } = useTranslation()
   const theme = useTheme()
   const [answers, setAnswers] = useState<Record<string, number | string>>({})
   const [currentQuestion, setCurrentQuestion] = useState(0)
@@ -53,17 +55,17 @@ export function PulseSurveyModal({ pulse, onClose, onComplete }: PulseSurveyModa
                 </svg>
               </div>
               <h3 className="text-2xl font-bold text-green-700 mb-2">
-                Thank You!
+                {t('pulse.thankYou')}
               </h3>
               <p className="text-gray-600 mb-6">
-                Your feedback has been submitted successfully. We appreciate you taking the time to help us improve.
+                {t('pulse.feedbackSubmitted')}
               </p>
               <button
                 onClick={handleDone}
                 className="px-8 py-3 rounded-lg text-white font-medium"
                 style={{ backgroundColor: theme.colors.brandColor }}
               >
-                Done
+                {t('common.done')}
               </button>
             </div>
           ) : (
@@ -81,7 +83,7 @@ export function PulseSurveyModal({ pulse, onClose, onComplete }: PulseSurveyModa
               {/* Progress */}
               <div className="mb-6">
                 <div className="flex justify-between text-sm text-gray-500 mb-2">
-                  <span>Question {currentQuestion + 1} of {questions.length}</span>
+                  <span>{t('pulse.question', { current: currentQuestion + 1, total: questions.length })}</span>
                 </div>
                 <div className="h-2 bg-gray-200 rounded-full">
                   <div
@@ -136,15 +138,15 @@ export function PulseSurveyModal({ pulse, onClose, onComplete }: PulseSurveyModa
                 <textarea
                   value={(answers[question?.id] as string) || ''}
                   onChange={(e) => handleAnswer(e.target.value)}
-                  placeholder="Your feedback (optional)"
+                  placeholder={t('pulse.yourFeedback')}
                   className="w-full p-3 border border-gray-300 rounded-lg mb-2 h-32"
                 />
               )}
 
               {isLikert && (
                 <div className="flex justify-between text-xs text-gray-500 mb-6">
-                  <span>Strongly Disagree</span>
-                  <span>Strongly Agree</span>
+                  <span>{t('pulse.stronglyDisagree')}</span>
+                  <span>{t('pulse.stronglyAgree')}</span>
                 </div>
               )}
 
@@ -155,7 +157,7 @@ export function PulseSurveyModal({ pulse, onClose, onComplete }: PulseSurveyModa
                 className="w-full py-3 rounded-lg text-white font-medium disabled:opacity-50 mt-4"
                 style={{ backgroundColor: theme.colors.brandColor }}
               >
-                {currentQuestion < questions.length - 1 ? 'Next' : isLoading ? 'Submitting...' : 'Submit'}
+                {currentQuestion < questions.length - 1 ? t('common.next') : isLoading ? t('pulse.submitting') : t('common.submit')}
               </button>
             </>
           )}

@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth, LoadingScreen, api, useApi } from '@wasil/shared'
 import type { KnowledgeCategory, KnowledgeArticle } from '@wasil/shared'
+import { useTranslation } from 'react-i18next'
+import { loadLanguage } from './i18n'
+import { initPushNotifications, setupPushListeners, isPushSupported } from './services/pushNotifications'
 import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
 import { SideMenu } from './components/layout/SideMenu'
@@ -147,6 +150,39 @@ function MagicLinkCallback() {
 
 export default function App() {
   const { isLoading, isAuthenticated, user } = useAuth()
+  const { i18n } = useTranslation()
+  const pushInitialized = useRef(false)
+
+  // Sync language preference with i18n
+  useEffect(() => {
+    const lang = user?.preferredLanguage || 'en'
+    if (lang !== i18n.language) {
+      loadLanguage(lang).then(() => {
+        i18n.changeLanguage(lang)
+      })
+    }
+  }, [user?.preferredLanguage, i18n])
+
+  // Initialize push notifications when authenticated
+  useEffect(() => {
+    if (!isAuthenticated || !user || pushInitialized.current) return
+    if (!isPushSupported()) return
+
+    pushInitialized.current = true
+
+    initPushNotifications().then((token) => {
+      if (token) {
+        console.log('Push notifications initialized')
+        setupPushListeners((notification) => {
+          console.log('Received notification:', notification)
+          // Handle notification - could show in-app toast or navigate
+          if (notification.tapped && notification.data?.route) {
+            window.location.href = notification.data.route as string
+          }
+        })
+      }
+    })
+  }, [isAuthenticated, user])
 
   if (isLoading) {
     return <LoadingScreen />

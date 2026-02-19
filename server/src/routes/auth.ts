@@ -47,6 +47,7 @@ router.get('/me', isAuthenticated, async (req, res) => {
       role: user.role,
       schoolId: user.schoolId,
       avatarUrl: user.avatarUrl,
+      preferredLanguage: user.preferredLanguage,
       children: user.children.map(child => ({
         id: child.id,
         name: child.name,
@@ -154,6 +155,7 @@ router.post('/demo-login', async (req, res) => {
         role: user.role,
         schoolId: user.schoolId,
         avatarUrl: user.avatarUrl,
+        preferredLanguage: user.preferredLanguage,
         children: user.children.map(child => ({
           id: child.id,
           name: child.name,
@@ -310,6 +312,7 @@ router.post('/magic-link/verify', async (req, res) => {
           role: user.role,
           schoolId: user.schoolId,
           avatarUrl: user.avatarUrl,
+          preferredLanguage: user.preferredLanguage,
           children: user.children.map(child => ({
             id: child.id,
             name: child.name,
@@ -455,6 +458,7 @@ router.post('/magic-link/verify', async (req, res) => {
           role: fullUser.role,
           schoolId: fullUser.schoolId,
           avatarUrl: fullUser.avatarUrl,
+          preferredLanguage: fullUser.preferredLanguage,
           children: fullUser.children.map(child => ({
             id: child.id,
             name: child.name,

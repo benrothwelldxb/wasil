@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { MessageCard, WeeklyMessagePreview } from '../components/messages'
 import { PulseBanner, PulseSurveyModal } from '../components/pulse'
 import { ScheduleWidget } from '../components/schedule'
@@ -10,6 +11,7 @@ import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class } from '@
 import { Clock } from 'lucide-react'
 
 export function ParentDashboard() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const theme = useTheme()
 
@@ -156,7 +158,8 @@ export function ParentDashboard() {
   }
 
   const getFilterLabel = (filter: string) => {
-    if (filter === 'all') return 'All Messages'
+    if (filter === 'all') return t('dashboard.allMessages', 'All Messages')
+    if (filter === 'Whole School') return t('messages.wholeSchool')
     return filter
   }
 
@@ -175,7 +178,7 @@ export function ParentDashboard() {
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center space-x-3">
           <Clock className="h-5 w-5 text-amber-600 flex-shrink-0" />
           <span className="text-sm font-medium text-amber-800">
-            You have {urgencySummary} outstanding form{urgencySummary > 1 ? 's' : ''} due within 3 days
+            {t('dashboard.formsUrgent', { count: urgencySummary, defaultValue: `You have ${urgencySummary} outstanding form${urgencySummary > 1 ? 's' : ''} due within 3 days` })}
           </span>
         </div>
       )}
@@ -191,7 +194,7 @@ export function ParentDashboard() {
       {/* Messages Section */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-2xl font-bold mb-6" style={{ color: theme.colors.brandColor }}>
-          Messages
+          {t('messages.title')}
         </h2>
 
         {/* Weekly Message Preview */}
@@ -241,7 +244,7 @@ export function ParentDashboard() {
             ))
           ) : (
             <p className="text-gray-500 text-center py-8">
-              No messages to display.
+              {t('dashboard.noMessages')}
             </p>
           )}
         </div>
@@ -258,11 +261,11 @@ export function ParentDashboard() {
                     {weeklyMessageData.title}
                   </h3>
                   <p className="text-sm text-gray-500">
-                    Week of {new Date(weeklyMessageData.weekOf).toLocaleDateString('en-GB', {
+                    {t('principal.weekOf', { date: new Date(weeklyMessageData.weekOf).toLocaleDateString('en-GB', {
                       day: 'numeric',
                       month: 'long',
                       year: 'numeric',
-                    })}
+                    }) })}
                   </p>
                 </div>
                 <button

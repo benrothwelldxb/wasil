@@ -1,5 +1,7 @@
-// Email service with optional SendGrid integration
-// Falls back to console logging if SENDGRID_API_KEY is not set
+// Email service with Resend integration
+// Falls back to console logging if RESEND_API_KEY is not set
+
+import { Resend } from 'resend'
 
 interface SendEmailParams {
   to: string
@@ -16,41 +18,45 @@ interface MagicLinkEmailParams {
   isRegistration?: boolean
 }
 
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY
-const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@wasil.app'
-const FROM_NAME = process.env.FROM_NAME || 'Wasil'
+let resendClient: Resend | null = null
+
+function getResendClient(): Resend | null {
+  if (resendClient) return resendClient
+
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) return null
+
+  resendClient = new Resend(apiKey)
+  return resendClient
+}
+
+function getFromEmail(): string {
+  return process.env.RESEND_FROM_EMAIL || 'Wasil <notifications@wasil.app>'
+}
 
 export async function sendEmail({ to, subject, html, text }: SendEmailParams): Promise<boolean> {
-  if (!SENDGRID_API_KEY) {
-    console.log('=== EMAIL (SendGrid not configured) ===')
+  const client = getResendClient()
+
+  if (!client) {
+    console.log('=== EMAIL (Resend not configured) ===')
     console.log(`To: ${to}`)
     console.log(`Subject: ${subject}`)
-    console.log(`Body: ${text || html}`)
-    console.log('========================================')
+    console.log(`Body: ${text || html.substring(0, 200)}...`)
+    console.log('======================================')
     return true
   }
 
   try {
-    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${SENDGRID_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: to }] }],
-        from: { email: FROM_EMAIL, name: FROM_NAME },
-        subject,
-        content: [
-          ...(text ? [{ type: 'text/plain', value: text }] : []),
-          { type: 'text/html', value: html },
-        ],
-      }),
+    const { error } = await client.emails.send({
+      from: getFromEmail(),
+      to,
+      subject,
+      html,
+      text,
     })
 
-    if (!response.ok) {
-      const error = await response.text()
-      console.error('SendGrid error:', error)
+    if (error) {
+      console.error('Resend error:', error)
       return false
     }
 

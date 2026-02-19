@@ -1,0 +1,166 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "save": "Save",
+    "cancel": "Cancel",
+    "submit": "Submit",
+    "done": "Done",
+    "next": "Next",
+    "back": "Back",
+    "close": "Close",
+    "search": "Search",
+    "noResults": "No results found",
+    "required": "Required"
+  },
+  "nav": {
+    "menu": "Menu",
+    "home": "Home",
+    "eventsCalendar": "Events Calendar",
+    "termDates": "Term Dates",
+    "principalUpdates": "Principal's Updates",
+    "schoolInfo": "School Information",
+    "policies": "Policies",
+    "files": "Files",
+    "superAdmin": "Super Admin",
+    "logout": "Logout"
+  },
+  "auth": {
+    "login": "Login",
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Forgot Password?",
+    "welcomeBack": "Welcome back",
+    "enterEmail": "Enter your email to sign in",
+    "sendMagicLink": "Send Magic Link",
+    "checkEmail": "Check your email",
+    "magicLinkSent": "We've sent a magic link to your email",
+    "continueWithGoogle": "Continue with Google",
+    "continueWithMicrosoft": "Continue with Microsoft",
+    "orContinueWith": "Or continue with",
+    "haveAccessCode": "Have an access code?",
+    "enterAccessCode": "Enter access code",
+    "accessCode": "Access Code",
+    "invalidCode": "Invalid access code",
+    "loggedInAs": "Logged in as"
+  },
+  "dashboard": {
+    "welcomeMessage": "Welcome, {{name}}!",
+    "latestMessages": "Latest Messages",
+    "upcomingEvents": "Upcoming Events",
+    "quickLinks": "Quick Links",
+    "viewAll": "View All",
+    "noMessages": "No messages to display.",
+    "noEvents": "No upcoming events",
+    "todaySchedule": "Today's Schedule",
+    "nothingScheduled": "Nothing scheduled for today",
+    "parentPulse": "Parent Pulse",
+    "pulseAvailable": "Survey available",
+    "completePulse": "Share your feedback",
+    "principalMessage": "Principal's Message",
+    "readMore": "Read more",
+    "allMessages": "All Messages",
+    "formsUrgent": "You have {{count}} outstanding form(s) due within 3 days"
+  },
+  "messages": {
+    "title": "Messages",
+    "acknowledge": "Acknowledge",
+    "acknowledged": "Acknowledged",
+    "urgent": "Urgent Message",
+    "pinned": "Pinned",
+    "actionRequired": "Action Required",
+    "dueDate": "Due: {{date}}",
+    "formExpired": "Form expired",
+    "formDueToday": "Form requiring your input — due today",
+    "formDaysRemaining": "Form requiring your input — {{days}} day(s) remaining",
+    "completed": "Completed",
+    "wholeSchool": "Whole School"
+  },
+  "events": {
+    "title": "Events Calendar",
+    "subtitle": "Upcoming school events and activities",
+    "allEvents": "All Events",
+    "noEvents": "No upcoming events.",
+    "rsvp": "RSVP:",
+    "rsvpRequired": "RSVP Required",
+    "attending": "Yes",
+    "maybe": "Maybe",
+    "notAttending": "No"
+  },
+  "termDates": {
+    "title": "Term Dates",
+    "subtitle": "Key dates for the academic year",
+    "term": "Term {{number}}",
+    "termStart": "Term Starts",
+    "termEnd": "Term Ends",
+    "halfTerm": "Half Term",
+    "holiday": "Holiday",
+    "induction": "Induction"
+  },
+  "principal": {
+    "title": "Principal's Updates",
+    "subtitle": "Weekly messages from the Principal",
+    "weekOf": "Week of {{date}}",
+    "clickToRead": "Click to read this week's message",
+    "current": "Current",
+    "hearts": "{{count}} hearts",
+    "noUpdates": "No updates yet"
+  },
+  "schedule": {
+    "daySchedule": "{{day}}'s Schedule"
+  },
+  "pulse": {
+    "title": "Parent Pulse",
+    "subtitle": "Share your feedback",
+    "question": "Question {{current}} of {{total}}",
+    "stronglyDisagree": "Strongly Disagree",
+    "stronglyAgree": "Strongly Agree",
+    "yourFeedback": "Your feedback (optional)",
+    "submitting": "Submitting...",
+    "thankYou": "Thank You!",
+    "feedbackSubmitted": "Your feedback has been submitted successfully. We appreciate you taking the time to help us improve."
+  },
+  "policies": {
+    "title": "Policies",
+    "subtitle": "School policies and documents",
+    "noPolicies": "No policies available",
+    "download": "Download",
+    "lastUpdated": "Last updated: {{date}}"
+  },
+  "files": {
+    "title": "Files",
+    "subtitle": "Documents and resources",
+    "noFiles": "No files available",
+    "download": "Download",
+    "folder": "Folder",
+    "file": "File"
+  },
+  "knowledge": {
+    "title": "School Information",
+    "subtitle": "Helpful information about our school",
+    "searchPlaceholder": "Search articles...",
+    "noArticles": "No articles found",
+    "backToCategories": "Back to categories"
+  },
+  "settings": {
+    "language": "Language",
+    "myChildren": "My Children",
+    "notifications": "Notifications",
+    "account": "Account"
+  },
+  "form": {
+    "submit": "Submit",
+    "required": "{{field}} is required",
+    "selectOption": "Select an option",
+    "consent": "Medical Form Required",
+    "payment": "Payment Due",
+    "rsvpRequired": "RSVP Required"
+  },
+  "dates": {
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "yesterday": "Yesterday"
+  }
+}

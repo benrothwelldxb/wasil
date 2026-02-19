@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
-import { isAdmin } from '../middleware/auth.js'
+import { isAdmin, isAuthenticated } from '../middleware/auth.js'
+import { SUPPORTED_LANGUAGES } from '../services/translation.js'
 
 const router = Router()
 
@@ -173,6 +174,35 @@ router.delete('/:id', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error deleting user:', error)
     res.status(500).json({ error: 'Failed to delete user' })
+  }
+})
+
+// Get supported languages
+router.get('/languages', isAuthenticated, async (_req, res) => {
+  res.json(SUPPORTED_LANGUAGES)
+})
+
+// Update user's language preference
+router.patch('/me/language', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    const { language } = req.body
+
+    // Validate language code
+    const validLanguage = SUPPORTED_LANGUAGES.find(l => l.code === language)
+    if (!validLanguage) {
+      return res.status(400).json({ error: 'Invalid language code' })
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { preferredLanguage: language },
+    })
+
+    res.json({ language })
+  } catch (error) {
+    console.error('Error updating language preference:', error)
+    res.status(500).json({ error: 'Failed to update language preference' })
   }
 })
 

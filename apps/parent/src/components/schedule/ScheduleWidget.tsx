@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { Calendar } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { ScheduleItem } from '@wasil/shared'
@@ -10,11 +11,13 @@ interface ScheduleWidgetProps {
 
 
 export function ScheduleWidget({ items, date }: ScheduleWidgetProps) {
+  const { t, i18n } = useTranslation()
   const theme = useTheme()
+  const locale = i18n.language || 'en'
 
   const dateObj = new Date(date)
-  const dayName = dateObj.toLocaleDateString('en-GB', { weekday: 'long' })
-  const dateStr = dateObj.toLocaleDateString('en-GB', {
+  const dayName = dateObj.toLocaleDateString(locale, { weekday: 'long' })
+  const dateStr = dateObj.toLocaleDateString(locale, {
     day: 'numeric',
     month: 'long',
   })
@@ -34,7 +37,7 @@ export function ScheduleWidget({ items, date }: ScheduleWidgetProps) {
           <Calendar className="h-5 w-5 text-white" />
         </div>
         <div>
-          <h3 className="font-bold text-white text-lg">{dayName}'s Schedule</h3>
+          <h3 className="font-bold text-white text-lg">{t('schedule.daySchedule', { day: dayName })}</h3>
           <p className="text-blue-100 text-sm">{dateStr}</p>
         </div>
       </div>

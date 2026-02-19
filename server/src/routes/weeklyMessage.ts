@@ -3,6 +3,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
+import { translateTexts } from '../services/translation.js'
 
 const router = Router()
 
@@ -28,10 +29,21 @@ router.get('/current', isAuthenticated, async (req, res) => {
       return res.json(null)
     }
 
+    // Translate if user has non-English language preference
+    const targetLang = user.preferredLanguage || 'en'
+    let translatedTitle = message.title
+    let translatedContent = message.content
+
+    if (targetLang !== 'en') {
+      const translations = await translateTexts([message.title, message.content], targetLang)
+      translatedTitle = translations[0]
+      translatedContent = translations[1]
+    }
+
     res.json({
       id: message.id,
-      title: message.title,
-      content: message.content,
+      title: translatedTitle,
+      content: translatedContent,
       weekOf: message.weekOf.toISOString().split('T')[0],
       isCurrent: message.isCurrent,
       schoolId: message.schoolId,
@@ -61,10 +73,31 @@ router.get('/', isAuthenticated, async (req, res) => {
       orderBy: { weekOf: 'desc' },
     })
 
+    // Translate if user has non-English language preference
+    const targetLang = user.preferredLanguage || 'en'
+    const translationMap = new Map<string, string>()
+
+    if (targetLang !== 'en') {
+      const textsToTranslate: string[] = []
+      messages.forEach(msg => {
+        textsToTranslate.push(msg.title, msg.content)
+      })
+
+      const translations = await translateTexts(textsToTranslate, targetLang)
+
+      let translationIndex = 0
+      messages.forEach(msg => {
+        translationMap.set(msg.title, translations[translationIndex++])
+        translationMap.set(msg.content, translations[translationIndex++])
+      })
+    }
+
+    const getTranslated = (text: string) => translationMap.get(text) || text
+
     res.json(messages.map(msg => ({
       id: msg.id,
-      title: msg.title,
-      content: msg.content,
+      title: getTranslated(msg.title),
+      content: getTranslated(msg.content),
       weekOf: msg.weekOf.toISOString().split('T')[0],
       isCurrent: msg.isCurrent,
       schoolId: msg.schoolId,

@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "Yükleniyor...",
+    "error": "Bir hata oluştu.",
+    "save": "Kaydetmek",
+    "cancel": "İptal etmek",
+    "submit": "Göndermek",
+    "done": "Tamamlamak",
+    "next": "Sonraki",
+    "back": "Geri",
+    "close": "Kapalı",
+    "search": "Aramak",
+    "noResults": "Hiçbir sonuç bulunamadı.",
+    "required": "Gerekli"
+  },
+  "nav": {
+    "menu": "Menü",
+    "home": "Ev",
+    "eventsCalendar": "Etkinlik Takvimi",
+    "termDates": "Dönem Tarihleri",
+    "principalUpdates": "Okul Müdüründen Güncellemeler",
+    "schoolInfo": "Okul Bilgileri",
+    "policies": "Politikalar",
+    "files": "Dosyalar",
+    "superAdmin": "Süper Yönetici",
+    "logout": "Çıkış yap"
+  },
+  "auth": {
+    "login": "Giriş yapmak",
+    "signIn": "Giriş Yap",
+    "signOut": "Oturumu Kapat",
+    "email": "E-posta",
+    "password": "Şifre",
+    "forgotPassword": "Parolanızı mı unuttunuz?",
+    "welcomeBack": "tekrar hoşgeldiniz",
+    "enterEmail": "Giriş yapmak için e-posta adresinizi girin.",
+    "sendMagicLink": "Sihirli Bağlantıyı Gönder",
+    "checkEmail": "E-postalarınızı kontrol edin.",
+    "magicLinkSent": "E-postanıza sihirli bir bağlantı gönderdik.",
+    "continueWithGoogle": "Google ile devam edin",
+    "continueWithMicrosoft": "Microsoft ile devam edin",
+    "orContinueWith": "Veya devam edin",
+    "haveAccessCode": "Erişim kodunuz var mı?",
+    "enterAccessCode": "Erişim kodunu girin",
+    "accessCode": "Erişim Kodu",
+    "invalidCode": "Geçersiz erişim kodu",
+    "loggedInAs": "Şu şekilde giriş yapıldı:"
+  },
+  "dashboard": {
+    "welcomeMessage": "Hoş geldin, {{name}}!",
+    "latestMessages": "Son Mesajlar",
+    "upcomingEvents": "Yaklaşan Etkinlikler",
+    "quickLinks": "Hızlı Bağlantılar",
+    "viewAll": "Tümünü Görüntüle",
+    "noMessages": "Gösterilecek mesaj yok.",
+    "noEvents": "Yaklaşan etkinlik yok.",
+    "todaySchedule": "Bugünkü Program",
+    "nothingScheduled": "Bugün için planlanmış bir şey yok.",
+    "parentPulse": "Ebeveyn Nabzı",
+    "pulseAvailable": "Ankete katılabilirsiniz.",
+    "completePulse": "Görüşlerinizi paylaşın",
+    "principalMessage": "Okul Müdürünün Mesajı",
+    "readMore": "Devamını oku",
+    "allMessages": "Tüm Mesajlar",
+    "formsUrgent": "3 gün içinde teslim etmeniz gereken {{count}} adet bekleyen formunuz var."
+  },
+  "messages": {
+    "title": "Mesajlar",
+    "acknowledge": "Kabullenmek",
+    "acknowledged": "Onaylandı",
+    "urgent": "Acil Mesaj",
+    "pinned": "Sabitlendi",
+    "actionRequired": "Gerekli Eylem",
+    "dueDate": "Son tarih: __YER TUTUCU_0__",
+    "formExpired": "Formun süresi doldu.",
+    "formDueToday": "Bilgilerinizi göndermenizi gerektiren form — son teslim tarihi bugün",
+    "formDaysRemaining": "Bilgilerinizi girmeniz gereken form — {{days}} gün kaldı",
+    "completed": "Tamamlanmış",
+    "wholeSchool": "Okulun tamamı"
+  },
+  "events": {
+    "title": "Etkinlik Takvimi",
+    "subtitle": "Yaklaşan okul etkinlikleri ve faaliyetleri",
+    "allEvents": "Tüm Etkinlikler",
+    "noEvents": "Yakın zamanda herhangi bir etkinlik bulunmamaktadır.",
+    "rsvp": "LÜTFEN CEVAP VERİNİZ:",
+    "rsvpRequired": "Katılımınızı bildirmeniz gerekmektedir.",
+    "attending": "Evet",
+    "maybe": "Belki",
+    "notAttending": "HAYIR"
+  },
+  "termDates": {
+    "title": "Dönem Tarihleri",
+    "subtitle": "Akademik yılın önemli tarihleri",
+    "term": "Terim __YER TUTUCU_0__",
+    "termStart": "Dönem Başlangıcı",
+    "termEnd": "Dönem Sonu",
+    "halfTerm": "Yarıyıl Tatili",
+    "holiday": "Tatil",
+    "induction": "İndüksiyon"
+  },
+  "principal": {
+    "title": "Okul Müdüründen Güncellemeler",
+    "subtitle": "Okul Müdüründen Haftalık Mesajlar",
+    "weekOf": "__YER TUTUCUSU_0__ Haftası",
+    "current": "Akım",
+    "hearts": "__YER TUTUCU_0__ kalp",
+    "noUpdates": "Henüz güncelleme yok."
+  },
+  "pulse": {
+    "title": "Ebeveyn Nabzı",
+    "subtitle": "Görüşlerinizi paylaşın",
+    "question": "Soru {{current}} / {{total}}",
+    "stronglyDisagree": "Kesinlikle katılmıyorum",
+    "stronglyAgree": "Kesinlikle Katılıyorum",
+    "yourFeedback": "Geri bildiriminiz (isteğe bağlı)",
+    "submitting": "Gönderiliyor...",
+    "thankYou": "Teşekkür ederim!",
+    "feedbackSubmitted": "Geri bildiriminiz başarıyla gönderildi. Gelişmemize yardımcı olmak için zaman ayırdığınız için teşekkür ederiz."
+  },
+  "policies": {
+    "title": "Politikalar",
+    "subtitle": "Okul politikaları ve belgeleri",
+    "noPolicies": "Mevcut poliçe yok.",
+    "download": "İndirmek",
+    "lastUpdated": "Son güncelleme: {{date}}"
+  },
+  "files": {
+    "title": "Dosyalar",
+    "subtitle": "Belgeler ve kaynaklar",
+    "noFiles": "Dosya bulunamadı.",
+    "download": "İndirmek",
+    "folder": "Dosya",
+    "file": "Dosya"
+  },
+  "knowledge": {
+    "title": "Okul Bilgileri",
+    "subtitle": "Okulumuz hakkında faydalı bilgiler",
+    "searchPlaceholder": "Makaleleri ara...",
+    "noArticles": "Makale bulunamadı.",
+    "backToCategories": "Kategorilere geri dön"
+  },
+  "settings": {
+    "language": "Dil",
+    "myChildren": "Çocuklarım",
+    "notifications": "Bildirimler",
+    "account": "Hesap"
+  },
+  "form": {
+    "submit": "Göndermek",
+    "required": "{{field}} gereklidir",
+    "selectOption": "Bir seçenek seçin",
+    "consent": "Tıbbi Form Gereklidir",
+    "payment": "Ödeme Vadesi Geldi",
+    "rsvpRequired": "Katılımınızı bildirmeniz gerekmektedir."
+  },
+  "dates": {
+    "today": "Bugün",
+    "tomorrow": "Yarın",
+    "yesterday": "Dün"
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "Załadunek...",
+    "error": "Wystąpił błąd",
+    "save": "Ratować",
+    "cancel": "Anulować",
+    "submit": "Składać",
+    "done": "Zrobione",
+    "next": "Następny",
+    "back": "Z powrotem",
+    "close": "Zamknąć",
+    "search": "Szukaj",
+    "noResults": "Nie znaleziono wyników",
+    "required": "Wymagany"
+  },
+  "nav": {
+    "menu": "Menu",
+    "home": "Dom",
+    "eventsCalendar": "Kalendarz wydarzeń",
+    "termDates": "Terminy semestrów",
+    "principalUpdates": "Aktualności Dyrektora",
+    "schoolInfo": "Informacje o szkole",
+    "policies": "Polityki",
+    "files": "Akta",
+    "superAdmin": "Superadministrator",
+    "logout": "Wyloguj"
+  },
+  "auth": {
+    "login": "Login",
+    "signIn": "Zalogować się",
+    "signOut": "Wyloguj się",
+    "email": "E-mail",
+    "password": "Hasło",
+    "forgotPassword": "Zapomniałeś hasła?",
+    "welcomeBack": "Witamy ponownie",
+    "enterEmail": "Wprowadź swój adres e-mail, aby się zalogować",
+    "sendMagicLink": "Wyślij magiczny link",
+    "checkEmail": "Sprawdź swoją pocztę e-mail",
+    "magicLinkSent": "Wysłaliśmy magiczny link na Twój adres e-mail",
+    "continueWithGoogle": "Kontynuuj z Google",
+    "continueWithMicrosoft": "Kontynuuj z Microsoft",
+    "orContinueWith": "Lub kontynuuj",
+    "haveAccessCode": "Masz kod dostępu?",
+    "enterAccessCode": "Wprowadź kod dostępu",
+    "accessCode": "Kod dostępu",
+    "invalidCode": "Nieprawidłowy kod dostępu",
+    "loggedInAs": "Zalogowany jako"
+  },
+  "dashboard": {
+    "welcomeMessage": "Witaj, {{name}}!",
+    "latestMessages": "Najnowsze wiadomości",
+    "upcomingEvents": "Nadchodzące wydarzenia",
+    "quickLinks": "Szybkie linki",
+    "viewAll": "Zobacz wszystko",
+    "noMessages": "Brak wiadomości do wyświetlenia.",
+    "noEvents": "Brak nadchodzących wydarzeń",
+    "todaySchedule": "Dzisiejszy harmonogram",
+    "nothingScheduled": "Nic nie zaplanowano na dziś",
+    "parentPulse": "Puls Rodzica",
+    "pulseAvailable": "Ankieta dostępna",
+    "completePulse": "Podziel się swoją opinią",
+    "principalMessage": "Wiadomość od dyrektora",
+    "readMore": "Przeczytaj więcej",
+    "allMessages": "Wszystkie wiadomości",
+    "formsUrgent": "Masz {{count}} zaległych formularzy, które należy dostarczyć w ciągu 3 dni"
+  },
+  "messages": {
+    "title": "Wiadomości",
+    "acknowledge": "Uznawać",
+    "acknowledged": "Potwierdzono",
+    "urgent": "Pilna wiadomość",
+    "pinned": "Przypięte",
+    "actionRequired": "Wymagane działanie",
+    "dueDate": "Termin: {{date}}",
+    "formExpired": "Formularz wygasł",
+    "formDueToday": "Formularz wymagający Twojego wkładu — termin złożenia dzisiaj",
+    "formDaysRemaining": "Formularz wymagający Twojego podania danych — {{days}} dni pozostałych",
+    "completed": "Zakończony",
+    "wholeSchool": "Cała szkoła"
+  },
+  "events": {
+    "title": "Kalendarz wydarzeń",
+    "subtitle": "Nadchodzące wydarzenia i zajęcia szkolne",
+    "allEvents": "Wszystkie wydarzenia",
+    "noEvents": "Brak nadchodzących wydarzeń.",
+    "rsvp": "Potwierdź obecność:",
+    "rsvpRequired": "Wymagane potwierdzenie obecności",
+    "attending": "Tak",
+    "maybe": "Może",
+    "notAttending": "NIE"
+  },
+  "termDates": {
+    "title": "Terminy semestrów",
+    "subtitle": "Kluczowe daty roku akademickiego",
+    "term": "Termin {{number}}",
+    "termStart": "Początek semestru",
+    "termEnd": "Koniec semestru",
+    "halfTerm": "Przerwa semestralna",
+    "holiday": "Wakacje",
+    "induction": "Wprowadzenie"
+  },
+  "principal": {
+    "title": "Aktualności Dyrektora",
+    "subtitle": "Tygodniowe wiadomości od Dyrektora",
+    "weekOf": "Tydzień {{date}}",
+    "current": "Aktualny",
+    "hearts": "{{count}} serc",
+    "noUpdates": "Brak aktualizacji"
+  },
+  "pulse": {
+    "title": "Puls Rodzica",
+    "subtitle": "Podziel się swoją opinią",
+    "question": "Pytanie {{current}} z {{total}}",
+    "stronglyDisagree": "Zdecydowanie się nie zgadzam",
+    "stronglyAgree": "Zdecydowanie się zgadzam",
+    "yourFeedback": "Twoja opinia (opcjonalnie)",
+    "submitting": "Przedkładający...",
+    "thankYou": "Dziękuję!",
+    "feedbackSubmitted": "Twoja opinia została pomyślnie przesłana. Dziękujemy za poświęcony czas i pomoc w doskonaleniu naszych usług."
+  },
+  "policies": {
+    "title": "Polityki",
+    "subtitle": "Polityki i dokumenty szkoły",
+    "noPolicies": "Brak dostępnych zasad",
+    "download": "Pobierać",
+    "lastUpdated": "Ostatnia aktualizacja: {{date}}"
+  },
+  "files": {
+    "title": "Akta",
+    "subtitle": "Dokumenty i zasoby",
+    "noFiles": "Brak dostępnych plików",
+    "download": "Pobierać",
+    "folder": "Falcówka",
+    "file": "Plik"
+  },
+  "knowledge": {
+    "title": "Informacje o szkole",
+    "subtitle": "Przydatne informacje o naszej szkole",
+    "searchPlaceholder": "Szukaj artykułów...",
+    "noArticles": "Nie znaleziono artykułów",
+    "backToCategories": "Powrót do kategorii"
+  },
+  "settings": {
+    "language": "Język",
+    "myChildren": "Moje dzieci",
+    "notifications": "Powiadomienia",
+    "account": "Konto"
+  },
+  "form": {
+    "submit": "Składać",
+    "required": "{{field}} jest wymagane",
+    "selectOption": "Wybierz opcję",
+    "consent": "Wymagany formularz medyczny",
+    "payment": "Należność płatna",
+    "rsvpRequired": "Wymagane potwierdzenie obecności"
+  },
+  "dates": {
+    "today": "Dzisiaj",
+    "tomorrow": "Jutro",
+    "yesterday": "Wczoraj"
+  }
+}

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, Users, Check, X, HelpCircle } from 'lucide-react'
 import { useApi, useMutation } from '@wasil/shared'
 import { useAuth } from '@wasil/shared'
@@ -7,6 +8,7 @@ import * as api from '@wasil/shared'
 import type { Event, EventRsvpStatus, Class } from '@wasil/shared'
 
 export function EventsPage() {
+  const { t } = useTranslation()
   const theme = useTheme()
   const { user } = useAuth()
   const [selectedFilter, setSelectedFilter] = useState<string>('all')
@@ -101,7 +103,8 @@ export function EventsPage() {
   }
 
   const getFilterLabel = (filter: string) => {
-    if (filter === 'all') return 'All Events'
+    if (filter === 'all') return t('events.allEvents')
+    if (filter === 'Whole School') return t('messages.wholeSchool')
     return filter
   }
 
@@ -109,14 +112,14 @@ export function EventsPage() {
     if (!event.requiresRsvp) return null
 
     const buttons = [
-      { status: 'attending' as EventRsvpStatus, icon: Check, label: 'Yes', color: 'green' },
-      { status: 'maybe' as EventRsvpStatus, icon: HelpCircle, label: 'Maybe', color: 'amber' },
-      { status: 'not_attending' as EventRsvpStatus, icon: X, label: 'No', color: 'red' },
+      { status: 'attending' as EventRsvpStatus, icon: Check, label: t('events.attending'), color: 'green' },
+      { status: 'maybe' as EventRsvpStatus, icon: HelpCircle, label: t('events.maybe'), color: 'amber' },
+      { status: 'not_attending' as EventRsvpStatus, icon: X, label: t('events.notAttending'), color: 'red' },
     ]
 
     return (
       <div className="flex items-center space-x-2 mt-3">
-        <span className="text-sm text-gray-500 mr-2">RSVP:</span>
+        <span className="text-sm text-gray-500 mr-2">{t('events.rsvp')}</span>
         {buttons.map(({ status, icon: Icon, label, color }) => {
           const isSelected = event.userRsvp === status
           return (
@@ -161,9 +164,9 @@ export function EventsPage() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold" style={{ color: theme.colors.brandColor }}>
-          Events Calendar
+          {t('events.title')}
         </h1>
-        <p className="text-gray-600 mt-1">Upcoming school events and activities</p>
+        <p className="text-gray-600 mt-1">{t('events.subtitle')}</p>
       </div>
 
       {/* Filter Pills */}
@@ -245,7 +248,7 @@ export function EventsPage() {
                             </div>
                             {event.requiresRsvp && (
                               <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">
-                                RSVP Required
+                                {t('events.rsvpRequired')}
                               </span>
                             )}
                           </div>
@@ -283,7 +286,7 @@ export function EventsPage() {
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
           <Calendar className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-          <p className="text-gray-500">No upcoming events.</p>
+          <p className="text-gray-500">{t('events.noEvents')}</p>
         </div>
       )}
     </div>

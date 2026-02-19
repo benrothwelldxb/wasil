@@ -8,9 +8,16 @@ export interface User {
   role: Role
   schoolId: string
   avatarUrl?: string
+  preferredLanguage?: string
   children?: Child[]
   studentLinks?: ParentStudentLinkInfo[]
   school?: School
+}
+
+// Language types
+export interface SupportedLanguage {
+  code: string
+  name: string
 }
 
 export interface Child {
@@ -389,6 +396,7 @@ export interface ParentInvitationListResponse {
 
 export interface InvitationValidationResponse {
   valid: boolean
+  invitationId: string
   school: {
     id: string
     name: string
@@ -405,6 +413,7 @@ export interface InvitationValidationResponse {
     className: string
   }>
   parentName?: string
+  parentEmail?: string
 }
 
 export interface InvitationRedeemResponse {

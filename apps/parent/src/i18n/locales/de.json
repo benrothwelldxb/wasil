@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "Laden...",
+    "error": "Es ist ein Fehler aufgetreten",
+    "save": "Speichern",
+    "cancel": "Stornieren",
+    "submit": "Einreichen",
+    "done": "Erledigt",
+    "next": "Nächste",
+    "back": "Zurück",
+    "close": "Schließen",
+    "search": "Suchen",
+    "noResults": "Keine Ergebnisse gefunden",
+    "required": "Erforderlich"
+  },
+  "nav": {
+    "menu": "Speisekarte",
+    "home": "Heim",
+    "eventsCalendar": "Veranstaltungskalender",
+    "termDates": "Semestertermine",
+    "principalUpdates": "Mitteilungen des Schulleiters",
+    "schoolInfo": "Schulinformationen",
+    "policies": "Richtlinien",
+    "files": "Dateien",
+    "superAdmin": "Super-Admin",
+    "logout": "Abmelden"
+  },
+  "auth": {
+    "login": "Login",
+    "signIn": "Anmelden",
+    "signOut": "Abmelden",
+    "email": "E-Mail",
+    "password": "Passwort",
+    "forgotPassword": "Passwort vergessen?",
+    "welcomeBack": "Willkommen zurück",
+    "enterEmail": "Geben Sie Ihre E-Mail-Adresse ein, um sich anzumelden.",
+    "sendMagicLink": "Magischen Link senden",
+    "checkEmail": "Überprüfen Sie Ihre E-Mails.",
+    "magicLinkSent": "Wir haben Ihnen einen magischen Link per E-Mail zugesendet.",
+    "continueWithGoogle": "Mit Google fortfahren",
+    "continueWithMicrosoft": "Mit Microsoft fortfahren",
+    "orContinueWith": "Oder fahren Sie fort mit",
+    "haveAccessCode": "Haben Sie einen Zugangscode?",
+    "enterAccessCode": "Zugangscode eingeben",
+    "accessCode": "Zugangscode",
+    "invalidCode": "Ungültiger Zugangscode",
+    "loggedInAs": "Angemeldet als"
+  },
+  "dashboard": {
+    "welcomeMessage": "Willkommen, {{name}}!",
+    "latestMessages": "Neueste Nachrichten",
+    "upcomingEvents": "Kommende Veranstaltungen",
+    "quickLinks": "Schnellzugriff",
+    "viewAll": "Alle anzeigen",
+    "noMessages": "Keine Meldungen anzuzeigen.",
+    "noEvents": "Keine anstehenden Veranstaltungen",
+    "todaySchedule": "Heutiger Zeitplan",
+    "nothingScheduled": "Heute ist nichts geplant.",
+    "parentPulse": "Elternpuls",
+    "pulseAvailable": "Umfrage verfügbar",
+    "completePulse": "Teilen Sie uns Ihr Feedback mit.",
+    "principalMessage": "Botschaft des Schulleiters",
+    "readMore": "Mehr lesen",
+    "allMessages": "Alle Nachrichten",
+    "formsUrgent": "Sie haben {{count}} ausstehende Formulare, die innerhalb von 3 Tagen fällig sind."
+  },
+  "messages": {
+    "title": "Nachrichten",
+    "acknowledge": "Anerkennen",
+    "acknowledged": "Anerkannt",
+    "urgent": "Dringende Nachricht",
+    "pinned": "Angepinnt",
+    "actionRequired": "Handlungsbedarf erforderlich",
+    "dueDate": "Fällig: {{date}}",
+    "formExpired": "Formular abgelaufen",
+    "formDueToday": "Formular, das Ihre Angaben erfordert – heute fällig",
+    "formDaysRemaining": "Formular, das Ihre Eingabe erfordert — {{days}} verbleibende Tage",
+    "completed": "Vollendet",
+    "wholeSchool": "Ganze Schule"
+  },
+  "events": {
+    "title": "Veranstaltungskalender",
+    "subtitle": "Bevorstehende Schulveranstaltungen und Aktivitäten",
+    "allEvents": "Alle Veranstaltungen",
+    "noEvents": "Keine anstehenden Veranstaltungen.",
+    "rsvp": "Bitte um Rückmeldung:",
+    "rsvpRequired": "Anmeldung erforderlich",
+    "attending": "Ja",
+    "maybe": "Vielleicht",
+    "notAttending": "NEIN"
+  },
+  "termDates": {
+    "title": "Semestertermine",
+    "subtitle": "Wichtige Termine für das akademische Jahr",
+    "term": "Begriff {{number}}",
+    "termStart": "Semesterbeginn",
+    "termEnd": "Amtszeitende",
+    "halfTerm": "Herbstferien",
+    "holiday": "Urlaub",
+    "induction": "Induktion"
+  },
+  "principal": {
+    "title": "Mitteilungen des Schulleiters",
+    "subtitle": "Wöchentliche Mitteilungen des Schulleiters",
+    "weekOf": "Woche vom {{date}}",
+    "current": "Aktuell",
+    "hearts": "{{count}} Herzen",
+    "noUpdates": "Noch keine Aktualisierungen"
+  },
+  "pulse": {
+    "title": "Elternpuls",
+    "subtitle": "Teilen Sie uns Ihr Feedback mit.",
+    "question": "Frage {{current}} von {{total}}",
+    "stronglyDisagree": "Stimme überhaupt nicht zu",
+    "stronglyAgree": "Stimme voll und ganz zu",
+    "yourFeedback": "Ihr Feedback (optional)",
+    "submitting": "Wird übermittelt...",
+    "thankYou": "Danke schön!",
+    "feedbackSubmitted": "Ihr Feedback wurde erfolgreich übermittelt. Vielen Dank, dass Sie sich die Zeit genommen haben, uns bei der Verbesserung zu helfen."
+  },
+  "policies": {
+    "title": "Richtlinien",
+    "subtitle": "Schulrichtlinien und Dokumente",
+    "noPolicies": "Es sind keine Richtlinien verfügbar.",
+    "download": "Herunterladen",
+    "lastUpdated": "Letzte Aktualisierung: {{date}}"
+  },
+  "files": {
+    "title": "Dateien",
+    "subtitle": "Dokumente und Ressourcen",
+    "noFiles": "Keine Dateien verfügbar",
+    "download": "Herunterladen",
+    "folder": "Ordner",
+    "file": "Datei"
+  },
+  "knowledge": {
+    "title": "Schulinformationen",
+    "subtitle": "Hilfreiche Informationen über unsere Schule",
+    "searchPlaceholder": "Artikel suchen...",
+    "noArticles": "Keine Artikel gefunden",
+    "backToCategories": "Zurück zu den Kategorien"
+  },
+  "settings": {
+    "language": "Sprache",
+    "myChildren": "Meine Kinder",
+    "notifications": "Benachrichtigungen",
+    "account": "Konto"
+  },
+  "form": {
+    "submit": "Einreichen",
+    "required": "{{field}} ist erforderlich",
+    "selectOption": "Wählen Sie eine Option aus",
+    "consent": "Ärztliches Attest erforderlich",
+    "payment": "Fällige Zahlung",
+    "rsvpRequired": "Anmeldung erforderlich"
+  },
+  "dates": {
+    "today": "Heute",
+    "tomorrow": "Morgen",
+    "yesterday": "Gestern"
+  }
+}

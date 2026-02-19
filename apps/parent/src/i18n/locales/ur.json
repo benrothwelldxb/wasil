@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "لوڈ ہو رہا ہے...",
+    "error": "ایک خرابی پیش آگئی",
+    "save": "محفوظ کریں۔",
+    "cancel": "منسوخ کریں۔",
+    "submit": "جمع کروائیں۔",
+    "done": "ہو گیا",
+    "next": "اگلا",
+    "back": "پیچھے",
+    "close": "بند",
+    "search": "تلاش کریں۔",
+    "noResults": "کوئی نتیجہ نہیں ملا",
+    "required": "درکار ہے۔"
+  },
+  "nav": {
+    "menu": "مینو",
+    "home": "گھر",
+    "eventsCalendar": "واقعات کا کیلنڈر",
+    "termDates": "مدت کی تاریخیں۔",
+    "principalUpdates": "پرنسپل کی اپڈیٹس",
+    "schoolInfo": "اسکول کی معلومات",
+    "policies": "پالیسیاں",
+    "files": "فائلیں",
+    "superAdmin": "سپر ایڈمن",
+    "logout": "لاگ آؤٹ"
+  },
+  "auth": {
+    "login": "لاگ ان",
+    "signIn": "سائن ان کریں۔",
+    "signOut": "سائن آؤٹ کریں۔",
+    "email": "ای میل",
+    "password": "پاس ورڈ",
+    "forgotPassword": "پاس ورڈ بھول گئے؟",
+    "welcomeBack": "دوبارہ خوش آمدید",
+    "enterEmail": "سائن ان کرنے کے لیے اپنا ای میل درج کریں۔",
+    "sendMagicLink": "میجک لنک بھیجیں۔",
+    "checkEmail": "اپنا ای میل چیک کریں۔",
+    "magicLinkSent": "ہم نے آپ کے ای میل پر ایک جادوئی لنک بھیج دیا ہے۔",
+    "continueWithGoogle": "گوگل کے ساتھ جاری رکھیں",
+    "continueWithMicrosoft": "مائیکروسافٹ کے ساتھ جاری رکھیں",
+    "orContinueWith": "یا جاری رکھیں",
+    "haveAccessCode": "ایک رسائی کوڈ ہے؟",
+    "enterAccessCode": "رسائی کوڈ درج کریں۔",
+    "accessCode": "رسائی کوڈ",
+    "invalidCode": "غلط رسائی کوڈ",
+    "loggedInAs": "بطور لاگ ان"
+  },
+  "dashboard": {
+    "welcomeMessage": "خوش آمدید، {{name}}!",
+    "latestMessages": "تازہ ترین پیغامات",
+    "upcomingEvents": "آنے والے واقعات",
+    "quickLinks": "فوری لنکس",
+    "viewAll": "سبھی دیکھیں",
+    "noMessages": "ڈسپلے کرنے کے لیے کوئی پیغامات نہیں ہیں۔",
+    "noEvents": "کوئی آنے والے واقعات نہیں ہیں۔",
+    "todaySchedule": "آج کا شیڈول",
+    "nothingScheduled": "آج کے لیے کچھ بھی طے نہیں ہے۔",
+    "parentPulse": "والدین کی نبض",
+    "pulseAvailable": "سروے دستیاب ہے۔",
+    "completePulse": "اپنی رائے شیئر کریں۔",
+    "principalMessage": "پرنسپل کا پیغام",
+    "readMore": "مزید پڑھیں",
+    "allMessages": "تمام پیغامات",
+    "formsUrgent": "آپ کے پاس 3 دن کے اندر {{count}} بقایا فارم( فارمز) ہیں۔"
+  },
+  "messages": {
+    "title": "پیغامات",
+    "acknowledge": "تسلیم کرتے ہیں۔",
+    "acknowledged": "تسلیم کیا۔",
+    "urgent": "فوری پیغام",
+    "pinned": "پن لگا ہوا",
+    "actionRequired": "ایکشن درکار ہے۔",
+    "dueDate": "واجب الادا: {{date}}",
+    "formExpired": "فارم کی میعاد ختم ہوگئی",
+    "formDueToday": "فارم جس کے لیے آپ کا ان پٹ درکار ہے — آج ہی مقرر ہے۔",
+    "formDaysRemaining": "فارم جس میں آپ کا ان پٹ درکار ہے — {{days}} دن باقی ہیں۔",
+    "completed": "مکمل",
+    "wholeSchool": "پورا سکول"
+  },
+  "events": {
+    "title": "واقعات کا کیلنڈر",
+    "subtitle": "اسکول کے آنے والے واقعات اور سرگرمیاں",
+    "allEvents": "تمام واقعات",
+    "noEvents": "کوئی آنے والے واقعات نہیں ہیں۔",
+    "rsvp": "RSVP:",
+    "rsvpRequired": "RSVP درکار ہے۔",
+    "attending": "جی ہاں",
+    "maybe": "ہو سکتا ہے۔",
+    "notAttending": "نہیں"
+  },
+  "termDates": {
+    "title": "مدت کی تاریخیں۔",
+    "subtitle": "تعلیمی سال کی اہم تاریخیں۔",
+    "term": "مدت {{number}}",
+    "termStart": "مدت شروع ہوتی ہے۔",
+    "termEnd": "مدت ختم",
+    "halfTerm": "نصف مدت",
+    "holiday": "چھٹی",
+    "induction": "شامل کرنا"
+  },
+  "principal": {
+    "title": "پرنسپل کی اپڈیٹس",
+    "subtitle": "پرنسپل کی طرف سے ہفتہ وار پیغامات",
+    "weekOf": "{{date}} کا ہفتہ",
+    "current": "کرنٹ",
+    "hearts": "{{count}} دل",
+    "noUpdates": "ابھی تک کوئی اپ ڈیٹ نہیں ہے۔"
+  },
+  "pulse": {
+    "title": "والدین کی نبض",
+    "subtitle": "اپنی رائے شیئر کریں۔",
+    "question": "سوال {{current}} از {{total}}",
+    "stronglyDisagree": "سختی سے متفق نہیں۔",
+    "stronglyAgree": "سختی سے متفق",
+    "yourFeedback": "آپ کی رائے (اختیاری)",
+    "submitting": "جمع کر رہا ہے...",
+    "thankYou": "شکریہ!",
+    "feedbackSubmitted": "آپ کی رائے کامیابی کے ساتھ جمع کر دی گئی ہے۔ ہم آپ کو بہتر بنانے میں مدد کرنے کے لیے وقت دینے کی تعریف کرتے ہیں۔"
+  },
+  "policies": {
+    "title": "پالیسیاں",
+    "subtitle": "اسکول کی پالیسیاں اور دستاویزات",
+    "noPolicies": "کوئی پالیسی دستیاب نہیں ہے۔",
+    "download": "ڈاؤن لوڈ کریں۔",
+    "lastUpdated": "آخری بار اپ ڈیٹ کیا گیا: {{date}}"
+  },
+  "files": {
+    "title": "فائلیں",
+    "subtitle": "دستاویزات اور وسائل",
+    "noFiles": "کوئی فائلیں دستیاب نہیں ہیں۔",
+    "download": "ڈاؤن لوڈ کریں۔",
+    "folder": "فولڈر",
+    "file": "فائل"
+  },
+  "knowledge": {
+    "title": "اسکول کی معلومات",
+    "subtitle": "ہمارے اسکول کے بارے میں مفید معلومات",
+    "searchPlaceholder": "مضامین تلاش کریں...",
+    "noArticles": "کوئی مضامین نہیں ملے",
+    "backToCategories": "زمرہ جات پر واپس جائیں۔"
+  },
+  "settings": {
+    "language": "زبان",
+    "myChildren": "میرے بچے",
+    "notifications": "اطلاعات",
+    "account": "اکاؤنٹ"
+  },
+  "form": {
+    "submit": "جمع کروائیں۔",
+    "required": "{{field}} درکار ہے۔",
+    "selectOption": "ایک آپشن منتخب کریں۔",
+    "consent": "میڈیکل فارم درکار ہے۔",
+    "payment": "ادائیگی واجب الادا",
+    "rsvpRequired": "RSVP درکار ہے۔"
+  },
+  "dates": {
+    "today": "آج",
+    "tomorrow": "کل",
+    "yesterday": "کل"
+  }
+}

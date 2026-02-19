@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "로딩 중...",
+    "error": "오류가 발생했습니다",
+    "save": "구하다",
+    "cancel": "취소",
+    "submit": "제출하다",
+    "done": "완료",
+    "next": "다음",
+    "back": "뒤쪽에",
+    "close": "닫다",
+    "search": "찾다",
+    "noResults": "검색 결과가 없습니다.",
+    "required": "필수의"
+  },
+  "nav": {
+    "menu": "메뉴",
+    "home": "집",
+    "eventsCalendar": "이벤트 캘린더",
+    "termDates": "학기 일정",
+    "principalUpdates": "교장 선생님의 소식",
+    "schoolInfo": "학교 정보",
+    "policies": "정책",
+    "files": "파일",
+    "superAdmin": "슈퍼 관리자",
+    "logout": "로그아웃"
+  },
+  "auth": {
+    "login": "로그인",
+    "signIn": "로그인",
+    "signOut": "로그아웃",
+    "email": "이메일",
+    "password": "비밀번호",
+    "forgotPassword": "비밀번호를 잊으셨나요?",
+    "welcomeBack": "다시 오신 것을 환영합니다",
+    "enterEmail": "로그인하려면 이메일을 입력하세요.",
+    "sendMagicLink": "매직링크 보내기",
+    "checkEmail": "이메일을 확인하세요",
+    "magicLinkSent": "고객님의 이메일로 마법의 링크를 보내드렸습니다.",
+    "continueWithGoogle": "Google에서 계속 진행",
+    "continueWithMicrosoft": "Microsoft에서 계속 진행하세요",
+    "orContinueWith": "또는 계속 진행하세요",
+    "haveAccessCode": "접속 코드가 있으신가요?",
+    "enterAccessCode": "액세스 코드를 입력하세요",
+    "accessCode": "접근 코드",
+    "invalidCode": "잘못된 접근 코드",
+    "loggedInAs": "로그인됨"
+  },
+  "dashboard": {
+    "welcomeMessage": "{{name}}님, 환영합니다!",
+    "latestMessages": "최신 메시지",
+    "upcomingEvents": "다가오는 행사",
+    "quickLinks": "바로가기 링크",
+    "viewAll": "모두 보기",
+    "noMessages": "표시할 메시지가 없습니다.",
+    "noEvents": "예정된 이벤트가 없습니다.",
+    "todaySchedule": "오늘의 일정",
+    "nothingScheduled": "오늘은 특별한 일정이 없습니다.",
+    "parentPulse": "부모의 펄스",
+    "pulseAvailable": "설문조사 가능",
+    "completePulse": "여러분의 의견을 공유해주세요.",
+    "principalMessage": "교장 선생님의 메시지",
+    "readMore": "더 읽어보기",
+    "allMessages": "모든 메시지",
+    "formsUrgent": "{{count}}개의 미제출 서류가 3일 이내에 제출되어야 합니다."
+  },
+  "messages": {
+    "title": "메시지",
+    "acknowledge": "인정하다",
+    "acknowledged": "인정됨",
+    "urgent": "긴급 메시지",
+    "pinned": "고정됨",
+    "actionRequired": "조치 필요",
+    "dueDate": "마감일: {{date}}",
+    "formExpired": "양식이 만료되었습니다",
+    "formDueToday": "귀하의 입력이 필요한 양식입니다. 제출 마감일은 오늘입니다.",
+    "formDaysRemaining": "입력이 필요한 양식 — 남은 시간: {{days}}일",
+    "completed": "완전한",
+    "wholeSchool": "전교생"
+  },
+  "events": {
+    "title": "이벤트 캘린더",
+    "subtitle": "다가오는 학교 행사 및 활동",
+    "allEvents": "모든 이벤트",
+    "noEvents": "예정된 이벤트가 없습니다.",
+    "rsvp": "참석 여부 회신:",
+    "rsvpRequired": "참석 여부 회신 필수",
+    "attending": "예",
+    "maybe": "아마도",
+    "notAttending": "아니요"
+  },
+  "termDates": {
+    "title": "학기 일정",
+    "subtitle": "학년도 주요 일정",
+    "term": "용어 {{number}}",
+    "termStart": "학기 시작",
+    "termEnd": "임기 종료",
+    "halfTerm": "중간 방학",
+    "holiday": "휴일",
+    "induction": "유도"
+  },
+  "principal": {
+    "title": "교장 선생님의 소식",
+    "subtitle": "교장 선생님의 주간 메시지",
+    "weekOf": "{{date}} 주차",
+    "current": "현재의",
+    "hearts": "{{count}} 하트",
+    "noUpdates": "아직 업데이트된 내용이 없습니다."
+  },
+  "pulse": {
+    "title": "부모의 펄스",
+    "subtitle": "여러분의 의견을 공유해주세요.",
+    "question": "질문 {{current}} ({{total}}의)",
+    "stronglyDisagree": "매우 반대합니다",
+    "stronglyAgree": "매우 동의합니다",
+    "yourFeedback": "의견을 보내주세요 (선택 사항)",
+    "submitting": "제출 중...",
+    "thankYou": "감사합니다!",
+    "feedbackSubmitted": "고객님의 의견이 성공적으로 제출되었습니다. 소중한 시간을 내어 저희 서비스 개선에 도움을 주셔서 감사합니다."
+  },
+  "policies": {
+    "title": "정책",
+    "subtitle": "학교 정책 및 문서",
+    "noPolicies": "이용 가능한 정책이 없습니다.",
+    "download": "다운로드",
+    "lastUpdated": "최종 업데이트: {{date}}"
+  },
+  "files": {
+    "title": "파일",
+    "subtitle": "문서 및 자료",
+    "noFiles": "사용 가능한 파일이 없습니다.",
+    "download": "다운로드",
+    "folder": "접는 사람",
+    "file": "파일"
+  },
+  "knowledge": {
+    "title": "학교 정보",
+    "subtitle": "우리 학교에 대한 유용한 정보",
+    "searchPlaceholder": "기사 검색...",
+    "noArticles": "기사를 찾을 수 없습니다.",
+    "backToCategories": "카테고리로 돌아가기"
+  },
+  "settings": {
+    "language": "언어",
+    "myChildren": "내 아이들",
+    "notifications": "알림",
+    "account": "계정"
+  },
+  "form": {
+    "submit": "제출하다",
+    "required": "{{field}}은 필수 항목입니다.",
+    "selectOption": "옵션을 선택하세요",
+    "consent": "의료 양식 필요",
+    "payment": "지불 기한",
+    "rsvpRequired": "참석 여부 회신 필수"
+  },
+  "dates": {
+    "today": "오늘",
+    "tomorrow": "내일",
+    "yesterday": "어제"
+  }
+}

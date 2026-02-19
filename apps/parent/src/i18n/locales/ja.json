@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "読み込み中...",
+    "error": "エラーが発生しました",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "submit": "提出する",
+    "done": "終わり",
+    "next": "次",
+    "back": "戻る",
+    "close": "近い",
+    "search": "検索",
+    "noResults": "結果が見つかりませんでした",
+    "required": "必須"
+  },
+  "nav": {
+    "menu": "メニュー",
+    "home": "家",
+    "eventsCalendar": "イベントカレンダー",
+    "termDates": "学期日程",
+    "principalUpdates": "校長からの最新情報",
+    "schoolInfo": "学校情報",
+    "policies": "ポリシー",
+    "files": "ファイル",
+    "superAdmin": "スーパー管理者",
+    "logout": "ログアウト"
+  },
+  "auth": {
+    "login": "ログイン",
+    "signIn": "サインイン",
+    "signOut": "サインアウト",
+    "email": "メール",
+    "password": "パスワード",
+    "forgotPassword": "パスワードをお忘れですか？",
+    "welcomeBack": "おかえり",
+    "enterEmail": "サインインするにはメールアドレスを入力してください",
+    "sendMagicLink": "マジックリンクを送信",
+    "checkEmail": "メールを確認してください",
+    "magicLinkSent": "あなたのメールにマジックリンクを送信しました",
+    "continueWithGoogle": "Googleで続行",
+    "continueWithMicrosoft": "Microsoftで続行",
+    "orContinueWith": "または、",
+    "haveAccessCode": "アクセスコードをお持ちですか?",
+    "enterAccessCode": "アクセスコードを入力してください",
+    "accessCode": "アクセスコード",
+    "invalidCode": "無効なアクセスコード",
+    "loggedInAs": "ログイン"
+  },
+  "dashboard": {
+    "welcomeMessage": "ようこそ、{{name}} さん！",
+    "latestMessages": "最新メッセージ",
+    "upcomingEvents": "今後のイベント",
+    "quickLinks": "クイックリンク",
+    "viewAll": "すべて表示",
+    "noMessages": "表示するメッセージはありません。",
+    "noEvents": "今後のイベントはありません",
+    "todaySchedule": "今日のスケジュール",
+    "nothingScheduled": "今日は何も予定されていません",
+    "parentPulse": "親の脈動",
+    "pulseAvailable": "アンケート調査あり",
+    "completePulse": "フィードバックを共有する",
+    "principalMessage": "校長メッセージ",
+    "readMore": "続きを読む",
+    "allMessages": "すべてのメッセージ",
+    "formsUrgent": "3 日以内に提出が必要な未処理のフォームが {{count}} 件あります"
+  },
+  "messages": {
+    "title": "メッセージ",
+    "acknowledge": "認める",
+    "acknowledged": "承認済み",
+    "urgent": "緊急メッセージ",
+    "pinned": "ピン留め",
+    "actionRequired": "必要なアクション",
+    "dueDate": "期限: {{date}}",
+    "formExpired": "フォームの有効期限が切れました",
+    "formDueToday": "入力が必要なフォーム — 本日締め切り",
+    "formDaysRemaining": "入力が必要なフォーム — 残り {{days}} 日",
+    "completed": "完了",
+    "wholeSchool": "全校生徒"
+  },
+  "events": {
+    "title": "イベントカレンダー",
+    "subtitle": "今後の学校行事と活動",
+    "allEvents": "すべてのイベント",
+    "noEvents": "今後のイベントはありません。",
+    "rsvp": "お返事お願いします：",
+    "rsvpRequired": "返信が必要です",
+    "attending": "はい",
+    "maybe": "多分",
+    "notAttending": "いいえ"
+  },
+  "termDates": {
+    "title": "学期日程",
+    "subtitle": "学年度の重要な日程",
+    "term": "用語 {{number}}",
+    "termStart": "学期開始",
+    "termEnd": "学期終了",
+    "halfTerm": "半期",
+    "holiday": "休日",
+    "induction": "誘導"
+  },
+  "principal": {
+    "title": "校長からの最新情報",
+    "subtitle": "校長からの毎週のメッセージ",
+    "weekOf": "{{date}} の週",
+    "current": "現在",
+    "hearts": "{{count}} ハート",
+    "noUpdates": "まだ更新はありません"
+  },
+  "pulse": {
+    "title": "親の脈動",
+    "subtitle": "フィードバックを共有する",
+    "question": "質問 {{current}} / {{total}}",
+    "stronglyDisagree": "強く反対",
+    "stronglyAgree": "強く同意する",
+    "yourFeedback": "フィードバック（任意）",
+    "submitting": "送信中...",
+    "thankYou": "ありがとう！",
+    "feedbackSubmitted": "フィードバックは送信されました。改善にご協力いただきありがとうございます。"
+  },
+  "policies": {
+    "title": "ポリシー",
+    "subtitle": "学校の方針と文書",
+    "noPolicies": "利用可能なポリシーはありません",
+    "download": "ダウンロード",
+    "lastUpdated": "最終更新日: {{date}}"
+  },
+  "files": {
+    "title": "ファイル",
+    "subtitle": "ドキュメントとリソース",
+    "noFiles": "利用可能なファイルはありません",
+    "download": "ダウンロード",
+    "folder": "フォルダ",
+    "file": "ファイル"
+  },
+  "knowledge": {
+    "title": "学校情報",
+    "subtitle": "当校に関する役立つ情報",
+    "searchPlaceholder": "記事を検索...",
+    "noArticles": "記事が見つかりません",
+    "backToCategories": "カテゴリに戻る"
+  },
+  "settings": {
+    "language": "言語",
+    "myChildren": "私の子供たち",
+    "notifications": "通知",
+    "account": "アカウント"
+  },
+  "form": {
+    "submit": "提出する",
+    "required": "{{field}} は必須です",
+    "selectOption": "オプションを選択",
+    "consent": "医療フォームが必要です",
+    "payment": "支払期限",
+    "rsvpRequired": "返信が必要です"
+  },
+  "dates": {
+    "today": "今日",
+    "tomorrow": "明日",
+    "yesterday": "昨日"
+  }
+}

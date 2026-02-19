@@ -1,4 +1,23 @@
 node_modules/
 dist/
 .env
+.env.*
 *.log
+server/.env
+**/node_modules/
+
+# Android
+apps/parent/android/app/google-services.json
+apps/parent/android/.gradle/
+apps/parent/android/build/
+apps/parent/android/app/build/
+apps/parent/android/.idea/
+apps/parent/android/local.properties
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store

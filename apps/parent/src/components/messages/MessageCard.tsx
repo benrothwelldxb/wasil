@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ThumbsUp, Share2, AlertTriangle, Pin, Check, Clock } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField } from '@wasil/shared'
@@ -18,6 +19,7 @@ export function MessageCard({
   showAcknowledgeButton = true,
   classColors = {},
 }: MessageCardProps) {
+  const { t } = useTranslation()
   const theme = useTheme()
 
   const form = message.form
@@ -35,13 +37,13 @@ export function MessageCard({
     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
 
     if (diffDays < 0) {
-      return { color: 'bg-gray-500', text: 'Form expired' }
+      return { color: 'bg-gray-500', text: t('messages.formExpired') }
     }
     if (diffDays === 0) {
-      return { color: 'bg-red-500', text: 'Form requiring your input \u2014 due today' }
+      return { color: 'bg-red-500', text: t('messages.formDueToday') }
     }
     if (diffDays <= 3) {
-      return { color: 'bg-amber-500', text: `Form requiring your input \u2014 ${diffDays} day${diffDays === 1 ? '' : 's'} remaining` }
+      return { color: 'bg-amber-500', text: t('messages.formDaysRemaining', { days: diffDays }) }
     }
     return null
   }
@@ -97,17 +99,17 @@ export function MessageCard({
 
     const badges: Record<string, { label: string; bg: string; text: string }> = {
       consent: {
-        label: message.actionLabel || 'Medical Form Required',
+        label: message.actionLabel || t('form.consent'),
         bg: 'bg-amber-50',
         text: 'text-amber-700',
       },
       payment: {
-        label: message.actionLabel || 'Payment Due',
+        label: message.actionLabel || t('form.payment'),
         bg: 'bg-amber-50',
         text: 'text-amber-700',
       },
       rsvp: {
-        label: message.actionLabel || 'RSVP Required',
+        label: message.actionLabel || t('form.rsvpRequired'),
         bg: 'bg-purple-50',
         text: 'text-purple-700',
       },
@@ -158,7 +160,7 @@ export function MessageCard({
       {isUrgent && (
         <div className="bg-red-500 px-4 py-1.5 flex items-center space-x-2">
           <AlertTriangle className="h-4 w-4 text-white" />
-          <span className="text-white text-sm font-semibold">Urgent Message</span>
+          <span className="text-white text-sm font-semibold">{t('messages.urgent')}</span>
         </div>
       )}
 
@@ -195,7 +197,7 @@ export function MessageCard({
             {hasForm && hasResponded && (
               <span className="flex items-center space-x-1 text-green-600 text-sm font-medium">
                 <Check className="h-4 w-4" />
-                <span>Completed</span>
+                <span>{t('messages.completed')}</span>
               </span>
             )}
             {getActionBadge()}
@@ -336,7 +338,7 @@ export function MessageCard({
               className="mt-4 w-full py-2 rounded-lg text-white font-medium transition-opacity hover:opacity-90"
               style={{ backgroundColor: theme.colors.brandColor }}
             >
-              Submit
+              {t('common.submit')}
             </button>
           </div>
         )}
@@ -350,13 +352,13 @@ export function MessageCard({
                 className="flex items-center space-x-2 px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 <ThumbsUp className="h-4 w-4" />
-                <span className="text-sm font-medium">Acknowledge</span>
+                <span className="text-sm font-medium">{t('messages.acknowledge')}</span>
               </button>
             )}
             {message.acknowledged && (
               <span className="flex items-center space-x-2 text-green-600 text-sm font-medium">
                 <ThumbsUp className="h-4 w-4" />
-                <span>Acknowledged</span>
+                <span>{t('messages.acknowledged')}</span>
               </span>
             )}
           </div>

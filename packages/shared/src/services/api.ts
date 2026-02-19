@@ -559,6 +559,12 @@ export const users = {
     fetchApi<{ message: string }>(`/api/users/${id}`, {
       method: 'DELETE',
     }),
+  languages: () => fetchApi<Array<{ code: string; name: string }>>('/api/users/languages'),
+  updateLanguage: (language: string) =>
+    fetchApi<{ language: string }>('/api/users/me/language', {
+      method: 'PATCH',
+      body: JSON.stringify({ language }),
+    }),
 }
 
 // Classes

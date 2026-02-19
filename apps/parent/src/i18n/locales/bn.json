@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "লোড হচ্ছে...",
+    "error": "একটি ত্রুটি ঘটেছে।",
+    "save": "সংরক্ষণ করুন",
+    "cancel": "বাতিল করুন",
+    "submit": "জমা দিন",
+    "done": "সম্পন্ন",
+    "next": "পরবর্তী",
+    "back": "পিছনে",
+    "close": "বন্ধ করা",
+    "search": "অনুসন্ধান করুন",
+    "noResults": "কোন ফলাফল পাওয়া যায়নি",
+    "required": "প্রয়োজনীয়"
+  },
+  "nav": {
+    "menu": "মেনু",
+    "home": "হোম",
+    "eventsCalendar": "ইভেন্ট ক্যালেন্ডার",
+    "termDates": "মেয়াদের তারিখ",
+    "principalUpdates": "অধ্যক্ষের আপডেট",
+    "schoolInfo": "স্কুলের তথ্য",
+    "policies": "নীতিমালা",
+    "files": "ফাইল",
+    "superAdmin": "সুপার অ্যাডমিন",
+    "logout": "লগআউট"
+  },
+  "auth": {
+    "login": "লগইন",
+    "signIn": "লগ ইন",
+    "signOut": "সাইন আউট",
+    "email": "ইমেইল",
+    "password": "পাসওয়ার্ড",
+    "forgotPassword": "পাসওয়ার্ড ভুলে গেছেন?",
+    "welcomeBack": "আবার স্বাগতম।",
+    "enterEmail": "সাইন ইন করতে আপনার ইমেল লিখুন",
+    "sendMagicLink": "ম্যাজিক লিঙ্ক পাঠান",
+    "checkEmail": "তোমার ইমেল চেক করো।",
+    "magicLinkSent": "আমরা আপনার ইমেলে একটি জাদুকরী লিঙ্ক পাঠিয়েছি।",
+    "continueWithGoogle": "গুগলের সাথে চালিয়ে যান",
+    "continueWithMicrosoft": "মাইক্রোসফটের সাথে চালিয়ে যান",
+    "orContinueWith": "অথবা চালিয়ে যান",
+    "haveAccessCode": "অ্যাক্সেস কোড আছে?",
+    "enterAccessCode": "অ্যাক্সেস কোড লিখুন",
+    "accessCode": "অ্যাক্সেস কোড",
+    "invalidCode": "অবৈধ অ্যাক্সেস কোড",
+    "loggedInAs": "লগ ইন করেছেন"
+  },
+  "dashboard": {
+    "welcomeMessage": "স্বাগতম, {{name}}!",
+    "latestMessages": "সর্বশেষ বার্তা",
+    "upcomingEvents": "আসন্ন ঘটনাবলী",
+    "quickLinks": "দ্রুত লিংক",
+    "viewAll": "সবগুলো দেখুন",
+    "noMessages": "প্রদর্শনের জন্য কোনও বার্তা নেই।",
+    "noEvents": "আসন্ন কোনও ইভেন্ট নেই",
+    "todaySchedule": "আজকের সময়সূচী",
+    "nothingScheduled": "আজ কিছু নির্ধারিত নেই",
+    "parentPulse": "প্যারেন্ট পালস",
+    "pulseAvailable": "জরিপ উপলব্ধ",
+    "completePulse": "আপনার মতামত শেয়ার করুন",
+    "principalMessage": "অধ্যক্ষের বার্তা",
+    "readMore": "আরও পড়ুন",
+    "allMessages": "সকল বার্তা",
+    "formsUrgent": "আপনার {{count}} বকেয়া ফর্ম(গুলি) ৩ দিনের মধ্যে জমা দিতে হবে।"
+  },
+  "messages": {
+    "title": "বার্তা",
+    "acknowledge": "স্বীকার করুন",
+    "acknowledged": "স্বীকৃত",
+    "urgent": "জরুরি বার্তা",
+    "pinned": "পিন করা হয়েছে",
+    "actionRequired": "পদক্ষেপ প্রয়োজন",
+    "dueDate": "শেষ তারিখ: {{date}}",
+    "formExpired": "ফর্মের মেয়াদ শেষ হয়ে গেছে",
+    "formDueToday": "আপনার মতামত প্রয়োজন এমন ফর্ম — আজ জমা দেওয়ার তারিখ",
+    "formDaysRemaining": "ফর্মটিতে আপনার মতামত প্রয়োজন — {{days}} দিন বাকি।",
+    "completed": "সম্পন্ন",
+    "wholeSchool": "পুরো স্কুল"
+  },
+  "events": {
+    "title": "ইভেন্ট ক্যালেন্ডার",
+    "subtitle": "আসন্ন স্কুল ইভেন্ট এবং কার্যক্রম",
+    "allEvents": "সকল ইভেন্ট",
+    "noEvents": "আসন্ন কোনও ইভেন্ট নেই।",
+    "rsvp": "উত্তর:",
+    "rsvpRequired": "উত্তর দেওয়া প্রয়োজন",
+    "attending": "হাঁ",
+    "maybe": "হয়তো",
+    "notAttending": "না"
+  },
+  "termDates": {
+    "title": "মেয়াদের তারিখ",
+    "subtitle": "শিক্ষাবর্ষের মূল তারিখগুলি",
+    "term": "মেয়াদ {{number}}",
+    "termStart": "মেয়াদ শুরু",
+    "termEnd": "মেয়াদ শেষ",
+    "halfTerm": "অর্ধ-মেয়াদী",
+    "holiday": "ছুটির দিন",
+    "induction": "আবেশন"
+  },
+  "principal": {
+    "title": "অধ্যক্ষের আপডেট",
+    "subtitle": "অধ্যক্ষের সাপ্তাহিক বার্তা",
+    "weekOf": "{{date}} এর সপ্তাহ",
+    "current": "বর্তমান",
+    "hearts": "{{count}} হৃদয়",
+    "noUpdates": "এখনও কোনও আপডেট নেই।"
+  },
+  "pulse": {
+    "title": "প্যারেন্ট পালস",
+    "subtitle": "আপনার মতামত শেয়ার করুন",
+    "question": "{{total}} এর প্রশ্ন {{current}}",
+    "stronglyDisagree": "সম্পূর্ণ অসম্মত",
+    "stronglyAgree": "দৃঢ়ভাবে একমত",
+    "yourFeedback": "আপনার মতামত (ঐচ্ছিক)",
+    "submitting": "জমা দেওয়া হচ্ছে...",
+    "thankYou": "ধন্যবাদ!",
+    "feedbackSubmitted": "আপনার মতামত সফলভাবে জমা দেওয়া হয়েছে। আমাদের উন্নতিতে সাহায্য করার জন্য আপনার সময় দেওয়ার জন্য আমরা কৃতজ্ঞ।"
+  },
+  "policies": {
+    "title": "নীতিমালা",
+    "subtitle": "স্কুল নীতিমালা এবং নথিপত্র",
+    "noPolicies": "কোনও নীতিমালা উপলব্ধ নেই",
+    "download": "ডাউনলোড করুন",
+    "lastUpdated": "শেষ আপডেট: {{date}}"
+  },
+  "files": {
+    "title": "ফাইল",
+    "subtitle": "নথি এবং সম্পদ",
+    "noFiles": "কোনও ফাইল উপলব্ধ নেই",
+    "download": "ডাউনলোড করুন",
+    "folder": "ফোল্ডার",
+    "file": "ফাইল"
+  },
+  "knowledge": {
+    "title": "স্কুলের তথ্য",
+    "subtitle": "আমাদের স্কুল সম্পর্কে সহায়ক তথ্য",
+    "searchPlaceholder": "নিবন্ধগুলি অনুসন্ধান করুন...",
+    "noArticles": "কোন নিবন্ধ পাওয়া যায়নি",
+    "backToCategories": "বিভাগগুলিতে ফিরে যান"
+  },
+  "settings": {
+    "language": "ভাষা",
+    "myChildren": "আমার সন্তানরা",
+    "notifications": "বিজ্ঞপ্তি",
+    "account": "হিসাব"
+  },
+  "form": {
+    "submit": "জমা দিন",
+    "required": "{{field}} প্রয়োজন",
+    "selectOption": "একটি বিকল্প নির্বাচন করুন",
+    "consent": "মেডিকেল ফর্ম আবশ্যক",
+    "payment": "বকেয়া পেমেন্ট",
+    "rsvpRequired": "উত্তর দেওয়া প্রয়োজন"
+  },
+  "dates": {
+    "today": "আজ",
+    "tomorrow": "আগামীকাল",
+    "yesterday": "গতকাল"
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "common": {
+    "loading": "Завантаження...",
+    "error": "Сталася помилка",
+    "save": "Зберегти",
+    "cancel": "Скасувати",
+    "submit": "Надіслати",
+    "done": "Готово",
+    "next": "Далі",
+    "back": "Назад",
+    "close": "Закрити",
+    "search": "Пошук",
+    "noResults": "Результатів не знайдено",
+    "required": "Обов'язково"
+  },
+  "nav": {
+    "menu": "Меню",
+    "home": "Дім",
+    "eventsCalendar": "Календар подій",
+    "termDates": "Дати семестру",
+    "principalUpdates": "Оновлення від директора",
+    "schoolInfo": "Інформація про школу",
+    "policies": "Політики",
+    "files": "Файли",
+    "superAdmin": "Суперадміністратор",
+    "logout": "Вийти"
+  },
+  "auth": {
+    "login": "Вхід",
+    "signIn": "Увійти",
+    "signOut": "Вийти",
+    "email": "Електронна пошта",
+    "password": "Пароль",
+    "forgotPassword": "Забули пароль?",
+    "welcomeBack": "Ласкаво просимо назад",
+    "enterEmail": "Введіть свою електронну адресу для входу",
+    "sendMagicLink": "Надіслати чарівне посилання",
+    "checkEmail": "Перевірте свою електронну пошту",
+    "magicLinkSent": "Ми надіслали чарівне посилання на вашу електронну пошту",
+    "continueWithGoogle": "Продовжити з Google",
+    "continueWithMicrosoft": "Продовжуйте роботу з Microsoft",
+    "orContinueWith": "Або продовжуйте з",
+    "haveAccessCode": "Маєте код доступу?",
+    "enterAccessCode": "Введіть код доступу",
+    "accessCode": "Код доступу",
+    "invalidCode": "Недійсний код доступу",
+    "loggedInAs": "Увійшов як"
+  },
+  "dashboard": {
+    "welcomeMessage": "Ласкаво просимо, {{name}}!",
+    "latestMessages": "Останні повідомлення",
+    "upcomingEvents": "Майбутні події",
+    "quickLinks": "Швидкі посилання",
+    "viewAll": "Переглянути всі",
+    "noMessages": "Немає повідомлень для відображення.",
+    "noEvents": "Немає майбутніх подій",
+    "todaySchedule": "Розклад на сьогодні",
+    "nothingScheduled": "На сьогодні нічого не заплановано",
+    "parentPulse": "Батьківський пульс",
+    "pulseAvailable": "Опитування доступне",
+    "completePulse": "Поділіться своїм відгуком",
+    "principalMessage": "Повідомлення директора",
+    "readMore": "Читати далі",
+    "allMessages": "Усі повідомлення",
+    "formsUrgent": "У вас є {{count}} невиконаних форм, які потрібно подати протягом 3 днів"
+  },
+  "messages": {
+    "title": "Повідомлення",
+    "acknowledge": "Підтвердити",
+    "acknowledged": "Визнано",
+    "urgent": "Термінове повідомлення",
+    "pinned": "Закріплено",
+    "actionRequired": "Необхідна дія",
+    "dueDate": "Термін сплати: {{date}}",
+    "formExpired": "Термін дії форми минув.",
+    "formDueToday": "Форма, в якій потрібно ввести дані — здати сьогодні",
+    "formDaysRemaining": "Форма, що потребує вашого введення — залишилося {{days}} днів",
+    "completed": "Завершено",
+    "wholeSchool": "Вся школа"
+  },
+  "events": {
+    "title": "Календар подій",
+    "subtitle": "Майбутні шкільні події та заходи",
+    "allEvents": "Усі події",
+    "noEvents": "Немає майбутніх подій.",
+    "rsvp": "Підтвердити участь:",
+    "rsvpRequired": "Потрібна відповідь",
+    "attending": "Так",
+    "maybe": "Можливо",
+    "notAttending": "Ні"
+  },
+  "termDates": {
+    "title": "Дати семестру",
+    "subtitle": "Ключові дати навчального року",
+    "term": "Термін {{number}}",
+    "termStart": "Початок семестру",
+    "termEnd": "Кінець терміну",
+    "halfTerm": "Половина терміну",
+    "holiday": "Свято",
+    "induction": "Індукція"
+  },
+  "principal": {
+    "title": "Оновлення від директора",
+    "subtitle": "Щотижневі повідомлення від директора",
+    "weekOf": "Тиждень {{date}}",
+    "current": "Поточний",
+    "hearts": "{{count}} серця",
+    "noUpdates": "Поки що немає оновлень"
+  },
+  "pulse": {
+    "title": "Батьківський пульс",
+    "subtitle": "Поділіться своїм відгуком",
+    "question": "Запитання {{current}} з {{total}}",
+    "stronglyDisagree": "Категорично не згоден",
+    "stronglyAgree": "Повністю згоден",
+    "yourFeedback": "Ваш відгук (необов'язково)",
+    "submitting": "Надсилання...",
+    "thankYou": "Дякую!",
+    "feedbackSubmitted": "Ваш відгук успішно надіслано. Дякуємо, що знайшли час допомогти нам покращити роботу."
+  },
+  "policies": {
+    "title": "Політики",
+    "subtitle": "Шкільні правила та документи",
+    "noPolicies": "Немає доступних правил",
+    "download": "Завантажити",
+    "lastUpdated": "Останнє оновлення: {{date}}"
+  },
+  "files": {
+    "title": "Файли",
+    "subtitle": "Документи та ресурси",
+    "noFiles": "Немає доступних файлів",
+    "download": "Завантажити",
+    "folder": "Папка",
+    "file": "Файл"
+  },
+  "knowledge": {
+    "title": "Інформація про школу",
+    "subtitle": "Корисна інформація про нашу школу",
+    "searchPlaceholder": "Пошук статей...",
+    "noArticles": "Статей не знайдено",
+    "backToCategories": "Назад до категорій"
+  },
+  "settings": {
+    "language": "Мова",
+    "myChildren": "Мої діти",
+    "notifications": "Сповіщення",
+    "account": "Обліковий запис"
+  },
+  "form": {
+    "submit": "Надіслати",
+    "required": "Потрібно вказати {{field}}",
+    "selectOption": "Виберіть опцію",
+    "consent": "Необхідна медична форма",
+    "payment": "Сплачено",
+    "rsvpRequired": "Потрібне підтвердження участі"
+  },
+  "dates": {
+    "today": "Сьогодні",
+    "tomorrow": "Завтра",
+    "yesterday": "Вчора"
+  }
+}

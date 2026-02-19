@@ -11,6 +11,7 @@ declare global {
       name: string
       role: 'PARENT' | 'STAFF' | 'ADMIN' | 'SUPER_ADMIN'
       schoolId: string
+      preferredLanguage: string
       children?: Array<{
         id: string
         name: string
