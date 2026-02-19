@@ -18,10 +18,7 @@ RUN npm ci
 COPY packages/shared ./packages/shared
 COPY apps ./apps
 
-# Build shared package
-RUN npm run build --workspace=packages/shared
-
-# Build the specified app
+# Build the specified app (shared package is used as TypeScript source)
 RUN npm run build --workspace=apps/${APP_NAME}
 
 # Production stage
