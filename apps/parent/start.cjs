@@ -14,6 +14,7 @@ if (!fs.existsSync(distPath)) {
   process.exit(1);
 }
 
+console.log('=== PARENT APP STARTING ===');
 console.log('Serving files from:', distPath);
 console.log('dist contents:', fs.readdirSync(distPath));
 
