@@ -277,7 +277,7 @@ router.post('/login', async (req, res) => {
 
 // Set password (for admin/staff accounts) - also bootstraps admin if needed
 router.post('/set-password', async (req, res) => {
-  const { email, password, adminSecret, name, schoolName } = req.body
+  const { email, password, adminSecret, name, schoolName, role } = req.body
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' })
@@ -320,16 +320,17 @@ router.post('/set-password', async (req, res) => {
 
       // Create admin user
       const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
+      const userRole = role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN'
       user = await prisma.user.create({
         data: {
           email: email.toLowerCase(),
           name: name || 'Admin',
-          role: 'ADMIN',
+          role: userRole,
           schoolId: school.id,
           passwordHash,
         },
       })
-      console.log('Bootstrap: Created admin user', user.id)
+      console.log('Bootstrap: Created admin user', user.id, 'with role', userRole)
 
       return res.json({ message: 'Admin user created successfully', bootstrapped: true })
     }
@@ -342,12 +343,18 @@ router.post('/set-password', async (req, res) => {
     // Hash and store password
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
 
+    // Build update data
+    const updateData: { passwordHash: string; role?: string } = { passwordHash }
+    if (role === 'SUPER_ADMIN' || role === 'ADMIN' || role === 'STAFF') {
+      updateData.role = role
+    }
+
     await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash },
+      data: updateData,
     })
 
-    res.json({ message: 'Password set successfully' })
+    res.json({ message: 'Password set successfully', roleUpdated: !!updateData.role })
   } catch (error) {
     console.error('Set password error:', error)
     res.status(500).json({ error: 'Failed to set password' })
