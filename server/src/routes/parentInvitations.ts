@@ -575,9 +575,27 @@ router.patch('/:id/resend', isAdmin, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No email address associated with this invitation' })
     }
 
-    // TODO: Integrate with email service (SendGrid/SES)
-    // For now, just log the action
-    console.log(`Would send email to ${invitation.parentEmail} for invitation ${invitation.accessCode}`)
+    // Send invitation email
+    const childrenNames = [
+      ...invitation.childLinks.map(c => c.childName),
+      ...invitation.studentLinks.map(s => `${s.student.firstName} ${s.student.lastName}`),
+    ]
+
+    const PARENT_APP_URL = process.env.PARENT_APP_URL || 'http://localhost:3000'
+    const magicLink = `${PARENT_APP_URL}/register?code=${invitation.accessCode}`
+
+    const { sendInvitationEmail } = await import('../services/email.js')
+    const emailSent = await sendInvitationEmail({
+      to: invitation.parentEmail,
+      magicLink,
+      accessCode: invitation.accessCode,
+      schoolName: invitation.school.name,
+      childrenNames,
+    })
+
+    if (!emailSent) {
+      console.error('Failed to send invitation email to', invitation.parentEmail)
+    }
 
     logAudit({
       req,
