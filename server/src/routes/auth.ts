@@ -275,9 +275,9 @@ router.post('/login', async (req, res) => {
   }
 })
 
-// Set password (for admin/staff accounts)
+// Set password (for admin/staff accounts) - also bootstraps admin if needed
 router.post('/set-password', async (req, res) => {
-  const { email, password, adminSecret } = req.body
+  const { email, password, adminSecret, name, schoolName } = req.body
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' })
@@ -294,12 +294,44 @@ router.post('/set-password', async (req, res) => {
   }
 
   try {
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
     })
 
+    // Bootstrap: create school and admin user if they don't exist
     if (!user) {
-      return res.status(404).json({ error: 'User not found' })
+      // Check if any school exists
+      let school = await prisma.school.findFirst()
+
+      if (!school) {
+        // Create default school
+        school = await prisma.school.create({
+          data: {
+            name: schoolName || 'My School',
+            shortName: schoolName?.substring(0, 10) || 'School',
+            city: 'City',
+            academicYear: '2025-2026',
+            brandColor: '#1e40af',
+            accentColor: '#3b82f6',
+          },
+        })
+        console.log('Bootstrap: Created school', school.id)
+      }
+
+      // Create admin user
+      const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
+      user = await prisma.user.create({
+        data: {
+          email: email.toLowerCase(),
+          name: name || 'Admin',
+          role: 'ADMIN',
+          schoolId: school.id,
+          passwordHash,
+        },
+      })
+      console.log('Bootstrap: Created admin user', user.id)
+
+      return res.json({ message: 'Admin user created successfully', bootstrapped: true })
     }
 
     // Only allow password setup for admin/staff
