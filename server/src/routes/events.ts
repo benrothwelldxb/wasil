@@ -27,6 +27,7 @@ router.get('/', isAuthenticated, async (req, res) => {
         schoolId: user.schoolId,
         OR: [
           { targetClass: 'Whole School' },
+          { targetClass: 'all' },
           { classId: { in: childClassIds } },
           ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
         ],
