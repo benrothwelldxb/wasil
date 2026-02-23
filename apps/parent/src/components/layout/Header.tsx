@@ -15,7 +15,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
   const { defaultSchool } = config
 
   return (
-    <header style={{ backgroundColor: theme.colors.brandColor, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+    <header className="sticky top-0 z-50" style={{ backgroundColor: theme.colors.brandColor, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
       <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           {theme.logoIconUrl ? (
