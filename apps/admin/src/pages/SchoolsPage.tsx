@@ -12,6 +12,7 @@ interface EditSchoolModalProps {
 function EditSchoolModal({ school, onClose, onSaved }: EditSchoolModalProps) {
   const [name, setName] = useState(school.name)
   const [shortName, setShortName] = useState(school.shortName)
+  const [city, setCity] = useState(school.city || '')
   const [tagline, setTagline] = useState(school.tagline || '')
   const [brandColor, setBrandColor] = useState(school.brandColor)
   const [accentColor, setAccentColor] = useState(school.accentColor)
@@ -25,6 +26,7 @@ function EditSchoolModal({ school, onClose, onSaved }: EditSchoolModalProps) {
       await api.schools.updateBranding(school.id, {
         name,
         shortName,
+        city: city || undefined,
         tagline: tagline || undefined,
         brandColor,
         accentColor,
@@ -69,6 +71,16 @@ function EditSchoolModal({ school, onClose, onSaved }: EditSchoolModalProps) {
                 value={shortName}
                 onChange={e => setShortName(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">City / Location</label>
+              <input
+                type="text"
+                value={city}
+                onChange={e => setCity(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g. City of Arabia"
               />
             </div>
             <div>
