@@ -219,7 +219,7 @@ export function RegisterPage() {
               </p>
             </div>
 
-            {(validationResult.children.length > 0 || validationResult.students?.length > 0) && (
+            {(validationResult.children.length > 0 || (validationResult.students && validationResult.students.length > 0)) && (
               <div className="bg-gray-50 rounded-lg p-4">
                 <p className="text-sm font-medium text-gray-700 mb-3">
                   {validationResult.parentName
