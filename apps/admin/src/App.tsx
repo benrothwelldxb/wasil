@@ -19,6 +19,7 @@ import { FilesPage } from './pages/FilesPage'
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage'
 import { SchoolsPage } from './pages/SchoolsPage'
 import { AuditLogPage } from './pages/AuditLogPage'
+import { SchedulePage } from './pages/SchedulePage'
 
 const PARENT_APP_URL = import.meta.env.VITE_PARENT_URL || 'http://localhost:3000'
 
@@ -101,6 +102,7 @@ export default function App() {
         <Route path="/weekly" element={<WeeklyMessagesPage />} />
         <Route path="/term-dates" element={<TermDatesPage />} />
         <Route path="/pulse" element={<PulsePage />} />
+        <Route path="/schedule" element={<SchedulePage />} />
         <Route path="/year-groups" element={<YearGroupsPage />} />
         <Route path="/classes" element={<ClassesPage />} />
         <Route path="/students" element={<StudentsPage />} />
