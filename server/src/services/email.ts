@@ -37,6 +37,9 @@ function getFromEmail(): string {
 export async function sendEmail({ to, subject, html, text }: SendEmailParams): Promise<boolean> {
   const client = getResendClient()
 
+  console.log(`[Email] Attempting to send email to ${to}, subject: "${subject}"`)
+  console.log(`[Email] Resend client configured: ${!!client}`)
+
   if (!client) {
     console.log('=== EMAIL (Resend not configured) ===')
     console.log(`To: ${to}`)
@@ -46,9 +49,12 @@ export async function sendEmail({ to, subject, html, text }: SendEmailParams): P
     return true
   }
 
+  const fromEmail = getFromEmail()
+  console.log(`[Email] Sending from: ${fromEmail}`)
+
   try {
-    const { error } = await client.emails.send({
-      from: getFromEmail(),
+    const { data, error } = await client.emails.send({
+      from: fromEmail,
       to,
       subject,
       html,
@@ -56,13 +62,14 @@ export async function sendEmail({ to, subject, html, text }: SendEmailParams): P
     })
 
     if (error) {
-      console.error('Resend error:', error)
+      console.error('[Email] Resend error:', error)
       return false
     }
 
+    console.log(`[Email] Successfully sent! ID: ${data?.id}`)
     return true
   } catch (error) {
-    console.error('Failed to send email:', error)
+    console.error('[Email] Failed to send email:', error)
     return false
   }
 }
