@@ -343,18 +343,24 @@ router.post('/set-password', async (req, res) => {
     // Hash and store password
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
 
-    // Build update data
-    const updateData: { passwordHash: string; role?: string } = { passwordHash }
+    // Update user with password and optionally role
     if (role === 'SUPER_ADMIN' || role === 'ADMIN' || role === 'STAFF') {
-      updateData.role = role
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          role: role as 'SUPER_ADMIN' | 'ADMIN' | 'STAFF',
+        },
+      })
+      return res.json({ message: 'Password set successfully', roleUpdated: true })
     }
 
     await prisma.user.update({
       where: { id: user.id },
-      data: updateData,
+      data: { passwordHash },
     })
 
-    res.json({ message: 'Password set successfully', roleUpdated: !!updateData.role })
+    res.json({ message: 'Password set successfully' })
   } catch (error) {
     console.error('Set password error:', error)
     res.status(500).json({ error: 'Failed to set password' })
