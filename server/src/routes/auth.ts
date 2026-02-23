@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express'
 import passport from 'passport'
 import crypto from 'crypto'
+import bcrypt from 'bcrypt'
 import prisma from '../services/prisma.js'
 import { isAuthenticated } from '../middleware/auth.js'
 import { generateAccessToken, generateRefreshToken, revokeRefreshToken, rotateRefreshToken } from '../services/jwt.js'
 import { sendMagicLinkEmail, sendInvitationEmail } from '../services/email.js'
+
+const SALT_ROUNDS = 12
 
 const router = Router()
 
@@ -186,6 +189,136 @@ router.post('/demo-login', async (req, res) => {
   } catch (error) {
     console.error('Demo login error:', error)
     res.status(500).json({ error: 'Login failed' })
+  }
+})
+
+// Email/password login (for admin/staff)
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' })
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      include: {
+        children: { include: { class: true } },
+        studentLinks: { include: { student: { include: { class: true } } } },
+        school: true,
+      },
+    })
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
+
+    // Check if user has password auth enabled
+    if (!user.passwordHash) {
+      return res.status(401).json({ error: 'Password login not enabled for this account' })
+    }
+
+    // Verify password
+    const isValid = await bcrypt.compare(password, user.passwordHash)
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
+
+    // Only allow admin/staff to use password login
+    if (user.role !== 'ADMIN' && user.role !== 'STAFF') {
+      return res.status(403).json({ error: 'Password login is only available for staff accounts' })
+    }
+
+    const accessToken = generateAccessToken(user)
+    const refreshToken = await generateRefreshToken(user)
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        schoolId: user.schoolId,
+        avatarUrl: user.avatarUrl,
+        preferredLanguage: user.preferredLanguage,
+        children: user.children.map(child => ({
+          id: child.id,
+          name: child.name,
+          classId: child.classId,
+          className: child.class.name,
+        })),
+        studentLinks: user.studentLinks.map(link => ({
+          studentId: link.student.id,
+          studentName: `${link.student.firstName} ${link.student.lastName}`,
+          className: link.student.class.name,
+        })),
+        school: {
+          id: user.school.id,
+          name: user.school.name,
+          shortName: user.school.shortName,
+          city: user.school.city,
+          academicYear: user.school.academicYear,
+          brandColor: user.school.brandColor,
+          accentColor: user.school.accentColor,
+          tagline: user.school.tagline,
+          logoUrl: user.school.logoUrl,
+          logoIconUrl: user.school.logoIconUrl,
+        },
+      },
+      accessToken,
+      refreshToken,
+    })
+  } catch (error) {
+    console.error('Login error:', error)
+    res.status(500).json({ error: 'Login failed' })
+  }
+})
+
+// Set password (for admin/staff accounts)
+router.post('/set-password', async (req, res) => {
+  const { email, password, adminSecret } = req.body
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' })
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' })
+  }
+
+  // Require admin secret for setting passwords (simple security measure)
+  const expectedSecret = process.env.ADMIN_SETUP_SECRET
+  if (!expectedSecret || adminSecret !== expectedSecret) {
+    return res.status(403).json({ error: 'Invalid admin secret' })
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    })
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    // Only allow password setup for admin/staff
+    if (user.role !== 'ADMIN' && user.role !== 'STAFF') {
+      return res.status(403).json({ error: 'Password login is only available for staff accounts' })
+    }
+
+    // Hash and store password
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    })
+
+    res.json({ message: 'Password set successfully' })
+  } catch (error) {
+    console.error('Set password error:', error)
+    res.status(500).json({ error: 'Failed to set password' })
   }
 })
 

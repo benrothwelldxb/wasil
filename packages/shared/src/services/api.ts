@@ -147,6 +147,14 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 // Auth
 export const auth = {
   me: () => fetchApi<User>('/auth/me'),
+  login: async (email: string, password: string) => {
+    const result = await fetchApi<{ user: User; accessToken: string; refreshToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    })
+    setTokens(result.accessToken, result.refreshToken)
+    return result.user
+  },
   demoLogin: async (email: string, role?: string) => {
     const result = await fetchApi<{ user: User; accessToken: string; refreshToken: string }>('/auth/demo-login', {
       method: 'POST',

@@ -7,6 +7,7 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   login: (email: string, role?: string) => Promise<void>
+  loginWithPassword: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   handleOAuthCallback: (accessToken: string, refreshToken: string) => Promise<void>
@@ -61,6 +62,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const loginWithPassword = async (email: string, password: string) => {
+    setIsLoading(true)
+    try {
+      const userData = await auth.login(email, password)
+      setUser(userData)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const logout = async () => {
     try {
       await auth.logout()
@@ -89,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         login,
+        loginWithPassword,
         logout,
         refreshUser,
         handleOAuthCallback,

@@ -56,6 +56,9 @@ model User {
   microsoftId String? @unique
   avatarUrl   String?
 
+  // Password auth (for admin/staff)
+  passwordHash String?
+
   // Language preference for translations (ISO 639-1 code)
   preferredLanguage String @default("en")
 
