@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Plus, X, Pencil, Trash2, Calendar } from 'lucide-react'
+import { Plus, X, Pencil, Trash2, Calendar, Database } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
 import type { TermDate, TermDateType } from '@wasil/shared'
 
@@ -61,6 +61,21 @@ export function TermDatesPage() {
   const [editingDate, setEditingDate] = useState<TermDate | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<TermDate | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSeeding, setIsSeeding] = useState(false)
+
+  const handleSeed = async () => {
+    if (!confirm('This will replace all existing term dates with UAE 2025-2026 demo data. Continue?')) return
+    setIsSeeding(true)
+    try {
+      await api.termDates.seed()
+      refetch()
+    } catch (err) {
+      console.error('Failed to seed term dates:', err)
+      alert('Failed to seed term dates')
+    } finally {
+      setIsSeeding(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -142,14 +157,24 @@ export function TermDatesPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-slate-900">Term Dates</h2>
-        <button
-          onClick={() => { setShowForm(true); setEditingDate(null); setForm(emptyForm) }}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium"
-          style={{ backgroundColor: theme.colors.brandColor }}
-        >
-          <Plus className="w-4 h-4" />
-          New Term Date
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSeed}
+            disabled={isSeeding}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-50"
+          >
+            <Database className="w-4 h-4" />
+            {isSeeding ? 'Seeding...' : 'Seed Demo Data'}
+          </button>
+          <button
+            onClick={() => { setShowForm(true); setEditingDate(null); setForm(emptyForm) }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium"
+            style={{ backgroundColor: theme.colors.brandColor }}
+          >
+            <Plus className="w-4 h-4" />
+            New Term Date
+          </button>
+        </div>
       </div>
 
       {/* Form */}

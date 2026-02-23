@@ -390,6 +390,10 @@ export const termDates = {
     fetchApi<{ message: string }>(`/api/term-dates/${id}`, {
       method: 'DELETE',
     }),
+  seed: () =>
+    fetchApi<{ message: string; count: number }>('/api/term-dates/seed', {
+      method: 'POST',
+    }),
 }
 
 // Weekly Message
