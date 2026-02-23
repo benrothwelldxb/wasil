@@ -85,7 +85,7 @@ router.get('/:id', isAuthenticated, isSuperAdmin, async (req, res) => {
 router.patch('/:id/branding', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params
-    const { brandColor, accentColor, tagline, logoUrl, logoIconUrl, name, shortName } = req.body
+    const { brandColor, accentColor, tagline, logoUrl, logoIconUrl, name, shortName, city } = req.body
 
     // Check if school exists
     const existingSchool = await prisma.school.findUnique({
@@ -105,6 +105,7 @@ router.patch('/:id/branding', isAuthenticated, isSuperAdmin, async (req, res) =>
     if (logoIconUrl !== undefined) updateData.logoIconUrl = logoIconUrl
     if (name !== undefined) updateData.name = name
     if (shortName !== undefined) updateData.shortName = shortName
+    if (city !== undefined) updateData.city = city
 
     const school = await prisma.school.update({
       where: { id },

@@ -304,7 +304,7 @@ router.post('/set-password', async (req, res) => {
           data: {
             name: schoolName || 'My School',
             shortName: schoolName?.substring(0, 10) || 'School',
-            city: 'City',
+            city: 'Dubai',
             academicYear: '2025-2026',
             brandColor: '#1e40af',
             accentColor: '#3b82f6',
