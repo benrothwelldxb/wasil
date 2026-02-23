@@ -126,20 +126,20 @@ router.post('/seed', isAdmin, async (req, res) => {
     // UAE School Calendar 2025-2026
     const termDates = [
       // Term 1
-      { term: 1, termName: 'Term 1', label: 'Term 1 Starts', date: '2025-08-25', type: 'term-start', color: '#22c55e' },
-      { term: 1, termName: 'Term 1', label: 'UAE National Day', sublabel: 'Public Holiday', date: '2025-12-02', endDate: '2025-12-03', type: 'public-holiday', color: '#ef4444' },
-      { term: 1, termName: 'Term 1', label: 'Winter Break', sublabel: 'Term 1 Ends', date: '2025-12-13', endDate: '2026-01-05', type: 'term-end', color: '#3b82f6' },
+      { term: 1, termName: 'Term 1', label: 'Term 1 Starts', date: '2025-08-25', type: 'term-start', color: 'green' },
+      { term: 1, termName: 'Term 1', label: 'UAE National Day', sublabel: 'Public Holiday', date: '2025-12-02', endDate: '2025-12-03', type: 'public-holiday', color: 'purple' },
+      { term: 1, termName: 'Term 1', label: 'Winter Break', sublabel: 'Term 1 Ends', date: '2025-12-13', endDate: '2026-01-05', type: 'term-end', color: 'blue' },
 
       // Term 2
-      { term: 2, termName: 'Term 2', label: 'Term 2 Starts', date: '2026-01-06', type: 'term-start', color: '#22c55e' },
-      { term: 2, termName: 'Term 2', label: 'Spring Break', sublabel: 'Mid-term Break', date: '2026-03-23', endDate: '2026-04-03', type: 'half-term', color: '#f59e0b' },
-      { term: 2, termName: 'Term 2', label: 'Eid al-Fitr', sublabel: 'Public Holiday (dates TBC)', date: '2026-03-20', endDate: '2026-03-22', type: 'public-holiday', color: '#ef4444' },
-      { term: 2, termName: 'Term 2', label: 'Term 2 Ends', date: '2026-04-03', type: 'term-end', color: '#3b82f6' },
+      { term: 2, termName: 'Term 2', label: 'Term 2 Starts', date: '2026-01-06', type: 'term-start', color: 'green' },
+      { term: 2, termName: 'Term 2', label: 'Spring Break', sublabel: 'Mid-term Break', date: '2026-03-23', endDate: '2026-04-03', type: 'half-term', color: 'orange' },
+      { term: 2, termName: 'Term 2', label: 'Eid al-Fitr', sublabel: 'Public Holiday (dates TBC)', date: '2026-03-20', endDate: '2026-03-22', type: 'public-holiday', color: 'purple' },
+      { term: 2, termName: 'Term 2', label: 'Term 2 Ends', date: '2026-04-03', type: 'term-end', color: 'blue' },
 
       // Term 3
-      { term: 3, termName: 'Term 3', label: 'Term 3 Starts', date: '2026-04-13', type: 'term-start', color: '#22c55e' },
-      { term: 3, termName: 'Term 3', label: 'Eid al-Adha', sublabel: 'Public Holiday (dates TBC)', date: '2026-05-27', endDate: '2026-05-30', type: 'public-holiday', color: '#ef4444' },
-      { term: 3, termName: 'Term 3', label: 'Last Day of School', sublabel: 'Summer Break Begins', date: '2026-07-03', type: 'term-end', color: '#3b82f6' },
+      { term: 3, termName: 'Term 3', label: 'Term 3 Starts', date: '2026-04-13', type: 'term-start', color: 'green' },
+      { term: 3, termName: 'Term 3', label: 'Eid al-Adha', sublabel: 'Public Holiday (dates TBC)', date: '2026-05-27', endDate: '2026-05-30', type: 'public-holiday', color: 'purple' },
+      { term: 3, termName: 'Term 3', label: 'Last Day of School', sublabel: 'Summer Break Begins', date: '2026-07-03', type: 'term-end', color: 'blue' },
     ]
 
     const created = await prisma.termDate.createMany({

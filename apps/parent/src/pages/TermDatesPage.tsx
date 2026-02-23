@@ -11,6 +11,9 @@ const DOT_COLORS: Record<string, string> = {
   green: '#22c55e',
   burgundy: '#7f0029',
   orange: '#f97316',
+  red: '#ef4444',
+  amber: '#f59e0b',
+  gray: '#6b7280',
 }
 
 export function TermDatesPage() {
@@ -126,7 +129,7 @@ export function TermDatesPage() {
                     {showDot(td.type) ? (
                       <div
                         className="w-3 h-3 rounded-full mt-1.5 flex-shrink-0"
-                        style={{ backgroundColor: DOT_COLORS[td.color] || DOT_COLORS.burgundy }}
+                        style={{ backgroundColor: DOT_COLORS[td.color] || (td.color?.startsWith('#') ? td.color : DOT_COLORS.burgundy) }}
                       />
                     ) : (
                       <div className="w-3 flex-shrink-0" />
@@ -137,7 +140,7 @@ export function TermDatesPage() {
                       <p
                         className="font-semibold"
                         style={{
-                          color: showDot(td.type) ? DOT_COLORS[td.color] || '#111' : '#111',
+                          color: showDot(td.type) ? (DOT_COLORS[td.color] || (td.color?.startsWith('#') ? td.color : '#111')) : '#111',
                         }}
                       >
                         {td.label}
