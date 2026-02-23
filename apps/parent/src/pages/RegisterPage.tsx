@@ -1,22 +1,26 @@
-import React, { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { api, useTheme, config } from '@wasil/shared'
+import React, { useState } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { api, useTheme, config, setTokens } from '@wasil/shared'
 import type { InvitationValidationResponse } from '@wasil/shared'
+import { Eye, EyeOff } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export function RegisterPage() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const theme = useTheme()
   const { defaultSchool } = config
 
   const [code, setCode] = useState(searchParams.get('code') || '')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(searchParams.get('error') || '')
   const [isValidating, setIsValidating] = useState(false)
+  const [isRegistering, setIsRegistering] = useState(false)
   const [validationResult, setValidationResult] = useState<InvitationValidationResponse | null>(null)
-  const [isSendingEmail, setIsSendingEmail] = useState(false)
-  const [emailSent, setEmailSent] = useState(false)
 
   const validateInvitation = async (codeToValidate?: string) => {
     const validateCode = codeToValidate || code
@@ -46,51 +50,67 @@ export function RegisterPage() {
     }
   }
 
-  const sendMagicLink = async () => {
-    if (!email || !validationResult?.invitationId) {
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!email) {
       setError('Please enter your email address')
       return
     }
 
-    // Basic email validation
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError('Please enter a valid email address')
       return
     }
 
-    setIsSendingEmail(true)
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    if (!validationResult?.invitationId) {
+      setError('Invalid invitation. Please try again.')
+      return
+    }
+
+    setIsRegistering(true)
     setError('')
 
     try {
-      // First, update the invitation with the email if different
-      // Then send the magic link
-      const response = await fetch(`${API_URL}/auth/magic-link/send-registration`, {
+      const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invitationId: validationResult.invitationId,
           email: email.toLowerCase(),
+          password,
+          name: validationResult.parentName,
         }),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to send email')
+        throw new Error(data.error || 'Registration failed')
       }
 
-      setEmailSent(true)
+      // Set tokens and redirect to home
+      setTokens(data.accessToken, data.refreshToken)
+      window.location.href = '/'
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send magic link')
+      setError(err instanceof Error ? err.message : 'Registration failed')
     } finally {
-      setIsSendingEmail(false)
+      setIsRegistering(false)
     }
   }
 
   const formatCode = (value: string) => {
-    // Remove non-alphanumeric characters and convert to uppercase
     const cleaned = value.toUpperCase().replace(/[^A-Z0-9]/g, '')
-
-    // Format as ABC-123-XYZ
     if (cleaned.length <= 3) return cleaned
     if (cleaned.length <= 6) return `${cleaned.slice(0, 3)}-${cleaned.slice(3)}`
     return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6, 9)}`
@@ -108,11 +128,6 @@ export function RegisterPage() {
     validateInvitation()
   }
 
-  const handleEmailSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    sendMagicLink()
-  }
-
   const getErrorMessage = (errorCode: string) => {
     switch (errorCode) {
       case 'invalid': return 'This invitation code is invalid.'
@@ -122,49 +137,6 @@ export function RegisterPage() {
       case 'server': return 'Something went wrong. Please try again.'
       default: return errorCode
     }
-  }
-
-  // Show success message after email is sent
-  if (emailSent) {
-    return (
-      <div className="min-h-[70vh] flex items-center justify-center">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Check your email</h2>
-          <p className="text-gray-600 mb-6">
-            We've sent a magic link to<br />
-            <span className="font-medium text-gray-900">{email}</span>
-          </p>
-          <p className="text-sm text-gray-500 mb-6">
-            Click the link in the email to complete your registration. The link will expire in 15 minutes.
-          </p>
-          <div className="space-y-3">
-            <button
-              onClick={() => sendMagicLink()}
-              disabled={isSendingEmail}
-              className="text-sm font-medium hover:underline"
-              style={{ color: theme.colors.brandColor }}
-            >
-              {isSendingEmail ? 'Sending...' : 'Resend email'}
-            </button>
-            <div className="text-sm text-gray-400">or</div>
-            <button
-              onClick={() => {
-                setEmailSent(false)
-                setEmail('')
-              }}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              Use a different email
-            </button>
-          </div>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -247,28 +219,38 @@ export function RegisterPage() {
               </p>
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm font-medium text-gray-700 mb-3">
-                {validationResult.parentName
-                  ? `Welcome, ${validationResult.parentName}!`
-                  : 'Your children will be linked to your account:'}
-              </p>
-              <ul className="space-y-2">
-                {validationResult.children.map((child, index) => (
-                  <li key={index} className="flex items-center text-sm text-gray-600">
-                    <span className="w-2 h-2 rounded-full bg-blue-500 mr-2" />
-                    <span className="font-medium">{child.childName}</span>
-                    <span className="mx-2 text-gray-400">-</span>
-                    <span>{child.className}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {(validationResult.children.length > 0 || validationResult.students?.length > 0) && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-700 mb-3">
+                  {validationResult.parentName
+                    ? `Welcome, ${validationResult.parentName}!`
+                    : 'Your children will be linked to your account:'}
+                </p>
+                <ul className="space-y-2">
+                  {validationResult.children.map((child, index) => (
+                    <li key={index} className="flex items-center text-sm text-gray-600">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 mr-2" />
+                      <span className="font-medium">{child.childName}</span>
+                      <span className="mx-2 text-gray-400">-</span>
+                      <span>{child.className}</span>
+                    </li>
+                  ))}
+                  {validationResult.students?.map((student, index) => (
+                    <li key={`s-${index}`} className="flex items-center text-sm text-gray-600">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 mr-2" />
+                      <span className="font-medium">{student.studentName}</span>
+                      <span className="mx-2 text-gray-400">-</span>
+                      <span>{student.className}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-            <form onSubmit={handleEmailSubmit} className="space-y-4">
+            <form onSubmit={handleRegister} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Enter your email address
+                  Email address
                 </label>
                 <input
                   type="email"
@@ -279,21 +261,61 @@ export function RegisterPage() {
                   }}
                   placeholder="your.email@example.com"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  autoFocus
-                  disabled={isSendingEmail}
+                  disabled={isRegistering}
                 />
-                <p className="text-xs text-gray-500 mt-2">
-                  We'll send you a magic link to complete registration
-                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Create password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value)
+                      setError('')
+                    }}
+                    placeholder="At least 8 characters"
+                    className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={isRegistering}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm password
+                </label>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value)
+                    setError('')
+                  }}
+                  placeholder="Enter password again"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={isRegistering}
+                />
               </div>
 
               <button
                 type="submit"
-                disabled={isSendingEmail || !email}
+                disabled={isRegistering || !email || !password || !confirmPassword}
                 className="w-full py-3 rounded-lg font-semibold text-white transition-colors disabled:opacity-50"
-                style={{ backgroundColor: theme.colors.brandColor }}
+                style={{ backgroundColor: validationResult?.school?.brandColor || theme.colors.brandColor }}
               >
-                {isSendingEmail ? 'Sending...' : 'Send Magic Link'}
+                {isRegistering ? 'Creating account...' : 'Create Account'}
               </button>
             </form>
 
@@ -302,6 +324,8 @@ export function RegisterPage() {
                 setValidationResult(null)
                 setCode('')
                 setEmail('')
+                setPassword('')
+                setConfirmPassword('')
               }}
               className="w-full text-sm text-gray-500 hover:text-gray-700"
             >

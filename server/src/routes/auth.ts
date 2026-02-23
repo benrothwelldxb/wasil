@@ -225,11 +225,6 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
-    // Only allow admin/staff to use password login
-    if (user.role !== 'ADMIN' && user.role !== 'STAFF') {
-      return res.status(403).json({ error: 'Password login is only available for staff accounts' })
-    }
-
     const accessToken = generateAccessToken(user)
     const refreshToken = await generateRefreshToken(user)
 
@@ -364,6 +359,172 @@ router.post('/set-password', async (req, res) => {
   } catch (error) {
     console.error('Set password error:', error)
     res.status(500).json({ error: 'Failed to set password' })
+  }
+})
+
+// Register parent with password (from invitation)
+router.post('/register', async (req, res) => {
+  const { invitationId, accessCode, email, password, name } = req.body
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' })
+  }
+
+  if (!invitationId && !accessCode) {
+    return res.status(400).json({ error: 'Invitation ID or access code is required' })
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' })
+  }
+
+  try {
+    // Find invitation
+    let invitation
+    if (invitationId) {
+      invitation = await prisma.parentInvitation.findUnique({
+        where: { id: invitationId },
+        include: {
+          school: true,
+          childLinks: { include: { class: true } },
+          studentLinks: { include: { student: { include: { class: true } } } },
+        },
+      })
+    } else {
+      // Normalize code
+      const normalizedCode = accessCode.toUpperCase().replace(/[^A-Z0-9]/g, '')
+      const formattedCode = normalizedCode.length === 9
+        ? `${normalizedCode.slice(0, 3)}-${normalizedCode.slice(3, 6)}-${normalizedCode.slice(6, 9)}`
+        : accessCode.toUpperCase()
+
+      invitation = await prisma.parentInvitation.findUnique({
+        where: { accessCode: formattedCode },
+        include: {
+          school: true,
+          childLinks: { include: { class: true } },
+          studentLinks: { include: { student: { include: { class: true } } } },
+        },
+      })
+    }
+
+    if (!invitation) {
+      return res.status(404).json({ error: 'Invalid invitation' })
+    }
+
+    if (invitation.status !== 'PENDING') {
+      return res.status(400).json({ error: 'This invitation has already been used or revoked' })
+    }
+
+    // Check if user already exists
+    let user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    })
+
+    if (user) {
+      return res.status(400).json({ error: 'An account with this email already exists. Please login instead.' })
+    }
+
+    // Create user with password
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
+    user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        name: name || invitation.parentName || email.split('@')[0],
+        role: 'PARENT',
+        schoolId: invitation.schoolId,
+        passwordHash,
+      },
+    })
+
+    // Link children (legacy approach)
+    for (const link of invitation.childLinks) {
+      await prisma.child.create({
+        data: {
+          name: link.childName,
+          parentId: user.id,
+          classId: link.classId,
+        },
+      })
+    }
+
+    // Link students (new approach)
+    for (const link of invitation.studentLinks) {
+      await prisma.parentStudentLink.create({
+        data: {
+          userId: user.id,
+          studentId: link.studentId,
+        },
+      })
+    }
+
+    // Mark invitation as redeemed
+    await prisma.parentInvitation.update({
+      where: { id: invitation.id },
+      data: {
+        status: 'REDEEMED',
+        redeemedAt: new Date(),
+        redeemedByUserId: user.id,
+        parentEmail: email.toLowerCase(),
+      },
+    })
+
+    // Fetch full user for response
+    const fullUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        children: { include: { class: true } },
+        studentLinks: { include: { student: { include: { class: true } } } },
+        school: true,
+      },
+    })
+
+    if (!fullUser) {
+      return res.status(500).json({ error: 'Failed to load user' })
+    }
+
+    // Generate tokens
+    const accessToken = generateAccessToken(fullUser)
+    const refreshToken = await generateRefreshToken(fullUser)
+
+    res.json({
+      user: {
+        id: fullUser.id,
+        email: fullUser.email,
+        name: fullUser.name,
+        role: fullUser.role,
+        schoolId: fullUser.schoolId,
+        avatarUrl: fullUser.avatarUrl,
+        preferredLanguage: fullUser.preferredLanguage,
+        children: fullUser.children.map(child => ({
+          id: child.id,
+          name: child.name,
+          classId: child.classId,
+          className: child.class.name,
+        })),
+        studentLinks: fullUser.studentLinks.map(link => ({
+          studentId: link.student.id,
+          studentName: `${link.student.firstName} ${link.student.lastName}`,
+          className: link.student.class.name,
+        })),
+        school: {
+          id: fullUser.school.id,
+          name: fullUser.school.name,
+          shortName: fullUser.school.shortName,
+          city: fullUser.school.city,
+          academicYear: fullUser.school.academicYear,
+          brandColor: fullUser.school.brandColor,
+          accentColor: fullUser.school.accentColor,
+          tagline: fullUser.school.tagline,
+          logoUrl: fullUser.school.logoUrl,
+          logoIconUrl: fullUser.school.logoIconUrl,
+        },
+      },
+      accessToken,
+      refreshToken,
+    })
+  } catch (error) {
+    console.error('Registration error:', error)
+    res.status(500).json({ error: 'Registration failed' })
   }
 })
 
