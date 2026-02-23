@@ -560,7 +560,11 @@ router.patch('/:id/resend', isAdmin, async (req: Request, res: Response) => {
 
     const invitation = await prisma.parentInvitation.findFirst({
       where: { id, schoolId: user.schoolId },
-      include: { school: { select: { name: true } } },
+      include: {
+        school: { select: { name: true } },
+        childLinks: true,
+        studentLinks: { include: { student: true } },
+      },
     })
 
     if (!invitation) {
