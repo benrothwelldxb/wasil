@@ -704,6 +704,8 @@ router.post('/validate', async (req: Request, res: Response) => {
 
     res.json({
       valid: true,
+      invitationId: invitation.id,
+      parentEmail: invitation.parentEmail,
       school: {
         id: invitation.school.id,
         name: invitation.school.name,
