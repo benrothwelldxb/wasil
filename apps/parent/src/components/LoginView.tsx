@@ -189,20 +189,7 @@ export function LoginView() {
           </>
         )}
 
-        <div className="my-6">
-          <a
-            href={import.meta.env.VITE_ADMIN_URL || 'http://localhost:3001'}
-            className="w-full py-3 rounded-lg font-semibold transition-colors border-2 text-center block"
-            style={{
-              borderColor: theme.colors.brandColor,
-              color: theme.colors.brandColor,
-            }}
-          >
-            Staff / Admin Login →
-          </a>
-        </div>
-
-        <p className="text-center text-sm text-gray-600">
+        <p className="text-center text-sm text-gray-600 mt-6">
           New parent?{' '}
           <a href="/register" className="font-medium" style={{ color: theme.colors.brandColor }}>
             Register here
