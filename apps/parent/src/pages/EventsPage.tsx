@@ -48,15 +48,25 @@ export function EventsPage() {
 
   const filterOptions = ['all', 'Whole School', ...userClasses]
 
+  // Helper to check if an event is whole-school
+  const isWholeSchool = (targetClass: string) =>
+    targetClass === 'Whole School' || targetClass === 'all' || targetClass === 'All Parents'
+
   // Filter and group events by month
   const groupedEvents = useMemo(() => {
     if (!events) return []
 
     let filtered = events
     if (selectedFilter !== 'all') {
-      filtered = events.filter(
-        (e) => e.targetClass === selectedFilter || e.targetClass === 'Whole School'
-      )
+      if (selectedFilter === 'Whole School') {
+        // Show all whole-school events regardless of how they're stored
+        filtered = events.filter((e) => isWholeSchool(e.targetClass))
+      } else {
+        // Show class-specific events + whole-school events
+        filtered = events.filter(
+          (e) => e.targetClass === selectedFilter || isWholeSchool(e.targetClass)
+        )
+      }
     }
 
     // Sort by date
@@ -243,7 +253,7 @@ export function EventsPage() {
                                 className="inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium text-white"
                                 style={{ backgroundColor: classColor }}
                               >
-                                {event.targetClass}
+                                {isWholeSchool(event.targetClass) ? t('messages.wholeSchool') : event.targetClass}
                               </span>
                             </div>
                             {event.requiresRsvp && (
