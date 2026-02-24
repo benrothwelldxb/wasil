@@ -18,6 +18,7 @@ function EditSchoolModal({ school, onClose, onSaved }: EditSchoolModalProps) {
   const [accentColor, setAccentColor] = useState(school.accentColor)
   const [logoUrl, setLogoUrl] = useState(school.logoUrl || '')
   const [logoIconUrl, setLogoIconUrl] = useState(school.logoIconUrl || '')
+  const [paymentUrl, setPaymentUrl] = useState(school.paymentUrl || '')
   const [isSaving, setIsSaving] = useState(false)
 
   const handleSave = async () => {
@@ -32,6 +33,7 @@ function EditSchoolModal({ school, onClose, onSaved }: EditSchoolModalProps) {
         accentColor,
         logoUrl: logoUrl || undefined,
         logoIconUrl: logoIconUrl || undefined,
+        paymentUrl: paymentUrl || undefined,
       })
       onSaved()
       onClose()
@@ -119,6 +121,16 @@ function EditSchoolModal({ school, onClose, onSaved }: EditSchoolModalProps) {
                 onChange={e => setLogoIconUrl(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="https://..."
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment URL (PayHub)</label>
+              <input
+                type="text"
+                value={paymentUrl}
+                onChange={e => setPaymentUrl(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="https://www.payhub360.com/login/"
               />
             </div>
           </div>

@@ -12,7 +12,7 @@ export function LinksPage() {
 
   const { data, isLoading } = useApi<LinksResponse>(
     () => api.links.list(),
-    { categories: [], uncategorized: [] }
+    []
   )
 
   const categories = data?.categories || []

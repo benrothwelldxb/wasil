@@ -29,6 +29,7 @@ router.get('/', isAuthenticated, isSuperAdmin, async (req, res) => {
         tagline: true,
         logoUrl: true,
         logoIconUrl: true,
+        paymentUrl: true,
         createdAt: true,
         updatedAt: true,
         _count: {
@@ -62,6 +63,7 @@ router.get('/:id', isAuthenticated, isSuperAdmin, async (req, res) => {
         tagline: true,
         logoUrl: true,
         logoIconUrl: true,
+        paymentUrl: true,
         createdAt: true,
         updatedAt: true,
         _count: {
@@ -85,7 +87,7 @@ router.get('/:id', isAuthenticated, isSuperAdmin, async (req, res) => {
 router.patch('/:id/branding', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params
-    const { brandColor, accentColor, tagline, logoUrl, logoIconUrl, name, shortName, city } = req.body
+    const { brandColor, accentColor, tagline, logoUrl, logoIconUrl, name, shortName, city, paymentUrl } = req.body
 
     // Check if school exists
     const existingSchool = await prisma.school.findUnique({
@@ -106,6 +108,7 @@ router.patch('/:id/branding', isAuthenticated, isSuperAdmin, async (req, res) =>
     if (name !== undefined) updateData.name = name
     if (shortName !== undefined) updateData.shortName = shortName
     if (city !== undefined) updateData.city = city
+    if (paymentUrl !== undefined) updateData.paymentUrl = paymentUrl
 
     const school = await prisma.school.update({
       where: { id },
@@ -121,6 +124,7 @@ router.patch('/:id/branding', isAuthenticated, isSuperAdmin, async (req, res) =>
         tagline: true,
         logoUrl: true,
         logoIconUrl: true,
+        paymentUrl: true,
         createdAt: true,
         updatedAt: true,
       },

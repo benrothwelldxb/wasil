@@ -87,6 +87,7 @@ router.get('/me', isAuthenticated, async (req, res) => {
         tagline: user.school.tagline,
         logoUrl: user.school.logoUrl,
         logoIconUrl: user.school.logoIconUrl,
+        paymentUrl: user.school.paymentUrl,
       },
     })
   } catch (error) {
@@ -531,6 +532,7 @@ router.post('/register', async (req, res) => {
           tagline: fullUser.school.tagline,
           logoUrl: fullUser.school.logoUrl,
           logoIconUrl: fullUser.school.logoIconUrl,
+          paymentUrl: fullUser.school.paymentUrl,
         },
       },
       accessToken,

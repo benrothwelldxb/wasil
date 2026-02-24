@@ -15,6 +15,7 @@ interface ThemeContextType {
   tagline: string
   logoUrl: string
   logoIconUrl: string
+  paymentUrl: string
   colors: ThemeColors
   isLoaded: boolean
 }
@@ -27,6 +28,7 @@ const defaultTheme: ThemeContextType = {
   tagline: 'Stay Connected',
   logoUrl: '/school-logo.png',
   logoIconUrl: config.defaultSchool.wasilIcon,
+  paymentUrl: '',
   colors: {
     brandColor: config.colors.burgundy,
     accentColor: config.colors.gold,
@@ -61,6 +63,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       tagline: school.tagline || 'Stay Connected',
       logoUrl: school.logoUrl || '/school-logo.png',
       logoIconUrl: school.logoIconUrl || config.defaultSchool.wasilIcon,
+      paymentUrl: school.paymentUrl || '',
       colors: {
         brandColor,
         accentColor,

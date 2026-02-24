@@ -7,7 +7,7 @@ export function LinksPage() {
   const theme = useTheme()
   const { data, refetch } = useApi<LinksAllResponse>(
     () => api.links.listAll(),
-    { categories: [], links: [] }
+    []
   )
 
   const categories = data?.categories || []

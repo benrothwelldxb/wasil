@@ -284,6 +284,17 @@ export const forms = {
     }),
   exportCSV: (id: string, title: string) =>
     downloadCSV(`/api/forms/${id}/export`, `${title.replace(/[^a-zA-Z0-9]/g, '_')}_responses.csv`),
+  // Public export link management
+  getExportToken: (id: string) =>
+    fetchApi<{ hasExportToken: boolean; exportToken: string | null }>(`/api/forms/${id}/export-token`),
+  generateExportToken: (id: string) =>
+    fetchApi<{ exportToken: string; message: string }>(`/api/forms/${id}/export-token`, {
+      method: 'POST',
+    }),
+  deleteExportToken: (id: string) =>
+    fetchApi<{ message: string }>(`/api/forms/${id}/export-token`, {
+      method: 'DELETE',
+    }),
 }
 
 // Events

@@ -77,7 +77,8 @@
     "formDueToday": "Form requiring your input — due today",
     "formDaysRemaining": "Form requiring your input — {{days}} day(s) remaining",
     "completed": "Completed",
-    "wholeSchool": "Whole School"
+    "wholeSchool": "Whole School",
+    "payNow": "Pay Now"
   },
   "events": {
     "title": "Events Calendar",

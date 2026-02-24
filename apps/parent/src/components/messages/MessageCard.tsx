@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ThumbsUp, Share2, AlertTriangle, Pin, Check, Clock } from 'lucide-react'
+import { ThumbsUp, Share2, AlertTriangle, Pin, Check, Clock, CreditCard } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField } from '@wasil/shared'
 
@@ -218,6 +218,20 @@ export function MessageCard({
               {message.actionAmount && ` \u2022 ${message.actionAmount}`}
             </span>
           </div>
+        )}
+
+        {/* Pay Now Button */}
+        {message.actionType === 'payment' && theme.paymentUrl && (
+          <a
+            href={theme.paymentUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-4 flex items-center justify-center space-x-2 w-full py-3 rounded-lg text-white font-medium transition-opacity hover:opacity-90"
+            style={{ backgroundColor: theme.colors.brandColor }}
+          >
+            <CreditCard className="h-5 w-5" />
+            <span>{t('messages.payNow')}</span>
+          </a>
         )}
 
         {/* Message Content */}

@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import crypto from 'crypto'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
@@ -473,6 +474,206 @@ router.patch('/:id/close', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error closing form:', error)
     res.status(500).json({ error: 'Failed to close form' })
+  }
+})
+
+// Generate or regenerate export token (admin only)
+router.post('/:id/export-token', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const existing = await prisma.form.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Form not found' })
+    }
+
+    // Generate a secure random token (32 bytes = 64 hex characters)
+    const exportToken = crypto.randomBytes(32).toString('hex')
+
+    const form = await prisma.form.update({
+      where: { id },
+      data: { exportToken },
+    })
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'FORM', resourceId: form.id, metadata: { title: form.title, action: 'generated_export_token' } })
+
+    res.json({
+      exportToken: form.exportToken,
+      message: 'Export token generated. Anyone with this link can access the form responses.',
+    })
+  } catch (error) {
+    console.error('Error generating export token:', error)
+    res.status(500).json({ error: 'Failed to generate export token' })
+  }
+})
+
+// Delete export token (admin only)
+router.delete('/:id/export-token', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const existing = await prisma.form.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Form not found' })
+    }
+
+    await prisma.form.update({
+      where: { id },
+      data: { exportToken: null },
+    })
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'FORM', resourceId: id, metadata: { title: existing.title, action: 'deleted_export_token' } })
+
+    res.json({ message: 'Export token deleted. Public link is now disabled.' })
+  } catch (error) {
+    console.error('Error deleting export token:', error)
+    res.status(500).json({ error: 'Failed to delete export token' })
+  }
+})
+
+// Public CSV export by token (NO AUTH REQUIRED)
+// WARNING: This endpoint is publicly accessible to anyone with the token
+router.get('/public-export/:token', async (req, res) => {
+  try {
+    const { token } = req.params
+
+    if (!token || token.length < 32) {
+      return res.status(400).json({ error: 'Invalid token' })
+    }
+
+    const form = await prisma.form.findUnique({
+      where: { exportToken: token },
+      include: {
+        responses: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+                children: {
+                  select: {
+                    name: true,
+                    class: { select: { name: true } },
+                  },
+                },
+                studentLinks: {
+                  select: {
+                    student: {
+                      select: {
+                        firstName: true,
+                        lastName: true,
+                        class: { select: { name: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    })
+
+    if (!form) {
+      return res.status(404).json({ error: 'Form not found or link expired' })
+    }
+
+    const fields = form.fields as Array<{ id: string; label: string; type: string }>
+
+    // Build CSV header
+    const headers = [
+      'Parent Name',
+      'Parent Email',
+      'Children',
+      'Classes',
+      ...fields.map(f => f.label),
+      'Submitted At',
+    ]
+
+    // Build CSV rows
+    const rows = form.responses.map(response => {
+      const answers = response.answers as Record<string, unknown>
+
+      // Get children info (from both old Child model and new StudentLinks)
+      const childrenFromOld = response.user.children?.map(c => c.name) || []
+      const childrenFromNew = response.user.studentLinks?.map(sl => `${sl.student.firstName} ${sl.student.lastName}`) || []
+      const allChildren = [...childrenFromOld, ...childrenFromNew]
+
+      const classesFromOld = response.user.children?.map(c => c.class.name) || []
+      const classesFromNew = response.user.studentLinks?.map(sl => sl.student.class.name) || []
+      const allClasses = [...new Set([...classesFromOld, ...classesFromNew])]
+
+      const fieldValues = fields.map(f => {
+        const val = answers[f.id]
+        if (val === undefined || val === null) return ''
+        if (f.type === 'checkbox') return val ? 'Yes' : 'No'
+        return String(val)
+      })
+
+      return [
+        response.user.name,
+        response.user.email,
+        allChildren.join('; '),
+        allClasses.join('; '),
+        ...fieldValues,
+        new Date(response.createdAt).toISOString(),
+      ]
+    })
+
+    // Convert to CSV
+    const escapeCSV = (val: string) => {
+      if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+        return `"${val.replace(/"/g, '""')}"`
+      }
+      return val
+    }
+
+    const csvContent = [
+      headers.map(escapeCSV).join(','),
+      ...rows.map(row => row.map(escapeCSV).join(',')),
+    ].join('\n')
+
+    // Set headers for CSV - no attachment so Google Sheets can read it directly
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+    res.send(csvContent)
+  } catch (error) {
+    console.error('Error in public export:', error)
+    res.status(500).json({ error: 'Failed to export responses' })
+  }
+})
+
+// Get export token status (admin only)
+router.get('/:id/export-token', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const form = await prisma.form.findFirst({
+      where: { id, schoolId: user.schoolId },
+      select: { id: true, exportToken: true },
+    })
+
+    if (!form) {
+      return res.status(404).json({ error: 'Form not found' })
+    }
+
+    res.json({
+      hasExportToken: !!form.exportToken,
+      exportToken: form.exportToken,
+    })
+  } catch (error) {
+    console.error('Error getting export token:', error)
+    res.status(500).json({ error: 'Failed to get export token' })
   }
 })
 

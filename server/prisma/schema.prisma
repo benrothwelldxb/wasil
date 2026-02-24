@@ -19,6 +19,7 @@ model School {
   tagline      String?  // "Stay Connected" - displayed in header
   logoUrl      String?  // URL to school logo (login page)
   logoIconUrl  String?  // URL to header icon (48x48)
+  paymentUrl   String?  // URL to payment portal (e.g., PayHub)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -474,6 +475,7 @@ model Form {
   schoolId     String
   school       School   @relation(fields: [schoolId], references: [id])
   expiresAt    DateTime?
+  exportToken  String?  @unique // Secret token for public CSV export (Google Sheets IMPORTDATA)
 
   message   Message?
 

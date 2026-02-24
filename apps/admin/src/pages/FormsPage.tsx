@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Plus, X, Pencil, Trash2, XCircle, Eye, FileText, Download } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Plus, X, Pencil, Trash2, XCircle, Eye, FileText, Download, Link2, Copy, RefreshCw, AlertTriangle, Check } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, FORM_TEMPLATES, createFieldsFromTemplate } from '@wasil/shared'
 import type { Class, YearGroup, FormWithResponses, FormType, FormField, FormStatus } from '@wasil/shared'
 import { FormForm } from '../components/forms'
@@ -26,6 +26,10 @@ export function FormsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null)
+  const [exportLinkForm, setExportLinkForm] = useState<FormWithResponses | null>(null)
+  const [exportToken, setExportToken] = useState<string | null>(null)
+  const [isLoadingToken, setIsLoadingToken] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [formData, setFormData] = useState<FormFormData>({
     title: '',
     description: '',
@@ -152,6 +156,58 @@ export function FormsPage() {
     }
   }
 
+  const openExportLinkModal = async (form: FormWithResponses) => {
+    setExportLinkForm(form)
+    setIsLoadingToken(true)
+    setCopied(false)
+    try {
+      const result = await api.forms.getExportToken(form.id)
+      setExportToken(result.exportToken)
+    } catch {
+      setExportToken(null)
+    } finally {
+      setIsLoadingToken(false)
+    }
+  }
+
+  const handleGenerateToken = async () => {
+    if (!exportLinkForm) return
+    setIsLoadingToken(true)
+    setCopied(false)
+    try {
+      const result = await api.forms.generateExportToken(exportLinkForm.id)
+      setExportToken(result.exportToken)
+    } catch {
+      alert('Failed to generate export link')
+    } finally {
+      setIsLoadingToken(false)
+    }
+  }
+
+  const handleDeleteToken = async () => {
+    if (!exportLinkForm) return
+    setIsLoadingToken(true)
+    try {
+      await api.forms.deleteExportToken(exportLinkForm.id)
+      setExportToken(null)
+    } catch {
+      alert('Failed to disable export link')
+    } finally {
+      setIsLoadingToken(false)
+    }
+  }
+
+  const getPublicExportUrl = (token: string) => {
+    const baseUrl = window.location.origin.replace(/:\d+$/, ':3000') // Use API port
+    return `${baseUrl}/api/forms/public-export/${token}`
+  }
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -267,6 +323,112 @@ export function FormsPage() {
         </div>
       )}
 
+      {/* Export Link Modal */}
+      {exportLinkForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-lg w-full">
+            <div className="p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold">Public Export Link</h3>
+                  <p className="text-sm text-gray-500 mt-1">{exportLinkForm.title}</p>
+                </div>
+                <button onClick={() => setExportLinkForm(null)} className="text-gray-400 hover:text-gray-600">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Warning Banner */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                <div className="flex gap-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium text-amber-800">Data Privacy Warning</p>
+                    <p className="text-amber-700 mt-1">
+                      This link allows <strong>anyone</strong> with access to view all form responses, including parent names and emails.
+                      Only share with trusted parties.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {isLoadingToken ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+                </div>
+              ) : exportToken ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Public CSV URL</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={getPublicExportUrl(exportToken)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-mono"
+                      />
+                      <button
+                        onClick={() => copyToClipboard(getPublicExportUrl(exportToken))}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
+                      >
+                        {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                        {copied ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm font-medium text-blue-800 mb-1">Google Sheets Formula</p>
+                    <code className="block text-xs text-blue-700 bg-blue-100 p-2 rounded font-mono break-all">
+                      =IMPORTDATA("{getPublicExportUrl(exportToken)}")
+                    </code>
+                    <button
+                      onClick={() => copyToClipboard(`=IMPORTDATA("${getPublicExportUrl(exportToken)}")`)}
+                      className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Copy formula
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleGenerateToken}
+                      disabled={isLoadingToken}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Regenerate Link
+                    </button>
+                    <button
+                      onClick={handleDeleteToken}
+                      disabled={isLoadingToken}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Disable Link
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <Link2 className="h-10 w-10 mx-auto text-gray-300 mb-3" />
+                  <p className="text-gray-500 text-sm mb-4">No public link enabled for this form.</p>
+                  <button
+                    onClick={handleGenerateToken}
+                    disabled={isLoadingToken}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium"
+                    style={{ backgroundColor: theme.colors.brandColor }}
+                  >
+                    <Link2 className="h-4 w-4" />
+                    Enable Public Export Link
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Forms List */}
       <div className="space-y-3">
         {forms?.map(form => (
@@ -293,9 +455,14 @@ export function FormsPage() {
                   <Eye className="h-4 w-4" />
                 </button>
                 {form.responseCount > 0 && (
-                  <button onClick={() => api.forms.exportCSV(form.id, form.title)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg" title="Export CSV">
-                    <Download className="h-4 w-4" />
-                  </button>
+                  <>
+                    <button onClick={() => api.forms.exportCSV(form.id, form.title)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg" title="Export CSV">
+                      <Download className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => openExportLinkModal(form)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Public Export Link (Google Sheets)">
+                      <Link2 className="h-4 w-4" />
+                    </button>
+                  </>
                 )}
                 <button onClick={() => handleEdit(form)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Edit">
                   <Pencil className="h-4 w-4" />

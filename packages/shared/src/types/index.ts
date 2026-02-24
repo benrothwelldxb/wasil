@@ -40,6 +40,7 @@ export interface School {
   tagline?: string
   logoUrl?: string
   logoIconUrl?: string
+  paymentUrl?: string
 }
 
 // Year Group types
