@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Plus, X, Pencil, Trash2 } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
-import type { Message, Class, YearGroup } from '@wasil/shared'
+import type { Message, Class, YearGroup, Group } from '@wasil/shared'
 import { MessageForm } from '../components/forms'
 import type { MessageFormData, AudienceOption } from '../components/forms'
 
@@ -10,6 +10,7 @@ export function MessagesPage() {
   const { data: messages, refetch: refetchMessages } = useApi<Message[]>(() => api.messages.listAll(), [])
   const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
   const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
+  const { data: groups } = useApi<Group[]>(() => api.groups.list(), [])
 
   const [showForm, setShowForm] = useState(false)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
@@ -21,6 +22,7 @@ export function MessagesPage() {
     expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '',
   })
 
+  const activeGroups = (groups || []).filter(g => g.isActive)
   const audienceOptions: AudienceOption[] = [
     { value: 'Whole School', type: 'school' },
     ...(yearGroups || []).flatMap(yg => {
@@ -31,6 +33,10 @@ export function MessagesPage() {
       ]
     }),
     ...(classes || []).filter(c => !c.yearGroupId).map(c => ({ value: c.name, type: 'class' as const, id: c.id })),
+    ...(activeGroups.length > 0 ? [
+      { value: '── Groups ──', type: 'divider' as const },
+      ...activeGroups.map(g => ({ value: g.name, type: 'group' as const, id: g.id })),
+    ] : []),
   ]
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,6 +46,7 @@ export function MessagesPage() {
       const data = {
         title: formData.title, content: formData.content, targetClass: formData.targetClass,
         classId: formData.classId || undefined, yearGroupId: formData.yearGroupId || undefined,
+        groupId: formData.groupId || undefined,
         isPinned: formData.isPinned, isUrgent: formData.isUrgent, expiresAt: formData.expiresAt || undefined,
         formId: formData.formId || undefined,
         ...(formData.hasAction && { actionType: formData.actionType, actionLabel: formData.actionLabel, actionDueDate: formData.actionDueDate, actionAmount: formData.actionAmount }),

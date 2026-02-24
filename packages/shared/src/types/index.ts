@@ -78,6 +78,7 @@ export interface Message {
   targetClass: string
   classId?: string
   yearGroupId?: string
+  groupId?: string
   schoolId: string
   senderId: string
   senderName: string
@@ -170,6 +171,7 @@ export interface Event {
   targetClass: string
   classId?: string
   yearGroupId?: string
+  groupId?: string
   schoolId: string
   requiresRsvp: boolean
   createdAt: string
@@ -321,6 +323,7 @@ export type AuditResourceType =
   | 'PULSE_SURVEY' | 'YEAR_GROUP' | 'CLASS' | 'STAFF' | 'STUDENT' | 'POLICY'
   | 'FILE' | 'FOLDER' | 'SCHEDULE_ITEM' | 'KNOWLEDGE_CATEGORY'
   | 'KNOWLEDGE_ARTICLE' | 'SCHOOL' | 'FORM' | 'PARENT_INVITATION'
+  | 'GROUP' | 'GROUP_CATEGORY'
 
 export interface AuditLog {
   id: string
@@ -552,4 +555,84 @@ export interface LinksResponse {
 export interface LinksAllResponse {
   categories: LinkCategory[]
   links: ExternalLink[]
+}
+
+// Group/Team types
+export interface GroupCategory {
+  id: string
+  name: string
+  icon?: string | null
+  color?: string | null
+  order: number
+  groupCount?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface Group {
+  id: string
+  name: string
+  description?: string | null
+  categoryId?: string | null
+  category?: {
+    id: string
+    name: string
+    icon?: string | null
+    color?: string | null
+  } | null
+  schoolId: string
+  isActive: boolean
+  memberCount?: number
+  staffCount?: number
+  createdAt: string
+  updatedAt?: string
+}
+
+export interface GroupMember {
+  id: string
+  studentId: string
+  studentName: string
+  firstName: string
+  lastName: string
+  classId: string
+  className: string
+  role?: string | null
+  joinedAt: string
+}
+
+export interface GroupStaffAssignment {
+  id: string
+  userId: string
+  userName: string
+  userEmail: string
+  userRole: string
+  canMessage: boolean
+  canManage: boolean
+  createdAt: string
+}
+
+export interface GroupMemberListResponse {
+  members: GroupMember[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+export interface ParentGroupInfo {
+  id: string
+  name: string
+  description?: string | null
+  category?: {
+    id: string
+    name: string
+    icon?: string | null
+    color?: string | null
+  } | null
+  children: Array<{
+    studentId: string
+    studentName: string
+  }>
 }

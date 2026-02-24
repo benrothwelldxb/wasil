@@ -16,10 +16,12 @@ import {
   Globe,
   ChevronDown,
   ExternalLink,
+  UsersRound,
 } from 'lucide-react'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import * as api from '@wasil/shared'
+import type { ParentGroupInfo } from '@wasil/shared'
 
 interface SideMenuProps {
   open: boolean
@@ -39,12 +41,19 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   const [languages, setLanguages] = useState<SupportedLanguage[]>([])
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
   const [isUpdatingLanguage, setIsUpdatingLanguage] = useState(false)
+  const [parentGroups, setParentGroups] = useState<ParentGroupInfo[]>([])
 
   useEffect(() => {
     if (open && languages.length === 0) {
       api.users.languages().then(setLanguages).catch(console.error)
     }
   }, [open, languages.length])
+
+  useEffect(() => {
+    if (open && user && parentGroups.length === 0) {
+      api.groups.forParent().then(setParentGroups).catch(console.error)
+    }
+  }, [open, user, parentGroups.length])
 
   if (!open || !user) return null
 
@@ -135,22 +144,56 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
               <p className="text-sm font-semibold mb-2" style={{ color: theme.colors.brandColor }}>
                 {t('settings.myChildren')}:
               </p>
-              {user.children?.map((child) => (
-                <div key={child.id} className="text-sm text-gray-600 mb-2">
-                  <div className="font-medium">{child.name} - {child.className}</div>
-                  {child.teacherName && (
-                    <div className="text-xs text-gray-400">Teacher: {child.teacherName}</div>
-                  )}
-                </div>
-              ))}
-              {user.studentLinks?.map((link) => (
-                <div key={link.studentId} className="text-sm text-gray-600 mb-2">
-                  <div className="font-medium">{link.studentName} - {link.className}</div>
-                  {link.teacherName && (
-                    <div className="text-xs text-gray-400">Teacher: {link.teacherName}</div>
-                  )}
-                </div>
-              ))}
+              {user.children?.map((child) => {
+                const childGroups = parentGroups.filter(g =>
+                  g.children.some(c => c.studentName === child.name)
+                )
+                return (
+                  <div key={child.id} className="text-sm text-gray-600 mb-3">
+                    <div className="font-medium">{child.name} - {child.className}</div>
+                    {child.teacherName && (
+                      <div className="text-xs text-gray-400">Teacher: {child.teacherName}</div>
+                    )}
+                    {childGroups.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {childGroups.map(g => (
+                          <span
+                            key={g.id}
+                            className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600"
+                          >
+                            {g.category?.icon || '👥'} {g.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              {user.studentLinks?.map((link) => {
+                const studentGroups = parentGroups.filter(g =>
+                  g.children.some(c => c.studentId === link.studentId)
+                )
+                return (
+                  <div key={link.studentId} className="text-sm text-gray-600 mb-3">
+                    <div className="font-medium">{link.studentName} - {link.className}</div>
+                    {link.teacherName && (
+                      <div className="text-xs text-gray-400">Teacher: {link.teacherName}</div>
+                    )}
+                    {studentGroups.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {studentGroups.map(g => (
+                          <span
+                            key={g.id}
+                            className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600"
+                          >
+                            {g.category?.icon || '👥'} {g.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 

@@ -6,6 +6,7 @@ interface NotificationTarget {
   targetClass: string
   classId?: string
   yearGroupId?: string
+  groupId?: string
   schoolId: string
 }
 
@@ -22,12 +23,25 @@ interface SendNotificationParams {
 
 export async function sendNotification({ req, type, title, body, resourceType, resourceId, data, target }: SendNotificationParams): Promise<void> {
   try {
-    const { targetClass, classId, yearGroupId, schoolId } = target
+    const { targetClass, classId, yearGroupId, groupId, schoolId } = target
 
     // Resolve target audience into parent user IDs
     let parentUserIds: string[] = []
 
-    if (targetClass === 'Whole School') {
+    if (groupId) {
+      // Parents of students in this group
+      const members = await prisma.studentGroupLink.findMany({
+        where: { groupId },
+        select: {
+          student: {
+            select: {
+              parentLinks: { select: { userId: true } },
+            },
+          },
+        },
+      })
+      parentUserIds = [...new Set(members.flatMap(m => m.student.parentLinks.map(pl => pl.userId)))]
+    } else if (targetClass === 'Whole School') {
       // All parents in the school
       const parents = await prisma.user.findMany({
         where: { schoolId, role: 'PARENT' },

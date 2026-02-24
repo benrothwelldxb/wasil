@@ -7,11 +7,12 @@ import { translateTexts } from '../services/translation.js'
 
 const router = Router()
 
-// Get messages (filtered by user's children's classes)
+// Get messages (filtered by user's children's classes and groups)
 router.get('/', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
     const childClassIds = user.children?.map(c => c.classId) || []
+    const studentIds = user.studentLinks?.map(l => l.studentId) || []
     const now = new Date()
 
     // Get year group IDs from children's classes
@@ -23,6 +24,15 @@ router.get('/', isAuthenticated, async (req, res) => {
       : []
     const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
 
+    // Get groups where parent's children are members
+    const childGroupLinks = studentIds.length > 0
+      ? await prisma.studentGroupLink.findMany({
+          where: { studentId: { in: studentIds } },
+          select: { groupId: true },
+        })
+      : []
+    const childGroupIds = [...new Set(childGroupLinks.map(l => l.groupId))]
+
     const messages = await prisma.message.findMany({
       where: {
         schoolId: user.schoolId,
@@ -30,6 +40,7 @@ router.get('/', isAuthenticated, async (req, res) => {
           { targetClass: 'Whole School' },
           { classId: { in: childClassIds } },
           ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
+          ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
         ],
         // Filter out expired messages for parents
         AND: [
@@ -95,6 +106,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       targetClass: msg.targetClass,
       classId: msg.classId,
       yearGroupId: msg.yearGroupId,
+      groupId: msg.groupId,
       schoolId: msg.schoolId,
       senderId: msg.senderId,
       senderName: msg.sender.name,
@@ -165,6 +177,7 @@ router.get('/all', isAdmin, async (req, res) => {
       targetClass: msg.targetClass,
       classId: msg.classId,
       yearGroupId: msg.yearGroupId,
+      groupId: msg.groupId,
       schoolId: msg.schoolId,
       senderId: msg.senderId,
       senderName: msg.sender.name,
@@ -199,7 +212,7 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
   try {
     const user = req.user!
-    const { title, content, targetClass, classId, yearGroupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt, formId } = req.body
+    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt, formId } = req.body
 
     // Staff cannot pin messages (only admin)
     const canPin = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
@@ -211,6 +224,7 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
         targetClass,
         classId: classId || null,
         yearGroupId: yearGroupId || null,
+        groupId: groupId || null,
         schoolId: user.schoolId,
         senderId: user.id,
         senderName: user.name,
@@ -234,7 +248,7 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
     }
 
     logAudit({ req, action: 'CREATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title } })
-    sendNotification({ req, type: 'MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'MESSAGE', resourceId: message.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, schoolId: user.schoolId } })
+    sendNotification({ req, type: 'MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'MESSAGE', resourceId: message.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
 
     res.status(201).json({
       id: message.id,
@@ -243,6 +257,7 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
       targetClass: message.targetClass,
       classId: message.classId,
       yearGroupId: message.yearGroupId,
+      groupId: message.groupId,
       schoolId: message.schoolId,
       senderId: message.senderId,
       senderName: message.senderName,
@@ -267,7 +282,7 @@ router.put('/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, content, targetClass, classId, yearGroupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt, formId } = req.body
+    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt, formId } = req.body
 
     // Verify message belongs to user's school
     const existing = await prisma.message.findFirst({
@@ -286,6 +301,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         targetClass,
         classId: classId || null,
         yearGroupId: yearGroupId || null,
+        groupId: groupId !== undefined ? (groupId || null) : existing.groupId,
         actionType: actionType || null,
         actionLabel: actionLabel || null,
         actionDueDate: actionDueDate ? new Date(actionDueDate) : null,
@@ -314,6 +330,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       targetClass: message.targetClass,
       classId: message.classId,
       yearGroupId: message.yearGroupId,
+      groupId: message.groupId,
       schoolId: message.schoolId,
       senderId: message.senderId,
       senderName: message.senderName,

@@ -43,6 +43,8 @@ model School {
   invitations         ParentInvitation[]
   linkCategories      LinkCategory[]
   externalLinks       ExternalLink[]
+  groupCategories     GroupCategory[]
+  groups              Group[]
 }
 
 // Users (Parents, Staff & Admins)
@@ -88,6 +90,9 @@ model User {
   createdInvitations  ParentInvitation[] @relation("CreatedInvitations")
   redeemedInvitations ParentInvitation[] @relation("RedeemedInvitations")
 
+  // Group management
+  staffGroupAssignments StaffGroupAssignment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -131,6 +136,7 @@ model Student {
 
   parentLinks     ParentStudentLink[]
   invitationLinks StudentInvitationLink[]
+  groupLinks      StudentGroupLink[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -222,6 +228,8 @@ model Message {
   class       Class?   @relation(fields: [classId], references: [id])
   yearGroupId String?
   yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
+  groupId     String?
+  group       Group?   @relation(fields: [groupId], references: [id])
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id])
   senderId    String
@@ -275,6 +283,8 @@ model Event {
   class        Class?   @relation(fields: [classId], references: [id])
   yearGroupId  String?
   yearGroup    YearGroup? @relation(fields: [yearGroupId], references: [id])
+  groupId      String?
+  group        Group?   @relation(fields: [groupId], references: [id])
   schoolId     String
   school       School   @relation(fields: [schoolId], references: [id])
   requiresRsvp Boolean  @default(false)
@@ -565,6 +575,8 @@ enum AuditResourceType {
   SCHOOL
   FORM
   PARENT_INVITATION
+  GROUP
+  GROUP_CATEGORY
 }
 
 model AuditLog {
@@ -647,6 +659,74 @@ model LinkCategory {
   updatedAt   DateTime       @updatedAt
 
   @@index([schoolId, order])
+}
+
+// Group Category for organizing (Sports, Music, Clubs, etc.)
+model GroupCategory {
+  id        String   @id @default(cuid())
+  name      String   // "Sports", "Music", "Clubs"
+  icon      String?  // Emoji
+  color     String?  // Hex color
+  order     Int      @default(0)
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  groups    Group[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId, order])
+}
+
+// Main Group model (Teams, Clubs, etc.)
+model Group {
+  id          String         @id @default(cuid())
+  name        String         // "U11 Football"
+  description String?
+  categoryId  String?
+  category    GroupCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  schoolId    String
+  school      School         @relation(fields: [schoolId], references: [id])
+  isActive    Boolean        @default(true)
+
+  studentMembers  StudentGroupLink[]
+  staffManagers   StaffGroupAssignment[]
+  messages        Message[]
+  events          Event[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId, isActive])
+}
+
+// Student membership in groups
+model StudentGroupLink {
+  id        String   @id @default(cuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  role      String?  // Optional: "captain", "member"
+  joinedAt  DateTime @default(now())
+
+  @@unique([studentId, groupId])
+}
+
+// Staff assignment to manage groups
+model StaffGroupAssignment {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId    String
+  group      Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  canMessage Boolean  @default(true)
+  canManage  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, groupId])
 }
 
 // External Links for parents

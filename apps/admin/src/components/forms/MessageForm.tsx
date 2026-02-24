@@ -8,6 +8,7 @@ export interface MessageFormData {
   targetClass: string
   classId?: string
   yearGroupId?: string
+  groupId?: string
   isPinned: boolean
   isUrgent: boolean
   expiresAt: string
@@ -21,7 +22,7 @@ export interface MessageFormData {
 
 export interface AudienceOption {
   value: string
-  type: 'school' | 'yearGroup' | 'class'
+  type: 'school' | 'yearGroup' | 'class' | 'group' | 'divider'
   id?: string
 }
 
@@ -59,17 +60,18 @@ export function MessageForm({
   const handleAudienceChange = (value: string) => {
     if (audienceOptions) {
       const option = audienceOptions.find(o => o.value === value)
-      if (option) {
+      if (option && option.type !== 'divider') {
         onChange({
           ...formData,
           targetClass: option.value,
           classId: option.type === 'class' ? option.id : undefined,
           yearGroupId: option.type === 'yearGroup' ? option.id : undefined,
+          groupId: option.type === 'group' ? option.id : undefined,
         })
         return
       }
     }
-    onChange({ ...formData, targetClass: value, classId: undefined, yearGroupId: undefined })
+    onChange({ ...formData, targetClass: value, classId: undefined, yearGroupId: undefined, groupId: undefined })
   }
 
   const options = audienceOptions
@@ -110,9 +112,15 @@ export function MessageForm({
           >
             {audienceOptions ? (
               audienceOptions.map((opt) => (
-                <option key={`${opt.type}-${opt.id || opt.value}`} value={opt.value}>
-                  {opt.type === 'class' ? `  └ ${opt.value}` : opt.value}
-                </option>
+                opt.type === 'divider' ? (
+                  <option key={opt.value} value="" disabled className="font-semibold">
+                    {opt.value}
+                  </option>
+                ) : (
+                  <option key={`${opt.type}-${opt.id || opt.value}`} value={opt.value}>
+                    {opt.type === 'class' ? `  └ ${opt.value}` : opt.type === 'group' ? `  👥 ${opt.value}` : opt.value}
+                  </option>
+                )
               ))
             ) : (
               options.map((cls) => (

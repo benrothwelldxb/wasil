@@ -37,6 +37,12 @@ import type {
   LinkCategory,
   LinksResponse,
   LinksAllResponse,
+  Group,
+  GroupCategory,
+  GroupMember,
+  GroupStaffAssignment,
+  GroupMemberListResponse,
+  ParentGroupInfo,
 } from '../types'
 
 const API_URL = config.apiUrl
@@ -190,6 +196,7 @@ export const messages = {
     targetClass: string
     classId?: string
     yearGroupId?: string
+    groupId?: string
     actionType?: string
     actionLabel?: string
     actionDueDate?: string
@@ -209,6 +216,7 @@ export const messages = {
     targetClass: string
     classId?: string
     yearGroupId?: string
+    groupId?: string
     actionType?: string
     actionLabel?: string
     actionDueDate?: string
@@ -310,6 +318,7 @@ export const events = {
     targetClass: string
     classId?: string
     yearGroupId?: string
+    groupId?: string
     requiresRsvp?: boolean
   }) =>
     fetchApi<Event>('/api/events', {
@@ -325,6 +334,7 @@ export const events = {
     targetClass: string
     classId?: string
     yearGroupId?: string
+    groupId?: string
     requiresRsvp?: boolean
   }) =>
     fetchApi<Event>(`/api/events/${id}`, {
@@ -957,6 +967,74 @@ export const links = {
     }),
 }
 
+// Groups
+export const groups = {
+  list: () => fetchApi<Group[]>('/api/groups'),
+  get: (id: string) => fetchApi<Group>(`/api/groups/${id}`),
+  getMembers: (id: string, params?: { page?: number; limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.page) searchParams.append('page', params.page.toString())
+    if (params?.limit) searchParams.append('limit', params.limit.toString())
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
+    return fetchApi<GroupMemberListResponse>(`/api/groups/${id}/members${query}`)
+  },
+  getStaff: (id: string) => fetchApi<GroupStaffAssignment[]>(`/api/groups/${id}/staff`),
+  forParent: () => fetchApi<ParentGroupInfo[]>('/api/groups/for-parent'),
+  create: (data: { name: string; description?: string; categoryId?: string; isActive?: boolean }) =>
+    fetchApi<Group>('/api/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: { name?: string; description?: string; categoryId?: string; isActive?: boolean }) =>
+    fetchApi<Group>(`/api/groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/groups/${id}`, {
+      method: 'DELETE',
+    }),
+  addMembers: (id: string, studentIds: string[], role?: string) =>
+    fetchApi<{ added: number }>(`/api/groups/${id}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ studentIds, role }),
+    }),
+  removeMember: (id: string, studentId: string) =>
+    fetchApi<{ message: string }>(`/api/groups/${id}/members/${studentId}`, {
+      method: 'DELETE',
+    }),
+  assignStaff: (id: string, userId: string, canMessage?: boolean, canManage?: boolean) =>
+    fetchApi<GroupStaffAssignment>(`/api/groups/${id}/staff`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, canMessage, canManage }),
+    }),
+  removeStaff: (id: string, userId: string) =>
+    fetchApi<{ message: string }>(`/api/groups/${id}/staff/${userId}`, {
+      method: 'DELETE',
+    }),
+  // Categories
+  listCategories: () => fetchApi<GroupCategory[]>('/api/groups/categories'),
+  createCategory: (data: { name: string; icon?: string; color?: string; order?: number }) =>
+    fetchApi<GroupCategory>('/api/groups/categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateCategory: (id: string, data: { name?: string; icon?: string; color?: string; order?: number }) =>
+    fetchApi<GroupCategory>(`/api/groups/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteCategory: (id: string) =>
+    fetchApi<{ message: string }>(`/api/groups/categories/${id}`, {
+      method: 'DELETE',
+    }),
+  reorderCategories: (ids: string[]) =>
+    fetchApi<{ message: string }>('/api/groups/categories/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
+    }),
+}
+
 export default {
   auth,
   messages,
@@ -980,4 +1058,5 @@ export default {
   parentInvitations,
   students,
   links,
+  groups,
 }

@@ -7,7 +7,7 @@ import { translateTexts } from '../services/translation.js'
 
 const router = Router()
 
-// Get events (filtered by user's children's classes)
+// Get events (filtered by user's children's classes and groups)
 router.get('/', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
@@ -15,6 +15,7 @@ router.get('/', isAuthenticated, async (req, res) => {
     const childClassIds = user.children?.map(c => c.classId) || []
     const studentClassIds = (user.studentLinks?.map(l => l.student?.classId).filter((id): id is string => !!id)) || []
     const allClassIds = [...new Set([...childClassIds, ...studentClassIds])]
+    const studentIds = user.studentLinks?.map(l => l.studentId) || []
 
     // Get year group IDs from children's classes
     const childClasses = allClassIds.length > 0
@@ -25,6 +26,15 @@ router.get('/', isAuthenticated, async (req, res) => {
       : []
     const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
 
+    // Get groups where parent's children are members
+    const childGroupLinks = studentIds.length > 0
+      ? await prisma.studentGroupLink.findMany({
+          where: { studentId: { in: studentIds } },
+          select: { groupId: true },
+        })
+      : []
+    const childGroupIds = [...new Set(childGroupLinks.map(l => l.groupId))]
+
     const events = await prisma.event.findMany({
       where: {
         schoolId: user.schoolId,
@@ -33,6 +43,7 @@ router.get('/', isAuthenticated, async (req, res) => {
           { targetClass: 'all' },
           { classId: { in: allClassIds } },
           ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
+          ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
         ],
       },
       include: {
@@ -75,6 +86,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       targetClass: event.targetClass,
       classId: event.classId,
       yearGroupId: event.yearGroupId,
+      groupId: event.groupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       userRsvp: event.rsvps[0]?.status || null,
@@ -113,6 +125,7 @@ router.get('/all', isAdmin, async (req, res) => {
       targetClass: event.targetClass,
       classId: event.classId,
       yearGroupId: event.yearGroupId,
+      groupId: event.groupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       rsvps: event.rsvps.map(r => ({
@@ -135,7 +148,7 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { title, description, date, time, location, targetClass, classId, yearGroupId, requiresRsvp } = req.body
+    const { title, description, date, time, location, targetClass, classId, yearGroupId, groupId, requiresRsvp } = req.body
 
     const event = await prisma.event.create({
       data: {
@@ -147,13 +160,14 @@ router.post('/', isAdmin, async (req, res) => {
         targetClass,
         classId: classId || null,
         yearGroupId: yearGroupId || null,
+        groupId: groupId || null,
         schoolId: user.schoolId,
         requiresRsvp: requiresRsvp || false,
       },
     })
 
     logAudit({ req, action: 'CREATE', resourceType: 'EVENT', resourceId: event.id, metadata: { title: event.title } })
-    sendNotification({ req, type: 'EVENT', title: event.title, body: event.description || 'New event', resourceType: 'EVENT', resourceId: event.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, schoolId: user.schoolId } })
+    sendNotification({ req, type: 'EVENT', title: event.title, body: event.description || 'New event', resourceType: 'EVENT', resourceId: event.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
 
     res.status(201).json({
       id: event.id,
@@ -165,6 +179,7 @@ router.post('/', isAdmin, async (req, res) => {
       targetClass: event.targetClass,
       classId: event.classId,
       yearGroupId: event.yearGroupId,
+      groupId: event.groupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       createdAt: event.createdAt.toISOString(),
@@ -215,7 +230,7 @@ router.put('/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, description, date, time, location, targetClass, classId, yearGroupId, requiresRsvp } = req.body
+    const { title, description, date, time, location, targetClass, classId, yearGroupId, groupId, requiresRsvp } = req.body
 
     // Verify event belongs to user's school
     const existing = await prisma.event.findFirst({
@@ -237,6 +252,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         targetClass,
         classId: classId || null,
         yearGroupId: yearGroupId || null,
+        groupId: groupId !== undefined ? (groupId || null) : existing.groupId,
         requiresRsvp: requiresRsvp ?? existing.requiresRsvp,
       },
     })
@@ -251,6 +267,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       targetClass: event.targetClass,
       classId: event.classId,
       yearGroupId: event.yearGroupId,
+      groupId: event.groupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       createdAt: event.createdAt.toISOString(),
