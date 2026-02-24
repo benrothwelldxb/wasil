@@ -25,6 +25,7 @@ import notificationsRoutes from './routes/notifications.js'
 import deviceTokensRoutes from './routes/deviceTokens.js'
 import parentInvitationsRoutes from './routes/parentInvitations.js'
 import studentsRoutes from './routes/students.js'
+import linksRoutes from './routes/links.js'
 import { initFirebase } from './services/firebase.js'
 
 dotenv.config()
@@ -70,6 +71,7 @@ app.use('/api/notifications', notificationsRoutes)
 app.use('/api/device-tokens', deviceTokensRoutes)
 app.use('/api/parent-invitations', parentInvitationsRoutes)
 app.use('/api/students', studentsRoutes)
+app.use('/api/links', linksRoutes)
 
 // Health check
 app.get('/health', (_req, res) => {

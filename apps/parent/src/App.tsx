@@ -16,6 +16,7 @@ import { EventsPage } from './pages/EventsPage'
 import { PrincipalUpdatesPage } from './pages/PrincipalUpdatesPage'
 import { PoliciesPage } from './pages/PoliciesPage'
 import { FilesPage } from './pages/FilesPage'
+import { LinksPage } from './pages/LinksPage'
 
 const ADMIN_APP_URL = import.meta.env.VITE_ADMIN_URL || 'http://localhost:3001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
@@ -247,6 +248,10 @@ export default function App() {
       <Route
         path="/files"
         element={<ProtectedRoute><AppLayout><FilesPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/links"
+        element={<ProtectedRoute><AppLayout><LinksPage /></AppLayout></ProtectedRoute>}
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

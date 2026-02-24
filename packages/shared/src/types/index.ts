@@ -520,3 +520,15 @@ export interface BulkStudentResult {
   errors?: string[]
   students: Array<{ id: string; firstName: string; lastName: string; className: string }>
 }
+
+// External Link types
+export interface ExternalLink {
+  id: string
+  title: string
+  description?: string | null
+  url: string
+  icon?: string | null
+  order: number
+  active?: boolean
+  createdAt?: string
+}

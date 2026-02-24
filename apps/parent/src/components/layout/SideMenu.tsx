@@ -15,6 +15,7 @@ import {
   Shield,
   Globe,
   ChevronDown,
+  ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
@@ -84,6 +85,7 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
     { icon: BookOpen, labelKey: 'nav.schoolInfo', path: '/knowledge-base' },
     { icon: ScrollText, labelKey: 'nav.policies', path: '/policies' },
     { icon: Folder, labelKey: 'nav.files', path: '/files' },
+    { icon: ExternalLink, labelKey: 'nav.links', path: '/links' },
   ]
 
   // Add Super Admin link for SUPER_ADMIN users

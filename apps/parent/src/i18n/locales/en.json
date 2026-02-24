@@ -22,6 +22,7 @@
     "schoolInfo": "School Information",
     "policies": "Policies",
     "files": "Files",
+    "links": "Useful Links",
     "superAdmin": "Super Admin",
     "logout": "Logout"
   },
@@ -136,6 +137,11 @@
     "download": "Download",
     "folder": "Folder",
     "file": "File"
+  },
+  "links": {
+    "title": "Useful Links",
+    "subtitle": "Helpful apps and resources for parents",
+    "noLinks": "No links available"
   },
   "knowledge": {
     "title": "School Information",

@@ -33,6 +33,7 @@ import type {
   StudentListResponse,
   StudentSearchResult,
   BulkStudentResult,
+  ExternalLink,
 } from '../types'
 
 const API_URL = config.apiUrl
@@ -909,6 +910,25 @@ export const students = {
     }),
 }
 
+export const links = {
+  list: () => fetchApi<ExternalLink[]>('/api/links'),
+  listAll: () => fetchApi<ExternalLink[]>('/api/links/all'),
+  create: (data: { title: string; description?: string; url: string; icon?: string; order?: number }) =>
+    fetchApi<ExternalLink>('/api/links', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: { title?: string; description?: string; url?: string; icon?: string; order?: number; active?: boolean }) =>
+    fetchApi<ExternalLink>(`/api/links/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/links/${id}`, {
+      method: 'DELETE',
+    }),
+}
+
 export default {
   auth,
   messages,
@@ -931,4 +951,5 @@ export default {
   deviceTokens,
   parentInvitations,
   students,
+  links,
 }
