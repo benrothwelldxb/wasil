@@ -5,13 +5,33 @@ import type { ExternalLink as ExternalLinkType, LinkCategory, LinksAllResponse }
 
 export function LinksPage() {
   const theme = useTheme()
-  const { data, refetch } = useApi<LinksAllResponse>(
+  const { data, refetch, isLoading, error } = useApi<LinksAllResponse>(
     () => api.links.listAll(),
     []
   )
 
   const categories = data?.categories || []
   const links = data?.links || []
+
+  if (isLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center py-12">
+        <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: theme.colors.brandColor, borderTopColor: 'transparent' }} />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          <p className="font-medium">Failed to load links</p>
+          <p className="text-sm mt-1">{error.message}</p>
+          <button onClick={() => refetch()} className="mt-2 text-sm underline">Try again</button>
+        </div>
+      </div>
+    )
+  }
 
   const [showLinkForm, setShowLinkForm] = useState(false)
   const [showCategoryForm, setShowCategoryForm] = useState(false)
