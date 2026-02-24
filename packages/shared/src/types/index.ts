@@ -522,13 +522,33 @@ export interface BulkStudentResult {
 }
 
 // External Link types
+export interface LinkCategory {
+  id: string
+  name: string
+  order: number
+  links?: ExternalLink[]
+  createdAt?: string
+}
+
 export interface ExternalLink {
   id: string
   title: string
   description?: string | null
   url: string
   icon?: string | null
+  imageUrl?: string | null
   order: number
   active?: boolean
+  categoryId?: string | null
   createdAt?: string
+}
+
+export interface LinksResponse {
+  categories: Array<LinkCategory & { links: ExternalLink[] }>
+  uncategorized: ExternalLink[]
+}
+
+export interface LinksAllResponse {
+  categories: LinkCategory[]
+  links: ExternalLink[]
 }

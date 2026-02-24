@@ -40,6 +40,7 @@ model School {
   auditLogs           AuditLog[]
   notifications       Notification[]
   invitations         ParentInvitation[]
+  linkCategories      LinkCategory[]
   externalLinks       ExternalLink[]
 }
 
@@ -632,19 +633,37 @@ model MagicLinkToken {
   @@index([token])
 }
 
+// Link Categories for organizing external links
+model LinkCategory {
+  id          String         @id @default(cuid())
+  name        String
+  order       Int            @default(0)
+  schoolId    String
+  school      School         @relation(fields: [schoolId], references: [id])
+  links       ExternalLink[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([schoolId, order])
+}
+
 // External Links for parents
 model ExternalLink {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   title       String
   description String?
   url         String
-  icon        String?  // Emoji or icon name
-  order       Int      @default(0)
-  active      Boolean  @default(true)
+  icon        String?       // Emoji or icon name
+  imageUrl    String?       // URL to logo/image
+  order       Int           @default(0)
+  active      Boolean       @default(true)
+  categoryId  String?
+  category    LinkCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  school      School        @relation(fields: [schoolId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   @@index([schoolId, active, order])
+  @@index([categoryId])
 }

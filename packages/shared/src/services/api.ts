@@ -34,6 +34,9 @@ import type {
   StudentSearchResult,
   BulkStudentResult,
   ExternalLink,
+  LinkCategory,
+  LinksResponse,
+  LinksAllResponse,
 } from '../types'
 
 const API_URL = config.apiUrl
@@ -911,20 +914,34 @@ export const students = {
 }
 
 export const links = {
-  list: () => fetchApi<ExternalLink[]>('/api/links'),
-  listAll: () => fetchApi<ExternalLink[]>('/api/links/all'),
-  create: (data: { title: string; description?: string; url: string; icon?: string; order?: number }) =>
+  list: () => fetchApi<LinksResponse>('/api/links'),
+  listAll: () => fetchApi<LinksAllResponse>('/api/links/all'),
+  create: (data: { title: string; description?: string; url: string; icon?: string; imageUrl?: string; order?: number; categoryId?: string }) =>
     fetchApi<ExternalLink>('/api/links', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  update: (id: string, data: { title?: string; description?: string; url?: string; icon?: string; order?: number; active?: boolean }) =>
+  update: (id: string, data: { title?: string; description?: string; url?: string; icon?: string; imageUrl?: string; order?: number; active?: boolean; categoryId?: string | null }) =>
     fetchApi<ExternalLink>(`/api/links/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
   delete: (id: string) =>
     fetchApi<{ message: string }>(`/api/links/${id}`, {
+      method: 'DELETE',
+    }),
+  createCategory: (data: { name: string; order?: number }) =>
+    fetchApi<LinkCategory>('/api/links/categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateCategory: (id: string, data: { name?: string; order?: number }) =>
+    fetchApi<LinkCategory>(`/api/links/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteCategory: (id: string) =>
+    fetchApi<{ message: string }>(`/api/links/categories/${id}`, {
       method: 'DELETE',
     }),
 }
