@@ -1,15 +1,28 @@
-import React, { useState } from 'react'
-import { Plus, X, Pencil, Trash2, Calendar, RotateCcw, CalendarDays, Pause, Play } from 'lucide-react'
+import React, { useState, useMemo, useEffect } from 'react'
+import { Plus, X, Pencil, Trash2, RotateCcw, CalendarDays, Pause, Play, Grid3X3, Save, Check } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
 import type { ScheduleItem, Class, YearGroup } from '@wasil/shared'
 
 const DAYS_OF_WEEK = [
-  { value: 1, label: 'Monday' },
-  { value: 2, label: 'Tuesday' },
-  { value: 3, label: 'Wednesday' },
-  { value: 4, label: 'Thursday' },
-  { value: 5, label: 'Friday' },
+  { value: 1, label: 'Mon', fullLabel: 'Monday' },
+  { value: 2, label: 'Tue', fullLabel: 'Tuesday' },
+  { value: 3, label: 'Wed', fullLabel: 'Wednesday' },
+  { value: 4, label: 'Thu', fullLabel: 'Thursday' },
+  { value: 5, label: 'Fri', fullLabel: 'Friday' },
 ]
+
+const GRID_TYPES = [
+  { value: '', label: '', icon: '', color: 'bg-gray-50' },
+  { value: 'pe', label: 'PE', icon: '🏃', color: 'bg-green-100 text-green-800 border-green-300' },
+  { value: 'swimming', label: 'Swim', icon: '🏊', color: 'bg-blue-100 text-blue-800 border-blue-300' },
+  { value: 'library', label: 'Lib', icon: '📚', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+]
+
+const TYPE_INFO: Record<string, { label: string; icon: string; description: string }> = {
+  'pe': { label: 'PE Day', icon: '🏃', description: 'Please wear PE kit' },
+  'swimming': { label: 'Swimming', icon: '🏊', description: 'Remember swimwear, towel & goggles' },
+  'library': { label: 'Library Day', icon: '📚', description: 'Return library books' },
+}
 
 const RECURRING_TYPES = [
   { value: 'pe', label: 'PE Day', icon: '🏃', description: 'Please wear PE kit' },
@@ -27,17 +40,29 @@ const ONEOFF_TYPES = [
   { value: 'performance', label: 'Performance', icon: '🎭', description: '' },
 ]
 
+// Grid cell state type
+type GridCell = '' | 'pe' | 'swimming' | 'library'
+
+// Grid state: classId -> dayOfWeek -> type
+type GridState = Record<string, Record<number, GridCell>>
+
 export function SchedulePage() {
   const theme = useTheme()
   const { data: scheduleItems, refetch } = useApi<ScheduleItem[]>(() => api.schedule.listAll(), [])
   const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
   const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
 
-  const [activeTab, setActiveTab] = useState<'recurring' | 'oneoff'>('recurring')
+  const [activeTab, setActiveTab] = useState<'grid' | 'recurring' | 'oneoff'>('grid')
   const [showForm, setShowForm] = useState(false)
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; label: string } | null>(null)
+
+  // Grid state
+  const [gridState, setGridState] = useState<GridState>({})
+  const [originalGridState, setOriginalGridState] = useState<GridState>({})
+  const [isSavingGrid, setIsSavingGrid] = useState(false)
+  const [gridSaved, setGridSaved] = useState(false)
 
   // Form state
   const [targetClass, setTargetClass] = useState('Whole School')
@@ -52,6 +77,124 @@ export function SchedulePage() {
 
   const recurringItems = scheduleItems?.filter(i => i.isRecurring) || []
   const oneoffItems = scheduleItems?.filter(i => !i.isRecurring) || []
+
+  // Sort classes by year group order then by name
+  const sortedClasses = useMemo(() => {
+    if (!classes || !yearGroups) return []
+    const ygOrder = new Map(yearGroups.map((yg, i) => [yg.id, i]))
+    return [...classes].sort((a, b) => {
+      const aOrder = ygOrder.get(a.yearGroupId || '') ?? 999
+      const bOrder = ygOrder.get(b.yearGroupId || '') ?? 999
+      if (aOrder !== bOrder) return aOrder - bOrder
+      return a.name.localeCompare(b.name)
+    })
+  }, [classes, yearGroups])
+
+  // Initialize grid state from schedule items
+  useEffect(() => {
+    if (!scheduleItems || !classes) return
+
+    const newState: GridState = {}
+
+    // Initialize all classes with empty days
+    classes.forEach(cls => {
+      newState[cls.id] = { 1: '', 2: '', 3: '', 4: '', 5: '' }
+    })
+
+    // Fill in from existing schedule items (only PE, Swimming, Library for grid)
+    recurringItems.forEach(item => {
+      if (item.classId && item.dayOfWeek && ['pe', 'swimming', 'library'].includes(item.type)) {
+        if (newState[item.classId]) {
+          newState[item.classId][item.dayOfWeek] = item.type as GridCell
+        }
+      }
+    })
+
+    setGridState(newState)
+    setOriginalGridState(JSON.parse(JSON.stringify(newState)))
+  }, [scheduleItems, classes])
+
+  const hasGridChanges = useMemo(() => {
+    return JSON.stringify(gridState) !== JSON.stringify(originalGridState)
+  }, [gridState, originalGridState])
+
+  const cycleCell = (classId: string, day: number) => {
+    setGridState(prev => {
+      const current = prev[classId]?.[day] || ''
+      const types: GridCell[] = ['', 'pe', 'swimming', 'library']
+      const currentIndex = types.indexOf(current)
+      const nextIndex = (currentIndex + 1) % types.length
+      return {
+        ...prev,
+        [classId]: {
+          ...prev[classId],
+          [day]: types[nextIndex],
+        },
+      }
+    })
+    setGridSaved(false)
+  }
+
+  const saveGrid = async () => {
+    setIsSavingGrid(true)
+    try {
+      // Find what changed
+      const toCreate: { classId: string; day: number; type: GridCell }[] = []
+      const toDelete: string[] = []
+
+      // Compare grid states
+      for (const classId of Object.keys(gridState)) {
+        for (const day of [1, 2, 3, 4, 5]) {
+          const newVal = gridState[classId]?.[day] || ''
+          const oldVal = originalGridState[classId]?.[day] || ''
+
+          if (newVal !== oldVal) {
+            // Find existing item to delete
+            const existingItem = recurringItems.find(
+              i => i.classId === classId && i.dayOfWeek === day && ['pe', 'swimming', 'library'].includes(i.type)
+            )
+            if (existingItem) {
+              toDelete.push(existingItem.id)
+            }
+
+            // Create new item if not empty
+            if (newVal) {
+              toCreate.push({ classId, day, type: newVal })
+            }
+          }
+        }
+      }
+
+      // Execute deletes
+      for (const id of toDelete) {
+        await api.schedule.delete(id)
+      }
+
+      // Execute creates
+      for (const item of toCreate) {
+        const cls = classes?.find(c => c.id === item.classId)
+        const info = TYPE_INFO[item.type]
+        await api.schedule.create({
+          targetClass: cls?.name || '',
+          classId: item.classId,
+          isRecurring: true,
+          dayOfWeek: item.day,
+          type: item.type,
+          label: info.label,
+          description: info.description,
+          icon: info.icon,
+        })
+      }
+
+      await refetch()
+      setGridSaved(true)
+      setTimeout(() => setGridSaved(false), 2000)
+    } catch (error) {
+      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsSavingGrid(false)
+    }
+  }
 
   const resetForm = () => {
     setShowForm(false)
@@ -173,7 +316,23 @@ export function SchedulePage() {
     }
   }
 
-  const getDayLabel = (day: number) => DAYS_OF_WEEK.find(d => d.value === day)?.label || ''
+  const getDayLabel = (day: number) => DAYS_OF_WEEK.find(d => d.value === day)?.fullLabel || ''
+
+  const getCellStyle = (type: GridCell) => {
+    const t = GRID_TYPES.find(g => g.value === type)
+    return t?.color || 'bg-gray-50'
+  }
+
+  const getCellContent = (type: GridCell) => {
+    const t = GRID_TYPES.find(g => g.value === type)
+    if (!t || !t.value) return null
+    return (
+      <div className="flex flex-col items-center">
+        <span className="text-lg">{t.icon}</span>
+        <span className="text-xs font-medium">{t.label}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6">
@@ -182,18 +341,29 @@ export function SchedulePage() {
           <h1 className="text-2xl font-bold text-gray-900">Schedule & Reminders</h1>
           <p className="text-gray-600 mt-1">Set up recurring reminders (PE kit, swimming) and one-off events</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
-          style={{ backgroundColor: theme.colors.brandColor }}
-        >
-          <Plus className="w-5 h-5" />
-          <span>Add Item</span>
-        </button>
+        {activeTab !== 'grid' && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
+            style={{ backgroundColor: theme.colors.brandColor }}
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add Item</span>
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
       <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setActiveTab('grid')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
+            activeTab === 'grid' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Grid3X3 className="w-4 h-4" />
+          <span>Quick Setup</span>
+        </button>
         <button
           onClick={() => setActiveTab('recurring')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
@@ -201,7 +371,7 @@ export function SchedulePage() {
           }`}
         >
           <RotateCcw className="w-4 h-4" />
-          <span>Weekly Recurring</span>
+          <span>All Recurring</span>
         </button>
         <button
           onClick={() => setActiveTab('oneoff')}
@@ -214,6 +384,97 @@ export function SchedulePage() {
         </button>
       </div>
 
+      {/* Grid View */}
+      {activeTab === 'grid' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-gray-900">Weekly Schedule Grid</h2>
+              <p className="text-sm text-gray-500">Click cells to toggle PE / Swimming / Library for each class</p>
+            </div>
+            <div className="flex items-center space-x-3">
+              {/* Legend */}
+              <div className="flex items-center space-x-2 text-sm">
+                {GRID_TYPES.filter(t => t.value).map(t => (
+                  <span key={t.value} className={`px-2 py-1 rounded ${t.color} border`}>
+                    {t.icon} {t.label}
+                  </span>
+                ))}
+              </div>
+              <button
+                onClick={saveGrid}
+                disabled={!hasGridChanges || isSavingGrid}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-white disabled:opacity-50 transition-all ${
+                  gridSaved ? 'bg-green-500' : ''
+                }`}
+                style={!gridSaved ? { backgroundColor: theme.colors.brandColor } : undefined}
+              >
+                {gridSaved ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Saved!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>{isSavingGrid ? 'Saving...' : 'Save Changes'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 w-48">Class</th>
+                  {DAYS_OF_WEEK.map(day => (
+                    <th key={day.value} className="px-2 py-3 text-center text-sm font-semibold text-gray-700 w-24">
+                      {day.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {sortedClasses.map(cls => (
+                  <tr key={cls.id} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-2">
+                      <div className="flex items-center space-x-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: cls.colorBg?.replace('bg-', '').includes('-') ? undefined : cls.colorBg }}
+                        />
+                        <span className="font-medium text-gray-900">{cls.name}</span>
+                      </div>
+                    </td>
+                    {DAYS_OF_WEEK.map(day => {
+                      const cellType = gridState[cls.id]?.[day.value] || ''
+                      return (
+                        <td key={day.value} className="px-2 py-2">
+                          <button
+                            onClick={() => cycleCell(cls.id, day.value)}
+                            className={`w-full h-16 rounded-lg border-2 border-dashed transition-all hover:scale-105 flex items-center justify-center ${getCellStyle(cellType)}`}
+                          >
+                            {getCellContent(cellType)}
+                          </button>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {sortedClasses.length === 0 && (
+            <div className="p-8 text-center text-gray-500">
+              No classes found. Add classes first to set up schedules.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Recurring Items */}
       {activeTab === 'recurring' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
@@ -223,7 +484,7 @@ export function SchedulePage() {
           </div>
           {recurringItems.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
-              No recurring items yet. Add PE days, swimming lessons, etc.
+              No recurring items yet. Use Quick Setup or add manually.
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -375,7 +636,7 @@ export function SchedulePage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     {DAYS_OF_WEEK.map(d => (
-                      <option key={d.value} value={d.value}>{d.label}</option>
+                      <option key={d.value} value={d.value}>{d.fullLabel}</option>
                     ))}
                   </select>
                 </div>
