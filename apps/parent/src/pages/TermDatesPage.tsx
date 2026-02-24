@@ -82,7 +82,8 @@ export function TermDatesPage() {
   }
 
   const showDot = (type: string) => {
-    return type !== 'term-start' && type !== 'term-end'
+    // Show colored dot for all term date types
+    return true
   }
 
   if (isLoading) {
