@@ -23,14 +23,26 @@ router.get('/me', isAuthenticated, async (req, res) => {
       include: {
         children: {
           include: {
-            class: true,
+            class: {
+              include: {
+                assignedStaff: {
+                  include: { user: { select: { name: true } } },
+                },
+              },
+            },
           },
         },
         studentLinks: {
           include: {
             student: {
               include: {
-                class: true,
+                class: {
+                  include: {
+                    assignedStaff: {
+                      include: { user: { select: { name: true } } },
+                    },
+                  },
+                },
               },
             },
           },
@@ -56,11 +68,13 @@ router.get('/me', isAuthenticated, async (req, res) => {
         name: child.name,
         classId: child.classId,
         className: child.class.name,
+        teacherName: child.class.assignedStaff?.[0]?.user?.name || null,
       })),
       studentLinks: user.studentLinks.map(link => ({
         studentId: link.student.id,
         studentName: `${link.student.firstName} ${link.student.lastName}`,
         className: link.student.class.name,
+        teacherName: link.student.class.assignedStaff?.[0]?.user?.name || null,
       })),
       school: {
         id: user.school.id,

@@ -25,6 +25,7 @@ export interface Child {
   name: string
   classId: string
   className: string
+  teacherName?: string | null
 }
 
 // School types
@@ -500,6 +501,7 @@ export interface ParentStudentLinkInfo {
   studentId: string
   studentName: string
   className: string
+  teacherName?: string | null
 }
 
 export interface StudentListResponse {

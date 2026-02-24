@@ -134,13 +134,19 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
                 {t('settings.myChildren')}:
               </p>
               {user.children?.map((child) => (
-                <div key={child.id} className="text-sm text-gray-600 mb-1">
-                  {child.name} - {child.className}
+                <div key={child.id} className="text-sm text-gray-600 mb-2">
+                  <div className="font-medium">{child.name} - {child.className}</div>
+                  {child.teacherName && (
+                    <div className="text-xs text-gray-400">Teacher: {child.teacherName}</div>
+                  )}
                 </div>
               ))}
               {user.studentLinks?.map((link) => (
-                <div key={link.studentId} className="text-sm text-gray-600 mb-1">
-                  {link.studentName} - {link.className}
+                <div key={link.studentId} className="text-sm text-gray-600 mb-2">
+                  <div className="font-medium">{link.studentName} - {link.className}</div>
+                  {link.teacherName && (
+                    <div className="text-xs text-gray-400">Teacher: {link.teacherName}</div>
+                  )}
                 </div>
               ))}
             </div>
