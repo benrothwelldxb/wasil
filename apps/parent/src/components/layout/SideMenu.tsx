@@ -128,14 +128,19 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
             </button>
           </div>
 
-          {user.children && user.children.length > 0 && (
+          {((user.children && user.children.length > 0) || (user.studentLinks && user.studentLinks.length > 0)) && (
             <div className="mt-8 pt-6 border-t border-gray-200">
               <p className="text-sm font-semibold mb-2" style={{ color: theme.colors.brandColor }}>
                 {t('settings.myChildren')}:
               </p>
-              {user.children.map((child) => (
+              {user.children?.map((child) => (
                 <div key={child.id} className="text-sm text-gray-600 mb-1">
                   {child.name} - {child.className}
+                </div>
+              ))}
+              {user.studentLinks?.map((link) => (
+                <div key={link.studentId} className="text-sm text-gray-600 mb-1">
+                  {link.studentName} - {link.className}
                 </div>
               ))}
             </div>

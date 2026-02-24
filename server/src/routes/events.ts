@@ -11,12 +11,15 @@ const router = Router()
 router.get('/', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
+    // Get class IDs from both children (legacy) and studentLinks (new)
     const childClassIds = user.children?.map(c => c.classId) || []
+    const studentClassIds = user.studentLinks?.map(l => l.student?.classId).filter(Boolean) || []
+    const allClassIds = [...new Set([...childClassIds, ...studentClassIds])]
 
     // Get year group IDs from children's classes
-    const childClasses = childClassIds.length > 0
+    const childClasses = allClassIds.length > 0
       ? await prisma.class.findMany({
-          where: { id: { in: childClassIds } },
+          where: { id: { in: allClassIds } },
           select: { yearGroupId: true },
         })
       : []
@@ -28,7 +31,7 @@ router.get('/', isAuthenticated, async (req, res) => {
         OR: [
           { targetClass: 'Whole School' },
           { targetClass: 'all' },
-          { classId: { in: childClassIds } },
+          { classId: { in: allClassIds } },
           ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
         ],
       },
