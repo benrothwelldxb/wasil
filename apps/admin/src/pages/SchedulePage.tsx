@@ -40,11 +40,17 @@ const ONEOFF_TYPES = [
   { value: 'performance', label: 'Performance', icon: '🎭', description: '' },
 ]
 
-// Grid cell state type
-type GridCell = '' | 'pe' | 'swimming' | 'library'
+// Grid cell state type - now supports multiple selections
+type GridCell = {
+  pe: boolean
+  swimming: boolean
+  library: boolean
+}
 
-// Grid state: classId -> dayOfWeek -> type
+// Grid state: classId -> dayOfWeek -> selections
 type GridState = Record<string, Record<number, GridCell>>
+
+const emptyCell: GridCell = { pe: false, swimming: false, library: false }
 
 export function SchedulePage() {
   const theme = useTheme()
@@ -98,14 +104,20 @@ export function SchedulePage() {
 
     // Initialize all classes with empty days
     classes.forEach(cls => {
-      newState[cls.id] = { 1: '', 2: '', 3: '', 4: '', 5: '' }
+      newState[cls.id] = {
+        1: { ...emptyCell },
+        2: { ...emptyCell },
+        3: { ...emptyCell },
+        4: { ...emptyCell },
+        5: { ...emptyCell },
+      }
     })
 
     // Fill in from existing schedule items (only PE, Swimming, Library for grid)
     recurringItems.forEach(item => {
       if (item.classId && item.dayOfWeek && ['pe', 'swimming', 'library'].includes(item.type)) {
         if (newState[item.classId]) {
-          newState[item.classId][item.dayOfWeek] = item.type as GridCell
+          newState[item.classId][item.dayOfWeek][item.type as keyof GridCell] = true
         }
       }
     })
@@ -118,17 +130,17 @@ export function SchedulePage() {
     return JSON.stringify(gridState) !== JSON.stringify(originalGridState)
   }, [gridState, originalGridState])
 
-  const cycleCell = (classId: string, day: number) => {
+  const toggleCellType = (classId: string, day: number, type: keyof GridCell) => {
     setGridState(prev => {
-      const current = prev[classId]?.[day] || ''
-      const types: GridCell[] = ['', 'pe', 'swimming', 'library']
-      const currentIndex = types.indexOf(current)
-      const nextIndex = (currentIndex + 1) % types.length
+      const current = prev[classId]?.[day] || { ...emptyCell }
       return {
         ...prev,
         [classId]: {
           ...prev[classId],
-          [day]: types[nextIndex],
+          [day]: {
+            ...current,
+            [type]: !current[type],
+          },
         },
       }
     })
@@ -138,28 +150,29 @@ export function SchedulePage() {
   const saveGrid = async () => {
     setIsSavingGrid(true)
     try {
-      // Find what changed
-      const toCreate: { classId: string; day: number; type: GridCell }[] = []
+      const toCreate: { classId: string; day: number; type: string }[] = []
       const toDelete: string[] = []
 
-      // Compare grid states
+      // Compare grid states for each class, day, and type
       for (const classId of Object.keys(gridState)) {
         for (const day of [1, 2, 3, 4, 5]) {
-          const newVal = gridState[classId]?.[day] || ''
-          const oldVal = originalGridState[classId]?.[day] || ''
+          for (const type of ['pe', 'swimming', 'library'] as const) {
+            const newVal = gridState[classId]?.[day]?.[type] || false
+            const oldVal = originalGridState[classId]?.[day]?.[type] || false
 
-          if (newVal !== oldVal) {
-            // Find existing item to delete
-            const existingItem = recurringItems.find(
-              i => i.classId === classId && i.dayOfWeek === day && ['pe', 'swimming', 'library'].includes(i.type)
-            )
-            if (existingItem) {
-              toDelete.push(existingItem.id)
-            }
+            if (newVal !== oldVal) {
+              // Find existing item
+              const existingItem = recurringItems.find(
+                i => i.classId === classId && i.dayOfWeek === day && i.type === type
+              )
 
-            // Create new item if not empty
-            if (newVal) {
-              toCreate.push({ classId, day, type: newVal })
+              if (oldVal && !newVal && existingItem) {
+                // Was on, now off - delete
+                toDelete.push(existingItem.id)
+              } else if (!oldVal && newVal) {
+                // Was off, now on - create
+                toCreate.push({ classId, day, type })
+              }
             }
           }
         }
@@ -318,18 +331,27 @@ export function SchedulePage() {
 
   const getDayLabel = (day: number) => DAYS_OF_WEEK.find(d => d.value === day)?.fullLabel || ''
 
-  const getCellStyle = (type: GridCell) => {
-    const t = GRID_TYPES.find(g => g.value === type)
-    return t?.color || 'bg-gray-50'
-  }
-
-  const getCellContent = (type: GridCell) => {
-    const t = GRID_TYPES.find(g => g.value === type)
-    if (!t || !t.value) return null
+  const renderCell = (classId: string, day: number) => {
+    const cell = gridState[classId]?.[day] || emptyCell
     return (
-      <div className="flex flex-col items-center">
-        <span className="text-lg">{t.icon}</span>
-        <span className="text-xs font-medium">{t.label}</span>
+      <div className="flex gap-1 justify-center">
+        {GRID_TYPES.filter(t => t.value).map(t => {
+          const isActive = cell[t.value as keyof GridCell]
+          return (
+            <button
+              key={t.value}
+              onClick={() => toggleCellType(classId, day, t.value as keyof GridCell)}
+              className={`w-10 h-10 rounded-lg border-2 transition-all hover:scale-110 flex items-center justify-center text-lg ${
+                isActive
+                  ? t.color + ' border-current'
+                  : 'bg-gray-50 border-dashed border-gray-200 opacity-40 hover:opacity-70'
+              }`}
+              title={t.label}
+            >
+              {t.icon}
+            </button>
+          )
+        })}
       </div>
     )
   }
@@ -390,7 +412,7 @@ export function SchedulePage() {
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
             <div>
               <h2 className="font-semibold text-gray-900">Weekly Schedule Grid</h2>
-              <p className="text-sm text-gray-500">Click cells to toggle PE / Swimming / Library for each class</p>
+              <p className="text-sm text-gray-500">Click icons to toggle on/off for each class and day</p>
             </div>
             <div className="flex items-center space-x-3">
               {/* Legend */}
@@ -428,9 +450,9 @@ export function SchedulePage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 w-48">Class</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 w-40">Class</th>
                   {DAYS_OF_WEEK.map(day => (
-                    <th key={day.value} className="px-2 py-3 text-center text-sm font-semibold text-gray-700 w-24">
+                    <th key={day.value} className="px-2 py-3 text-center text-sm font-semibold text-gray-700 w-36">
                       {day.label}
                     </th>
                   ))}
@@ -448,19 +470,11 @@ export function SchedulePage() {
                         <span className="font-medium text-gray-900">{cls.name}</span>
                       </div>
                     </td>
-                    {DAYS_OF_WEEK.map(day => {
-                      const cellType = gridState[cls.id]?.[day.value] || ''
-                      return (
-                        <td key={day.value} className="px-2 py-2">
-                          <button
-                            onClick={() => cycleCell(cls.id, day.value)}
-                            className={`w-full h-16 rounded-lg border-2 border-dashed transition-all hover:scale-105 flex items-center justify-center ${getCellStyle(cellType)}`}
-                          >
-                            {getCellContent(cellType)}
-                          </button>
-                        </td>
-                      )
-                    })}
+                    {DAYS_OF_WEEK.map(day => (
+                      <td key={day.value} className="px-2 py-2">
+                        {renderCell(cls.id, day.value)}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>

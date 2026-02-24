@@ -21,6 +21,19 @@ declare global {
           name: string
         }
       }>
+      studentLinks?: Array<{
+        studentId: string
+        student: {
+          id: string
+          firstName: string
+          lastName: string
+          classId: string
+          class: {
+            id: string
+            name: string
+          }
+        }
+      }>
       assignedClasses?: Array<{
         classId: string
         class: {
@@ -46,6 +59,7 @@ export async function isAuthenticated(req: Request, res: Response, next: NextFun
       where: { id: payload.userId },
       include: {
         children: { include: { class: true } },
+        studentLinks: { include: { student: { include: { class: true } } } },
         assignedClasses: { include: { class: true } },
       },
     })

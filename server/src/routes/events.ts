@@ -13,7 +13,7 @@ router.get('/', isAuthenticated, async (req, res) => {
     const user = req.user!
     // Get class IDs from both children (legacy) and studentLinks (new)
     const childClassIds = user.children?.map(c => c.classId) || []
-    const studentClassIds = user.studentLinks?.map(l => l.student?.classId).filter(Boolean) || []
+    const studentClassIds = (user.studentLinks?.map(l => l.student?.classId).filter((id): id is string => !!id)) || []
     const allClassIds = [...new Set([...childClassIds, ...studentClassIds])]
 
     // Get year group IDs from children's classes
