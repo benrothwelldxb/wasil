@@ -872,9 +872,23 @@ model EcaActivity {
   @@index([schoolId, isActive])
 }
 
-enum EcaTimeSlot { BEFORE_SCHOOL AFTER_SCHOOL }
-enum EcaActivityType { OPEN INVITE_ONLY COMPULSORY TRYOUT }
-enum EcaGender { MIXED BOYS_ONLY GIRLS_ONLY }
+enum EcaTimeSlot {
+  BEFORE_SCHOOL
+  AFTER_SCHOOL
+}
+
+enum EcaActivityType {
+  OPEN
+  INVITE_ONLY
+  COMPULSORY
+  TRYOUT
+}
+
+enum EcaGender {
+  MIXED
+  BOYS_ONLY
+  GIRLS_ONLY
+}
 
 // Parent selections during registration
 model EcaSelection {
@@ -915,8 +929,21 @@ model EcaAllocation {
   @@index([ecaTermId, studentId])
 }
 
-enum EcaAllocationType { FIRST_COME SMART_PRIORITY SMART_RANKED SMART_REALLOCATION INVITED COMPULSORY MANUAL }
-enum EcaAllocationStatus { CONFIRMED WITHDRAWN REMOVED }
+enum EcaAllocationType {
+  FIRST_COME
+  SMART_PRIORITY
+  SMART_RANKED
+  SMART_REALLOCATION
+  INVITED
+  COMPULSORY
+  MANUAL
+}
+
+enum EcaAllocationStatus {
+  CONFIRMED
+  WITHDRAWN
+  REMOVED
+}
 
 // Waitlist for full activities
 model EcaWaitlist {
@@ -952,8 +979,18 @@ model EcaInvitation {
   @@unique([ecaActivityId, studentId])
 }
 
-enum EcaInvitationStatus { PENDING ACCEPTED DECLINED EXPIRED }
-enum EcaTryoutResult { SUCCESSFUL UNSUCCESSFUL PENDING }
+enum EcaInvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum EcaTryoutResult {
+  SUCCESSFUL
+  UNSUCCESSFUL
+  PENDING
+}
 
 // Attendance tracking (optional)
 model EcaAttendance {
@@ -976,4 +1013,9 @@ model EcaAttendance {
   @@index([ecaActivityId, sessionDate])
 }
 
-enum EcaAttendanceStatus { PRESENT ABSENT EXCUSED LATE }
+enum EcaAttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+  LATE
+}
