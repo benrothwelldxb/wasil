@@ -43,6 +43,7 @@ export function StudentsPage() {
   const [showSeedPanel, setShowSeedPanel] = useState(false)
   const [seedStats, setSeedStats] = useState<{ testStudents: number; testParents: number; totalStudents: number; totalParents: number } | null>(null)
   const [studentsPerClass, setStudentsPerClass] = useState(10)
+  const [includeEcaActivities, setIncludeEcaActivities] = useState(false)
   const [includeEcaSelections, setIncludeEcaSelections] = useState(false)
   const [isSeeding, setIsSeeding] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
@@ -58,8 +59,11 @@ export function StudentsPage() {
   const handleSeed = async () => {
     setIsSeeding(true)
     try {
-      const result = await api.students.seed({ studentsPerClass, includeEcaSelections })
-      alert(`Test data created: ${result.studentsCreated} students, ${result.parentsCreated} parents${result.ecaSelectionsCreated > 0 ? `, ${result.ecaSelectionsCreated} ECA selections` : ''}`)
+      const result = await api.students.seed({ studentsPerClass, includeEcaActivities, includeEcaSelections })
+      let message = `Test data created: ${result.studentsCreated} students, ${result.parentsCreated} parents`
+      if (result.ecaActivitiesCreated > 0) message += `, ${result.ecaActivitiesCreated} ECA activities`
+      if (result.ecaSelectionsCreated > 0) message += `, ${result.ecaSelectionsCreated} ECA selections`
+      alert(message)
       refetchStudents()
       api.students.seedStats().then(setSeedStats).catch(console.error)
     } catch (error) {
@@ -302,12 +306,28 @@ export function StudentsPage() {
               <label className="flex items-center space-x-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={includeEcaSelections}
-                  onChange={e => setIncludeEcaSelections(e.target.checked)}
+                  checked={includeEcaActivities}
+                  onChange={e => {
+                    setIncludeEcaActivities(e.target.checked)
+                    if (!e.target.checked) setIncludeEcaSelections(false)
+                  }}
                   className="rounded border-purple-300 text-purple-600 focus:ring-purple-500"
                 />
                 <span className="text-sm text-purple-800">
-                  Include ECA activity selections (for testing allocation)
+                  Create ECA activities (or use existing term if available)
+                </span>
+              </label>
+
+              <label className={`flex items-center space-x-2 cursor-pointer ${!includeEcaActivities ? 'opacity-50' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={includeEcaSelections}
+                  onChange={e => setIncludeEcaSelections(e.target.checked)}
+                  disabled={!includeEcaActivities}
+                  className="rounded border-purple-300 text-purple-600 focus:ring-purple-500 disabled:opacity-50"
+                />
+                <span className="text-sm text-purple-800">
+                  Also seed student activity selections (for testing allocation)
                 </span>
               </label>
 

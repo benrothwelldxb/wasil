@@ -953,8 +953,8 @@ export const students = {
   // Test data seeding
   seedStats: () =>
     fetchApi<{ testStudents: number; testParents: number; totalStudents: number; totalParents: number }>('/api/students/seed/stats'),
-  seed: (options?: { studentsPerClass?: number; includeEcaSelections?: boolean }) =>
-    fetchApi<{ studentsCreated: number; parentsCreated: number; linksCreated: number; ecaSelectionsCreated: number }>('/api/students/seed', {
+  seed: (options?: { studentsPerClass?: number; includeEcaActivities?: boolean; includeEcaSelections?: boolean }) =>
+    fetchApi<{ studentsCreated: number; parentsCreated: number; linksCreated: number; ecaActivitiesCreated: number; ecaSelectionsCreated: number }>('/api/students/seed', {
       method: 'POST',
       body: options ? JSON.stringify(options) : undefined,
     }),

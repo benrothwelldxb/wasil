@@ -470,10 +470,11 @@ router.get('/seed/stats', isAdmin, async (req: Request, res: Response) => {
 router.post('/seed', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const { studentsPerClass = 10, includeEcaSelections = false } = req.body
+    const { studentsPerClass = 10, includeEcaActivities = false, includeEcaSelections = false } = req.body
 
     const result = await seedTestData(user.schoolId, {
       studentsPerClass: Math.min(studentsPerClass, 30), // Cap at 30 per class
+      includeEcaActivities,
       includeEcaSelections,
     })
 
