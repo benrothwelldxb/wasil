@@ -1265,6 +1265,9 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
     const studentLinks = user.studentLinks || []
     const studentIds = studentLinks.map(l => l.studentId)
 
+    console.log('[ECA Debug] Parent user:', user.id, user.email)
+    console.log('[ECA Debug] Student links:', studentLinks.length, 'studentIds:', studentIds)
+
     // Get students with their details
     const students = await prisma.student.findMany({
       where: { id: { in: studentIds } },
@@ -1274,6 +1277,15 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
         },
       },
     })
+
+    console.log('[ECA Debug] Students found:', students.map(s => ({
+      id: s.id,
+      name: `${s.firstName} ${s.lastName}`,
+      classId: s.classId,
+      className: s.class.name,
+      yearGroupId: s.class.yearGroupId,
+      yearGroupName: s.class.yearGroup?.name,
+    })))
 
     // Get existing selections for this parent/term
     const existingSelections = await prisma.ecaSelection.findMany({
@@ -1293,6 +1305,11 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
       },
     })
 
+    console.log('[ECA Debug] Term activities count:', term.activities.length)
+    term.activities.forEach(a => {
+      console.log('[ECA Debug] Activity:', a.id, a.name, 'eligibleYearGroupIds:', a.eligibleYearGroupIds)
+    })
+
     // Build activities with eligibility info
     const activitiesWithEligibility = term.activities.map(activity => {
       const eligibleYearGroupIds = JSON.parse(activity.eligibleYearGroupIds as string) as string[]
@@ -1300,6 +1317,10 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
       // Check eligibility for the requested student (or first student)
       const targetStudentId = studentId as string || studentIds[0]
       const student = students.find(s => s.id === targetStudentId)
+
+      console.log('[ECA Debug] Checking activity:', activity.name, 'for student:', targetStudentId)
+      console.log('[ECA Debug] Activity eligibleYearGroupIds:', eligibleYearGroupIds)
+      console.log('[ECA Debug] Student class yearGroupId:', student?.class.yearGroupId)
 
       let isEligible = true
       let eligibilityReason: string | null = null
@@ -1310,7 +1331,12 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
           if (!eligibleYearGroupIds.includes(student.class.yearGroupId)) {
             isEligible = false
             eligibilityReason = 'Not in eligible year group'
+            console.log('[ECA Debug] NOT ELIGIBLE - yearGroup mismatch')
+          } else {
+            console.log('[ECA Debug] ELIGIBLE - yearGroup matches')
           }
+        } else {
+          console.log('[ECA Debug] ELIGIBLE - no yearGroup restriction or student has no yearGroup')
         }
 
         // Gender check (would need gender field on Student)
