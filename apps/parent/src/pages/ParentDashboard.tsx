@@ -7,8 +7,8 @@ import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import { useApi, useMutation } from '@wasil/shared'
 import * as api from '@wasil/shared'
-import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations } from '@wasil/shared'
-import { Clock, Sparkles, MapPin, ChevronRight } from 'lucide-react'
+import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm } from '@wasil/shared'
+import { Clock, Sparkles, MapPin, ChevronRight, Calendar } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 export function ParentDashboard() {
@@ -43,6 +43,10 @@ export function ParentDashboard() {
   )
   const { data: ecaAllocations } = useApi<ParentEcaAllocations[]>(
     () => api.eca.parent.getAllocations(),
+    []
+  )
+  const { data: ecaTerms } = useApi<EcaTerm[]>(
+    () => api.eca.parent.listTerms(),
     []
   )
 
@@ -155,6 +159,27 @@ export function ParentDashboard() {
     return count > 0 ? count : null
   }, [messages])
 
+  // Check for open ECA registration
+  const openRegistrationTerm = useMemo(() => {
+    if (!ecaTerms) return null
+    const now = new Date()
+    return ecaTerms.find(term => {
+      if (term.status !== 'REGISTRATION_OPEN') return false
+      const closes = new Date(term.registrationCloses)
+      return closes > now
+    }) || null
+  }, [ecaTerms])
+
+  // Calculate days left for registration
+  const registrationDaysLeft = useMemo(() => {
+    if (!openRegistrationTerm) return null
+    const now = new Date()
+    const closes = new Date(openRegistrationTerm.registrationCloses)
+    const diffTime = closes.getTime() - now.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    return diffDays > 0 ? diffDays : null
+  }, [openRegistrationTerm])
+
   const handleAcknowledge = async (messageId: string) => {
     await acknowledgeMessage(messageId)
     setMessages((prev) =>
@@ -218,6 +243,42 @@ export function ParentDashboard() {
             {t('dashboard.formsUrgent', { count: urgencySummary, defaultValue: `You have ${urgencySummary} outstanding form${urgencySummary > 1 ? 's' : ''} due within 3 days` })}
           </span>
         </div>
+      )}
+
+      {/* ECA Registration Open Banner */}
+      {openRegistrationTerm && (
+        <Link
+          to="/activities"
+          className="block bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4 hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: theme.colors.brandColor }}
+              >
+                <Sparkles className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">
+                  {t('eca.registrationOpen', 'Activity Registration Open!')}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  {t('eca.registrationOpenBanner', 'Sign up for clubs and activities.')}
+                  {registrationDaysLeft && (
+                    <span className="ml-1 font-medium" style={{ color: theme.colors.brandColor }}>
+                      {t('eca.daysLeft', '{{count}} days left', { count: registrationDaysLeft })}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-sm font-medium" style={{ color: theme.colors.brandColor }}>
+              {t('eca.registerNow', 'Register Now')}
+              <ChevronRight className="h-4 w-4" />
+            </div>
+          </div>
+        </Link>
       )}
 
       {/* Today's Schedule */}
