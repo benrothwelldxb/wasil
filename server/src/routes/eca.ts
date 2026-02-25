@@ -1209,6 +1209,7 @@ router.get('/activities/:id/attendance/export', isAdmin, async (req, res) => {
 router.get('/parent/terms', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
+    console.log('[ECA Debug] GET /parent/terms called by user:', user.id, user.email)
 
     const terms = await prisma.ecaTerm.findMany({
       where: {
@@ -1239,6 +1240,7 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
     const user = req.user!
     const { id } = req.params
     const { studentId } = req.query
+    console.log('[ECA Debug] GET /parent/terms/:id called - termId:', id, 'studentId:', studentId, 'user:', user.email)
 
     const term = await prisma.ecaTerm.findFirst({
       where: { id, schoolId: user.schoolId },
