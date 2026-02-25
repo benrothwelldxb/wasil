@@ -490,7 +490,7 @@ router.put('/activities/:id', isAdmin, async (req, res) => {
         customEndTime: customEndTime !== undefined ? (customEndTime || null) : existing.customEndTime,
         location: location !== undefined ? (location || null) : existing.location,
         activityType: activityType ?? existing.activityType,
-        eligibleYearGroupIds: eligibleYearGroupIds ? JSON.stringify(eligibleYearGroupIds) : existing.eligibleYearGroupIds,
+        eligibleYearGroupIds: eligibleYearGroupIds ? JSON.stringify(eligibleYearGroupIds) : undefined,
         eligibleGender: eligibleGender ?? existing.eligibleGender,
         minCapacity: minCapacity !== undefined ? minCapacity : existing.minCapacity,
         maxCapacity: maxCapacity !== undefined ? maxCapacity : existing.maxCapacity,
