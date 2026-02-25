@@ -104,9 +104,9 @@ export function EcaPage() {
     if (user?.studentLinks && user.studentLinks.length > 0) {
       return user.studentLinks.map(link => ({
         id: link.studentId,
-        name: `${link.student.firstName} ${link.student.lastName}`,
-        classId: link.student.classId,
-        className: link.student.class?.name || '',
+        name: link.studentName,
+        classId: '', // Not available in ParentStudentLinkInfo, but not needed for ECA
+        className: link.className,
       }))
     }
     // Fall back to legacy children
