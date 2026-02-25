@@ -52,7 +52,7 @@ export function EcaPage() {
   const [submitSuccess, setSubmitSuccess] = useState(false)
 
   // Fetch terms
-  const { data: terms, isLoading: termsLoading } = useApi<EcaTerm[]>(
+  const { data: terms, isLoading: termsLoading, error: termsError } = useApi<EcaTerm[]>(
     () => api.eca.parent.listTerms(),
     []
   )
@@ -337,6 +337,24 @@ export function EcaPage() {
           className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin"
           style={{ borderColor: theme.colors.brandColor, borderTopColor: 'transparent' }}
         />
+      </div>
+    )
+  }
+
+  // Error state
+  if (termsError) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold" style={{ color: theme.colors.brandColor }}>
+            {t('eca.title', 'Activities')}
+          </h1>
+          <p className="text-gray-600 mt-1">{t('eca.subtitle', 'Extra-curricular activities for your children')}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
+          <AlertCircle className="h-12 w-12 mx-auto text-red-300 mb-4" />
+          <p className="text-gray-500">{t('common.error', 'An error occurred. Please try again later.')}</p>
+        </div>
       </div>
     )
   }
