@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Plus, X, Upload, Users, Search, Pencil, Trash2 } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Plus, X, Upload, Users, Search, Pencil, Trash2, Sparkles, AlertTriangle } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
 import type { Class, Student } from '@wasil/shared'
 
@@ -38,6 +38,51 @@ export function StudentsPage() {
   const [bulkText, setBulkText] = useState('')
   const [bulkResult, setBulkResult] = useState<BulkImportResult | null>(null)
   const [isBulkImporting, setIsBulkImporting] = useState(false)
+
+  // Seed test data
+  const [showSeedPanel, setShowSeedPanel] = useState(false)
+  const [seedStats, setSeedStats] = useState<{ testStudents: number; testParents: number; totalStudents: number; totalParents: number } | null>(null)
+  const [studentsPerClass, setStudentsPerClass] = useState(10)
+  const [includeEcaSelections, setIncludeEcaSelections] = useState(false)
+  const [isSeeding, setIsSeeding] = useState(false)
+  const [isClearing, setIsClearing] = useState(false)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+
+  // Load seed stats when panel opens
+  useEffect(() => {
+    if (showSeedPanel) {
+      api.students.seedStats().then(setSeedStats).catch(console.error)
+    }
+  }, [showSeedPanel])
+
+  const handleSeed = async () => {
+    setIsSeeding(true)
+    try {
+      const result = await api.students.seed({ studentsPerClass, includeEcaSelections })
+      alert(`Test data created: ${result.studentsCreated} students, ${result.parentsCreated} parents${result.ecaSelectionsCreated > 0 ? `, ${result.ecaSelectionsCreated} ECA selections` : ''}`)
+      refetchStudents()
+      api.students.seedStats().then(setSeedStats).catch(console.error)
+    } catch (error) {
+      alert(`Failed to seed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsSeeding(false)
+    }
+  }
+
+  const handleClearSeed = async () => {
+    setShowClearConfirm(false)
+    setIsClearing(true)
+    try {
+      const result = await api.students.clearSeed()
+      alert(`Test data cleared: ${result.studentsDeleted} students, ${result.parentsDeleted} parents`)
+      refetchStudents()
+      api.students.seedStats().then(setSeedStats).catch(console.error)
+    } catch (error) {
+      alert(`Failed to clear: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsClearing(false)
+    }
+  }
 
   const resetForm = () => {
     setShowForm(false)
@@ -160,14 +205,21 @@ export function StudentsPage() {
         <h2 className="text-xl font-semibold text-slate-900">Students</h2>
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => { setShowBulkImport(!showBulkImport); setShowForm(false); setEditingStudent(null) }}
+            onClick={() => { setShowSeedPanel(!showSeedPanel); setShowBulkImport(false); setShowForm(false); setEditingStudent(null) }}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg border ${showSeedPanel ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Sparkles className="h-4 w-4" />
+            <span>Test Data</span>
+          </button>
+          <button
+            onClick={() => { setShowBulkImport(!showBulkImport); setShowForm(false); setEditingStudent(null); setShowSeedPanel(false) }}
             className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
           >
             <Upload className="h-4 w-4" />
             <span>Bulk Import</span>
           </button>
           <button
-            onClick={() => showForm && !editingStudent ? resetForm() : (setShowForm(true), setShowBulkImport(false), setEditingStudent(null))}
+            onClick={() => showForm && !editingStudent ? resetForm() : (setShowForm(true), setShowBulkImport(false), setEditingStudent(null), setShowSeedPanel(false))}
             className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
             style={{ backgroundColor: theme.colors.brandColor }}
           >
@@ -200,6 +252,114 @@ export function StudentsPage() {
           />
         </div>
       </div>
+
+      {/* Test Data Seed Panel */}
+      {showSeedPanel && (
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 p-6 mb-6">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h3 className="font-medium text-purple-900 flex items-center gap-2">
+                <Sparkles className="h-5 w-5" />
+                Test Data Generator
+              </h3>
+              <p className="text-sm text-purple-700 mt-1">
+                Generate realistic test students and parents for testing. Test data can be cleared at any time.
+              </p>
+            </div>
+            {seedStats && (
+              <div className="text-right text-sm">
+                <div className="text-purple-700">
+                  <span className="font-medium">{seedStats.testStudents}</span> test / <span className="font-medium">{seedStats.totalStudents}</span> total students
+                </div>
+                <div className="text-purple-600">
+                  <span className="font-medium">{seedStats.testParents}</span> test / <span className="font-medium">{seedStats.totalParents}</span> total parents
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Seed Options */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-purple-900 mb-1">
+                  Students per class
+                </label>
+                <select
+                  value={studentsPerClass}
+                  onChange={e => setStudentsPerClass(parseInt(e.target.value))}
+                  className="w-full px-3 py-2 border border-purple-200 rounded-lg bg-white focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value={5}>5 students</option>
+                  <option value={10}>10 students</option>
+                  <option value={15}>15 students</option>
+                  <option value={20}>20 students</option>
+                  <option value={25}>25 students</option>
+                  <option value={30}>30 students (max)</option>
+                </select>
+              </div>
+
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeEcaSelections}
+                  onChange={e => setIncludeEcaSelections(e.target.checked)}
+                  className="rounded border-purple-300 text-purple-600 focus:ring-purple-500"
+                />
+                <span className="text-sm text-purple-800">
+                  Include ECA activity selections (for testing allocation)
+                </span>
+              </label>
+
+              <button
+                onClick={handleSeed}
+                disabled={isSeeding}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
+              >
+                <Sparkles className="h-4 w-4" />
+                <span>{isSeeding ? 'Generating...' : 'Generate Test Data'}</span>
+              </button>
+            </div>
+
+            {/* Clear Options */}
+            <div className="space-y-4">
+              <div className="bg-white/50 rounded-lg p-4 border border-purple-200">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-purple-900">Clear Test Data</p>
+                    <p className="text-xs text-purple-700 mt-1">
+                      This will remove all students with TEST- IDs and their associated parent accounts.
+                      Real students and parents will not be affected.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowClearConfirm(true)}
+                disabled={isClearing || !seedStats || seedStats.testStudents === 0}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-red-700 bg-white border border-red-300 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>{isClearing ? 'Clearing...' : `Clear ${seedStats?.testStudents || 0} Test Students`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Test Data Confirmation */}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        title="Clear Test Data"
+        message={`Are you sure you want to delete ${seedStats?.testStudents || 0} test students and ${seedStats?.testParents || 0} test parents? This action cannot be undone.`}
+        confirmLabel="Clear Test Data"
+        onConfirm={handleClearSeed}
+        onCancel={() => setShowClearConfirm(false)}
+        isLoading={isClearing}
+        variant="danger"
+      />
 
       {/* Bulk Import Form */}
       {showBulkImport && (
