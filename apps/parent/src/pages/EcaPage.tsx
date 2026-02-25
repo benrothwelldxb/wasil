@@ -98,8 +98,20 @@ export function EcaPage() {
 
   const { mutate: respondToInvitation } = useMutation(api.eca.parent.respondToInvitation)
 
-  // Get children from user
-  const children = useMemo(() => user?.children || [], [user])
+  // Get children from user - support both legacy children and new studentLinks
+  const children = useMemo(() => {
+    // Prefer studentLinks (new model)
+    if (user?.studentLinks && user.studentLinks.length > 0) {
+      return user.studentLinks.map(link => ({
+        id: link.studentId,
+        name: `${link.student.firstName} ${link.student.lastName}`,
+        classId: link.student.classId,
+        className: link.student.class?.name || '',
+      }))
+    }
+    // Fall back to legacy children
+    return user?.children || []
+  }, [user])
 
   // Initialize selected student
   React.useEffect(() => {
