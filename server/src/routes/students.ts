@@ -118,6 +118,72 @@ router.get('/search', isAdmin, async (req: Request, res: Response) => {
   }
 })
 
+// =====================
+// Test Data Seeding (must be before /:id routes)
+// =====================
+
+import { seedTestData, clearTestData, getTestDataStats } from '../services/seed.js'
+
+// Get test data statistics
+router.get('/seed/stats', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const stats = await getTestDataStats(user.schoolId)
+    res.json(stats)
+  } catch (error) {
+    console.error('Error getting seed stats:', error)
+    res.status(500).json({ error: 'Failed to get seed statistics' })
+  }
+})
+
+// Seed test students and parents
+router.post('/seed', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { studentsPerClass = 10, includeEcaActivities = false, includeEcaSelections = false } = req.body
+
+    const result = await seedTestData(user.schoolId, {
+      studentsPerClass: Math.min(studentsPerClass, 30), // Cap at 30 per class
+      includeEcaActivities,
+      includeEcaSelections,
+    })
+
+    logAudit({
+      req,
+      action: 'CREATE',
+      resourceType: 'STUDENT',
+      resourceId: 'seed',
+      metadata: { type: 'seed', ...result },
+    })
+
+    res.json(result)
+  } catch (error: any) {
+    console.error('Error seeding test data:', error)
+    res.status(500).json({ error: error.message || 'Failed to seed test data' })
+  }
+})
+
+// Clear test students and parents
+router.delete('/seed', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const result = await clearTestData(user.schoolId)
+
+    logAudit({
+      req,
+      action: 'DELETE',
+      resourceType: 'STUDENT',
+      resourceId: 'seed',
+      metadata: { type: 'seed-clear', ...result },
+    })
+
+    res.json(result)
+  } catch (error) {
+    console.error('Error clearing test data:', error)
+    res.status(500).json({ error: 'Failed to clear test data' })
+  }
+})
+
 // Get single student
 router.get('/:id', isAdmin, async (req: Request, res: Response) => {
   try {
@@ -445,72 +511,6 @@ router.delete('/:id', isAdmin, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error deleting student:', error)
     res.status(500).json({ error: 'Failed to delete student' })
-  }
-})
-
-// =====================
-// Test Data Seeding
-// =====================
-
-import { seedTestData, clearTestData, getTestDataStats } from '../services/seed.js'
-
-// Get test data statistics
-router.get('/seed/stats', isAdmin, async (req: Request, res: Response) => {
-  try {
-    const user = req.user!
-    const stats = await getTestDataStats(user.schoolId)
-    res.json(stats)
-  } catch (error) {
-    console.error('Error getting seed stats:', error)
-    res.status(500).json({ error: 'Failed to get seed statistics' })
-  }
-})
-
-// Seed test students and parents
-router.post('/seed', isAdmin, async (req: Request, res: Response) => {
-  try {
-    const user = req.user!
-    const { studentsPerClass = 10, includeEcaActivities = false, includeEcaSelections = false } = req.body
-
-    const result = await seedTestData(user.schoolId, {
-      studentsPerClass: Math.min(studentsPerClass, 30), // Cap at 30 per class
-      includeEcaActivities,
-      includeEcaSelections,
-    })
-
-    logAudit({
-      req,
-      action: 'CREATE',
-      resourceType: 'STUDENT',
-      resourceId: 'seed',
-      metadata: { type: 'seed', ...result },
-    })
-
-    res.json(result)
-  } catch (error: any) {
-    console.error('Error seeding test data:', error)
-    res.status(500).json({ error: error.message || 'Failed to seed test data' })
-  }
-})
-
-// Clear test students and parents
-router.delete('/seed', isAdmin, async (req: Request, res: Response) => {
-  try {
-    const user = req.user!
-    const result = await clearTestData(user.schoolId)
-
-    logAudit({
-      req,
-      action: 'DELETE',
-      resourceType: 'STUDENT',
-      resourceId: 'seed',
-      metadata: { type: 'seed-clear', ...result },
-    })
-
-    res.json(result)
-  } catch (error) {
-    console.error('Error clearing test data:', error)
-    res.status(500).json({ error: 'Failed to clear test data' })
   }
 })
 
