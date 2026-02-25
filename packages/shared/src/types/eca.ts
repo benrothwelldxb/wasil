@@ -225,10 +225,13 @@ export interface EcaAllocationPreview {
     waitlist: number
     belowMinimum: boolean
     willBeCancelled: boolean
+    minCapacity: number | null
   }>
   totalAllocations: number
   totalWaitlist: number
   activitiesToCancel: number
+  selectionMode: EcaSelectionMode
+  defaultSelectionMode: EcaSelectionMode
 }
 
 export interface EcaAllocationResult {
@@ -236,7 +239,13 @@ export interface EcaAllocationResult {
   allocations: number
   waitlisted: number
   cancelledActivities: number
+  cancelledActivityNames?: string[]
   errors?: string[]
+}
+
+export interface EcaAllocationOptions {
+  selectionMode?: EcaSelectionMode
+  cancelBelowMinimum?: boolean
 }
 
 // Parent-specific types

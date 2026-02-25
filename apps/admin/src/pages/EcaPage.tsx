@@ -153,6 +153,9 @@ export function EcaPage() {
   const [allocationPreview, setAllocationPreview] = useState<EcaAllocationPreview | null>(null)
   const [showAllocationModal, setShowAllocationModal] = useState(false)
   const [runningAllocation, setRunningAllocation] = useState(false)
+  const [selectedAllocationMode, setSelectedAllocationMode] = useState<EcaSelectionMode>('FIRST_COME_FIRST_SERVED')
+  const [cancelBelowMinimum, setCancelBelowMinimum] = useState(true)
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false)
 
   // Activity management
   const [showStudentsModal, setShowStudentsModal] = useState(false)
@@ -377,24 +380,58 @@ export function EcaPage() {
     }
   }
 
-  const handlePreviewAllocation = async () => {
+  const handlePreviewAllocation = async (mode?: EcaSelectionMode) => {
     if (!selectedTermId) return
     try {
-      const preview = await api.eca.previewAllocation(selectedTermId)
+      const preview = await api.eca.previewAllocation(selectedTermId, mode)
       setAllocationPreview(preview)
+      setSelectedAllocationMode(preview.defaultSelectionMode)
+      setCancelBelowMinimum(true)
+      setShowCancelConfirmation(false)
       setShowAllocationModal(true)
     } catch (error) {
       alert(`Failed to preview: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
+  const handleModeChange = async (newMode: EcaSelectionMode) => {
+    setSelectedAllocationMode(newMode)
+    if (!selectedTermId) return
+    try {
+      const preview = await api.eca.previewAllocation(selectedTermId, newMode)
+      setAllocationPreview(preview)
+    } catch (error) {
+      alert(`Failed to update preview: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   const handleRunAllocation = async () => {
     if (!selectedTermId) return
+
+    // If there are activities to cancel and user hasn't confirmed, show confirmation
+    const activitiesToCancel = allocationPreview?.activities.filter(a => a.willBeCancelled) || []
+    if (cancelBelowMinimum && activitiesToCancel.length > 0 && !showCancelConfirmation) {
+      setShowCancelConfirmation(true)
+      return
+    }
+
     setRunningAllocation(true)
     try {
-      const result = await api.eca.runAllocation(selectedTermId)
-      alert(`Allocation complete: ${result.allocations} students allocated, ${result.waitlisted} waitlisted, ${result.cancelledActivities} activities cancelled`)
+      const result = await api.eca.runAllocation(selectedTermId, {
+        selectionMode: selectedAllocationMode,
+        cancelBelowMinimum,
+      })
+
+      let message = `Allocation complete: ${result.allocations} students allocated, ${result.waitlisted} waitlisted`
+      if (result.cancelledActivities > 0) {
+        message += `, ${result.cancelledActivities} activities cancelled`
+        if (result.cancelledActivityNames && result.cancelledActivityNames.length > 0) {
+          message += ` (${result.cancelledActivityNames.join(', ')})`
+        }
+      }
+      alert(message)
       setShowAllocationModal(false)
+      setShowCancelConfirmation(false)
       refetchTerm()
     } catch (error) {
       alert(`Failed to run allocation: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -1297,65 +1334,159 @@ export function EcaPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Allocation Preview</h2>
-              <button onClick={() => setShowAllocationModal(false)} className="p-1 hover:bg-gray-100 rounded">
+              <h2 className="text-lg font-semibold">
+                {showCancelConfirmation ? 'Confirm Cancellations' : 'Allocation Preview'}
+              </h2>
+              <button onClick={() => { setShowAllocationModal(false); setShowCancelConfirmation(false) }} className="p-1 hover:bg-gray-100 rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-4">
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="bg-green-50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-green-700">{allocationPreview.totalAllocations}</p>
-                  <p className="text-sm text-green-600">Allocations</p>
-                </div>
-                <div className="bg-yellow-50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-yellow-700">{allocationPreview.totalWaitlist}</p>
-                  <p className="text-sm text-yellow-600">Waitlisted</p>
-                </div>
-                <div className="bg-red-50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-red-700">{allocationPreview.activitiesToCancel}</p>
-                  <p className="text-sm text-red-600">To Cancel</p>
-                </div>
-              </div>
-
-              <div className="border rounded-lg divide-y">
-                {allocationPreview.activities.map(activity => (
-                  <div key={activity.activityId} className="p-3 flex items-center justify-between">
-                    <div>
-                      <span className="font-medium">{activity.activityName}</span>
-                      {activity.willBeCancelled && (
-                        <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-                          Will be cancelled
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-4 text-sm">
-                      <span className="text-green-600">{activity.allocations} allocated</span>
-                      {activity.waitlist > 0 && (
-                        <span className="text-yellow-600">{activity.waitlist} waitlist</span>
-                      )}
+              {showCancelConfirmation ? (
+                // Cancellation confirmation view
+                <div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="font-medium text-amber-800">The following activities will be cancelled</p>
+                        <p className="text-sm text-amber-700 mt-1">
+                          These activities did not meet their minimum capacity and will be cancelled.
+                          Students will be reallocated to their backup choices where possible.
+                        </p>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              <div className="flex space-x-3 mt-6">
-                <button
-                  onClick={() => setShowAllocationModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleRunAllocation}
-                  disabled={runningAllocation}
-                  className="flex-1 px-4 py-2 rounded-lg text-white disabled:opacity-50"
-                  style={{ backgroundColor: theme.colors.brandColor }}
-                >
-                  {runningAllocation ? 'Running...' : 'Run Allocation'}
-                </button>
-              </div>
+                  <div className="border rounded-lg divide-y mb-4">
+                    {allocationPreview.activities.filter(a => a.willBeCancelled).map(activity => (
+                      <div key={activity.activityId} className="p-3 flex items-center justify-between">
+                        <span className="font-medium">{activity.activityName}</span>
+                        <span className="text-sm text-gray-500">
+                          {activity.allocations}/{activity.minCapacity} minimum
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => setShowCancelConfirmation(false)}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                    >
+                      Go Back
+                    </button>
+                    <button
+                      onClick={() => {
+                        setCancelBelowMinimum(false)
+                        setShowCancelConfirmation(false)
+                      }}
+                      className="flex-1 px-4 py-2 border border-amber-300 rounded-lg text-amber-700 hover:bg-amber-50"
+                    >
+                      Skip Cancellations
+                    </button>
+                    <button
+                      onClick={handleRunAllocation}
+                      disabled={runningAllocation}
+                      className="flex-1 px-4 py-2 rounded-lg text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {runningAllocation ? 'Running...' : 'Confirm & Cancel'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                // Normal preview view
+                <>
+                  {/* Allocation Method Selection */}
+                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Allocation Method
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => handleModeChange('FIRST_COME_FIRST_SERVED')}
+                        className={`p-3 rounded-lg border-2 text-left transition-colors ${
+                          selectedAllocationMode === 'FIRST_COME_FIRST_SERVED'
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <p className="font-medium text-sm">First Come, First Served</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Allocates based on submission order
+                        </p>
+                      </button>
+                      <button
+                        onClick={() => handleModeChange('SMART_ALLOCATION')}
+                        className={`p-3 rounded-lg border-2 text-left transition-colors ${
+                          selectedAllocationMode === 'SMART_ALLOCATION'
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <p className="font-medium text-sm">Smart Allocation</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Uses priorities and ranked choices
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="bg-green-50 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-green-700">{allocationPreview.totalAllocations}</p>
+                      <p className="text-sm text-green-600">Allocations</p>
+                    </div>
+                    <div className="bg-yellow-50 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-yellow-700">{allocationPreview.totalWaitlist}</p>
+                      <p className="text-sm text-yellow-600">Waitlisted</p>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-red-700">{allocationPreview.activitiesToCancel}</p>
+                      <p className="text-sm text-red-600">Below Minimum</p>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
+                    {allocationPreview.activities.map(activity => (
+                      <div key={activity.activityId} className="p-3 flex items-center justify-between">
+                        <div>
+                          <span className="font-medium">{activity.activityName}</span>
+                          {activity.belowMinimum && (
+                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                              Below minimum ({activity.allocations}/{activity.minCapacity})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-4 text-sm">
+                          <span className="text-green-600">{activity.allocations} allocated</span>
+                          {activity.waitlist > 0 && (
+                            <span className="text-yellow-600">{activity.waitlist} waitlist</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex space-x-3 mt-6">
+                    <button
+                      onClick={() => setShowAllocationModal(false)}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleRunAllocation}
+                      disabled={runningAllocation}
+                      className="flex-1 px-4 py-2 rounded-lg text-white disabled:opacity-50"
+                      style={{ backgroundColor: theme.colors.brandColor }}
+                    >
+                      {runningAllocation ? 'Running...' : 'Run Allocation'}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

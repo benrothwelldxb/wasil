@@ -954,6 +954,7 @@ router.post('/terms/:id/run-allocation', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
+    const { selectionMode, cancelBelowMinimum } = req.body
 
     const term = await prisma.ecaTerm.findFirst({
       where: { id, schoolId: user.schoolId },
@@ -967,9 +968,12 @@ router.post('/terms/:id/run-allocation', isAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Allocation can only be run after registration closes' })
     }
 
-    const result = await runAllocation(id, user.schoolId)
+    const result = await runAllocation(id, user.schoolId, {
+      selectionMode,
+      cancelBelowMinimum,
+    })
 
-    logAudit({ req, action: 'CREATE', resourceType: 'ECA_ALLOCATION', resourceId: id, metadata: { termName: term.name, ...result } })
+    logAudit({ req, action: 'CREATE', resourceType: 'ECA_ALLOCATION', resourceId: id, metadata: { termName: term.name, selectionMode, cancelBelowMinimum, ...result } })
 
     res.json(result)
   } catch (error) {
@@ -983,6 +987,7 @@ router.get('/terms/:id/allocation-preview', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
+    const { selectionMode } = req.query as { selectionMode?: 'FIRST_COME_FIRST_SERVED' | 'SMART_ALLOCATION' }
 
     const term = await prisma.ecaTerm.findFirst({
       where: { id, schoolId: user.schoolId },
@@ -992,7 +997,7 @@ router.get('/terms/:id/allocation-preview', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Term not found' })
     }
 
-    const preview = await previewAllocation(id, user.schoolId)
+    const preview = await previewAllocation(id, user.schoolId, selectionMode)
 
     res.json(preview)
   } catch (error) {

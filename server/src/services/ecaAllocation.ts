@@ -1,11 +1,17 @@
 import prisma from './prisma.js'
 import type { EcaAllocationType, EcaAllocationStatus, EcaSelectionMode } from '@prisma/client'
 
+interface AllocationOptions {
+  selectionMode?: 'FIRST_COME_FIRST_SERVED' | 'SMART_ALLOCATION'
+  cancelBelowMinimum?: boolean
+}
+
 interface AllocationResult {
   success: boolean
   allocations: number
   waitlisted: number
   cancelledActivities: number
+  cancelledActivityNames: string[]
   errors: string[]
 }
 
@@ -17,10 +23,13 @@ interface AllocationPreview {
     waitlist: number
     belowMinimum: boolean
     willBeCancelled: boolean
+    minCapacity: number | null
   }>
   totalAllocations: number
   totalWaitlist: number
   activitiesToCancel: number
+  selectionMode: 'FIRST_COME_FIRST_SERVED' | 'SMART_ALLOCATION'
+  defaultSelectionMode: 'FIRST_COME_FIRST_SERVED' | 'SMART_ALLOCATION'
 }
 
 interface SelectionWithDetails {
@@ -64,12 +73,13 @@ interface ActivityEnrollmentMap {
 /**
  * Run the ECA allocation algorithm for a term
  */
-export async function runAllocation(ecaTermId: string, schoolId: string): Promise<AllocationResult> {
+export async function runAllocation(ecaTermId: string, schoolId: string, options: AllocationOptions = {}): Promise<AllocationResult> {
   const result: AllocationResult = {
     success: false,
     allocations: 0,
     waitlisted: 0,
     cancelledActivities: 0,
+    cancelledActivityNames: [],
     errors: [],
   }
 
@@ -79,7 +89,11 @@ export async function runAllocation(ecaTermId: string, schoolId: string): Promis
       where: { schoolId },
     })
 
-    const selectionMode: EcaSelectionMode = settings?.selectionMode || 'FIRST_COME_FIRST_SERVED'
+    // Use provided selectionMode option, or fall back to school settings
+    const selectionMode: EcaSelectionMode = options.selectionMode || settings?.selectionMode || 'FIRST_COME_FIRST_SERVED'
+
+    // Default to cancelling below minimum unless explicitly set to false
+    const cancelBelowMinimum = options.cancelBelowMinimum !== false
 
     // Get all activities for this term
     const activities = await prisma.ecaActivity.findMany({
@@ -173,37 +187,40 @@ export async function runAllocation(ecaTermId: string, schoolId: string): Promis
       )
     }
 
-    // Check minimum capacity and cancel under-enrolled activities
-    for (const activity of activities) {
-      if (activity.minCapacity && activityEnrollment[activity.id].length < activity.minCapacity) {
-        // Cancel the activity
-        await prisma.ecaActivity.update({
-          where: { id: activity.id },
-          data: {
-            isCancelled: true,
-            cancelReason: `Minimum capacity of ${activity.minCapacity} not met`,
-          },
-        })
+    // Check minimum capacity and cancel under-enrolled activities (if enabled)
+    if (cancelBelowMinimum) {
+      for (const activity of activities) {
+        if (activity.minCapacity && activityEnrollment[activity.id].length < activity.minCapacity) {
+          // Cancel the activity
+          await prisma.ecaActivity.update({
+            where: { id: activity.id },
+            data: {
+              isCancelled: true,
+              cancelReason: `Minimum capacity of ${activity.minCapacity} not met`,
+            },
+          })
 
-        // Remove allocations for this activity
-        await prisma.ecaAllocation.deleteMany({
-          where: { ecaActivityId: activity.id },
-        })
+          // Remove allocations for this activity
+          await prisma.ecaAllocation.deleteMany({
+            where: { ecaActivityId: activity.id },
+          })
 
-        // Try to reallocate affected students to their backup choices
-        const affectedStudentIds = activityEnrollment[activity.id]
-        await reallocateStudents(
-          ecaTermId,
-          affectedStudentIds,
-          activity.id,
-          selections,
-          activities,
-          studentSlots,
-          activityEnrollment,
-          result
-        )
+          // Try to reallocate affected students to their backup choices
+          const affectedStudentIds = activityEnrollment[activity.id]
+          await reallocateStudents(
+            ecaTermId,
+            affectedStudentIds,
+            activity.id,
+            selections,
+            activities,
+            studentSlots,
+            activityEnrollment,
+            result
+          )
 
-        result.cancelledActivities++
+          result.cancelledActivities++
+          result.cancelledActivityNames.push(activity.name)
+        }
       }
     }
 
@@ -480,7 +497,7 @@ async function addToWaitlist(
 /**
  * Preview allocation results without committing
  */
-export async function previewAllocation(ecaTermId: string, schoolId: string): Promise<AllocationPreview> {
+export async function previewAllocation(ecaTermId: string, schoolId: string, selectionModeOverride?: 'FIRST_COME_FIRST_SERVED' | 'SMART_ALLOCATION'): Promise<AllocationPreview> {
   const settings = await prisma.ecaSettings.findUnique({
     where: { schoolId },
   })
@@ -513,8 +530,8 @@ export async function previewAllocation(ecaTermId: string, schoolId: string): Pr
 
   const waitlistCounts: { [activityId: string]: number } = {}
 
-  // Simple simulation based on mode
-  const selectionMode = settings?.selectionMode || 'FIRST_COME_FIRST_SERVED'
+  // Simple simulation based on mode (use override if provided)
+  const selectionMode = selectionModeOverride || settings?.selectionMode || 'FIRST_COME_FIRST_SERVED'
 
   if (selectionMode === 'FIRST_COME_FIRST_SERVED') {
     for (const selection of selections) {
@@ -558,12 +575,17 @@ export async function previewAllocation(ecaTermId: string, schoolId: string): Pr
     }
   }
 
+  // Default selection mode from settings
+  const defaultMode = settings?.selectionMode || 'FIRST_COME_FIRST_SERVED'
+
   // Build preview
   const preview: AllocationPreview = {
     activities: [],
     totalAllocations: 0,
     totalWaitlist: 0,
     activitiesToCancel: 0,
+    selectionMode,
+    defaultSelectionMode: defaultMode,
   }
 
   for (const activity of activities) {
@@ -578,6 +600,7 @@ export async function previewAllocation(ecaTermId: string, schoolId: string): Pr
       waitlist,
       belowMinimum,
       willBeCancelled: belowMinimum,
+      minCapacity: activity.minCapacity,
     })
 
     preview.totalAllocations += allocations

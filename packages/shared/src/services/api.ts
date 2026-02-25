@@ -1214,12 +1214,15 @@ export const eca = {
     }),
 
   // Allocation
-  runAllocation: (termId: string) =>
+  runAllocation: (termId: string, options?: { selectionMode?: EcaSelectionMode; cancelBelowMinimum?: boolean }) =>
     fetchApi<EcaAllocationResult>(`/api/eca/terms/${termId}/run-allocation`, {
       method: 'POST',
+      body: options ? JSON.stringify(options) : undefined,
     }),
-  previewAllocation: (termId: string) =>
-    fetchApi<EcaAllocationPreview>(`/api/eca/terms/${termId}/allocation-preview`),
+  previewAllocation: (termId: string, selectionMode?: EcaSelectionMode) => {
+    const params = selectionMode ? `?selectionMode=${selectionMode}` : ''
+    return fetchApi<EcaAllocationPreview>(`/api/eca/terms/${termId}/allocation-preview${params}`)
+  },
   publishAllocation: (termId: string) =>
     fetchApi<{ message: string }>(`/api/eca/terms/${termId}/publish-allocation`, {
       method: 'POST',
