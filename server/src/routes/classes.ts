@@ -49,7 +49,7 @@ router.get('/all', isAdmin, async (req, res) => {
     const classes = await prisma.class.findMany({
       where: { schoolId: user.schoolId },
       include: {
-        _count: { select: { children: true } },
+        _count: { select: { students: true } },
         assignedStaff: {
           include: {
             user: { select: { id: true, name: true, role: true } },
@@ -76,7 +76,7 @@ router.get('/all', isAdmin, async (req, res) => {
       schoolId: c.schoolId,
       yearGroupId: c.yearGroupId,
       yearGroup: c.yearGroup,
-      studentCount: c._count.children,
+      studentCount: c._count.students,
       assignedStaff: c.assignedStaff.map(a => ({
         id: a.user.id,
         name: a.user.name,
@@ -109,7 +109,7 @@ router.post('/', isAdmin, async (req, res) => {
         } : undefined,
       },
       include: {
-        _count: { select: { children: true } },
+        _count: { select: { students: true } },
         assignedStaff: {
           include: {
             user: { select: { id: true, name: true, role: true } },
@@ -129,7 +129,7 @@ router.post('/', isAdmin, async (req, res) => {
       schoolId: newClass.schoolId,
       yearGroupId: newClass.yearGroupId,
       yearGroup: newClass.yearGroup,
-      studentCount: newClass._count.children,
+      studentCount: newClass._count.students,
       assignedStaff: newClass.assignedStaff.map(a => ({
         id: a.user.id,
         name: a.user.name,
@@ -180,7 +180,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         where: { id },
         data: { name, colorBg, colorText, yearGroupId: yearGroupId !== undefined ? (yearGroupId || null) : undefined },
         include: {
-          _count: { select: { children: true } },
+          _count: { select: { students: true } },
           assignedStaff: {
             include: {
               user: { select: { id: true, name: true, role: true } },
@@ -201,7 +201,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       schoolId: updatedClass.schoolId,
       yearGroupId: updatedClass.yearGroupId,
       yearGroup: updatedClass.yearGroup,
-      studentCount: updatedClass._count.children,
+      studentCount: updatedClass._count.students,
       assignedStaff: updatedClass.assignedStaff.map(a => ({
         id: a.user.id,
         name: a.user.name,
@@ -229,13 +229,13 @@ router.delete('/:id', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Class not found' })
     }
 
-    // Check if class has children
-    const childCount = await prisma.child.count({
+    // Check if class has students
+    const studentCount = await prisma.student.count({
       where: { classId: id },
     })
 
-    if (childCount > 0) {
-      return res.status(400).json({ error: 'Cannot delete class with enrolled children' })
+    if (studentCount > 0) {
+      return res.status(400).json({ error: 'Cannot delete class with enrolled students' })
     }
 
     await prisma.class.delete({
