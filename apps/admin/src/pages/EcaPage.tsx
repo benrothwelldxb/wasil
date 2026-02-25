@@ -760,7 +760,7 @@ export function EcaPage() {
               )}
               {selectedTerm.status === 'REGISTRATION_CLOSED' && !selectedTerm.allocationRun && (
                 <button
-                  onClick={handlePreviewAllocation}
+                  onClick={() => handlePreviewAllocation()}
                   className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
                   style={{ backgroundColor: theme.colors.brandColor }}
                 >
