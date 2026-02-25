@@ -203,7 +203,10 @@ router.get('/terms/:id', isAdmin, async (req, res) => {
       updatedAt: term.updatedAt.toISOString(),
       activities: term.activities.map(a => ({
         ...a,
-        eligibleYearGroupIds: JSON.parse(a.eligibleYearGroupIds as string),
+        // Handle both string (legacy) and array (already parsed by Prisma)
+        eligibleYearGroupIds: typeof a.eligibleYearGroupIds === 'string'
+          ? JSON.parse(a.eligibleYearGroupIds)
+          : a.eligibleYearGroupIds,
         currentEnrollment: a._count.allocations,
         waitlistCount: a._count.waitlists,
         selectionCount: a._count.selections,
@@ -437,7 +440,7 @@ router.post('/terms/:id/activities', isAdmin, async (req, res) => {
 
     res.status(201).json({
       ...activity,
-      eligibleYearGroupIds: JSON.parse(activity.eligibleYearGroupIds as string),
+      eligibleYearGroupIds: (typeof activity.eligibleYearGroupIds === 'string' ? JSON.parse(activity.eligibleYearGroupIds) : activity.eligibleYearGroupIds),
       createdAt: activity.createdAt.toISOString(),
       updatedAt: activity.updatedAt.toISOString(),
     })
@@ -526,7 +529,7 @@ router.put('/activities/:id', isAdmin, async (req, res) => {
 
     res.json({
       ...activity,
-      eligibleYearGroupIds: JSON.parse(activity.eligibleYearGroupIds as string),
+      eligibleYearGroupIds: (typeof activity.eligibleYearGroupIds === 'string' ? JSON.parse(activity.eligibleYearGroupIds) : activity.eligibleYearGroupIds),
       createdAt: activity.createdAt.toISOString(),
       updatedAt: activity.updatedAt.toISOString(),
     })
@@ -605,7 +608,7 @@ router.patch('/activities/:id/cancel', isAdmin, async (req, res) => {
 
     res.json({
       ...activity,
-      eligibleYearGroupIds: JSON.parse(activity.eligibleYearGroupIds as string),
+      eligibleYearGroupIds: (typeof activity.eligibleYearGroupIds === 'string' ? JSON.parse(activity.eligibleYearGroupIds) : activity.eligibleYearGroupIds),
       createdAt: activity.createdAt.toISOString(),
       updatedAt: activity.updatedAt.toISOString(),
     })
@@ -1319,7 +1322,7 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
 
     // Build activities with eligibility info
     const activitiesWithEligibility = term.activities.map(activity => {
-      const eligibleYearGroupIds = JSON.parse(activity.eligibleYearGroupIds as string) as string[]
+      const eligibleYearGroupIds = (typeof activity.eligibleYearGroupIds === 'string' ? JSON.parse(activity.eligibleYearGroupIds) : activity.eligibleYearGroupIds) as string[]
 
       // Check eligibility for the requested student (or first student)
       const targetStudentId = studentId as string || studentIds[0]
