@@ -28,6 +28,7 @@ import type {
   EcaTimeSlot,
   EcaActivityType,
   EcaGender,
+  EcaSelectionMode,
   EcaAllocationPreview,
   GroupCategory,
   YearGroup,
@@ -77,8 +78,13 @@ export function EcaPage() {
     () => api.eca.getSettings(),
     []
   )
-  const [settingsForm, setSettingsForm] = useState({
-    selectionMode: 'FIRST_COME_FIRST_SERVED' as const,
+  const [settingsForm, setSettingsForm] = useState<{
+    selectionMode: EcaSelectionMode
+    attendanceEnabled: boolean
+    maxPriorityChoices: number
+    maxChoicesPerDay: number
+  }>({
+    selectionMode: 'FIRST_COME_FIRST_SERVED',
     attendanceEnabled: false,
     maxPriorityChoices: 1,
     maxChoicesPerDay: 3,
