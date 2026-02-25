@@ -23,6 +23,7 @@ import {
   ChevronsRight,
   LogOut,
   UsersRound,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth, useTheme, config } from '@wasil/shared'
@@ -45,6 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { icon: Layers, label: 'Year Groups', path: '/year-groups' },
   { icon: Users, label: 'Classes', path: '/classes' },
   { icon: UsersRound, label: 'Groups', path: '/groups' },
+  { icon: Sparkles, label: 'Activities (ECA)', path: '/eca' },
   { icon: GraduationCap, label: 'Students', path: '/students' },
   { icon: UserCog, label: 'Staff', path: '/staff' },
   { icon: UserPlus, label: 'Parents', path: '/parents' },

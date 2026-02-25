@@ -7,8 +7,9 @@ import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import { useApi, useMutation } from '@wasil/shared'
 import * as api from '@wasil/shared'
-import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class } from '@wasil/shared'
-import { Clock } from 'lucide-react'
+import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations } from '@wasil/shared'
+import { Clock, Sparkles, MapPin, ChevronRight } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 export function ParentDashboard() {
   const { t } = useTranslation()
@@ -38,6 +39,10 @@ export function ParentDashboard() {
   )
   const { data: allClasses } = useApi<Class[]>(
     () => api.classes.list(),
+    []
+  )
+  const { data: ecaAllocations } = useApi<ParentEcaAllocations[]>(
+    () => api.eca.parent.getAllocations(),
     []
   )
 
@@ -102,6 +107,38 @@ export function ParentDashboard() {
       return false
     })
   }, [scheduleData, todayDayOfWeek, todayString])
+
+  // Get today's ECA activities
+  const todaysEcaActivities = useMemo(() => {
+    if (!ecaAllocations) return []
+    const activities: Array<{
+      studentName: string
+      activityName: string
+      timeSlot: string
+      location?: string | null
+      startTime?: string | null
+      endTime?: string | null
+    }> = []
+    ecaAllocations.forEach(student => {
+      student.allocations
+        .filter(a => a.status === 'CONFIRMED' && a.dayOfWeek === todayDayOfWeek)
+        .forEach(a => {
+          activities.push({
+            studentName: student.studentName,
+            activityName: a.activityName,
+            timeSlot: a.timeSlot === 'BEFORE_SCHOOL' ? 'Before School' : 'After School',
+            location: a.location,
+            startTime: a.startTime,
+            endTime: a.endTime,
+          })
+        })
+    })
+    return activities.sort((a, b) => {
+      if (a.timeSlot === 'Before School' && b.timeSlot !== 'Before School') return -1
+      if (a.timeSlot !== 'Before School' && b.timeSlot === 'Before School') return 1
+      return 0
+    })
+  }, [ecaAllocations, todayDayOfWeek])
 
   // Urgency summary: count outstanding forms nearing deadline across all messages
   const urgencySummary = useMemo(() => {
@@ -189,6 +226,63 @@ export function ParentDashboard() {
           items={todaysSchedule}
           date={todayString}
         />
+      )}
+
+      {/* Today's ECA Activities */}
+      {todaysEcaActivities.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" style={{ color: theme.colors.brandColor }} />
+              <h3 className="font-semibold" style={{ color: theme.colors.brandColor }}>
+                {t('eca.todayActivities', "Today's Activities")}
+              </h3>
+            </div>
+            <Link
+              to="/activities"
+              className="text-sm flex items-center gap-1 hover:underline"
+              style={{ color: theme.colors.brandColor }}
+            >
+              {t('eca.viewAll', 'View all')}
+              <ChevronRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {todaysEcaActivities.map((activity, idx) => (
+              <div key={idx} className="p-3 flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
+                  style={{ backgroundColor: theme.colors.brandColor }}
+                >
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-gray-900 truncate">{activity.activityName}</div>
+                  <div className="text-sm text-gray-500 flex flex-wrap items-center gap-2">
+                    <span>{activity.studentName}</span>
+                    <span>&middot;</span>
+                    <span>{activity.timeSlot}</span>
+                    {activity.startTime && activity.endTime && (
+                      <>
+                        <span>&middot;</span>
+                        <span>{activity.startTime} - {activity.endTime}</span>
+                      </>
+                    )}
+                    {activity.location && (
+                      <>
+                        <span>&middot;</span>
+                        <span className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {activity.location}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Messages Section */}

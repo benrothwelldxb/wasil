@@ -45,6 +45,10 @@ model School {
   externalLinks       ExternalLink[]
   groupCategories     GroupCategory[]
   groups              Group[]
+  // ECA relations
+  ecaSettings         EcaSettings?
+  ecaTerms            EcaTerm[]
+  ecaActivities       EcaActivity[]
 }
 
 // Users (Parents, Staff & Admins)
@@ -93,6 +97,12 @@ model User {
   // Group management
   staffGroupAssignments StaffGroupAssignment[]
 
+  // ECA relations
+  ecaSelections        EcaSelection[] @relation("EcaSelections")
+  ecaActivitiesManaged EcaActivity[]  @relation("EcaActivityStaff")
+  ecaInvitationsSent   EcaInvitation[] @relation("EcaInvitationsSent")
+  ecaAttendanceMarked  EcaAttendance[] @relation("EcaAttendanceMarkedBy")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -137,6 +147,12 @@ model Student {
   parentLinks     ParentStudentLink[]
   invitationLinks StudentInvitationLink[]
   groupLinks      StudentGroupLink[]
+  // ECA relations
+  ecaSelections   EcaSelection[]
+  ecaAllocations  EcaAllocation[]
+  ecaWaitlists    EcaWaitlist[]
+  ecaInvitations  EcaInvitation[]
+  ecaAttendance   EcaAttendance[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -577,6 +593,9 @@ enum AuditResourceType {
   PARENT_INVITATION
   GROUP
   GROUP_CATEGORY
+  ECA_TERM
+  ECA_ACTIVITY
+  ECA_ALLOCATION
 }
 
 model AuditLog {
@@ -671,6 +690,7 @@ model GroupCategory {
   schoolId  String
   school    School   @relation(fields: [schoolId], references: [id])
   groups    Group[]
+  ecaActivities EcaActivity[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -694,6 +714,7 @@ model Group {
   staffManagers   StaffGroupAssignment[]
   messages        Message[]
   events          Event[]
+  ecaActivity     EcaActivity?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -749,3 +770,210 @@ model ExternalLink {
   @@index([schoolId, active, order])
   @@index([categoryId])
 }
+
+// ============================================
+// ECA (Extra-Curricular Activities) Module
+// ============================================
+
+// School-level ECA settings
+model EcaSettings {
+  id                    String   @id @default(cuid())
+  schoolId              String   @unique
+  school                School   @relation(fields: [schoolId], references: [id])
+  selectionMode         EcaSelectionMode @default(FIRST_COME_FIRST_SERVED)
+  attendanceEnabled     Boolean  @default(false)
+  maxPriorityChoices    Int      @default(1)  // Priority ECAs per week
+  maxChoicesPerDay      Int      @default(3)  // Ranked choices per slot
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+enum EcaSelectionMode {
+  FIRST_COME_FIRST_SERVED
+  SMART_ALLOCATION
+}
+
+// ECA Term - registration windows and time slots per term
+model EcaTerm {
+  id                       String   @id @default(cuid())
+  schoolId                 String
+  school                   School   @relation(fields: [schoolId], references: [id])
+  name                     String   // "Term 1 2025/26"
+  termNumber               Int      // 1, 2, 3
+  academicYear             String   // "2025/26"
+  startDate                DateTime
+  endDate                  DateTime
+  registrationOpens        DateTime
+  registrationCloses       DateTime
+  defaultBeforeSchoolStart String?  // "07:30"
+  defaultBeforeSchoolEnd   String?  // "08:15"
+  defaultAfterSchoolStart  String?  // "15:30"
+  defaultAfterSchoolEnd    String?  // "16:30"
+  status                   EcaTermStatus @default(DRAFT)
+  allocationRun            Boolean  @default(false)
+  activities               EcaActivity[]
+  selections               EcaSelection[]
+  allocations              EcaAllocation[]
+  waitlists                EcaWaitlist[]
+  attendanceRecords        EcaAttendance[]
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@unique([schoolId, termNumber, academicYear])
+  @@index([schoolId, status])
+}
+
+enum EcaTermStatus {
+  DRAFT               // Setup phase
+  REGISTRATION_OPEN   // Parents can submit
+  REGISTRATION_CLOSED // Waiting for allocation
+  ALLOCATION_COMPLETE // Results published
+  ACTIVE              // Term in progress
+  COMPLETED           // Term ended
+}
+
+// ECA Activity - individual activity offering
+model EcaActivity {
+  id                   String   @id @default(cuid())
+  ecaTermId            String
+  ecaTerm              EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  schoolId             String
+  school               School   @relation(fields: [schoolId], references: [id])
+  name                 String   // "Football Club"
+  description          String?
+  groupId              String?  @unique  // Auto-created group
+  group                Group?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  categoryId           String?
+  category             GroupCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  dayOfWeek            Int      // 0=Sun, 1=Mon, etc.
+  timeSlot             EcaTimeSlot
+  customStartTime      String?  // Override default
+  customEndTime        String?
+  location             String?
+  activityType         EcaActivityType @default(OPEN)
+  eligibleYearGroupIds Json     @default("[]")  // String[]
+  eligibleGender       EcaGender @default(MIXED)
+  minCapacity          Int?
+  maxCapacity          Int?
+  staffId              String?
+  staff                User?    @relation("EcaActivityStaff", fields: [staffId], references: [id])
+  isActive             Boolean  @default(true)
+  isCancelled          Boolean  @default(false)
+  cancelReason         String?
+  selections           EcaSelection[]
+  allocations          EcaAllocation[]
+  waitlists            EcaWaitlist[]
+  invitations          EcaInvitation[]
+  attendanceRecords    EcaAttendance[]
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([ecaTermId, dayOfWeek, timeSlot])
+  @@index([schoolId, isActive])
+}
+
+enum EcaTimeSlot { BEFORE_SCHOOL AFTER_SCHOOL }
+enum EcaActivityType { OPEN INVITE_ONLY COMPULSORY TRYOUT }
+enum EcaGender { MIXED BOYS_ONLY GIRLS_ONLY }
+
+// Parent selections during registration
+model EcaSelection {
+  id            String   @id @default(cuid())
+  ecaTermId     String
+  ecaTerm       EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parentUserId  String
+  parentUser    User     @relation("EcaSelections", fields: [parentUserId], references: [id], onDelete: Cascade)
+  ecaActivityId String
+  ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  rank          Int      @default(1)  // 1=first choice
+  isPriority    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([ecaTermId, studentId, ecaActivityId])
+  @@index([ecaTermId, studentId])
+}
+
+// Final allocations after algorithm runs
+model EcaAllocation {
+  id              String   @id @default(cuid())
+  ecaTermId       String
+  ecaTerm         EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  studentId       String
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  ecaActivityId   String
+  ecaActivity     EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  allocationType  EcaAllocationType
+  allocationRound Int?
+  status          EcaAllocationStatus @default(CONFIRMED)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([ecaTermId, studentId, ecaActivityId])
+  @@index([ecaTermId, studentId])
+}
+
+enum EcaAllocationType { FIRST_COME SMART_PRIORITY SMART_RANKED SMART_REALLOCATION INVITED COMPULSORY MANUAL }
+enum EcaAllocationStatus { CONFIRMED WITHDRAWN REMOVED }
+
+// Waitlist for full activities
+model EcaWaitlist {
+  id            String   @id @default(cuid())
+  ecaTermId     String
+  ecaTerm       EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  ecaActivityId String
+  ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  position      Int
+  createdAt     DateTime @default(now())
+
+  @@unique([ecaTermId, studentId, ecaActivityId])
+  @@index([ecaActivityId, position])
+}
+
+// Invitations for invite-only/tryout activities
+model EcaInvitation {
+  id            String   @id @default(cuid())
+  ecaActivityId String
+  ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status        EcaInvitationStatus @default(PENDING)
+  invitedById   String
+  invitedBy     User     @relation("EcaInvitationsSent", fields: [invitedById], references: [id])
+  isTryout      Boolean  @default(false)
+  tryoutResult  EcaTryoutResult?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([ecaActivityId, studentId])
+}
+
+enum EcaInvitationStatus { PENDING ACCEPTED DECLINED EXPIRED }
+enum EcaTryoutResult { SUCCESSFUL UNSUCCESSFUL PENDING }
+
+// Attendance tracking (optional)
+model EcaAttendance {
+  id            String   @id @default(cuid())
+  ecaTermId     String
+  ecaTerm       EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  ecaActivityId String
+  ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sessionDate   DateTime
+  status        EcaAttendanceStatus
+  note          String?
+  markedById    String?
+  markedBy      User?    @relation("EcaAttendanceMarkedBy", fields: [markedById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([ecaActivityId, studentId, sessionDate])
+  @@index([ecaActivityId, sessionDate])
+}
+
+enum EcaAttendanceStatus { PRESENT ABSENT EXCUSED LATE }

@@ -43,6 +43,24 @@ import type {
   GroupStaffAssignment,
   GroupMemberListResponse,
   ParentGroupInfo,
+  EcaSettings,
+  EcaTerm,
+  EcaTermWithActivities,
+  EcaActivity,
+  EcaAllocationPreview,
+  EcaAllocationResult,
+  ParentEcaTerm,
+  ParentEcaSelections,
+  ParentEcaAllocations,
+  EcaSelectionSubmission,
+  EcaAttendanceSession,
+  EcaAttendanceMarkRequest,
+  EcaTermStatus,
+  EcaSelectionMode,
+  EcaTimeSlot,
+  EcaActivityType,
+  EcaGender,
+  EcaAttendanceStatus,
 } from '../types'
 
 const API_URL = config.apiUrl
@@ -1035,6 +1053,242 @@ export const groups = {
     }),
 }
 
+// ECA (Extra-Curricular Activities)
+export const eca = {
+  // Admin endpoints
+  getSettings: () => fetchApi<EcaSettings>('/api/eca/settings'),
+  updateSettings: (data: {
+    selectionMode?: EcaSelectionMode
+    attendanceEnabled?: boolean
+    maxPriorityChoices?: number
+    maxChoicesPerDay?: number
+  }) =>
+    fetchApi<EcaSettings>('/api/eca/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  // Terms
+  listTerms: () => fetchApi<EcaTerm[]>('/api/eca/terms'),
+  getTerm: (id: string) => fetchApi<EcaTermWithActivities>(`/api/eca/terms/${id}`),
+  createTerm: (data: {
+    name: string
+    termNumber: number
+    academicYear: string
+    startDate: string
+    endDate: string
+    registrationOpens: string
+    registrationCloses: string
+    defaultBeforeSchoolStart?: string
+    defaultBeforeSchoolEnd?: string
+    defaultAfterSchoolStart?: string
+    defaultAfterSchoolEnd?: string
+  }) =>
+    fetchApi<EcaTerm>('/api/eca/terms', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateTerm: (id: string, data: Partial<{
+    name: string
+    startDate: string
+    endDate: string
+    registrationOpens: string
+    registrationCloses: string
+    defaultBeforeSchoolStart: string
+    defaultBeforeSchoolEnd: string
+    defaultAfterSchoolStart: string
+    defaultAfterSchoolEnd: string
+  }>) =>
+    fetchApi<EcaTerm>(`/api/eca/terms/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteTerm: (id: string) =>
+    fetchApi<{ message: string }>(`/api/eca/terms/${id}`, {
+      method: 'DELETE',
+    }),
+  updateTermStatus: (id: string, status: EcaTermStatus) =>
+    fetchApi<EcaTerm>(`/api/eca/terms/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+
+  // Activities
+  createActivity: (termId: string, data: {
+    name: string
+    description?: string
+    categoryId?: string
+    dayOfWeek: number
+    timeSlot: EcaTimeSlot
+    customStartTime?: string
+    customEndTime?: string
+    location?: string
+    activityType?: EcaActivityType
+    eligibleYearGroupIds?: string[]
+    eligibleGender?: EcaGender
+    minCapacity?: number
+    maxCapacity?: number
+    staffId?: string
+  }) =>
+    fetchApi<EcaActivity>(`/api/eca/terms/${termId}/activities`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateActivity: (id: string, data: Partial<{
+    name: string
+    description: string
+    categoryId: string
+    dayOfWeek: number
+    timeSlot: EcaTimeSlot
+    customStartTime: string
+    customEndTime: string
+    location: string
+    activityType: EcaActivityType
+    eligibleYearGroupIds: string[]
+    eligibleGender: EcaGender
+    minCapacity: number
+    maxCapacity: number
+    staffId: string
+    isActive: boolean
+  }>) =>
+    fetchApi<EcaActivity>(`/api/eca/activities/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteActivity: (id: string) =>
+    fetchApi<{ message: string }>(`/api/eca/activities/${id}`, {
+      method: 'DELETE',
+    }),
+  cancelActivity: (id: string, reason?: string) =>
+    fetchApi<EcaActivity>(`/api/eca/activities/${id}/cancel`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reason }),
+    }),
+
+  // Activity students
+  getActivityStudents: (id: string) =>
+    fetchApi<Array<{
+      id: string
+      studentId: string
+      studentName: string
+      className: string
+      allocationType: string
+      status: string
+      createdAt: string
+    }>>(`/api/eca/activities/${id}/students`),
+  addStudentToActivity: (id: string, studentId: string) =>
+    fetchApi<any>(`/api/eca/activities/${id}/students`, {
+      method: 'POST',
+      body: JSON.stringify({ studentId }),
+    }),
+  removeStudentFromActivity: (id: string, studentId: string) =>
+    fetchApi<{ message: string }>(`/api/eca/activities/${id}/students/${studentId}`, {
+      method: 'DELETE',
+    }),
+
+  // Waitlist
+  getActivityWaitlist: (id: string) =>
+    fetchApi<Array<{
+      id: string
+      studentId: string
+      studentName: string
+      className: string
+      position: number
+      createdAt: string
+    }>>(`/api/eca/activities/${id}/waitlist`),
+  promoteFromWaitlist: (activityId: string, studentId: string) =>
+    fetchApi<{ message: string }>(`/api/eca/activities/${activityId}/waitlist/${studentId}/promote`, {
+      method: 'POST',
+    }),
+
+  // Invitations
+  inviteStudents: (activityId: string, studentIds: string[], isTryout?: boolean) =>
+    fetchApi<{ created: number; invitations: any[] }>(`/api/eca/activities/${activityId}/invite`, {
+      method: 'POST',
+      body: JSON.stringify({ studentIds, isTryout }),
+    }),
+  updateInvitation: (id: string, data: { status?: string; tryoutResult?: string }) =>
+    fetchApi<any>(`/api/eca/invitations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  // Allocation
+  runAllocation: (termId: string) =>
+    fetchApi<EcaAllocationResult>(`/api/eca/terms/${termId}/run-allocation`, {
+      method: 'POST',
+    }),
+  previewAllocation: (termId: string) =>
+    fetchApi<EcaAllocationPreview>(`/api/eca/terms/${termId}/allocation-preview`),
+  publishAllocation: (termId: string) =>
+    fetchApi<{ message: string }>(`/api/eca/terms/${termId}/publish-allocation`, {
+      method: 'POST',
+    }),
+
+  // Attendance
+  getAttendance: (activityId: string, date?: string) => {
+    const params = date ? `?date=${date}` : ''
+    return fetchApi<EcaAttendanceSession>(`/api/eca/activities/${activityId}/attendance${params}`)
+  },
+  markAttendance: (activityId: string, data: EcaAttendanceMarkRequest) =>
+    fetchApi<{ message: string }>(`/api/eca/activities/${activityId}/attendance`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  exportAttendanceHtml: async (activityId: string, startDate?: string, endDate?: string, blank?: boolean) => {
+    const params = new URLSearchParams()
+    if (startDate) params.append('startDate', startDate)
+    if (endDate) params.append('endDate', endDate)
+    if (blank) params.append('blank', 'true')
+    const query = params.toString() ? `?${params.toString()}` : ''
+
+    const headers: Record<string, string> = {}
+    const token = getAccessToken()
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    const response = await fetch(`${API_URL}/api/eca/activities/${activityId}/attendance/export${query}`, { headers })
+    if (!response.ok) throw new Error('Export failed')
+    return response.text()
+  },
+
+  // Parent endpoints
+  parent: {
+    listTerms: () => fetchApi<EcaTerm[]>('/api/eca/parent/terms'),
+    getTerm: (id: string, studentId?: string) => {
+      const params = studentId ? `?studentId=${studentId}` : ''
+      return fetchApi<ParentEcaTerm>(`/api/eca/parent/terms/${id}${params}`)
+    },
+    getSelections: (termId: string) =>
+      fetchApi<ParentEcaSelections[]>(`/api/eca/parent/terms/${termId}/selections`),
+    submitSelections: (termId: string, data: EcaSelectionSubmission) =>
+      fetchApi<{ message: string; count: number }>(`/api/eca/parent/terms/${termId}/selections`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    getAllocations: () => fetchApi<ParentEcaAllocations[]>('/api/eca/parent/allocations'),
+    getInvitations: () =>
+      fetchApi<Array<{
+        id: string
+        studentId: string
+        studentName: string
+        activityId: string
+        activityName: string
+        activityDescription?: string
+        dayOfWeek: number
+        timeSlot: string
+        location?: string
+        isTryout: boolean
+        invitedByName: string
+        createdAt: string
+      }>>('/api/eca/parent/invitations'),
+    respondToInvitation: (id: string, accept: boolean) =>
+      fetchApi<{ message: string }>(`/api/eca/parent/invitations/${id}/respond`, {
+        method: 'POST',
+        body: JSON.stringify({ accept }),
+      }),
+  },
+}
+
 export default {
   auth,
   messages,
@@ -1059,4 +1313,5 @@ export default {
   students,
   links,
   groups,
+  eca,
 }

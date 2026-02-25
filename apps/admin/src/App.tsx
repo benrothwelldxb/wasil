@@ -22,6 +22,7 @@ import { AuditLogPage } from './pages/AuditLogPage'
 import { SchedulePage } from './pages/SchedulePage'
 import { LinksPage } from './pages/LinksPage'
 import { GroupsPage } from './pages/GroupsPage'
+import { EcaPage } from './pages/EcaPage'
 
 const PARENT_APP_URL = import.meta.env.VITE_PARENT_URL || 'http://localhost:3000'
 
@@ -114,6 +115,7 @@ export default function App() {
         <Route path="/files" element={<FilesPage />} />
         <Route path="/links" element={<LinksPage />} />
         <Route path="/groups" element={<GroupsPage />} />
+        <Route path="/eca" element={<EcaPage />} />
         <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
         <Route path="/audit-log" element={<AuditLogPage />} />
         <Route

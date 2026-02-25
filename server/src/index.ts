@@ -27,6 +27,7 @@ import parentInvitationsRoutes from './routes/parentInvitations.js'
 import studentsRoutes from './routes/students.js'
 import linksRoutes from './routes/links.js'
 import groupsRoutes from './routes/groups.js'
+import ecaRoutes from './routes/eca.js'
 import { initFirebase } from './services/firebase.js'
 
 dotenv.config()
@@ -74,6 +75,7 @@ app.use('/api/parent-invitations', parentInvitationsRoutes)
 app.use('/api/students', studentsRoutes)
 app.use('/api/links', linksRoutes)
 app.use('/api/groups', groupsRoutes)
+app.use('/api/eca', ecaRoutes)
 
 // Health check
 app.get('/health', (_req, res) => {

@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ExternalLink,
   UsersRound,
+  Sparkles,
 } from 'lucide-react'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
@@ -95,6 +96,7 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
     { icon: ScrollText, labelKey: 'nav.policies', path: '/policies' },
     { icon: Folder, labelKey: 'nav.files', path: '/files' },
     { icon: ExternalLink, labelKey: 'nav.links', path: '/links' },
+    { icon: Sparkles, labelKey: 'nav.activities', path: '/activities' },
   ]
 
   // Add Super Admin link for SUPER_ADMIN users

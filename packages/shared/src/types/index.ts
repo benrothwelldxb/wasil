@@ -323,7 +323,7 @@ export type AuditResourceType =
   | 'PULSE_SURVEY' | 'YEAR_GROUP' | 'CLASS' | 'STAFF' | 'STUDENT' | 'POLICY'
   | 'FILE' | 'FOLDER' | 'SCHEDULE_ITEM' | 'KNOWLEDGE_CATEGORY'
   | 'KNOWLEDGE_ARTICLE' | 'SCHOOL' | 'FORM' | 'PARENT_INVITATION'
-  | 'GROUP' | 'GROUP_CATEGORY'
+  | 'GROUP' | 'GROUP_CATEGORY' | 'ECA_TERM' | 'ECA_ACTIVITY' | 'ECA_ALLOCATION'
 
 export interface AuditLog {
   id: string
@@ -636,3 +636,6 @@ export interface ParentGroupInfo {
     studentName: string
   }>
 }
+
+// ECA Types
+export * from './eca'
