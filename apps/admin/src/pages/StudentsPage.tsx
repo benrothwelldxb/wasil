@@ -350,16 +350,17 @@ export function StudentsPage() {
       )}
 
       {/* Clear Test Data Confirmation */}
-      <ConfirmModal
-        isOpen={showClearConfirm}
-        title="Clear Test Data"
-        message={`Are you sure you want to delete ${seedStats?.testStudents || 0} test students and ${seedStats?.testParents || 0} test parents? This action cannot be undone.`}
-        confirmLabel="Clear Test Data"
-        onConfirm={handleClearSeed}
-        onCancel={() => setShowClearConfirm(false)}
-        isLoading={isClearing}
-        variant="danger"
-      />
+      {showClearConfirm && (
+        <ConfirmModal
+          title="Clear Test Data"
+          message={`Are you sure you want to delete ${seedStats?.testStudents || 0} test students and ${seedStats?.testParents || 0} test parents? This action cannot be undone.`}
+          confirmLabel="Clear Test Data"
+          onConfirm={handleClearSeed}
+          onCancel={() => setShowClearConfirm(false)}
+          isLoading={isClearing}
+          variant="danger"
+        />
+      )}
 
       {/* Bulk Import Form */}
       {showBulkImport && (
