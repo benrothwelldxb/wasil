@@ -30,6 +30,7 @@ import type {
   EcaGender,
   EcaSelectionMode,
   EcaAllocationPreview,
+  EcaAllocationResult,
   GroupCategory,
   YearGroup,
 } from '@wasil/shared'
@@ -156,6 +157,8 @@ export function EcaPage() {
   const [selectedAllocationMode, setSelectedAllocationMode] = useState<EcaSelectionMode>('FIRST_COME_FIRST_SERVED')
   const [cancelBelowMinimum, setCancelBelowMinimum] = useState(true)
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false)
+  const [allocationResult, setAllocationResult] = useState<EcaAllocationResult | null>(null)
+  const [showAllocationResultModal, setShowAllocationResultModal] = useState(false)
 
   // Activity management
   const [showStudentsModal, setShowStudentsModal] = useState(false)
@@ -422,16 +425,11 @@ export function EcaPage() {
         cancelBelowMinimum,
       })
 
-      let message = `Allocation complete: ${result.allocations} students allocated, ${result.waitlisted} waitlisted`
-      if (result.cancelledActivities > 0) {
-        message += `, ${result.cancelledActivities} activities cancelled`
-        if (result.cancelledActivityNames && result.cancelledActivityNames.length > 0) {
-          message += ` (${result.cancelledActivityNames.join(', ')})`
-        }
-      }
-      alert(message)
+      // Store result and show results modal
+      setAllocationResult(result)
       setShowAllocationModal(false)
       setShowCancelConfirmation(false)
+      setShowAllocationResultModal(true)
       refetchTerm()
     } catch (error) {
       alert(`Failed to run allocation: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -1598,6 +1596,244 @@ export function EcaPage() {
           onCancel={() => setDeleteConfirm(null)}
           variant="danger"
         />
+      )}
+
+      {/* Allocation Result Modal */}
+      {showAllocationResultModal && allocationResult && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {allocationResult.success ? (
+                  <Check className="w-5 h-5 text-green-600" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                )}
+                <h2 className="text-lg font-semibold">
+                  Allocation {allocationResult.success ? 'Complete' : 'Failed'}
+                </h2>
+              </div>
+              <button onClick={() => setShowAllocationResultModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              {/* Summary Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-blue-50 rounded-lg p-3">
+                  <p className="text-sm text-blue-600 font-medium">Total Students</p>
+                  <p className="text-2xl font-bold text-blue-900">{allocationResult.totalStudents}</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-3">
+                  <p className="text-sm text-green-600 font-medium">Allocated</p>
+                  <p className="text-2xl font-bold text-green-900">{allocationResult.totalAllocations}</p>
+                </div>
+                <div className="bg-yellow-50 rounded-lg p-3">
+                  <p className="text-sm text-yellow-600 font-medium">Waitlisted</p>
+                  <p className="text-2xl font-bold text-yellow-900">{allocationResult.waitlisted}</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-3">
+                  <p className="text-sm text-red-600 font-medium">Cancelled</p>
+                  <p className="text-2xl font-bold text-red-900">{allocationResult.cancelledActivities}</p>
+                </div>
+              </div>
+
+              {/* Satisfaction Metrics (Smart Allocation only) */}
+              {(allocationResult.firstChoiceAllocations !== undefined ||
+                allocationResult.secondChoiceAllocations !== undefined) && (
+                <div className="mb-6">
+                  <h3 className="font-medium text-gray-900 mb-3">Satisfaction Breakdown</h3>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase">1st Choice</p>
+                        <p className="text-xl font-bold text-green-600">
+                          {allocationResult.firstChoiceAllocations || 0}
+                          {allocationResult.totalAllocations > 0 && (
+                            <span className="text-sm font-normal text-gray-500 ml-1">
+                              ({Math.round(((allocationResult.firstChoiceAllocations || 0) / allocationResult.totalAllocations) * 100)}%)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase">2nd Choice</p>
+                        <p className="text-xl font-bold text-blue-600">
+                          {allocationResult.secondChoiceAllocations || 0}
+                          {allocationResult.totalAllocations > 0 && (
+                            <span className="text-sm font-normal text-gray-500 ml-1">
+                              ({Math.round(((allocationResult.secondChoiceAllocations || 0) / allocationResult.totalAllocations) * 100)}%)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase">3rd Choice</p>
+                        <p className="text-xl font-bold text-yellow-600">
+                          {allocationResult.thirdChoiceAllocations || 0}
+                          {allocationResult.totalAllocations > 0 && (
+                            <span className="text-sm font-normal text-gray-500 ml-1">
+                              ({Math.round(((allocationResult.thirdChoiceAllocations || 0) / allocationResult.totalAllocations) * 100)}%)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase">Forced</p>
+                        <p className="text-xl font-bold text-orange-600">
+                          {allocationResult.forcedAllocations || 0}
+                          {allocationResult.totalAllocations > 0 && (
+                            <span className="text-sm font-normal text-gray-500 ml-1">
+                              ({Math.round(((allocationResult.forcedAllocations || 0) / allocationResult.totalAllocations) * 100)}%)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    {allocationResult.totalAllocations > 0 && (
+                      <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden flex">
+                        <div
+                          className="bg-green-500"
+                          style={{ width: `${((allocationResult.firstChoiceAllocations || 0) / allocationResult.totalAllocations) * 100}%` }}
+                        />
+                        <div
+                          className="bg-blue-500"
+                          style={{ width: `${((allocationResult.secondChoiceAllocations || 0) / allocationResult.totalAllocations) * 100}%` }}
+                        />
+                        <div
+                          className="bg-yellow-500"
+                          style={{ width: `${((allocationResult.thirdChoiceAllocations || 0) / allocationResult.totalAllocations) * 100}%` }}
+                        />
+                        <div
+                          className="bg-orange-500"
+                          style={{ width: `${((allocationResult.forcedAllocations || 0) / allocationResult.totalAllocations) * 100}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Cancelled Activities */}
+              {allocationResult.cancelledActivities > 0 && allocationResult.cancelledActivityNames && (
+                <div className="mb-6">
+                  <h3 className="font-medium text-gray-900 mb-3">Cancelled Activities</h3>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm text-red-800">
+                          The following activities were cancelled due to insufficient enrollment:
+                        </p>
+                        <ul className="mt-2 text-sm text-red-700 list-disc list-inside">
+                          {allocationResult.cancelledActivityNames.map((name, i) => (
+                            <li key={i}>{name}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Activities at Risk */}
+              {allocationResult.activitiesAtRisk && allocationResult.activitiesAtRisk.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="font-medium text-gray-900 mb-3">Activities at Risk</h3>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div className="w-full">
+                        <p className="text-sm text-amber-800 mb-2">
+                          These activities are below minimum capacity and may need manual intervention:
+                        </p>
+                        <div className="space-y-2">
+                          {allocationResult.activitiesAtRisk.map((activity) => (
+                            <div key={activity.activityId} className="flex items-center justify-between text-sm">
+                              <span className="text-amber-900 font-medium">{activity.activityName}</span>
+                              <span className="text-amber-700">
+                                {activity.currentEnrollment}/{activity.minCapacity} (need {activity.shortfall} more)
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Unallocated Students */}
+              {allocationResult.unallocatedStudents && allocationResult.unallocatedStudents.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="font-medium text-gray-900 mb-3">
+                    Unallocated Students ({allocationResult.unallocatedStudents.length})
+                  </h3>
+                  <div className="bg-red-50 border border-red-200 rounded-lg overflow-hidden">
+                    <div className="p-3 border-b border-red-200 bg-red-100">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-sm text-red-800">
+                          These students could not be placed in any activity for some time slots.
+                          Manual intervention may be required.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto divide-y divide-red-100">
+                      {allocationResult.unallocatedStudents.map((student) => (
+                        <div key={student.studentId} className="p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-medium text-gray-900">{student.studentName}</span>
+                            <span className="text-sm text-gray-500">{student.className}</span>
+                          </div>
+                          <div className="space-y-1">
+                            {student.unallocatedSlots.map((slot, i) => (
+                              <div key={i} className="text-sm text-red-700 flex items-center gap-2">
+                                <span className="font-medium">{DAY_NAMES[slot.dayOfWeek]} {slot.timeSlot.replace('_', ' ').toLowerCase()}</span>
+                                <span className="text-red-500">-</span>
+                                <span>
+                                  {slot.reason === 'ALL_FULL' && 'All requested activities full'}
+                                  {slot.reason === 'CANCELLED' && 'Requested activities cancelled'}
+                                  {slot.reason === 'NO_ELIGIBLE_ACTIVITIES' && 'No eligible activities'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Errors */}
+              {allocationResult.errors && allocationResult.errors.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="font-medium text-gray-900 mb-3">Errors</h3>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <ul className="text-sm text-red-700 list-disc list-inside">
+                      {allocationResult.errors.map((error, i) => (
+                        <li key={i}>{error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => setShowAllocationResultModal(false)}
+                  className="px-4 py-2 rounded-lg text-white"
+                  style={{ backgroundColor: theme.colors.brandColor }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

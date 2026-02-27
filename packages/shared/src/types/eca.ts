@@ -18,6 +18,7 @@ export type EcaAllocationType =
   | 'SMART_PRIORITY'
   | 'SMART_RANKED'
   | 'SMART_REALLOCATION'
+  | 'SMART_FORCED'
   | 'INVITED'
   | 'COMPULSORY'
   | 'MANUAL'
@@ -237,10 +238,40 @@ export interface EcaAllocationPreview {
 export interface EcaAllocationResult {
   success: boolean
   allocations: number
+  totalAllocations: number
+  totalStudents: number
   waitlisted: number
   cancelledActivities: number
   cancelledActivityNames?: string[]
   errors?: string[]
+
+  // Satisfaction metrics (smart allocation only)
+  firstChoiceAllocations?: number
+  secondChoiceAllocations?: number
+  thirdChoiceAllocations?: number
+  forcedAllocations?: number  // Assigned to non-selected activities
+
+  // Unallocated students (for manual intervention)
+  unallocatedStudents?: Array<{
+    studentId: string
+    studentName: string
+    className: string
+    unallocatedSlots: Array<{
+      dayOfWeek: number
+      timeSlot: EcaTimeSlot
+      requestedActivities: string[]
+      reason: 'ALL_FULL' | 'CANCELLED' | 'NO_ELIGIBLE_ACTIVITIES'
+    }>
+  }>
+
+  // Activities at risk of cancellation
+  activitiesAtRisk?: Array<{
+    activityId: string
+    activityName: string
+    currentEnrollment: number
+    minCapacity: number
+    shortfall: number
+  }>
 }
 
 export interface EcaAllocationOptions {
