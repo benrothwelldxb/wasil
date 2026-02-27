@@ -1286,7 +1286,7 @@ export const eca = {
       studentName: string
       className: string
       yearGroup: string
-      allocations: { [dayOfWeek: number]: { activityId: string; activityName: string } }
+      allocations: { [dayOfWeek: number]: { activityId: string; activityName: string; rank: number | null; isCompulsory: boolean } }
     }>>(`/api/eca/terms/${termId}/student-allocations`),
 
   // Parent endpoints

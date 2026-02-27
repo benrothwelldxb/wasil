@@ -782,11 +782,17 @@ model EcaSettings {
   schoolId              String   @unique
   school                School   @relation(fields: [schoolId], references: [id])
   selectionMode         EcaSelectionMode @default(FIRST_COME_FIRST_SERVED)
+  schoolWeek            EcaSchoolWeek @default(MON_FRI)
   attendanceEnabled     Boolean  @default(false)
   maxPriorityChoices    Int      @default(1)  // Priority ECAs per week
   maxChoicesPerDay      Int      @default(3)  // Ranked choices per slot
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+}
+
+enum EcaSchoolWeek {
+  MON_FRI   // Monday to Friday (Western)
+  SUN_THU   // Sunday to Thursday (Middle East)
 }
 
 enum EcaSelectionMode {

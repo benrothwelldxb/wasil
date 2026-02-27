@@ -184,7 +184,7 @@ export function EcaPage() {
     studentName: string
     className: string
     yearGroup: string
-    allocations: { [dayOfWeek: number]: { activityId: string; activityName: string } }
+    allocations: { [dayOfWeek: number]: { activityId: string; activityName: string; rank: number | null; isCompulsory: boolean } }
   }>>([])
   const [loadingStudentAllocations, setLoadingStudentAllocations] = useState(false)
 
@@ -1037,16 +1037,23 @@ export function EcaPage() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
+                  <div className="mb-3 px-4 pt-3 flex items-center gap-4 text-xs text-gray-500">
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-500"></span> 1st choice</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-500"></span> 2nd choice</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-500"></span> 3rd choice</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-purple-500"></span> Compulsory</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-gray-400"></span> Other</span>
+                  </div>
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="px-4 py-3 text-left font-medium text-gray-700 sticky left-0 bg-gray-50">Student</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-700">Class</th>
-                        <th className="px-4 py-3 text-left font-medium text-gray-700">Sunday</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-700">Monday</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-700">Tuesday</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-700">Wednesday</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-700">Thursday</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Friday</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1054,10 +1061,16 @@ export function EcaPage() {
                         <tr key={student.studentId} className="hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium text-gray-900 sticky left-0 bg-white">{student.studentName}</td>
                           <td className="px-4 py-3 text-gray-600">{student.className}</td>
-                          {[0, 1, 2, 3, 4].map((day) => (
+                          {[1, 2, 3, 4, 5].map((day) => (
                             <td key={day} className="px-4 py-3">
                               {student.allocations[day] ? (
-                                <span className="inline-flex px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                                <span className={`inline-flex px-2 py-1 text-xs rounded-full text-white ${
+                                  student.allocations[day].isCompulsory ? 'bg-purple-500' :
+                                  student.allocations[day].rank === 1 ? 'bg-green-500' :
+                                  student.allocations[day].rank === 2 ? 'bg-blue-500' :
+                                  student.allocations[day].rank === 3 ? 'bg-amber-500' :
+                                  'bg-gray-400'
+                                }`}>
                                   {student.allocations[day].activityName}
                                 </span>
                               ) : (

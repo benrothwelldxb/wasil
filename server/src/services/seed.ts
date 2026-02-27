@@ -264,19 +264,73 @@ async function seedEcaActivities(schoolId: string): Promise<number> {
     },
   })
 
-  // Get year groups for eligibility - exclude FS (Foundation Stage)
+  // Get year groups for eligibility - Y2-6 only (exclude FS, Reception, Y1)
   const allYearGroups = await prisma.yearGroup.findMany({
     where: { schoolId },
     orderBy: { order: 'asc' },
   })
-  // Filter to Y1-6 only (exclude FS1, FS2, Reception, etc.)
+  // Filter to Y2-6 only
   const yearGroups = allYearGroups.filter(yg =>
     !yg.name.startsWith('FS') &&
     !yg.name.toLowerCase().includes('foundation') &&
-    !yg.name.toLowerCase().includes('reception')
+    !yg.name.toLowerCase().includes('reception') &&
+    !yg.name.includes('Year 1') &&
+    yg.name !== 'Y1'
   )
 
-  // Flatten all activities
+  const eligibleYearGroupIds = yearGroups.map(yg => yg.id)
+
+  let activitiesCreated = 0
+
+  // Monday (day 1): Whole School Production - COMPULSORY
+  try {
+    await prisma.ecaActivity.create({
+      data: {
+        ecaTermId: term.id,
+        schoolId,
+        name: 'Whole School Production',
+        description: 'Rehearsals and preparation for the whole school production',
+        dayOfWeek: 1, // Monday
+        timeSlot: 'AFTER_SCHOOL',
+        location: 'Drama Studio',
+        activityType: 'COMPULSORY',
+        eligibleYearGroupIds,
+        eligibleGender: 'MIXED',
+        minCapacity: null,
+        maxCapacity: 500, // Large capacity for whole school
+        isActive: true,
+      },
+    })
+    activitiesCreated++
+  } catch {
+    // Ignore duplicates
+  }
+
+  // Wednesday (day 3): Wellbeing Wednesday - COMPULSORY
+  try {
+    await prisma.ecaActivity.create({
+      data: {
+        ecaTermId: term.id,
+        schoolId,
+        name: 'Wellbeing Wednesday',
+        description: 'Mindfulness, relaxation and wellbeing activities',
+        dayOfWeek: 3, // Wednesday
+        timeSlot: 'AFTER_SCHOOL',
+        location: 'Multi-Purpose Room',
+        activityType: 'COMPULSORY',
+        eligibleYearGroupIds,
+        eligibleGender: 'MIXED',
+        minCapacity: null,
+        maxCapacity: 500, // Large capacity for whole school
+        isActive: true,
+      },
+    })
+    activitiesCreated++
+  } catch {
+    // Ignore duplicates
+  }
+
+  // Tuesday (day 2) and Thursday (day 4): Regular ECA activities
   const allActivities = [
     ...ECA_ACTIVITIES.sports,
     ...ECA_ACTIVITIES.arts,
@@ -284,28 +338,17 @@ async function seedEcaActivities(schoolId: string): Promise<number> {
     ...ECA_ACTIVITIES.languages,
     ...ECA_ACTIVITIES.other,
   ]
-
-  // Shuffle activities
   const shuffled = [...allActivities].sort(() => Math.random() - 0.5)
 
-  let activitiesCreated = 0
-  const daysOfWeek = [0, 1, 2, 3, 4] // Sunday to Thursday (typical school week in Middle East)
-
-  // Create 3-5 activities per day (after school only)
   let activityIndex = 0
-  for (const dayOfWeek of daysOfWeek) {
-    const activitiesPerDay = Math.floor(Math.random() * 3) + 3 // 3-5 activities
+  for (const dayOfWeek of [2, 4]) { // Tuesday and Thursday only
+    const activitiesPerDay = 5 // 5 activities per day
 
     for (let i = 0; i < activitiesPerDay && activityIndex < shuffled.length; i++) {
       const activity = shuffled[activityIndex]
       activityIndex++
 
-      // All activities are for Y1-6 (already filtered out FS)
-      const eligibleYearGroupIds = yearGroups.map(yg => yg.id)
-
       // Set capacity based on activity type
-      // Choir: 100, Dance: 50, all others: 25
-      // Min capacity: 8 for all
       const minCapacity = 8
       let maxCapacity = 25
       if (activity.name === 'Choir') {
@@ -389,10 +432,11 @@ async function seedEcaSelections(schoolId: string): Promise<number> {
 
   let selectionsCreated = 0
 
-  // For each student, create some random selections
+  // For each student, create selections for OPEN activities only
   for (const [studentId, info] of studentParentMap) {
-    // Filter eligible activities for this student
+    // Filter to OPEN activities that this student is eligible for
     const eligibleActivities = term.activities.filter(activity => {
+      if (activity.activityType !== 'OPEN') return false // Skip COMPULSORY activities
       const eligibleYearGroupIds = activity.eligibleYearGroupIds as string[]
       if (eligibleYearGroupIds.length === 0) return true
       if (!info.yearGroupId) return false
@@ -411,9 +455,8 @@ async function seedEcaSelections(schoolId: string): Promise<number> {
       activitiesBySlot.get(key)!.push(activity)
     }
 
-    // For each slot, maybe create some selections (70% chance)
+    // For each slot, create selections (all students must select)
     for (const [, slotActivities] of activitiesBySlot) {
-      if (Math.random() > 0.7) continue // 30% skip this slot
 
       // Shuffle and pick 1-3 choices
       const shuffled = [...slotActivities].sort(() => Math.random() - 0.5)

@@ -1,6 +1,7 @@
 // ECA (Extra-Curricular Activities) Types
 
 export type EcaSelectionMode = 'FIRST_COME_FIRST_SERVED' | 'SMART_ALLOCATION'
+export type EcaSchoolWeek = 'MON_FRI' | 'SUN_THU'
 
 export type EcaTermStatus =
   | 'DRAFT'
@@ -31,6 +32,7 @@ export interface EcaSettings {
   id: string
   schoolId: string
   selectionMode: EcaSelectionMode
+  schoolWeek: EcaSchoolWeek
   attendanceEnabled: boolean
   maxPriorityChoices: number
   maxChoicesPerDay: number

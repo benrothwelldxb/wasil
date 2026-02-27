@@ -1112,7 +1112,7 @@ router.get('/terms/:id/student-allocations', isAdmin, async (req, res) => {
             firstName: true,
             lastName: true,
             class: {
-              select: { name: true, yearGroup: { select: { name: true } } },
+              select: { name: true, yearGroup: { select: { name: true, order: true } } },
             },
           },
         },
@@ -1122,6 +1122,7 @@ router.get('/terms/:id/student-allocations', isAdmin, async (req, res) => {
             name: true,
             dayOfWeek: true,
             timeSlot: true,
+            activityType: true,
           },
         },
       },
@@ -1133,13 +1134,25 @@ router.get('/terms/:id/student-allocations', isAdmin, async (req, res) => {
       ],
     })
 
+    // Get all selections to determine choice rank
+    const selections = await prisma.ecaSelection.findMany({
+      where: { ecaTermId: id },
+      select: { studentId: true, ecaActivityId: true, rank: true },
+    })
+
+    // Create a lookup map for selections
+    const selectionRanks = new Map<string, number>()
+    for (const sel of selections) {
+      selectionRanks.set(`${sel.studentId}-${sel.ecaActivityId}`, sel.rank)
+    }
+
     // Group by student
     const studentMap = new Map<string, {
       studentId: string
       studentName: string
       className: string
       yearGroup: string
-      allocations: { [dayOfWeek: number]: { activityId: string; activityName: string } }
+      allocations: { [dayOfWeek: number]: { activityId: string; activityName: string; rank: number | null; isCompulsory: boolean } }
     }>()
 
     for (const alloc of allocations) {
@@ -1153,9 +1166,13 @@ router.get('/terms/:id/student-allocations', isAdmin, async (req, res) => {
         })
       }
       const student = studentMap.get(alloc.studentId)!
+      const isCompulsory = alloc.ecaActivity.activityType === 'COMPULSORY'
+      const rank = isCompulsory ? null : (selectionRanks.get(`${alloc.studentId}-${alloc.ecaActivityId}`) || null)
       student.allocations[alloc.ecaActivity.dayOfWeek] = {
         activityId: alloc.ecaActivity.id,
         activityName: alloc.ecaActivity.name,
+        rank,
+        isCompulsory,
       }
     }
 
