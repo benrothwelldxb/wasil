@@ -277,7 +277,7 @@ router.put('/terms/:id', isAdmin, async (req, res) => {
   }
 })
 
-// Delete term (DRAFT only)
+// Delete term
 router.delete('/terms/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
@@ -289,10 +289,6 @@ router.delete('/terms/:id', isAdmin, async (req, res) => {
 
     if (!term) {
       return res.status(404).json({ error: 'Term not found' })
-    }
-
-    if (term.status !== 'DRAFT') {
-      return res.status(400).json({ error: 'Only draft terms can be deleted' })
     }
 
     await prisma.ecaTerm.delete({ where: { id } })
@@ -558,11 +554,6 @@ router.delete('/activities/:id', isAdmin, async (req, res) => {
 
     if (!activity) {
       return res.status(404).json({ error: 'Activity not found' })
-    }
-
-    // Only allow deletion in DRAFT status
-    if (activity.ecaTerm.status !== 'DRAFT') {
-      return res.status(400).json({ error: 'Activities can only be deleted during draft phase' })
     }
 
     // Delete associated group
