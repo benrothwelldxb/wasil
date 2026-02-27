@@ -1161,6 +1161,9 @@ export async function previewAllocation(ecaTermId: string, schoolId: string, sel
 
   if (selectionMode === 'FIRST_COME_FIRST_SERVED') {
     for (const selection of selections) {
+      // Skip if activity was cancelled/inactive
+      if (!activityEnrollment[selection.ecaActivityId]) continue
+
       const slotKey = `${selection.ecaActivity.dayOfWeek}-${selection.ecaActivity.timeSlot}`
 
       if (studentSlots[selection.studentId]?.[slotKey]) continue
@@ -1183,6 +1186,9 @@ export async function previewAllocation(ecaTermId: string, schoolId: string, sel
     const rank1 = selections.filter(s => !s.isPriority && s.rank === 1)
 
     for (const selection of [...prioritySelections, ...rank1]) {
+      // Skip if activity was cancelled/inactive
+      if (!activityEnrollment[selection.ecaActivityId]) continue
+
       const slotKey = `${selection.ecaActivity.dayOfWeek}-${selection.ecaActivity.timeSlot}`
 
       if (studentSlots[selection.studentId]?.[slotKey]) continue
