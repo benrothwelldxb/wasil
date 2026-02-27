@@ -220,44 +220,49 @@ export async function seedTestData(schoolId: string, options: SeedOptions = {}):
  * Seed ECA activities for a term
  */
 async function seedEcaActivities(schoolId: string): Promise<number> {
-  // Find a term that's in draft or registration phase
-  let term = await prisma.ecaTerm.findFirst({
+  // Find or create an ECA term for seeding
+  const now = new Date()
+  const registrationOpens = new Date(now)
+  registrationOpens.setDate(now.getDate() - 7) // Opened a week ago
+  const registrationCloses = new Date(now)
+  registrationCloses.setDate(now.getDate() + 14) // Closes in 2 weeks
+  const termStart = new Date(registrationCloses)
+  termStart.setDate(termStart.getDate() + 7) // Starts 1 week after registration closes
+  const termEnd = new Date(termStart)
+  termEnd.setMonth(termEnd.getMonth() + 3) // 3 months term
+
+  // Use upsert to avoid unique constraint errors
+  let term = await prisma.ecaTerm.upsert({
     where: {
-      schoolId,
-      status: { in: ['DRAFT', 'REGISTRATION_OPEN', 'REGISTRATION_CLOSED'] },
-    },
-  })
-
-  // If no term exists, create one
-  if (!term) {
-    const now = new Date()
-    const registrationOpens = new Date(now)
-    registrationOpens.setDate(now.getDate() - 7) // Opened a week ago
-    const registrationCloses = new Date(now)
-    registrationCloses.setDate(now.getDate() + 14) // Closes in 2 weeks
-    const termStart = new Date(registrationCloses)
-    termStart.setDate(termStart.getDate() + 7) // Starts 1 week after registration closes
-    const termEnd = new Date(termStart)
-    termEnd.setMonth(termEnd.getMonth() + 3) // 3 months term
-
-    term = await prisma.ecaTerm.create({
-      data: {
+      schoolId_termNumber_academicYear: {
         schoolId,
-        name: 'Test Term 1',
         termNumber: 1,
         academicYear: '2025/26',
-        startDate: termStart,
-        endDate: termEnd,
-        registrationOpens,
-        registrationCloses,
-        defaultBeforeSchoolStart: '07:30',
-        defaultBeforeSchoolEnd: '08:15',
-        defaultAfterSchoolStart: '15:30',
-        defaultAfterSchoolEnd: '16:30',
-        status: 'REGISTRATION_OPEN',
       },
-    })
-  }
+    },
+    update: {
+      // Update dates to keep it current if it already exists
+      registrationOpens,
+      registrationCloses,
+      startDate: termStart,
+      endDate: termEnd,
+    },
+    create: {
+      schoolId,
+      name: 'Test Term 1',
+      termNumber: 1,
+      academicYear: '2025/26',
+      startDate: termStart,
+      endDate: termEnd,
+      registrationOpens,
+      registrationCloses,
+      defaultBeforeSchoolStart: '07:30',
+      defaultBeforeSchoolEnd: '08:15',
+      defaultAfterSchoolStart: '15:30',
+      defaultAfterSchoolEnd: '16:30',
+      status: 'REGISTRATION_OPEN',
+    },
+  })
 
   // Get all year groups for eligibility
   const yearGroups = await prisma.yearGroup.findMany({
