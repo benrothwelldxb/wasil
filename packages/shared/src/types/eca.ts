@@ -272,6 +272,44 @@ export interface EcaAllocationResult {
     minCapacity: number
     shortfall: number
   }>
+
+  // Suggestions for improvement
+  suggestions?: EcaAllocationSuggestionInput[]
+}
+
+// Suggestion types
+export type EcaSuggestionType =
+  | 'INCREASE_CAPACITY'
+  | 'DECREASE_MINIMUM'
+  | 'ADD_SESSION'
+  | 'MANUAL_PLACEMENT'
+  | 'REVIEW_ACTIVITY'
+
+export type EcaSuggestionPriority = 'HIGH' | 'MEDIUM' | 'LOW'
+
+export type EcaSuggestionStatus = 'PENDING' | 'RESOLVED' | 'DISMISSED'
+
+export interface EcaAllocationSuggestionInput {
+  type: EcaSuggestionType
+  priority: EcaSuggestionPriority
+  title: string
+  description: string
+  activityId?: string
+  activityName?: string
+  currentValue?: number
+  suggestedValue?: number
+  affectedCount?: number
+}
+
+export interface EcaAllocationSuggestion extends EcaAllocationSuggestionInput {
+  id: string
+  ecaTermId: string
+  status: EcaSuggestionStatus
+  resolvedAt?: string | null
+  resolvedById?: string | null
+  resolvedBy?: { id: string; name: string } | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface EcaAllocationOptions {

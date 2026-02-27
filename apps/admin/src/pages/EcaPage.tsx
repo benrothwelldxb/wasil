@@ -31,6 +31,7 @@ import type {
   EcaSelectionMode,
   EcaAllocationPreview,
   EcaAllocationResult,
+  EcaAllocationSuggestion,
   GroupCategory,
   YearGroup,
 } from '@wasil/shared'
@@ -160,6 +161,11 @@ export function EcaPage() {
   const [allocationResult, setAllocationResult] = useState<EcaAllocationResult | null>(null)
   const [showAllocationResultModal, setShowAllocationResultModal] = useState(false)
 
+  // Suggestions
+  const [suggestions, setSuggestions] = useState<EcaAllocationSuggestion[]>([])
+  const [showSuggestionsPanel, setShowSuggestionsPanel] = useState(false)
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+
   // Activity management
   const [showStudentsModal, setShowStudentsModal] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
@@ -182,6 +188,15 @@ export function EcaPage() {
       })
     }
   }, [settings])
+
+  // Load suggestions when term changes and allocation has been run
+  useEffect(() => {
+    if (selectedTerm?.allocationRun) {
+      loadSuggestions()
+    } else {
+      setSuggestions([])
+    }
+  }, [selectedTermId, selectedTerm?.allocationRun])
 
   const handleSaveSettings = async () => {
     setSavingSettings(true)
@@ -447,6 +462,42 @@ export function EcaPage() {
       refetchTerms()
     } catch (error) {
       alert(`Failed to publish: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleReopenAllocation = async () => {
+    if (!selectedTermId || !selectedTerm) return
+    if (!confirm('This will allow you to edit activities and re-run allocation. Continue?')) return
+
+    try {
+      await api.eca.updateTermStatus(selectedTermId, 'REGISTRATION_CLOSED')
+      alert('Allocation reopened. You can now make changes and re-run allocation.')
+      refetchTerm()
+      refetchTerms()
+    } catch (error) {
+      alert(`Failed to reopen: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const loadSuggestions = async () => {
+    if (!selectedTermId) return
+    setLoadingSuggestions(true)
+    try {
+      const data = await api.eca.getSuggestions(selectedTermId)
+      setSuggestions(data)
+    } catch (error) {
+      console.error('Failed to load suggestions:', error)
+    } finally {
+      setLoadingSuggestions(false)
+    }
+  }
+
+  const handleUpdateSuggestion = async (id: string, status: 'RESOLVED' | 'DISMISSED') => {
+    try {
+      await api.eca.updateSuggestion(id, status)
+      loadSuggestions()
+    } catch (error) {
+      alert(`Failed to update suggestion: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -776,13 +827,22 @@ export function EcaPage() {
                 </button>
               )}
               {selectedTerm.status === 'ALLOCATION_COMPLETE' && (
-                <button
-                  onClick={() => handleTermStatusChange(selectedTerm.id, 'ACTIVE')}
-                  className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white bg-purple-600 hover:bg-purple-700"
-                >
-                  <Play className="w-4 h-4" />
-                  <span>Start Term</span>
-                </button>
+                <>
+                  <button
+                    onClick={handleReopenAllocation}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    <span>Reopen for Adjustments</span>
+                  </button>
+                  <button
+                    onClick={() => handleTermStatusChange(selectedTerm.id, 'ACTIVE')}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white bg-purple-600 hover:bg-purple-700"
+                  >
+                    <Play className="w-4 h-4" />
+                    <span>Start Term</span>
+                  </button>
+                </>
               )}
               {selectedTerm.status === 'ACTIVE' && (
                 <button
@@ -835,6 +895,86 @@ export function EcaPage() {
               </div>
             </div>
           </div>
+
+          {/* Suggestions Panel */}
+          {suggestions.filter(s => s.status === 'PENDING').length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  <h3 className="font-semibold text-amber-900">
+                    {suggestions.filter(s => s.status === 'PENDING').length} Suggestions to Review
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowSuggestionsPanel(!showSuggestionsPanel)}
+                  className="text-sm text-amber-700 hover:text-amber-800"
+                >
+                  {showSuggestionsPanel ? 'Hide' : 'Show All'}
+                </button>
+              </div>
+
+              {showSuggestionsPanel ? (
+                <div className="space-y-3">
+                  {suggestions.filter(s => s.status === 'PENDING').map(suggestion => (
+                    <div key={suggestion.id} className="bg-white rounded-lg p-3 border border-amber-100">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              suggestion.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
+                              suggestion.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {suggestion.priority}
+                            </span>
+                            <span className="font-medium text-gray-900">{suggestion.title}</span>
+                          </div>
+                          <p className="text-sm text-gray-600">{suggestion.description}</p>
+                          {suggestion.currentValue !== null && suggestion.suggestedValue !== null && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Current: {suggestion.currentValue} | Suggested: {suggestion.suggestedValue}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <button
+                            onClick={() => handleUpdateSuggestion(suggestion.id, 'RESOLVED')}
+                            className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200"
+                          >
+                            Resolved
+                          </button>
+                          <button
+                            onClick={() => handleUpdateSuggestion(suggestion.id, 'DISMISSED')}
+                            className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {suggestions.filter(s => s.status === 'PENDING').slice(0, 3).map(s => (
+                    <span key={s.id} className={`text-xs px-2 py-1 rounded-full ${
+                      s.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
+                      s.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {s.title}
+                    </span>
+                  ))}
+                  {suggestions.filter(s => s.status === 'PENDING').length > 3 && (
+                    <span className="text-xs text-amber-700">
+                      +{suggestions.filter(s => s.status === 'PENDING').length - 3} more
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Activities */}
           <div className="flex items-center justify-between mb-4">
@@ -1817,6 +1957,46 @@ export function EcaPage() {
                         <li key={i}>{error}</li>
                       ))}
                     </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Suggestions */}
+              {allocationResult.suggestions && allocationResult.suggestions.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="font-medium text-gray-900 mb-3">
+                    Suggestions ({allocationResult.suggestions.length})
+                  </h3>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg overflow-hidden">
+                    <div className="p-3 border-b border-blue-200 bg-blue-100">
+                      <div className="flex items-start gap-2">
+                        <FileText className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-sm text-blue-800">
+                          These suggestions have been saved and can be reviewed later from the term details page.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto divide-y divide-blue-100">
+                      {allocationResult.suggestions.map((suggestion, i) => (
+                        <div key={i} className="p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`inline-flex px-1.5 py-0.5 text-xs font-medium rounded ${
+                                  suggestion.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
+                                  suggestion.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {suggestion.priority}
+                                </span>
+                                <span className="font-medium text-gray-900">{suggestion.title}</span>
+                              </div>
+                              <p className="text-sm text-gray-600">{suggestion.description}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

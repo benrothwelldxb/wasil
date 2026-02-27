@@ -102,6 +102,7 @@ model User {
   ecaActivitiesManaged EcaActivity[]  @relation("EcaActivityStaff")
   ecaInvitationsSent   EcaInvitation[] @relation("EcaInvitationsSent")
   ecaAttendanceMarked  EcaAttendance[] @relation("EcaAttendanceMarkedBy")
+  ecaSuggestionsResolved EcaAllocationSuggestion[] @relation("EcaSuggestionsResolved")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -816,6 +817,7 @@ model EcaTerm {
   allocations              EcaAllocation[]
   waitlists                EcaWaitlist[]
   attendanceRecords        EcaAttendance[]
+  suggestions              EcaAllocationSuggestion[]
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 
@@ -1019,4 +1021,48 @@ enum EcaAttendanceStatus {
   ABSENT
   EXCUSED
   LATE
+}
+
+// Allocation suggestions for admin review
+model EcaAllocationSuggestion {
+  id            String   @id @default(cuid())
+  ecaTermId     String
+  ecaTerm       EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  type          EcaSuggestionType
+  priority      EcaSuggestionPriority
+  title         String
+  description   String
+  activityId    String?
+  activityName  String?
+  currentValue  Int?     // e.g., current capacity
+  suggestedValue Int?    // e.g., suggested capacity
+  affectedCount Int?     // e.g., number of students affected
+  status        EcaSuggestionStatus @default(PENDING)
+  resolvedAt    DateTime?
+  resolvedById  String?
+  resolvedBy    User?    @relation("EcaSuggestionsResolved", fields: [resolvedById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([ecaTermId, status])
+}
+
+enum EcaSuggestionType {
+  INCREASE_CAPACITY    // Activity oversubscribed, suggest increasing max
+  DECREASE_MINIMUM     // Activity at risk, suggest lowering min
+  ADD_SESSION          // High demand, suggest adding another session
+  MANUAL_PLACEMENT     // Students couldn't be placed, need manual intervention
+  REVIEW_ACTIVITY      // Activity has issues needing review
+}
+
+enum EcaSuggestionPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum EcaSuggestionStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
 }

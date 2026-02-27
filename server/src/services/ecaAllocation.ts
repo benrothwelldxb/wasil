@@ -44,6 +44,19 @@ interface SmartAllocationResult {
     minCapacity: number
     shortfall: number
   }>
+
+  // Suggestions for improvement
+  suggestions: Array<{
+    type: 'INCREASE_CAPACITY' | 'DECREASE_MINIMUM' | 'ADD_SESSION' | 'MANUAL_PLACEMENT' | 'REVIEW_ACTIVITY'
+    priority: 'HIGH' | 'MEDIUM' | 'LOW'
+    title: string
+    description: string
+    activityId?: string
+    activityName?: string
+    currentValue?: number
+    suggestedValue?: number
+    affectedCount?: number
+  }>
 }
 
 interface AllocationPreview {
@@ -153,6 +166,7 @@ export async function runAllocation(ecaTermId: string, schoolId: string, options
     forcedAllocations: 0,
     unallocatedStudents: [],
     activitiesAtRisk: [],
+    suggestions: [],
   }
 
   try {
@@ -335,6 +349,9 @@ export async function runAllocation(ecaTermId: string, schoolId: string, options
       where: { id: ecaTermId },
       data: { allocationRun: true },
     })
+
+    // Generate suggestions for improvement
+    generateSuggestions(result, selections, activities, activityEnrollment)
 
     result.totalAllocations = result.allocations
     result.success = true
@@ -1219,6 +1236,94 @@ export async function previewAllocation(ecaTermId: string, schoolId: string, sel
   }
 
   return preview
+}
+
+/**
+ * Generate suggestions for improving allocation results
+ */
+function generateSuggestions(
+  result: SmartAllocationResult,
+  selections: SelectionWithDetails[],
+  activities: ActivityWithDetails[],
+  activityEnrollment: ActivityEnrollmentMap
+): void {
+  // Count selections per activity (demand)
+  const selectionCounts = new Map<string, number>()
+  for (const selection of selections) {
+    const count = selectionCounts.get(selection.ecaActivityId) || 0
+    selectionCounts.set(selection.ecaActivityId, count + 1)
+  }
+
+  for (const activity of activities) {
+    if (activity.isCancelled) continue
+
+    const enrollment = activityEnrollment[activity.id]?.length || 0
+    const demand = selectionCounts.get(activity.id) || 0
+    const maxCap = getEffectiveMaxCapacity(activity)
+    const minCap = activity.minCapacity ?? DEFAULT_MIN_CAPACITY
+
+    // Suggestion: Increase capacity for oversubscribed activities
+    if (demand > maxCap && enrollment >= maxCap * 0.9) {
+      const waitlistCount = demand - enrollment
+      result.suggestions.push({
+        type: 'INCREASE_CAPACITY',
+        priority: waitlistCount > 10 ? 'HIGH' : waitlistCount > 5 ? 'MEDIUM' : 'LOW',
+        title: `Increase capacity for ${activity.name}`,
+        description: `${activity.name} has ${waitlistCount} students on the waitlist. Consider increasing capacity from ${maxCap} to ${Math.min(maxCap + waitlistCount, maxCap + 10)} to accommodate more students.`,
+        activityId: activity.id,
+        activityName: activity.name,
+        currentValue: maxCap,
+        suggestedValue: Math.min(maxCap + waitlistCount, maxCap + 10),
+        affectedCount: waitlistCount,
+      })
+    }
+
+    // Suggestion: Activity at risk - decrease minimum or find more students
+    if (enrollment > 0 && enrollment < minCap) {
+      const shortfall = minCap - enrollment
+      result.suggestions.push({
+        type: 'DECREASE_MINIMUM',
+        priority: shortfall > 3 ? 'HIGH' : 'MEDIUM',
+        title: `${activity.name} is below minimum capacity`,
+        description: `${activity.name} has ${enrollment} students but needs ${minCap} minimum. Consider lowering the minimum to ${enrollment} or finding ${shortfall} more students to avoid cancellation.`,
+        activityId: activity.id,
+        activityName: activity.name,
+        currentValue: minCap,
+        suggestedValue: enrollment,
+        affectedCount: shortfall,
+      })
+    }
+
+    // Suggestion: High demand - consider adding another session
+    if (demand > maxCap * 1.5) {
+      result.suggestions.push({
+        type: 'ADD_SESSION',
+        priority: 'MEDIUM',
+        title: `Consider adding another ${activity.name} session`,
+        description: `${activity.name} has very high demand (${demand} selections for ${maxCap} spots). Consider adding another session on a different day.`,
+        activityId: activity.id,
+        activityName: activity.name,
+        currentValue: demand,
+        suggestedValue: maxCap,
+        affectedCount: demand - maxCap,
+      })
+    }
+  }
+
+  // Suggestion: Manual placement needed for unallocated students
+  if (result.unallocatedStudents.length > 0) {
+    result.suggestions.push({
+      type: 'MANUAL_PLACEMENT',
+      priority: 'HIGH',
+      title: `${result.unallocatedStudents.length} students need manual placement`,
+      description: `${result.unallocatedStudents.length} student(s) could not be automatically placed in activities. Review the unallocated students list and manually assign them to appropriate activities.`,
+      affectedCount: result.unallocatedStudents.length,
+    })
+  }
+
+  // Sort suggestions by priority (HIGH first)
+  const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 }
+  result.suggestions.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority])
 }
 
 // Fisher-Yates shuffle for fairness

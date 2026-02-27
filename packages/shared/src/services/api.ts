@@ -61,6 +61,8 @@ import type {
   EcaActivityType,
   EcaGender,
   EcaAttendanceStatus,
+  EcaAllocationSuggestion,
+  EcaSuggestionStatus,
 } from '../types'
 
 const API_URL = config.apiUrl
@@ -1265,6 +1267,17 @@ export const eca = {
     if (!response.ok) throw new Error('Export failed')
     return response.text()
   },
+
+  // Suggestions
+  getSuggestions: (termId: string, status?: string) => {
+    const params = status ? `?status=${status}` : ''
+    return fetchApi<EcaAllocationSuggestion[]>(`/api/eca/terms/${termId}/suggestions${params}`)
+  },
+  updateSuggestion: (id: string, status: EcaSuggestionStatus) =>
+    fetchApi<EcaAllocationSuggestion>(`/api/eca/suggestions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
 
   // Parent endpoints
   parent: {

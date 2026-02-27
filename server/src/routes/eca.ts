@@ -326,7 +326,7 @@ router.patch('/terms/:id/status', isAdmin, async (req, res) => {
       DRAFT: ['REGISTRATION_OPEN'],
       REGISTRATION_OPEN: ['REGISTRATION_CLOSED'],
       REGISTRATION_CLOSED: ['ALLOCATION_COMPLETE'],
-      ALLOCATION_COMPLETE: ['ACTIVE'],
+      ALLOCATION_COMPLETE: ['ACTIVE', 'REGISTRATION_CLOSED'], // Allow reopening for adjustments
       ACTIVE: ['COMPLETED'],
       COMPLETED: [],
     }
@@ -335,9 +335,15 @@ router.patch('/terms/:id/status', isAdmin, async (req, res) => {
       return res.status(400).json({ error: `Cannot transition from ${term.status} to ${status}` })
     }
 
+    // When reopening from ALLOCATION_COMPLETE, clear allocations so they can be re-run
+    const additionalUpdates: any = {}
+    if (term.status === 'ALLOCATION_COMPLETE' && status === 'REGISTRATION_CLOSED') {
+      additionalUpdates.allocationRun = false
+    }
+
     const updated = await prisma.ecaTerm.update({
       where: { id },
-      data: { status },
+      data: { status, ...additionalUpdates },
     })
 
     logAudit({ req, action: 'UPDATE', resourceType: 'ECA_TERM', resourceId: id, metadata: { name: term.name, status } })
@@ -976,7 +982,30 @@ router.post('/terms/:id/run-allocation', isAdmin, async (req, res) => {
       cancelBelowMinimum,
     })
 
-    logAudit({ req, action: 'CREATE', resourceType: 'ECA_ALLOCATION', resourceId: id, metadata: { termName: term.name, selectionMode, cancelBelowMinimum, ...result } })
+    // Clear old suggestions and save new ones
+    await prisma.ecaAllocationSuggestion.deleteMany({
+      where: { ecaTermId: id },
+    })
+
+    if (result.suggestions && result.suggestions.length > 0) {
+      await prisma.ecaAllocationSuggestion.createMany({
+        data: result.suggestions.map(s => ({
+          ecaTermId: id,
+          type: s.type,
+          priority: s.priority,
+          title: s.title,
+          description: s.description,
+          activityId: s.activityId || null,
+          activityName: s.activityName || null,
+          currentValue: s.currentValue || null,
+          suggestedValue: s.suggestedValue || null,
+          affectedCount: s.affectedCount || null,
+          status: 'PENDING',
+        })),
+      })
+    }
+
+    logAudit({ req, action: 'CREATE', resourceType: 'ECA_ALLOCATION', resourceId: id, metadata: { termName: term.name, selectionMode, cancelBelowMinimum, allocations: result.allocations, suggestions: result.suggestions?.length || 0 } })
 
     res.json(result)
   } catch (error) {
@@ -1206,6 +1235,103 @@ router.get('/activities/:id/attendance/export', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error exporting attendance:', error)
     res.status(500).json({ error: 'Failed to export attendance' })
+  }
+})
+
+// ============================================
+// SUGGESTION ENDPOINTS
+// ============================================
+
+// Get suggestions for a term
+router.get('/terms/:id/suggestions', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const { status } = req.query as { status?: string }
+
+    const term = await prisma.ecaTerm.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!term) {
+      return res.status(404).json({ error: 'Term not found' })
+    }
+
+    const whereClause: any = { ecaTermId: id }
+    if (status) {
+      whereClause.status = status
+    }
+
+    const suggestions = await prisma.ecaAllocationSuggestion.findMany({
+      where: whereClause,
+      orderBy: [
+        { status: 'asc' }, // PENDING first
+        { priority: 'asc' }, // HIGH priority first
+        { createdAt: 'desc' },
+      ],
+      include: {
+        resolvedBy: { select: { id: true, name: true } },
+      },
+    })
+
+    res.json(suggestions.map(s => ({
+      ...s,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+      resolvedAt: s.resolvedAt?.toISOString() || null,
+    })))
+  } catch (error) {
+    console.error('Error fetching suggestions:', error)
+    res.status(500).json({ error: 'Failed to fetch suggestions' })
+  }
+})
+
+// Update suggestion status
+router.patch('/suggestions/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const { status } = req.body
+
+    if (!['PENDING', 'RESOLVED', 'DISMISSED'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' })
+    }
+
+    const suggestion = await prisma.ecaAllocationSuggestion.findFirst({
+      where: { id },
+      include: { ecaTerm: { select: { schoolId: true } } },
+    })
+
+    if (!suggestion || suggestion.ecaTerm.schoolId !== user.schoolId) {
+      return res.status(404).json({ error: 'Suggestion not found' })
+    }
+
+    const updateData: any = { status }
+    if (status === 'RESOLVED' || status === 'DISMISSED') {
+      updateData.resolvedAt = new Date()
+      updateData.resolvedById = user.id
+    } else {
+      updateData.resolvedAt = null
+      updateData.resolvedById = null
+    }
+
+    const updated = await prisma.ecaAllocationSuggestion.update({
+      where: { id },
+      data: updateData,
+      include: {
+        resolvedBy: { select: { id: true, name: true } },
+      },
+    })
+
+    res.json({
+      ...updated,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+      resolvedAt: updated.resolvedAt?.toISOString() || null,
+    })
+  } catch (error) {
+    console.error('Error updating suggestion:', error)
+    res.status(500).json({ error: 'Failed to update suggestion' })
   }
 })
 
