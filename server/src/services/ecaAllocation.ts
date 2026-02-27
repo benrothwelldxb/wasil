@@ -344,10 +344,10 @@ export async function runAllocation(ecaTermId: string, schoolId: string, options
       }
     }
 
-    // Update term status
+    // Update term status to ALLOCATION_COMPLETE
     await prisma.ecaTerm.update({
       where: { id: ecaTermId },
-      data: { allocationRun: true },
+      data: { allocationRun: true, status: 'ALLOCATION_COMPLETE' },
     })
 
     // Generate suggestions for improvement
