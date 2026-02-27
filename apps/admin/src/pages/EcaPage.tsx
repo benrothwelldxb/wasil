@@ -129,8 +129,8 @@ export function EcaPage() {
     registrationCloses: '',
     defaultBeforeSchoolStart: '07:30',
     defaultBeforeSchoolEnd: '08:15',
-    defaultAfterSchoolStart: '15:30',
-    defaultAfterSchoolEnd: '16:30',
+    defaultAfterSchoolStart: '14:20',
+    defaultAfterSchoolEnd: '15:00',
   })
 
   // Activity form
@@ -223,8 +223,8 @@ export function EcaPage() {
       registrationCloses: '',
       defaultBeforeSchoolStart: '07:30',
       defaultBeforeSchoolEnd: '08:15',
-      defaultAfterSchoolStart: '15:30',
-      defaultAfterSchoolEnd: '16:30',
+      defaultAfterSchoolStart: '14:20',
+      defaultAfterSchoolEnd: '15:00',
     })
   }
 
@@ -261,8 +261,8 @@ export function EcaPage() {
       registrationCloses: term.registrationCloses.split('T')[0],
       defaultBeforeSchoolStart: term.defaultBeforeSchoolStart || '07:30',
       defaultBeforeSchoolEnd: term.defaultBeforeSchoolEnd || '08:15',
-      defaultAfterSchoolStart: term.defaultAfterSchoolStart || '15:30',
-      defaultAfterSchoolEnd: term.defaultAfterSchoolEnd || '16:30',
+      defaultAfterSchoolStart: term.defaultAfterSchoolStart || '14:20',
+      defaultAfterSchoolEnd: term.defaultAfterSchoolEnd || '15:00',
     })
     setShowTermForm(true)
   }
@@ -816,13 +816,21 @@ export function EcaPage() {
                     className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100"
                   >
                     <Pencil className="w-4 h-4" />
-                    <span>Reopen for Adjustments</span>
+                    <span>Edit Activities</span>
+                  </button>
+                  <button
+                    onClick={() => handlePreviewAllocation()}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
+                    style={{ backgroundColor: theme.colors.brandColor }}
+                  >
+                    <Play className="w-4 h-4" />
+                    <span>Reallocate</span>
                   </button>
                   <button
                     onClick={() => handleTermStatusChange(selectedTerm.id, 'ACTIVE')}
                     className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white bg-purple-600 hover:bg-purple-700"
                   >
-                    <Play className="w-4 h-4" />
+                    <Check className="w-4 h-4" />
                     <span>Start Term</span>
                   </button>
                 </>
@@ -871,7 +879,7 @@ export function EcaPage() {
               <div>
                 <p className="text-gray-500">After School</p>
                 <p className="font-medium">
-                  {selectedTerm.defaultAfterSchoolStart || '15:30'} - {selectedTerm.defaultAfterSchoolEnd || '16:30'}
+                  {selectedTerm.defaultAfterSchoolStart || '14:20'} - {selectedTerm.defaultAfterSchoolEnd || '15:00'}
                 </p>
               </div>
             </div>

@@ -964,7 +964,7 @@ router.post('/terms/:id/run-allocation', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Term not found' })
     }
 
-    if (term.status !== 'REGISTRATION_CLOSED') {
+    if (term.status !== 'REGISTRATION_CLOSED' && term.status !== 'ALLOCATION_COMPLETE') {
       return res.status(400).json({ error: 'Allocation can only be run after registration closes' })
     }
 

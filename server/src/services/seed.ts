@@ -258,17 +258,23 @@ async function seedEcaActivities(schoolId: string): Promise<number> {
       registrationCloses,
       defaultBeforeSchoolStart: '07:30',
       defaultBeforeSchoolEnd: '08:15',
-      defaultAfterSchoolStart: '15:30',
-      defaultAfterSchoolEnd: '16:30',
+      defaultAfterSchoolStart: '14:20',
+      defaultAfterSchoolEnd: '15:00',
       status: 'REGISTRATION_OPEN',
     },
   })
 
-  // Get all year groups for eligibility
-  const yearGroups = await prisma.yearGroup.findMany({
+  // Get year groups for eligibility - exclude FS (Foundation Stage)
+  const allYearGroups = await prisma.yearGroup.findMany({
     where: { schoolId },
     orderBy: { order: 'asc' },
   })
+  // Filter to Y1-6 only (exclude FS1, FS2, Reception, etc.)
+  const yearGroups = allYearGroups.filter(yg =>
+    !yg.name.startsWith('FS') &&
+    !yg.name.toLowerCase().includes('foundation') &&
+    !yg.name.toLowerCase().includes('reception')
+  )
 
   // Flatten all activities
   const allActivities = [
@@ -294,21 +300,8 @@ async function seedEcaActivities(schoolId: string): Promise<number> {
       const activity = shuffled[activityIndex]
       activityIndex++
 
-      // Determine eligibility - some activities are for all, some for specific year groups
-      let eligibleYearGroupIds: string[] = []
-      const eligibilityType = Math.random()
-      if (eligibilityType < 0.4) {
-        // 40% - All year groups
-        eligibleYearGroupIds = []
-      } else if (eligibilityType < 0.7) {
-        // 30% - Lower years (first half of year groups)
-        const halfPoint = Math.ceil(yearGroups.length / 2)
-        eligibleYearGroupIds = yearGroups.slice(0, halfPoint).map(yg => yg.id)
-      } else {
-        // 30% - Upper years (second half of year groups)
-        const halfPoint = Math.floor(yearGroups.length / 2)
-        eligibleYearGroupIds = yearGroups.slice(halfPoint).map(yg => yg.id)
-      }
+      // All activities are for Y1-6 (already filtered out FS)
+      const eligibleYearGroupIds = yearGroups.map(yg => yg.id)
 
       // Set capacity based on activity type
       // Choir: 100, Dance: 50, all others: 25
