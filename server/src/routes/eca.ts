@@ -1088,6 +1088,84 @@ router.post('/terms/:id/publish-allocation', isAdmin, async (req, res) => {
   }
 })
 
+// Get all student allocations for a term (overview)
+router.get('/terms/:id/student-allocations', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const term = await prisma.ecaTerm.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!term) {
+      return res.status(404).json({ error: 'Term not found' })
+    }
+
+    // Get all allocations with student and activity details
+    const allocations = await prisma.ecaAllocation.findMany({
+      where: { ecaTermId: id, status: 'CONFIRMED' },
+      include: {
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            class: {
+              select: { name: true, yearGroup: { select: { name: true } } },
+            },
+          },
+        },
+        ecaActivity: {
+          select: {
+            id: true,
+            name: true,
+            dayOfWeek: true,
+            timeSlot: true,
+          },
+        },
+      },
+      orderBy: [
+        { student: { class: { yearGroup: { order: 'asc' } } } },
+        { student: { class: { name: 'asc' } } },
+        { student: { lastName: 'asc' } },
+        { student: { firstName: 'asc' } },
+      ],
+    })
+
+    // Group by student
+    const studentMap = new Map<string, {
+      studentId: string
+      studentName: string
+      className: string
+      yearGroup: string
+      allocations: { [dayOfWeek: number]: { activityId: string; activityName: string } }
+    }>()
+
+    for (const alloc of allocations) {
+      if (!studentMap.has(alloc.studentId)) {
+        studentMap.set(alloc.studentId, {
+          studentId: alloc.studentId,
+          studentName: `${alloc.student.firstName} ${alloc.student.lastName}`,
+          className: alloc.student.class.name,
+          yearGroup: alloc.student.class.yearGroup?.name || '',
+          allocations: {},
+        })
+      }
+      const student = studentMap.get(alloc.studentId)!
+      student.allocations[alloc.ecaActivity.dayOfWeek] = {
+        activityId: alloc.ecaActivity.id,
+        activityName: alloc.ecaActivity.name,
+      }
+    }
+
+    res.json(Array.from(studentMap.values()))
+  } catch (error) {
+    console.error('Error fetching student allocations:', error)
+    res.status(500).json({ error: 'Failed to fetch student allocations' })
+  }
+})
+
 // Get attendance for activity
 router.get('/activities/:id/attendance', isAdmin, async (req, res) => {
   try {

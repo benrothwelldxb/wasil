@@ -177,6 +177,17 @@ export function EcaPage() {
   // Student add
   const [selectedStudentsToAdd, setSelectedStudentsToAdd] = useState<{ id: string; fullName: string; className: string }[]>([])
 
+  // Student allocations view
+  const [showStudentAllocations, setShowStudentAllocations] = useState(false)
+  const [studentAllocations, setStudentAllocations] = useState<Array<{
+    studentId: string
+    studentName: string
+    className: string
+    yearGroup: string
+    allocations: { [dayOfWeek: number]: { activityId: string; activityName: string } }
+  }>>([])
+  const [loadingStudentAllocations, setLoadingStudentAllocations] = useState(false)
+
   // Update settings form when data loads
   useEffect(() => {
     if (settings) {
@@ -499,6 +510,26 @@ export function EcaPage() {
     } catch (error) {
       alert(`Failed to update suggestion: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
+  }
+
+  const loadStudentAllocations = async () => {
+    if (!selectedTermId) return
+    setLoadingStudentAllocations(true)
+    try {
+      const data = await api.eca.getStudentAllocations(selectedTermId)
+      setStudentAllocations(data)
+    } catch (error) {
+      console.error('Failed to load student allocations:', error)
+    } finally {
+      setLoadingStudentAllocations(false)
+    }
+  }
+
+  const toggleStudentAllocationsView = () => {
+    if (!showStudentAllocations && studentAllocations.length === 0) {
+      loadStudentAllocations()
+    }
+    setShowStudentAllocations(!showStudentAllocations)
   }
 
   const openStudentsModal = async (activity: EcaActivity) => {
@@ -965,10 +996,22 @@ export function EcaPage() {
             </div>
           )}
 
-          {/* Activities */}
+          {/* View Toggle and Activities Header */}
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Activities ({selectedTerm.activities?.length || 0})</h3>
-            {selectedTerm.status === 'DRAFT' && (
+            <div className="flex items-center gap-4">
+              <h3 className="text-lg font-semibold">
+                {showStudentAllocations ? 'Student Allocations' : `Activities (${selectedTerm.activities?.length || 0})`}
+              </h3>
+              {selectedTerm.allocationRun && (
+                <button
+                  onClick={toggleStudentAllocationsView}
+                  className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                >
+                  {showStudentAllocations ? 'View Activities' : 'View Student Allocations'}
+                </button>
+              )}
+            </div>
+            {selectedTerm.status === 'DRAFT' && !showStudentAllocations && (
               <button
                 onClick={() => setShowActivityForm(true)}
                 className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
@@ -980,7 +1023,56 @@ export function EcaPage() {
             )}
           </div>
 
-          {(selectedTerm.activities || []).length === 0 ? (
+          {/* Student Allocations View */}
+          {showStudentAllocations ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              {loadingStudentAllocations ? (
+                <div className="p-12 text-center">
+                  <p className="text-gray-500">Loading student allocations...</p>
+                </div>
+              ) : studentAllocations.length === 0 ? (
+                <div className="p-12 text-center">
+                  <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <p className="text-gray-500">No student allocations yet.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700 sticky left-0 bg-gray-50">Student</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Class</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Sunday</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Monday</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Tuesday</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Wednesday</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Thursday</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {studentAllocations.map((student) => (
+                        <tr key={student.studentId} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium text-gray-900 sticky left-0 bg-white">{student.studentName}</td>
+                          <td className="px-4 py-3 text-gray-600">{student.className}</td>
+                          {[0, 1, 2, 3, 4].map((day) => (
+                            <td key={day} className="px-4 py-3">
+                              {student.allocations[day] ? (
+                                <span className="inline-flex px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                                  {student.allocations[day].activityName}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : (selectedTerm.activities || []).length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
               <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p className="text-gray-500">No activities yet. Add activities for students to select.</p>

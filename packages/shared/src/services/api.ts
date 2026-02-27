@@ -1279,6 +1279,16 @@ export const eca = {
       body: JSON.stringify({ status }),
     }),
 
+  // Student allocations overview
+  getStudentAllocations: (termId: string) =>
+    fetchApi<Array<{
+      studentId: string
+      studentName: string
+      className: string
+      yearGroup: string
+      allocations: { [dayOfWeek: number]: { activityId: string; activityName: string } }
+    }>>(`/api/eca/terms/${termId}/student-allocations`),
+
   // Parent endpoints
   parent: {
     listTerms: () => fetchApi<EcaTerm[]>('/api/eca/parent/terms'),
