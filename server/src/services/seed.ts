@@ -284,60 +284,64 @@ async function seedEcaActivities(schoolId: string): Promise<number> {
 
   let activitiesCreated = 0
   const daysOfWeek = [0, 1, 2, 3, 4] // Sunday to Thursday (typical school week in Middle East)
-  const timeSlots: Array<'BEFORE_SCHOOL' | 'AFTER_SCHOOL'> = ['BEFORE_SCHOOL', 'AFTER_SCHOOL']
 
-  // Create 2-4 activities per day per slot
+  // Create 3-5 activities per day (after school only)
   let activityIndex = 0
   for (const dayOfWeek of daysOfWeek) {
-    for (const timeSlot of timeSlots) {
-      const activitiesPerSlot = Math.floor(Math.random() * 3) + 2 // 2-4 activities
+    const activitiesPerDay = Math.floor(Math.random() * 3) + 3 // 3-5 activities
 
-      for (let i = 0; i < activitiesPerSlot && activityIndex < shuffled.length; i++) {
-        const activity = shuffled[activityIndex]
-        activityIndex++
+    for (let i = 0; i < activitiesPerDay && activityIndex < shuffled.length; i++) {
+      const activity = shuffled[activityIndex]
+      activityIndex++
 
-        // Determine eligibility - some activities are for all, some for specific year groups
-        let eligibleYearGroupIds: string[] = []
-        const eligibilityType = Math.random()
-        if (eligibilityType < 0.4) {
-          // 40% - All year groups
-          eligibleYearGroupIds = []
-        } else if (eligibilityType < 0.7) {
-          // 30% - Lower years (first half of year groups)
-          const halfPoint = Math.ceil(yearGroups.length / 2)
-          eligibleYearGroupIds = yearGroups.slice(0, halfPoint).map(yg => yg.id)
-        } else {
-          // 30% - Upper years (second half of year groups)
-          const halfPoint = Math.floor(yearGroups.length / 2)
-          eligibleYearGroupIds = yearGroups.slice(halfPoint).map(yg => yg.id)
-        }
+      // Determine eligibility - some activities are for all, some for specific year groups
+      let eligibleYearGroupIds: string[] = []
+      const eligibilityType = Math.random()
+      if (eligibilityType < 0.4) {
+        // 40% - All year groups
+        eligibleYearGroupIds = []
+      } else if (eligibilityType < 0.7) {
+        // 30% - Lower years (first half of year groups)
+        const halfPoint = Math.ceil(yearGroups.length / 2)
+        eligibleYearGroupIds = yearGroups.slice(0, halfPoint).map(yg => yg.id)
+      } else {
+        // 30% - Upper years (second half of year groups)
+        const halfPoint = Math.floor(yearGroups.length / 2)
+        eligibleYearGroupIds = yearGroups.slice(halfPoint).map(yg => yg.id)
+      }
 
-        // Random capacity
-        const minCapacity = Math.random() > 0.7 ? Math.floor(Math.random() * 5) + 5 : null // 30% have min capacity
-        const maxCapacity = Math.floor(Math.random() * 15) + 10 // 10-25 max
+      // Set capacity based on activity type
+      // Choir: 100, Dance: 50, all others: 25
+      // Min capacity: 8 for all
+      const minCapacity = 8
+      let maxCapacity = 25
+      if (activity.name === 'Choir') {
+        maxCapacity = 100
+      } else if (activity.name === 'Dance') {
+        maxCapacity = 50
+      }
 
-        try {
-          await prisma.ecaActivity.create({
-            data: {
-              ecaTermId: term.id,
-              schoolId,
-              name: activity.name,
-              description: activity.description,
-              dayOfWeek,
-              timeSlot,
-              location: randomElement(LOCATIONS),
-              activityType: 'OPEN',
-              eligibleYearGroupIds,
-              eligibleGender: 'MIXED',
-              minCapacity,
-              maxCapacity,
-              isActive: true,
-            },
-          })
-          activitiesCreated++
-        } catch {
-          // Ignore duplicates
-        }
+      try {
+        await prisma.ecaActivity.create({
+          data: {
+            ecaTermId: term.id,
+            schoolId,
+            name: activity.name,
+            description: activity.description,
+            dayOfWeek,
+            timeSlot: 'AFTER_SCHOOL',
+            location: randomElement(LOCATIONS),
+            activityType: 'OPEN',
+            eligibleYearGroupIds,
+            eligibleGender: 'MIXED',
+            minCapacity,
+            maxCapacity,
+            isActive: true,
+          },
+        })
+        activitiesCreated++
+      } catch {
+        // Ignore duplicates
       }
     }
   }

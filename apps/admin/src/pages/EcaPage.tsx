@@ -663,37 +663,20 @@ export function EcaPage() {
             </div>
 
             {settingsForm.selectionMode === 'SMART_ALLOCATION' && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Priority Choices Per Week</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={5}
-                    value={settingsForm.maxPriorityChoices}
-                    onChange={(e) => setSettingsForm({ ...settingsForm, maxPriorityChoices: parseInt(e.target.value) || 0 })}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                  <p className="text-sm text-gray-500 mt-1">
-                    Number of activities parents can mark as high priority.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Ranked Choices Per Day/Slot</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={settingsForm.maxChoicesPerDay}
-                    onChange={(e) => setSettingsForm({ ...settingsForm, maxChoicesPerDay: parseInt(e.target.value) || 1 })}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                  <p className="text-sm text-gray-500 mt-1">
-                    Number of ranked choices per time slot (1st, 2nd, 3rd choice).
-                  </p>
-                </div>
-              </>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ranked Choices Per Day/Slot</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={settingsForm.maxChoicesPerDay}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, maxChoicesPerDay: parseInt(e.target.value) || 1 })}
+                  className="w-24 px-3 py-2 border border-gray-300 rounded-lg"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Number of ranked choices per time slot (1st, 2nd, 3rd choice).
+                </p>
+              </div>
             )}
 
             <div className="flex items-center space-x-2">
@@ -859,14 +842,12 @@ export function EcaPage() {
               >
                 <Pencil className="w-5 h-5" />
               </button>
-              {selectedTerm.status === 'DRAFT' && (
-                <button
-                  onClick={() => setDeleteConfirm({ type: 'term', id: selectedTerm.id, name: selectedTerm.name })}
-                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              )}
+              <button
+                onClick={() => setDeleteConfirm({ type: 'term', id: selectedTerm.id, name: selectedTerm.name })}
+                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
             </div>
           </div>
 
@@ -998,14 +979,45 @@ export function EcaPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(selectedTerm.activities || []).map(activity => (
+              {(selectedTerm.activities || [])
+                .map(activity => {
+                  // Find suggestions for this activity
+                  const activitySuggestions = suggestions.filter(s => s.activityId === activity.id && s.status === 'PENDING')
+                  const highestPriority = activitySuggestions.find(s => s.priority === 'HIGH') ? 'HIGH'
+                    : activitySuggestions.find(s => s.priority === 'MEDIUM') ? 'MEDIUM'
+                    : activitySuggestions.find(s => s.priority === 'LOW') ? 'LOW' : null
+                  return { ...activity, _suggestionPriority: highestPriority }
+                })
+                .sort((a, b) => {
+                  // Sort by suggestion priority: HIGH > MEDIUM > LOW > none
+                  const priorityOrder: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
+                  const aOrder = a._suggestionPriority ? priorityOrder[a._suggestionPriority] : 3
+                  const bOrder = b._suggestionPriority ? priorityOrder[b._suggestionPriority] : 3
+                  if (aOrder !== bOrder) return aOrder - bOrder
+                  // Secondary sort by name
+                  return a.name.localeCompare(b.name)
+                })
+                .map(activity => (
                 <div
                   key={activity.id}
-                  className={`bg-white rounded-xl shadow-sm border border-gray-200 p-4 ${activity.isCancelled ? 'opacity-60' : ''}`}
+                  className={`bg-white rounded-xl shadow-sm p-4 ${
+                    activity._suggestionPriority === 'HIGH' ? 'border-2 border-red-400' :
+                    activity._suggestionPriority === 'MEDIUM' ? 'border-2 border-amber-400' :
+                    activity._suggestionPriority === 'LOW' ? 'border-2 border-blue-300' :
+                    'border border-gray-200'
+                  } ${activity.isCancelled ? 'opacity-60' : ''}`}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <h4 className="font-semibold text-gray-900">{activity.name}</h4>
+                      <div className="flex items-center gap-2">
+                        {activity._suggestionPriority && (
+                          <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold text-white ${
+                            activity._suggestionPriority === 'HIGH' ? 'bg-red-500' :
+                            activity._suggestionPriority === 'MEDIUM' ? 'bg-amber-500' : 'bg-blue-500'
+                          }`}>!</span>
+                        )}
+                        <h4 className="font-semibold text-gray-900">{activity.name}</h4>
+                      </div>
                       <div className="flex items-center space-x-2 mt-1 text-sm text-gray-500">
                         <span>{DAY_NAMES[activity.dayOfWeek]}</span>
                         <span>|</span>
@@ -1071,14 +1083,12 @@ export function EcaPage() {
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
-                    {selectedTerm.status === 'DRAFT' && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ type: 'activity', id: activity.id, name: activity.name }); }}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ type: 'activity', id: activity.id, name: activity.name }); }}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               ))}
