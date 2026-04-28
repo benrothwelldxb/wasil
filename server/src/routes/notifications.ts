@@ -97,4 +97,100 @@ router.post('/read-all', isAuthenticated, async (req, res) => {
   }
 })
 
+// Get notification preferences
+router.get('/preferences', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+
+    let prefs = await prisma.notificationPreference.findUnique({
+      where: { userId: user.id },
+    })
+
+    // Return defaults if no preferences set yet
+    if (!prefs) {
+      return res.json({
+        posts: true,
+        directMessages: true,
+        emergencyAlerts: true,
+        forms: true,
+        events: true,
+        weeklyUpdates: true,
+        pulseSurveys: true,
+        ecaUpdates: true,
+        consultations: true,
+        schoolServices: true,
+      })
+    }
+
+    res.json({
+      posts: prefs.posts,
+      directMessages: prefs.directMessages,
+      emergencyAlerts: prefs.emergencyAlerts,
+      forms: prefs.forms,
+      events: prefs.events,
+      weeklyUpdates: prefs.weeklyUpdates,
+      pulseSurveys: prefs.pulseSurveys,
+      ecaUpdates: prefs.ecaUpdates,
+      consultations: prefs.consultations,
+      schoolServices: prefs.schoolServices,
+    })
+  } catch (error) {
+    console.error('Error fetching notification preferences:', error)
+    res.status(500).json({ error: 'Failed to fetch preferences' })
+  }
+})
+
+// Update notification preferences
+router.put('/preferences', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    const { posts, directMessages, emergencyAlerts, forms, events, weeklyUpdates, pulseSurveys, ecaUpdates, consultations, schoolServices } = req.body
+
+    const prefs = await prisma.notificationPreference.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        posts: posts ?? true,
+        directMessages: directMessages ?? true,
+        emergencyAlerts: emergencyAlerts ?? true,
+        forms: forms ?? true,
+        events: events ?? true,
+        weeklyUpdates: weeklyUpdates ?? true,
+        pulseSurveys: pulseSurveys ?? true,
+        ecaUpdates: ecaUpdates ?? true,
+        consultations: consultations ?? true,
+        schoolServices: schoolServices ?? true,
+      },
+      update: {
+        ...(posts !== undefined && { posts }),
+        ...(directMessages !== undefined && { directMessages }),
+        ...(emergencyAlerts !== undefined && { emergencyAlerts }),
+        ...(forms !== undefined && { forms }),
+        ...(events !== undefined && { events }),
+        ...(weeklyUpdates !== undefined && { weeklyUpdates }),
+        ...(pulseSurveys !== undefined && { pulseSurveys }),
+        ...(ecaUpdates !== undefined && { ecaUpdates }),
+        ...(consultations !== undefined && { consultations }),
+        ...(schoolServices !== undefined && { schoolServices }),
+      },
+    })
+
+    res.json({
+      posts: prefs.posts,
+      directMessages: prefs.directMessages,
+      emergencyAlerts: prefs.emergencyAlerts,
+      forms: prefs.forms,
+      events: prefs.events,
+      weeklyUpdates: prefs.weeklyUpdates,
+      pulseSurveys: prefs.pulseSurveys,
+      ecaUpdates: prefs.ecaUpdates,
+      consultations: prefs.consultations,
+      schoolServices: prefs.schoolServices,
+    })
+  } catch (error) {
+    console.error('Error updating notification preferences:', error)
+    res.status(500).json({ error: 'Failed to update preferences' })
+  }
+})
+
 export default router

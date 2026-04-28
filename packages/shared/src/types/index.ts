@@ -9,6 +9,8 @@ export interface User {
   schoolId: string
   avatarUrl?: string
   preferredLanguage?: string
+  twoFactorEnabled?: boolean
+  twoFactorRequired?: boolean
   children?: Child[]
   studentLinks?: ParentStudentLinkInfo[]
   school?: School
@@ -41,6 +43,89 @@ export interface School {
   logoUrl?: string
   logoIconUrl?: string
   paymentUrl?: string
+  principalName?: string
+  principalTitle?: string
+  archived?: boolean
+}
+
+export interface SchoolWithCount extends School {
+  _count?: { users: number; students?: number; classes?: number; messages?: number }
+  parentCount?: number
+  staffCount?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface SchoolStats {
+  parentCount: number
+  staffCount: number
+  adminCount: number
+  studentCount: number
+  classCount: number
+  messageCount: number
+  formCount: number
+  ecaTermCount: number
+  activeAllocations: number
+  latestActivity: string | null
+  recentAuditLogs: Array<{
+    id: string
+    userName: string
+    action: string
+    resourceType: string
+    resourceId: string
+    metadata: Record<string, unknown> | null
+    createdAt: string
+  }>
+}
+
+export interface SystemStats {
+  totalSchools: number
+  totalUsers: number
+  totalParents: number
+  totalStudents: number
+  totalMessages: number
+  totalForms: number
+  messagesThisMonth: number
+  schoolsThisMonth: number
+  mostActiveSchools: Array<{
+    schoolId: string
+    name: string
+    messageCount: number
+  }>
+}
+
+export interface SchoolUser {
+  id: string
+  email: string
+  name: string
+  role: Role
+  avatarUrl?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface CreateSchoolData {
+  name: string
+  shortName?: string
+  city?: string
+  academicYear?: string
+  brandColor?: string
+  accentColor?: string
+  tagline?: string
+  logoUrl?: string
+  logoIconUrl?: string
+  paymentUrl?: string
+}
+
+export interface CreateAdminData {
+  email: string
+  name: string
+  role: 'ADMIN' | 'STAFF'
+}
+
+export interface CreateAdminResponse extends SchoolUser {
+  tempPassword: string
+  note: string
 }
 
 // Year Group types
@@ -71,6 +156,16 @@ export interface ActionRequired {
   amount?: string
 }
 
+export interface MessageAttachment {
+  id: string
+  messageId: string
+  fileName: string
+  fileUrl: string
+  fileType: string
+  fileSize: number
+  createdAt: string
+}
+
 export interface Message {
   id: string
   title: string
@@ -88,9 +183,12 @@ export interface Message {
   actionAmount?: string
   isPinned?: boolean
   isUrgent?: boolean
+  scheduledAt?: string
+  isScheduled?: boolean
   expiresAt?: string
   formId?: string
   form?: Form & { userResponse?: FormResponseData | null }
+  attachments?: MessageAttachment[]
   acknowledged?: boolean
   acknowledgmentCount?: number
   createdAt: string
@@ -104,7 +202,13 @@ export interface MessageAcknowledgment {
 }
 
 // Form types
-export type FormFieldType = 'text' | 'textarea' | 'checkbox' | 'select' | 'number' | 'date'
+export type FormFieldType = 'text' | 'textarea' | 'checkbox' | 'select' | 'number' | 'date' | 'signature'
+
+export interface FormFieldCondition {
+  fieldId: string    // which field to check
+  operator: 'equals' | 'not_equals' | 'is_checked' | 'is_not_checked'
+  value?: string     // for equals/not_equals
+}
 
 export interface FormField {
   id: string
@@ -115,6 +219,8 @@ export interface FormField {
   removable: boolean
   options?: string[]
   validation?: { min?: number; max?: number }
+  page?: number                  // page number (0-indexed), undefined = page 0
+  condition?: FormFieldCondition // show only when condition is met
 }
 
 export type FormType = 'permission-consent' | 'trip-consent' | 'payment-request' | 'medical-info' | 'general-info' | 'quick-poll'
@@ -158,6 +264,30 @@ export interface FormWithResponses extends Form {
     createdAt: string
   }>
   responseCount: number
+}
+
+export interface FormFieldStat {
+  label: string
+  type: string
+  // checkbox
+  checkedCount?: number
+  uncheckedCount?: number
+  // select
+  optionCounts?: Record<string, number>
+  // number
+  average?: number
+  min?: number
+  max?: number
+  // text / textarea / date / signature
+  filledCount?: number
+  emptyCount?: number
+}
+
+export interface FormAnalytics {
+  totalResponses: number
+  totalTargeted: number
+  completionRate: number
+  fieldStats: Record<string, FormFieldStat>
 }
 
 // Event types
@@ -229,6 +359,8 @@ export interface WeeklyMessage {
   content: string
   weekOf: string
   isCurrent: boolean
+  imageUrl?: string | null
+  scheduledAt?: string | null
   schoolId: string
   heartCount: number
   hasHearted?: boolean
@@ -265,6 +397,12 @@ export interface KnowledgeArticle {
 // Pulse Survey types
 export type PulseSurveyStatus = 'DRAFT' | 'OPEN' | 'CLOSED'
 
+export interface PulseCustomQuestion {
+  id: string
+  text: string
+  type: 'LIKERT_5' | 'TEXT_OPTIONAL'
+}
+
 export interface PulseSurvey {
   id: string
   halfTermName: string
@@ -273,9 +411,17 @@ export interface PulseSurvey {
   closesAt: string
   schoolId: string
   additionalQuestionKey?: string | null
+  customQuestions?: PulseCustomQuestion[] | null
   questions: PulseQuestion[]
   userResponse?: PulseResponse
   responseCount?: number
+}
+
+export interface PulseComparison {
+  id: string
+  halfTermName: string
+  responseCount: number
+  coreAverages: Record<string, number | null>
 }
 
 export interface PulseQuestion {
@@ -325,6 +471,11 @@ export type AuditResourceType =
   | 'KNOWLEDGE_ARTICLE' | 'SCHOOL' | 'FORM' | 'PARENT_INVITATION'
   | 'GROUP' | 'GROUP_CATEGORY' | 'ECA_TERM' | 'ECA_ACTIVITY' | 'ECA_ALLOCATION'
 
+export interface AuditLogChange {
+  from: unknown
+  to: unknown
+}
+
 export interface AuditLog {
   id: string
   userId: string
@@ -333,6 +484,7 @@ export interface AuditLog {
   resourceType: AuditResourceType
   resourceId: string
   metadata: Record<string, unknown> | null
+  changes: Record<string, AuditLogChange> | null
   ipAddress: string | null
   createdAt: string
 }
@@ -489,9 +641,34 @@ export interface Student {
   lastName: string
   fullName: string
   externalId?: string
+  photoUrl?: string | null
   classId: string
   className: string
   parentCount: number
+}
+
+// Inclusion/IEP types
+export interface StudentIep {
+  id: string
+  studentId: string
+  studentName: string
+  className: string
+  title: string
+  status: string
+  targets: IepTarget[]
+  reviewDate?: string | null
+  keyWorker?: string | null
+  notes?: string | null
+  syncedAt: string
+  updatedAt: string
+}
+
+export interface IepTarget {
+  area: string      // e.g. "Communication", "Social Skills"
+  target: string    // The target description
+  strategies: string // How to achieve it
+  progress?: string  // Current progress notes
+  status?: string    // "Not Started", "In Progress", "Achieved"
 }
 
 export interface StudentSearchResult {
@@ -637,5 +814,423 @@ export interface ParentGroupInfo {
   }>
 }
 
+// Analytics Types
+export interface AnalyticsOverview {
+  totalParents: number
+  activeParents: number
+  adoptionRate: number
+  totalStudents: number
+  totalMessages: number
+  messageReadRate: number
+  formsCompletionRate: number
+  eventsRsvpRate: number
+  ecaParticipationRate: number
+  pulseAverageRating: number
+  pulseResponseRate: number
+}
+
+export interface AnalyticsMessage {
+  id: string
+  title: string
+  sentAt: string
+  targetClass: string
+  totalRecipients: number
+  acknowledged: number
+  readRate: number
+  hasForm: boolean
+  formResponses: number
+  formCompletionRate: number
+}
+
+export interface AnalyticsMessagesResponse {
+  messages: AnalyticsMessage[]
+}
+
+export interface EngagementWeek {
+  week: string
+  label: string
+  activeUsers: number
+  messagesRead: number
+  formsCompleted: number
+}
+
+export interface EngagementTrendResponse {
+  weeks: EngagementWeek[]
+}
+
+export interface EcaPopularActivity {
+  name: string
+  demand: number
+  capacity: number
+}
+
+export interface EcaStatsResponse {
+  totalActivities: number
+  totalAllocations: number
+  firstChoiceRate: number
+  averageActivitiesPerStudent: number
+  mostPopular: EcaPopularActivity[]
+}
+
+// School Services Types
+export type ServiceStatus = 'DRAFT' | 'PUBLISHED' | 'REGISTRATION_OPEN' | 'REGISTRATION_CLOSED' | 'ACTIVE' | 'ARCHIVED'
+export type RegistrationStatus = 'PENDING' | 'CONFIRMED' | 'WAITLISTED' | 'CANCELLED'
+export type PaymentStatus = 'UNPAID' | 'PAID' | 'PARTIAL' | 'WAIVED'
+
+export interface SchoolService {
+  id: string
+  schoolId: string
+  name: string
+  description?: string | null
+  details?: string | null
+  days: string[] // parsed from JSON
+  startTime: string
+  endTime: string
+  costPerSession?: number | null
+  costPerWeek?: number | null
+  costPerTerm?: number | null
+  costDescription?: string | null
+  costIsFrom?: boolean
+  currency?: string
+  paymentMethod?: string | null  // "ONLINE", "CASH_ONLY", "FREE"
+  paymentUrl?: string | null     // Custom payment link
+  capacity?: number | null
+  eligibleClasses?: string[] | null
+  eligibleYears?: string[] | null
+  status: ServiceStatus
+  registrationOpens?: string | null
+  registrationCloses?: string | null
+  serviceStarts?: string | null
+  serviceEnds?: string | null
+  location?: string | null
+  staffName?: string | null
+  imageUrl?: string | null
+  sortOrder: number
+  registeredCount?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SchoolServiceWithStats extends SchoolService {
+  registrations?: ServiceRegistration[]
+  registeredCount: number
+  confirmedCount?: number
+  pendingCount?: number
+  waitlistedCount?: number
+  paidCount?: number
+  unpaidCount?: number
+}
+
+export interface ServiceRegistration {
+  id: string
+  serviceId: string
+  parentId: string
+  studentId: string
+  studentName: string
+  className: string
+  days: string[] // parsed from JSON
+  status: RegistrationStatus
+  paymentStatus: PaymentStatus
+  notes?: string | null
+  startDate?: string | null
+  createdAt: string
+  updatedAt: string
+  parentName?: string
+  parentEmail?: string
+  serviceName?: string
+}
+
+export interface ServiceRegistrationCreate {
+  serviceId: string
+  studentId: string
+  studentName: string
+  className: string
+  days: string[]
+  notes?: string
+  startDate?: string
+}
+
+// Notification Preference Types
+export interface NotificationPreferences {
+  posts: boolean
+  directMessages: boolean
+  emergencyAlerts: boolean
+  forms: boolean
+  events: boolean
+  weeklyUpdates: boolean
+  pulseSurveys: boolean
+  ecaUpdates: boolean
+  consultations: boolean
+  schoolServices: boolean
+}
+
+// Cafeteria Types
+export interface CafeteriaMenu {
+  id: string
+  weekOf: string
+  title?: string | null
+  imageUrl?: string | null
+  orderUrl?: string | null
+  isPublished: boolean
+  itemCount?: number
+  items?: CafeteriaMenuItem[]
+  createdAt?: string
+}
+
+export interface CafeteriaMenuItem {
+  id: string
+  dayOfWeek: number
+  dayName: string
+  mealType: string
+  name: string
+  description?: string | null
+  dietaryTags: string[]
+  allergens: string[]
+  calories?: number | null
+  protein?: number | null
+  carbs?: number | null
+  fat?: number | null
+  price?: number | null
+  isDefault: boolean
+  order?: number
+}
+
+// Inbox / Two-Way Messaging Types
+export interface SchoolContactInfo {
+  id: string
+  name: string
+  description?: string | null
+  icon?: string | null
+  assignedUserId: string
+  assignedUserName: string
+  assignedUserEmail?: string
+  order: number
+  archived: boolean
+  createdAt: string
+}
+
+export interface ConversationListItem {
+  id: string
+  staffId?: string
+  staffName: string
+  staffAvatarUrl?: string | null
+  parentId?: string
+  parentName?: string
+  parentAvatarUrl?: string | null
+  studentId?: string | null
+  studentName?: string | null
+  className?: string | null
+  schoolContactId?: string | null
+  schoolContactName?: string | null
+  schoolContactIcon?: string | null
+  lastMessageAt: string
+  lastMessageText?: string | null
+  unreadCount: number
+  muted?: boolean
+  createdAt: string
+}
+
+export interface MessageReaction {
+  id: string
+  messageId: string
+  userId: string
+  emoji: string
+  createdAt: string
+}
+
+export interface ConversationMessageItem {
+  id: string
+  senderId: string
+  senderName: string
+  content: string
+  readAt: string | null
+  deleted?: boolean
+  deletedAt?: string | null
+  replyTo?: {
+    id: string
+    content: string
+    senderName: string
+    deleted?: boolean
+  } | null
+  reactions?: Record<string, { count: number; reacted: boolean }>
+  createdAt: string
+  attachments: ConversationAttachmentItem[]
+}
+
+export interface ConversationAttachmentItem {
+  id: string
+  fileName: string
+  fileUrl: string
+  fileType: string
+  fileSize: number
+}
+
+export interface MessageSearchResult {
+  id: string
+  senderId: string
+  senderName: string
+  content: string
+  createdAt: string
+}
+
+export interface ConversationDetail {
+  id: string
+  parentId: string
+  parentName: string
+  parentAvatarUrl?: string | null
+  staffId: string
+  staffName: string
+  staffAvatarUrl?: string | null
+  studentId?: string | null
+  studentName?: string | null
+  className?: string | null
+  schoolContactId?: string | null
+  schoolContactName?: string | null
+  schoolContactIcon?: string | null
+  lastMessageAt: string
+  createdAt: string
+  muted?: boolean
+  messages: ConversationMessageItem[]
+}
+
+export interface AvailableContactsResponse {
+  teachers: Array<{
+    id: string
+    name: string
+    avatarUrl: string | null
+    classes: Array<{ id: string; name: string }>
+  }>
+  schoolContacts: Array<{
+    id: string
+    name: string
+    description?: string | null
+    icon?: string | null
+    assignedUserId: string
+    assignedUserName: string
+  }>
+  children: Array<{
+    studentId: string
+    studentName: string
+    classId: string
+    className: string
+  }>
+}
+
 // ECA Types
 export * from './eca'
+
+// Emergency Alert Types
+export type AlertType = 'LOCKDOWN' | 'WEATHER' | 'EARLY_DISMISSAL' | 'MEDICAL' | 'SECURITY' | 'GENERAL'
+export type AlertSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM'
+export type AlertStatus = 'ACTIVE' | 'RESOLVED'
+export type DeliveryChannel = 'PUSH' | 'SMS' | 'WHATSAPP' | 'EMAIL'
+export type DeliveryStatus = 'PENDING' | 'SENT' | 'DELIVERED' | 'FAILED'
+
+export interface EmergencyAlert {
+  id: string
+  title: string
+  message: string
+  type: AlertType
+  severity: AlertSeverity
+  status: AlertStatus
+  sendPush: boolean
+  sendSms: boolean
+  sendWhatsapp: boolean
+  sendEmail: boolean
+  targetClass?: string | null
+  sentAt: string
+  resolvedAt?: string | null
+  resolvedBy?: string | null
+  createdBy: string
+  isDrill?: boolean
+  drillName?: string | null
+  requireAck?: boolean
+  acknowledged?: boolean
+  acknowledgedAt?: string | null
+  ackCount?: number
+  totalDeliveries?: number
+  deliveryStats?: Record<string, { sent: number; delivered: number; failed: number; pending: number }>
+  parentCount?: number
+  createdAt: string
+}
+
+export interface EmergencyAlertCreateData {
+  title: string
+  message: string
+  type?: AlertType
+  severity?: AlertSeverity
+  targetClass?: string
+  sendPush?: boolean
+  sendSms?: boolean
+  sendWhatsapp?: boolean
+  sendEmail?: boolean
+  isDrill?: boolean
+  drillName?: string
+  requireAck?: boolean
+}
+
+// Consultation Types
+export type ConsultationStatus = 'DRAFT' | 'PUBLISHED' | 'BOOKING_OPEN' | 'BOOKING_CLOSED' | 'COMPLETED'
+
+export interface ConsultationEvent {
+  id: string
+  schoolId: string
+  title: string
+  description?: string | null
+  date: string
+  endDate?: string | null
+  status: ConsultationStatus
+  slotDuration: number
+  breakDuration: number
+  targetClass?: string | null
+  teachers?: ConsultationTeacher[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type ConsultationLocationType = 'IN_PERSON' | 'GOOGLE_MEET' | 'ZOOM' | 'TEAMS' | 'CUSTOM'
+
+export interface ConsultationTeacher {
+  id: string
+  consultationId: string
+  teacherId: string
+  teacherName: string
+  teacherRole?: string
+  teacherPosition?: string | null
+  assignedClasses?: string[]
+  location?: string | null
+  locationType?: ConsultationLocationType
+  startTime: string
+  endTime: string
+  slots?: ConsultationSlot[]
+}
+
+export interface ConsultationSlot {
+  id: string
+  consultationTeacherId: string
+  startTime: string
+  endTime: string
+  date?: string | null
+  isBreak: boolean
+  isCustom?: boolean
+  booking?: ConsultationBooking | null
+}
+
+export interface ConsultationBooking {
+  id: string
+  slotId: string
+  parentId: string
+  parentName?: string
+  studentId: string
+  studentName: string
+  notes?: string | null
+  meetingLink?: string | null
+  createdAt: string
+  // Enriched fields for display
+  teacherName?: string
+  teacherLocation?: string | null
+  slotStartTime?: string
+  slotEndTime?: string
+  consultationTitle?: string
+  consultationDate?: string
+}

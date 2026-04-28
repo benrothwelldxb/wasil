@@ -13,17 +13,18 @@
     "@capacitor/android": "^8.1.0",
     "@capacitor/cli": "^8.1.0",
     "@capacitor/core": "^8.1.0",
+    "@capacitor/preferences": "^8.0.1",
     "@capacitor/push-notifications": "^8.0.1",
     "@wasil/shared": "*",
     "date-fns": "^3.2.0",
+    "express": "^4.18.2",
     "i18next": "^25.8.11",
     "lucide-react": "^0.303.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-i18next": "^16.5.4",
     "react-router-dom": "^6.21.0",
-    "serve": "^14.2.0",
-    "express": "^4.18.2"
+    "serve": "^14.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

@@ -1,7 +1,9 @@
-import React, { useState } from 'react'
-import { Plus, X, Pencil, Trash2, Calendar, Clock, MapPin, Upload, CheckCircle } from 'lucide-react'
+import React, { useState, useRef } from 'react'
+import { Plus, X, Pencil, Trash2, Calendar, Clock, MapPin, Upload, CheckCircle, Download, FileText, Copy, Repeat } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
 import type { Event, Class, YearGroup } from '@wasil/shared'
+
+type RecurrenceType = 'none' | 'weekly' | 'fortnightly' | 'monthly' | 'custom'
 
 interface EventForm {
   title: string
@@ -13,6 +15,9 @@ interface EventForm {
   classId: string
   yearGroupId: string
   requiresRsvp: boolean
+  recurrence: RecurrenceType
+  recurrenceEnd: string
+  customIntervalDays: string
 }
 
 const emptyForm: EventForm = {
@@ -25,6 +30,34 @@ const emptyForm: EventForm = {
   classId: '',
   yearGroupId: '',
   requiresRsvp: false,
+  recurrence: 'none',
+  recurrenceEnd: '',
+  customIntervalDays: '14',
+}
+
+function generateRecurringDates(startDate: string, recurrence: RecurrenceType, endDate: string, customDays: number): string[] {
+  if (recurrence === 'none' || !endDate) return [startDate]
+
+  const dates: string[] = []
+  const start = new Date(startDate + 'T00:00:00')
+  const end = new Date(endDate + 'T00:00:00')
+  const current = new Date(start)
+
+  while (current <= end) {
+    dates.push(current.toISOString().split('T')[0])
+
+    if (recurrence === 'weekly') {
+      current.setDate(current.getDate() + 7)
+    } else if (recurrence === 'fortnightly') {
+      current.setDate(current.getDate() + 14)
+    } else if (recurrence === 'monthly') {
+      current.setMonth(current.getMonth() + 1)
+    } else if (recurrence === 'custom') {
+      current.setDate(current.getDate() + customDays)
+    }
+  }
+
+  return dates
 }
 
 interface CsvRow {
@@ -83,11 +116,13 @@ export function EventsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // CSV state
+  const [showCsvGuide, setShowCsvGuide] = useState(false)
   const [showCsvModal, setShowCsvModal] = useState(false)
   const [csvData, setCsvData] = useState<CsvRow[]>([])
   const [csvFileName, setCsvFileName] = useState('')
   const [csvImporting, setCsvImporting] = useState(false)
   const [csvImportResult, setCsvImportResult] = useState<{ success: number; failed: number } | null>(null)
+  const csvInputRef = useRef<HTMLInputElement>(null)
 
   const audienceOptions = [
     { value: 'all', label: 'All Parents', classId: '', yearGroupId: '' },
@@ -128,10 +163,9 @@ export function EventsPage() {
     e.preventDefault()
     setIsSubmitting(true)
     try {
-      const payload = {
+      const basePayload = {
         title: form.title,
         description: form.description || undefined,
-        date: form.date,
         time: form.time || undefined,
         location: form.location || undefined,
         targetClass: form.targetClass,
@@ -139,10 +173,22 @@ export function EventsPage() {
         yearGroupId: form.yearGroupId || undefined,
         requiresRsvp: form.requiresRsvp,
       }
+
       if (editingEvent) {
-        await api.events.update(editingEvent.id, payload)
+        await api.events.update(editingEvent.id, { ...basePayload, date: form.date })
       } else {
-        await api.events.create(payload)
+        // Generate dates for recurring events
+        const dates = generateRecurringDates(
+          form.date,
+          form.recurrence,
+          form.recurrenceEnd || form.date,
+          parseInt(form.customIntervalDays) || 14
+        )
+
+        // Create all events
+        for (const date of dates) {
+          await api.events.create({ ...basePayload, date })
+        }
       }
       setShowForm(false)
       setEditingEvent(null)
@@ -167,6 +213,28 @@ export function EventsPage() {
       classId: event.classId || '',
       yearGroupId: event.yearGroupId || '',
       requiresRsvp: event.requiresRsvp,
+      recurrence: 'none',
+      recurrenceEnd: '',
+      customIntervalDays: '14',
+    })
+    setShowForm(true)
+  }
+
+  const handleDuplicate = (event: Event) => {
+    setEditingEvent(null)
+    setForm({
+      title: event.title,
+      description: event.description || '',
+      date: '', // leave blank so they pick a new date
+      time: event.time || '',
+      location: event.location || '',
+      targetClass: event.targetClass,
+      classId: event.classId || '',
+      yearGroupId: event.yearGroupId || '',
+      requiresRsvp: event.requiresRsvp,
+      recurrence: 'none',
+      recurrenceEnd: '',
+      customIntervalDays: '14',
     })
     setShowForm(true)
   }
@@ -222,6 +290,7 @@ export function EventsPage() {
       }
 
       setCsvData(rows)
+      setShowCsvGuide(false)
       setShowCsvModal(true)
     }
     reader.readAsText(file)
@@ -262,11 +331,14 @@ export function EventsPage() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-slate-900">Events</h2>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 cursor-pointer text-sm font-medium">
+          <button
+            onClick={() => setShowCsvGuide(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-medium"
+          >
             <Upload className="w-4 h-4" />
             Import CSV
-            <input type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
-          </label>
+          </button>
+          <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
           <button
             onClick={() => { setShowForm(true); setEditingEvent(null); setForm(emptyForm) }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium"
@@ -365,6 +437,80 @@ export function EventsPage() {
                 Requires RSVP
               </label>
             </div>
+
+            {/* Recurrence (only for new events) */}
+            {!editingEvent && (
+              <div className="border border-slate-200 rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Repeat className="w-4 h-4 text-slate-500" />
+                  <label className="text-sm font-medium text-slate-700">Repeat</label>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {([
+                    ['none', 'No repeat'],
+                    ['weekly', 'Weekly'],
+                    ['fortnightly', 'Fortnightly'],
+                    ['monthly', 'Monthly'],
+                    ['custom', 'Custom'],
+                  ] as [RecurrenceType, string][]).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, recurrence: value }))}
+                      className="px-3 py-2 rounded-lg text-xs font-semibold text-center transition-colors"
+                      style={
+                        form.recurrence === value
+                          ? { backgroundColor: theme.colors.brandColor, color: '#FFFFFF' }
+                          : { backgroundColor: '#F1F5F9', color: '#64748B' }
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {form.recurrence !== 'none' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Repeat until</label>
+                      <input
+                        type="date"
+                        value={form.recurrenceEnd}
+                        onChange={(e) => setForm(f => ({ ...f, recurrenceEnd: e.target.value }))}
+                        min={form.date}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                    </div>
+                    {form.recurrence === 'custom' && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Every X days</label>
+                        <input
+                          type="number"
+                          value={form.customIntervalDays}
+                          onChange={(e) => setForm(f => ({ ...f, customIntervalDays: e.target.value }))}
+                          min="1"
+                          max="365"
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          required
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {form.recurrence !== 'none' && form.date && form.recurrenceEnd && (
+                  <p className="text-xs text-slate-500">
+                    This will create{' '}
+                    <span className="font-semibold text-slate-700">
+                      {generateRecurringDates(form.date, form.recurrence, form.recurrenceEnd, parseInt(form.customIntervalDays) || 14).length}
+                    </span>{' '}
+                    events
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -379,7 +525,7 @@ export function EventsPage() {
                 className="px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50"
                 style={{ backgroundColor: theme.colors.brandColor }}
               >
-                {isSubmitting ? 'Saving...' : editingEvent ? 'Update Event' : 'Create Event'}
+                {isSubmitting ? 'Saving...' : editingEvent ? 'Update Event' : form.recurrence !== 'none' && form.recurrenceEnd ? `Create ${generateRecurringDates(form.date, form.recurrence, form.recurrenceEnd, parseInt(form.customIntervalDays) || 14).length} Events` : 'Create Event'}
               </button>
             </div>
           </form>
@@ -429,14 +575,23 @@ export function EventsPage() {
               </div>
               <div className="flex items-center gap-1 ml-4">
                 <button
+                  onClick={() => handleDuplicate(event)}
+                  className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
+                  title="Duplicate event"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+                <button
                   onClick={() => handleEdit(event)}
                   className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                  title="Edit event"
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setDeleteTarget(event)}
                   className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                  title="Delete event"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -448,6 +603,104 @@ export function EventsPage() {
           <p className="text-center text-slate-400 py-8">No events yet.</p>
         )}
       </div>
+
+      {/* CSV Guide Modal */}
+      {showCsvGuide && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-lg w-full shadow-xl">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#FFF0F3' }}>
+                  <FileText className="w-5 h-5" style={{ color: '#C4506E' }} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Import Events from CSV</h3>
+                  <p className="text-sm text-slate-500">Bulk import events using a spreadsheet</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCsvGuide(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Format description */}
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900 mb-2">Required columns</h4>
+                <div className="bg-slate-50 rounded-lg p-3 space-y-1.5">
+                  <div className="flex items-start gap-2 text-sm">
+                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">title</span>
+                    <span className="text-slate-600">Event name (required)</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm">
+                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">date</span>
+                    <span className="text-slate-600">Date in YYYY-MM-DD format (required)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900 mb-2">Optional columns</h4>
+                <div className="bg-slate-50 rounded-lg p-3 space-y-1.5">
+                  <div className="flex items-start gap-2 text-sm">
+                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">description</span>
+                    <span className="text-slate-600">Event description</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm">
+                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">time</span>
+                    <span className="text-slate-600">Time range, e.g. "09:00 - 11:00"</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm">
+                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">location</span>
+                    <span className="text-slate-600">Venue or room name</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm">
+                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">targetClass</span>
+                    <span className="text-slate-600">Audience: "all", "Whole School", or a class name</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm">
+                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">rsvp</span>
+                    <span className="text-slate-600">Require RSVP: "yes" or "no"</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sample download */}
+              <button
+                onClick={() => {
+                  const sample = `title,date,description,time,location,targetClass,rsvp
+Sports Day,2026-06-15,Annual sports day for all students,09:00 - 15:00,School Field,all,yes
+Y2 Assembly,2026-05-20,Year 2 class assembly,08:30 - 09:00,Main Hall,Y2 Red,no
+End of Term Concert,2026-07-10,Summer concert performance,14:00 - 15:30,MPH,Whole School,no`
+                  const blob = new Blob([sample], { type: 'text/csv' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'events-sample.csv'
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-slate-300 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Download sample CSV
+              </button>
+            </div>
+
+            {/* Upload button */}
+            <div className="p-6 border-t border-slate-200">
+              <button
+                onClick={() => csvInputRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-white text-sm font-semibold"
+                style={{ backgroundColor: '#C4506E' }}
+              >
+                <Upload className="w-4 h-4" />
+                Choose CSV File
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CSV Import Modal */}
       {showCsvModal && (

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 
 const router = Router()
@@ -29,9 +29,17 @@ const OPTIONAL_QUESTIONS = [
   { key: 'opt_transition', text: 'The school has supported my child well during transitions.', type: 'LIKERT_5' },
 ]
 
+interface CustomQuestion {
+  id: string
+  text: string
+  type: 'LIKERT_5' | 'TEXT_OPTIONAL'
+}
+
 // Helper to build questions list for a pulse
-function getQuestionsForPulse(additionalQuestionKey: string | null) {
+function getQuestionsForPulse(additionalQuestionKey: string | null, customQuestions?: CustomQuestion[] | null) {
   const questions = [...PULSE_CORE_QUESTIONS]
+
+  // Legacy: single optional question from preset list
   if (additionalQuestionKey) {
     const optionalQ = OPTIONAL_QUESTIONS.find(q => q.key === additionalQuestionKey)
     if (optionalQ) {
@@ -44,6 +52,20 @@ function getQuestionsForPulse(additionalQuestionKey: string | null) {
       })
     }
   }
+
+  // Custom questions added by admin
+  if (customQuestions && Array.isArray(customQuestions)) {
+    customQuestions.forEach((cq, idx) => {
+      questions.push({
+        id: cq.id,
+        stableKey: cq.id,
+        text: cq.text,
+        type: cq.type,
+        order: questions.length + 1,
+      })
+    })
+  }
+
   return questions
 }
 
@@ -78,7 +100,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
       userResponse: pulse.responses[0] ? {
         id: pulse.responses[0].id,
         answers: pulse.responses[0].answers as Record<string, number | string>,
@@ -114,7 +136,7 @@ router.get('/all', isAdmin, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
       responseCount: pulse._count.responses,
       responses: pulse.responses.map(r => ({
         id: r.id,
@@ -153,7 +175,7 @@ router.get('/:id', isAdmin, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
       responses: pulse.responses.map(r => ({
         id: r.id,
         answers: r.answers as Record<string, number | string>,
@@ -192,7 +214,7 @@ router.get('/:id/analytics', isAdmin, async (req, res) => {
     const responseRate = totalParents > 0 ? Math.round((responseCount / totalParents) * 100) : 0
 
     // Build questions list for this pulse
-    const questions = getQuestionsForPulse(pulse.additionalQuestionKey)
+    const questions = getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null)
 
     // Calculate stats for each question
     const questionStats: Record<string, {
@@ -311,7 +333,7 @@ router.get('/:id/export', isAdmin, async (req, res) => {
     })
 
     // Build questions list
-    const questions = getQuestionsForPulse(pulse.additionalQuestionKey)
+    const questions = getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null)
 
     // Build CSV header
     const headers = [
@@ -413,7 +435,7 @@ router.get('/:id/export', isAdmin, async (req, res) => {
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { halfTermName, status, opensAt, closesAt, additionalQuestionKey } = req.body
+    const { halfTermName, status, opensAt, closesAt, additionalQuestionKey, customQuestions } = req.body
 
     const pulse = await prisma.pulseSurvey.create({
       data: {
@@ -422,6 +444,7 @@ router.post('/', isAdmin, async (req, res) => {
         opensAt: new Date(opensAt),
         closesAt: new Date(closesAt),
         additionalQuestionKey: additionalQuestionKey || null,
+        customQuestions: customQuestions && customQuestions.length > 0 ? JSON.parse(JSON.stringify(customQuestions)) : undefined,
         schoolId: user.schoolId,
       },
     })
@@ -436,7 +459,7 @@ router.post('/', isAdmin, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
       responseCount: 0,
       createdAt: pulse.createdAt.toISOString(),
     })
@@ -504,7 +527,7 @@ router.post('/:id/send', isAdmin, async (req, res) => {
     })
 
     logAudit({ req, action: 'UPDATE', resourceType: 'PULSE_SURVEY', resourceId: pulse.id, metadata: { action: 'send' } })
-    sendNotification({ req, type: 'PULSE', title: 'Parent Pulse Survey', body: `The ${pulse.halfTermName} pulse survey is now open`, resourceType: 'PULSE_SURVEY', resourceId: pulse.id, target: { targetClass: 'Whole School', schoolId: pulse.schoolId } })
+    sendNotification({ req, type: 'PULSE_SURVEY', title: 'Parent Pulse Survey', body: `The ${pulse.halfTermName} pulse survey is now open`, resourceType: 'PULSE_SURVEY', resourceId: pulse.id, target: { targetClass: 'Whole School', schoolId: pulse.schoolId } })
 
     res.json({
       id: pulse.id,
@@ -522,7 +545,7 @@ router.put('/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { halfTermName, opensAt, closesAt, additionalQuestionKey } = req.body
+    const { halfTermName, opensAt, closesAt, additionalQuestionKey, customQuestions } = req.body
 
     // Verify pulse belongs to user's school
     const existing = await prisma.pulseSurvey.findFirst({
@@ -540,6 +563,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         opensAt: new Date(opensAt),
         closesAt: new Date(closesAt),
         additionalQuestionKey: additionalQuestionKey !== undefined ? (additionalQuestionKey || null) : existing.additionalQuestionKey,
+        ...(customQuestions !== undefined && { customQuestions: customQuestions && customQuestions.length > 0 ? JSON.parse(JSON.stringify(customQuestions)) : null }),
       },
       include: {
         _count: { select: { responses: true } },
@@ -554,12 +578,13 @@ router.put('/:id', isAdmin, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
       responseCount: pulse._count.responses,
       createdAt: pulse.createdAt.toISOString(),
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'PULSE_SURVEY', resourceId: pulse.id, metadata: { halfTermName: pulse.halfTermName } })
+    const changes = computeChanges(existing as any, pulse as any, ['halfTermName', 'status'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'PULSE_SURVEY', resourceId: pulse.id, metadata: { halfTermName: pulse.halfTermName }, changes })
   } catch (error) {
     console.error('Error updating pulse survey:', error)
     res.status(500).json({ error: 'Failed to update pulse survey' })
@@ -591,6 +616,55 @@ router.delete('/:id', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error deleting pulse survey:', error)
     res.status(500).json({ error: 'Failed to delete pulse survey' })
+  }
+})
+
+// Term-over-term comparison (admin)
+router.get('/comparison', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+
+    const pulses = await prisma.pulseSurvey.findMany({
+      where: { schoolId: user.schoolId, status: 'CLOSED' },
+      include: { responses: true },
+      orderBy: { opensAt: 'asc' },
+    })
+
+    const comparison: Array<{
+      id: string
+      halfTermName: string
+      responseCount: number
+      coreAverages: Record<string, number | null>
+    }> = []
+
+    for (const pulse of pulses) {
+      const coreAverages: Record<string, number | null> = {}
+
+      for (const q of PULSE_CORE_QUESTIONS) {
+        if (q.type !== 'LIKERT_5') continue
+        const scores: number[] = []
+        for (const r of pulse.responses) {
+          const answers = r.answers as Record<string, number | string>
+          const val = answers[q.id]
+          if (typeof val === 'number' && val >= 1 && val <= 5) scores.push(val)
+        }
+        coreAverages[q.stableKey] = scores.length > 0
+          ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+          : null
+      }
+
+      comparison.push({
+        id: pulse.id,
+        halfTermName: pulse.halfTermName,
+        responseCount: pulse.responses.length,
+        coreAverages,
+      })
+    }
+
+    res.json({ comparison })
+  } catch (error) {
+    console.error('Error fetching pulse comparison:', error)
+    res.status(500).json({ error: 'Failed to fetch comparison' })
   }
 })
 

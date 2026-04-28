@@ -1,16 +1,85 @@
 import { Router } from 'express'
+import multer from 'multer'
+import { z } from 'zod'
 import prisma from '../services/prisma.js'
-import { isAuthenticated, isAdmin, isStaff, canSendToTarget, canMarkUrgent } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { isAuthenticated, isAdmin, isStaff, canSendToTarget, canMarkUrgent, loadUserWithRelations } from '../middleware/auth.js'
+import { validate } from '../middleware/validate.js'
+import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
+import { uploadFile, generateKey } from '../services/storage.js'
 
 const router = Router()
+
+const createMessageSchema = z.object({
+  title: z.string().min(1).max(500),
+  content: z.string().min(1),
+  targetClass: z.string().min(1),
+  classId: z.string().optional(),
+  yearGroupId: z.string().optional(),
+  groupId: z.string().optional(),
+  actionType: z.string().optional(),
+  actionLabel: z.string().optional(),
+  actionDueDate: z.string().optional(),
+  actionAmount: z.string().optional(),
+  isPinned: z.boolean().optional(),
+  isUrgent: z.boolean().optional(),
+  scheduledAt: z.string().optional(),
+  expiresAt: z.string().optional(),
+  formId: z.string().optional(),
+  attachments: z.array(z.object({
+    fileName: z.string(),
+    fileUrl: z.string(),
+    fileType: z.string(),
+    fileSize: z.number(),
+  })).optional(),
+})
+
+const updateMessageSchema = createMessageSchema.partial()
+
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 16 * 1024 * 1024 }, // 16MB
+})
+
+const ATTACHMENT_MIME_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]
+
+// Upload attachment file to R2 (staff/admin only)
+router.post('/upload', isStaff, attachmentUpload.single('file'), async (req, res) => {
+  try {
+    const uploaded = req.file
+    if (!uploaded) {
+      return res.status(400).json({ error: 'File is required' })
+    }
+
+    if (!ATTACHMENT_MIME_TYPES.includes(uploaded.mimetype)) {
+      return res.status(400).json({ error: 'File type not allowed. Supported: images, PDF, Word documents.' })
+    }
+
+    const key = generateKey('message-attachments', uploaded.originalname)
+    const fileUrl = await uploadFile(uploaded.buffer, key, uploaded.mimetype)
+
+    res.json({
+      fileName: uploaded.originalname,
+      fileUrl,
+      fileType: uploaded.mimetype,
+      fileSize: uploaded.size,
+    })
+  } catch (error) {
+    console.error('Error uploading attachment:', error)
+    res.status(500).json({ error: 'Failed to upload attachment' })
+  }
+})
 
 // Get messages (filtered by user's children's classes and groups)
 router.get('/', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
     const childClassIds = user.children?.map(c => c.classId) || []
     const studentIds = user.studentLinks?.map(l => l.studentId) || []
     const now = new Date()
@@ -42,12 +111,18 @@ router.get('/', isAuthenticated, async (req, res) => {
           ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
           ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
         ],
-        // Filter out expired messages for parents
+        // Filter out expired and not-yet-scheduled messages for parents
         AND: [
           {
             OR: [
               { expiresAt: null },
               { expiresAt: { gt: now } },
+            ],
+          },
+          {
+            OR: [
+              { scheduledAt: null },
+              { scheduledAt: { lte: now } },
             ],
           },
         ],
@@ -65,6 +140,7 @@ router.get('/', isAuthenticated, async (req, res) => {
             },
           },
         },
+        attachments: true,
       },
       orderBy: [
         { isPinned: 'desc' },
@@ -140,6 +216,15 @@ router.get('/', isAuthenticated, async (req, res) => {
           createdAt: msg.form.responses[0].createdAt.toISOString(),
         } : null,
       } : undefined,
+      attachments: msg.attachments.map(a => ({
+        id: a.id,
+        messageId: a.messageId,
+        fileName: a.fileName,
+        fileUrl: a.fileUrl,
+        fileType: a.fileType,
+        fileSize: a.fileSize,
+        createdAt: a.createdAt.toISOString(),
+      })),
       acknowledged: msg.acknowledgments.length > 0,
       acknowledgmentCount: msg._count.acknowledgments,
       createdAt: msg.createdAt.toISOString(),
@@ -165,6 +250,7 @@ router.get('/all', isAdmin, async (req, res) => {
             _count: { select: { responses: true } },
           },
         },
+        attachments: true,
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -187,6 +273,8 @@ router.get('/all', isAdmin, async (req, res) => {
       actionAmount: msg.actionAmount,
       isPinned: msg.isPinned,
       isUrgent: msg.isUrgent,
+      scheduledAt: msg.scheduledAt?.toISOString(),
+      isScheduled: msg.scheduledAt ? msg.scheduledAt > now : false,
       expiresAt: msg.expiresAt?.toISOString(),
       isExpired: msg.expiresAt ? msg.expiresAt < now : false,
       formId: msg.formId,
@@ -198,6 +286,15 @@ router.get('/all', isAdmin, async (req, res) => {
         fields: msg.form.fields,
         responseCount: msg.form._count.responses,
       } : undefined,
+      attachments: msg.attachments.map(a => ({
+        id: a.id,
+        messageId: a.messageId,
+        fileName: a.fileName,
+        fileUrl: a.fileUrl,
+        fileType: a.fileType,
+        fileSize: a.fileSize,
+        createdAt: a.createdAt.toISOString(),
+      })),
       acknowledgmentCount: msg._count.acknowledgments,
       createdAt: msg.createdAt.toISOString(),
       updatedAt: msg.updatedAt.toISOString(),
@@ -209,10 +306,10 @@ router.get('/all', isAdmin, async (req, res) => {
 })
 
 // Create message (staff can send to assigned classes, admin can send anywhere)
-router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
+router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMarkUrgent, async (req, res) => {
   try {
     const user = req.user!
-    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt, formId } = req.body
+    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, scheduledAt, expiresAt, formId, attachments } = req.body
 
     // Staff cannot pin messages (only admin)
     const canPin = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
@@ -234,6 +331,7 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
         actionAmount: actionAmount || null,
         isPinned: canPin ? (isPinned || false) : false,
         isUrgent: isUrgent || false,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         formId: formId || null,
       },
@@ -247,7 +345,25 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
       })
     }
 
-    logAudit({ req, action: 'CREATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title } })
+    // Create attachment records
+    if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+      await prisma.messageAttachment.createMany({
+        data: attachments.map((a: { fileName: string; fileUrl: string; fileType: string; fileSize: number }) => ({
+          messageId: message.id,
+          fileName: a.fileName,
+          fileUrl: a.fileUrl,
+          fileType: a.fileType,
+          fileSize: a.fileSize,
+        })),
+      })
+    }
+
+    // Fetch created attachments for response
+    const createdAttachments = await prisma.messageAttachment.findMany({
+      where: { messageId: message.id },
+    })
+
+    logAudit({ req, action: 'CREATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title, attachmentCount: createdAttachments.length } })
     sendNotification({ req, type: 'MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'MESSAGE', resourceId: message.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
 
     res.status(201).json({
@@ -267,8 +383,18 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
       actionAmount: message.actionAmount,
       isPinned: message.isPinned,
       isUrgent: message.isUrgent,
+      scheduledAt: message.scheduledAt?.toISOString(),
       expiresAt: message.expiresAt?.toISOString(),
       formId: message.formId,
+      attachments: createdAttachments.map(a => ({
+        id: a.id,
+        messageId: a.messageId,
+        fileName: a.fileName,
+        fileUrl: a.fileUrl,
+        fileType: a.fileType,
+        fileSize: a.fileSize,
+        createdAt: a.createdAt.toISOString(),
+      })),
       createdAt: message.createdAt.toISOString(),
     })
   } catch (error) {
@@ -278,11 +404,11 @@ router.post('/', isStaff, canSendToTarget, canMarkUrgent, async (req, res) => {
 })
 
 // Update message (admin only)
-router.put('/:id', isAdmin, async (req, res) => {
+router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, expiresAt, formId } = req.body
+    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, scheduledAt, expiresAt, formId, attachments } = req.body
 
     // Verify message belongs to user's school
     const existing = await prisma.message.findFirst({
@@ -308,6 +434,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         actionAmount: actionAmount || null,
         isPinned: isPinned ?? existing.isPinned,
         isUrgent: isUrgent ?? existing.isUrgent,
+        scheduledAt: scheduledAt !== undefined ? (scheduledAt ? new Date(scheduledAt) : null) : existing.scheduledAt,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         formId: formId !== undefined ? (formId || null) : existing.formId,
       },
@@ -321,7 +448,28 @@ router.put('/:id', isAdmin, async (req, res) => {
       })
     }
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title } })
+    // Sync attachments if provided (replace all)
+    if (attachments !== undefined && Array.isArray(attachments)) {
+      await prisma.messageAttachment.deleteMany({ where: { messageId: id } })
+      if (attachments.length > 0) {
+        await prisma.messageAttachment.createMany({
+          data: attachments.map((a: { fileName: string; fileUrl: string; fileType: string; fileSize: number }) => ({
+            messageId: id,
+            fileName: a.fileName,
+            fileUrl: a.fileUrl,
+            fileType: a.fileType,
+            fileSize: a.fileSize,
+          })),
+        })
+      }
+    }
+
+    const updatedAttachments = await prisma.messageAttachment.findMany({
+      where: { messageId: id },
+    })
+
+    const changes = computeChanges(existing as any, message as any, ['title', 'content', 'targetClass', 'isPinned', 'isUrgent', 'actionType', 'actionLabel', 'actionDueDate', 'actionAmount'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title }, changes })
 
     res.json({
       id: message.id,
@@ -342,6 +490,15 @@ router.put('/:id', isAdmin, async (req, res) => {
       isUrgent: message.isUrgent,
       expiresAt: message.expiresAt?.toISOString(),
       formId: message.formId,
+      attachments: updatedAttachments.map(a => ({
+        id: a.id,
+        messageId: a.messageId,
+        fileName: a.fileName,
+        fileUrl: a.fileUrl,
+        fileType: a.fileType,
+        fileSize: a.fileSize,
+        createdAt: a.createdAt.toISOString(),
+      })),
       createdAt: message.createdAt.toISOString(),
       updatedAt: message.updatedAt.toISOString(),
     })

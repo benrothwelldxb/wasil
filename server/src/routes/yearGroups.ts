@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { logAudit, computeChanges } from '../services/audit.js'
 
 const router = Router()
 
@@ -86,7 +86,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       },
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'YEAR_GROUP', resourceId: yearGroup.id, metadata: { name: yearGroup.name } })
+    const changes = computeChanges(existing as any, yearGroup as any, ['name', 'order'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'YEAR_GROUP', resourceId: yearGroup.id, metadata: { name: yearGroup.name }, changes })
 
     res.json({
       id: yearGroup.id,

@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Wasil - Option 3: Material You</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Material You tonal palette from burgundy #7f0029 */
+    --md-primary: #7f0029;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #ffd9de;
+    --md-on-primary-container: #3b0011;
+    --md-secondary: #75565c;
+    --md-on-secondary: #ffffff;
+    --md-secondary-container: #ffd9de;
+    --md-on-secondary-container: #2c1519;
+    --md-tertiary: #7b5733;
+    --md-on-tertiary: #ffffff;
+    --md-tertiary-container: #ffdcbe;
+    --md-on-tertiary-container: #2c1600;
+    --md-surface: #fffbff;
+    --md-surface-variant: #f4dddf;
+    --md-on-surface: #201a1b;
+    --md-on-surface-variant: #524345;
+    --md-outline: #847375;
+    --md-outline-variant: #d7c1c3;
+    --md-error: #ba1a1a;
+    --md-surface-1: #fceff0;
+    --md-surface-2: #fae7e9;
+    --md-surface-3: #f8dfe2;
+    --md-surface-4: #f5d6d9;
+    --md-surface-5: #f2cfd2;
+    --md-inverse-surface: #362f30;
+    --md-inverse-on-surface: #fbeeee;
+
+    --nav-height: 80px;
+    --status-height: 24px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Outfit', 'Google Sans', sans-serif;
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    max-width: 390px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .material-symbols-rounded {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+  }
+  .filled { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  /* Status bar */
+  .status-bar {
+    height: var(--status-height);
+    background: var(--md-surface);
+  }
+
+  /* Top App Bar */
+  .top-app-bar {
+    padding: 8px 16px 12px;
+    background: var(--md-surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .top-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .school-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: var(--md-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--md-on-primary);
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .greeting h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--md-on-surface);
+  }
+  .greeting p {
+    font-size: 14px;
+    color: var(--md-on-surface-variant);
+    font-weight: 400;
+  }
+  .top-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .icon-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--md-on-surface-variant);
+    position: relative;
+    transition: background 0.2s;
+  }
+  .icon-btn:active { background: var(--md-surface-variant); }
+  .icon-btn .badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 18px;
+    height: 18px;
+    background: var(--md-error);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 18px;
+    background: var(--md-primary-container);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--md-on-primary-container);
+  }
+
+  /* Content */
+  .content {
+    padding: 0 16px 100px;
+  }
+
+  /* Section Label */
+  .section-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--md-on-surface-variant);
+    margin: 24px 0 12px;
+    letter-spacing: 0.01em;
+  }
+  .section-label:first-child { margin-top: 8px; }
+
+  /* M3 Card */
+  .m3-card {
+    background: var(--md-surface-1);
+    border-radius: 28px;
+    padding: 20px;
+    margin-bottom: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .m3-card-elevated {
+    background: var(--md-surface-2);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.08);
+  }
+
+  /* Urgent Chip */
+  .urgent-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px 10px 14px;
+    border-radius: 20px;
+    background: #FFEEE4;
+    border: 1px solid #FFD0B5;
+    font-size: 14px;
+    font-weight: 500;
+    color: #BF360C;
+    margin-bottom: 8px;
+  }
+  .urgent-chip .material-symbols-rounded {
+    font-size: 20px;
+    color: #E65100;
+  }
+
+  /* ECA Registration Card */
+  .eca-card {
+    background: linear-gradient(135deg, var(--md-primary), #a50035);
+    border-radius: 28px;
+    padding: 24px 20px;
+    margin-bottom: 16px;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+  .eca-card:active { transform: scale(0.98); }
+  .eca-card::before {
+    content: '';
+    position: absolute;
+    top: -40px;
+    right: -30px;
+    width: 140px;
+    height: 140px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 70px;
+  }
+  .eca-card::after {
+    content: '';
+    position: absolute;
+    bottom: -50px;
+    left: 20px;
+    width: 100px;
+    height: 100px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 50px;
+  }
+  .eca-card-content {
+    position: relative;
+    z-index: 1;
+    color: var(--md-on-primary);
+  }
+  .eca-card-content h3 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .eca-card-content p {
+    font-size: 14px;
+    opacity: 0.85;
+    margin-bottom: 12px;
+  }
+  .eca-days-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  /* Activity Card */
+  .activity-card {
+    background: var(--md-surface-2);
+    border-radius: 20px;
+    padding: 16px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: transform 0.2s;
+  }
+  .activity-card:active { transform: scale(0.98); }
+  .activity-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .activity-info { flex: 1; }
+  .activity-info h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .activity-info .activity-detail {
+    font-size: 13px;
+    color: var(--md-on-surface-variant);
+    line-height: 1.4;
+  }
+  .activity-info .activity-detail .location {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 2px;
+  }
+  .time-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: var(--md-primary-container);
+    color: var(--md-on-primary-container);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-top: 6px;
+  }
+
+  /* Message Card */
+  .message-card {
+    background: var(--md-surface-1);
+    border-radius: 28px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .msg-body {
+    padding: 20px 20px 16px;
+  }
+  .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .msg-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .msg-meta { flex: 1; }
+  .msg-meta h4 { font-size: 16px; font-weight: 600; }
+  .msg-meta p { font-size: 13px; color: var(--md-on-surface-variant); }
+  .msg-unread {
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background: var(--md-primary);
+  }
+  .msg-subject {
+    font-size: 15px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+  .msg-preview {
+    font-size: 14px;
+    color: var(--md-on-surface-variant);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .msg-actions {
+    padding: 0 12px 12px;
+    display: flex;
+    gap: 8px;
+  }
+  .m3-btn-filled {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    border-radius: 20px;
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+  }
+  .m3-btn-filled:active { transform: scale(0.96); }
+  .m3-btn-tonal {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    border-radius: 20px;
+    background: var(--md-secondary-container);
+    color: var(--md-on-secondary-container);
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+  }
+  .m3-btn-tonal:active { transform: scale(0.96); }
+
+  /* Principal Card */
+  .principal-card {
+    background: var(--md-surface-3);
+    border-radius: 28px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .principal-header {
+    padding: 20px 20px 12px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .principal-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 26px;
+    background: var(--md-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--md-on-primary);
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .principal-info h3 { font-size: 16px; font-weight: 600; }
+  .principal-info p { font-size: 13px; color: var(--md-on-surface-variant); }
+  .principal-body {
+    padding: 0 20px 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--md-on-surface-variant);
+  }
+  .principal-footer {
+    padding: 0 12px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .heart-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    color: var(--md-on-surface-variant);
+    transition: all 0.2s;
+  }
+  .heart-btn:active { background: var(--md-surface-variant); }
+  .heart-btn.active {
+    color: var(--md-error);
+    background: #FFEEE4;
+  }
+  .heart-btn .material-symbols-rounded {
+    font-size: 22px;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .heart-btn.active .material-symbols-rounded {
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    transform: scale(1.1);
+  }
+
+  /* Navigation Bar */
+  .nav-bar {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    height: var(--nav-height);
+    background: var(--md-surface-2);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    z-index: 100;
+    padding-bottom: 8px;
+  }
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    min-width: 64px;
+  }
+  .nav-icon-wrap {
+    width: 64px;
+    height: 32px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+  }
+  .nav-item.active .nav-icon-wrap {
+    background: var(--md-secondary-container);
+  }
+  .nav-item .material-symbols-rounded {
+    font-size: 24px;
+    color: var(--md-on-surface-variant);
+    transition: all 0.3s;
+  }
+  .nav-item.active .material-symbols-rounded {
+    color: var(--md-on-secondary-container);
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .nav-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--md-on-surface-variant);
+    letter-spacing: 0.01em;
+  }
+  .nav-item.active .nav-label {
+    color: var(--md-on-surface);
+    font-weight: 600;
+  }
+
+  /* Animations */
+  @keyframes m3FadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate { animation: m3FadeUp 0.5s cubic-bezier(0.2, 0, 0, 1) both; }
+  .d1 { animation-delay: 0.05s; }
+  .d2 { animation-delay: 0.1s; }
+  .d3 { animation-delay: 0.15s; }
+  .d4 { animation-delay: 0.2s; }
+  .d5 { animation-delay: 0.25s; }
+  .d6 { animation-delay: 0.3s; }
+  .d7 { animation-delay: 0.35s; }
+
+  @media (min-width: 420px) {
+    body {
+      border-left: 1px solid #eee;
+      border-right: 1px solid #eee;
+      box-shadow: 0 0 60px rgba(0,0,0,0.06);
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="status-bar"></div>
+
+<!-- Top App Bar -->
+<div class="top-app-bar">
+  <div class="top-row">
+    <div class="top-left">
+      <div class="school-logo">W</div>
+      <div class="greeting">
+        <h1>Hello Ben</h1>
+        <p>Monday 21 April</p>
+      </div>
+    </div>
+    <div class="top-right">
+      <button class="icon-btn">
+        <span class="material-symbols-rounded">notifications</span>
+        <span class="badge">2</span>
+      </button>
+      <div class="avatar">BR</div>
+    </div>
+  </div>
+</div>
+
+<!-- Content -->
+<div class="content">
+
+  <!-- Urgent Chip -->
+  <div class="animate d1">
+    <div class="urgent-chip">
+      <span class="material-symbols-rounded filled" style="color: #E65100;">warning</span>
+      1 form due within 3 days
+    </div>
+  </div>
+
+  <!-- ECA Registration -->
+  <div class="eca-card animate d2">
+    <div class="eca-card-content">
+      <h3>Activity Registration Open</h3>
+      <p>Sign up for clubs and activities for next term</p>
+      <div class="eca-days-chip">
+        <span class="material-symbols-rounded" style="font-size:16px;">schedule</span>
+        3 days left
+      </div>
+    </div>
+  </div>
+
+  <!-- Your Day -->
+  <div class="section-label animate d3">Your Day</div>
+
+  <div class="activity-card animate d3">
+    <div class="activity-icon" style="background: #DCEEFB;">
+      <span class="material-symbols-rounded" style="color: #1565C0; font-size: 26px;">pool</span>
+    </div>
+    <div class="activity-info">
+      <h4>Swimming</h4>
+      <div class="activity-detail">
+        Lara &middot; 3:15 &ndash; 4:00
+        <div class="location">
+          <span class="material-symbols-rounded" style="font-size:14px;">location_on</span>
+          Sports Hall
+        </div>
+      </div>
+      <div class="time-chip">After School</div>
+    </div>
+  </div>
+
+  <div class="activity-card animate d4">
+    <div class="activity-icon" style="background: #DFF0D8;">
+      <span class="material-symbols-rounded" style="color: #2E7D32; font-size: 26px;">sports_soccer</span>
+    </div>
+    <div class="activity-info">
+      <h4>Football</h4>
+      <div class="activity-detail">
+        Oscar &middot; 3:15 &ndash; 4:15
+        <div class="location">
+          <span class="material-symbols-rounded" style="font-size:14px;">location_on</span>
+          Main Pitch
+        </div>
+      </div>
+      <div class="time-chip">After School</div>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="section-label animate d5">Messages</div>
+
+  <div class="message-card animate d5">
+    <div class="msg-body">
+      <div class="msg-header">
+        <div class="msg-avatar" style="background: #5C6BC0;">Y3</div>
+        <div class="msg-meta">
+          <h4>Year 3 Team</h4>
+          <p>Today, 8:30 AM</p>
+        </div>
+        <div class="msg-unread"></div>
+      </div>
+      <div class="msg-subject">Field Trip to Science Museum</div>
+      <div class="msg-preview">Dear parents, we are excited to announce a field trip to the Science Museum on Thursday 1st May. Please provide your consent below.</div>
+    </div>
+    <div class="msg-actions">
+      <button class="m3-btn-filled">
+        <span class="material-symbols-rounded" style="font-size:18px;">check_circle</span>
+        Give Consent
+      </button>
+      <button class="m3-btn-tonal">Read More</button>
+    </div>
+  </div>
+
+  <div class="message-card animate d6">
+    <div class="msg-body">
+      <div class="msg-header">
+        <div class="msg-avatar" style="background: var(--md-primary);">WS</div>
+        <div class="msg-meta">
+          <h4>Whole School</h4>
+          <p>Yesterday</p>
+        </div>
+      </div>
+      <div class="msg-subject">Annual Sports Day</div>
+      <div class="msg-preview">Sports Day will be held on Friday 16th May. All students should come in their house colours. Parents are welcome to attend from 9:00 AM.</div>
+    </div>
+    <div class="msg-actions">
+      <button class="m3-btn-tonal">Read More</button>
+    </div>
+  </div>
+
+  <!-- Principal's Update -->
+  <div class="section-label animate d7">From the Principal</div>
+
+  <div class="principal-card animate d7">
+    <div class="principal-header">
+      <div class="principal-avatar">MH</div>
+      <div class="principal-info">
+        <h3>Weekly Update</h3>
+        <p>Mrs. Harrison &middot; Week of 21 April</p>
+      </div>
+    </div>
+    <div class="principal-body">
+      What a wonderful start to the summer term! It's been lovely seeing the children back and settled after the holiday. A special well done to Year 5 for their assembly...
+    </div>
+    <div class="principal-footer">
+      <button class="heart-btn" id="heartBtn" onclick="toggleHeart()">
+        <span class="material-symbols-rounded">favorite</span>
+        <span id="heartCount">24</span>
+      </button>
+      <button class="m3-btn-tonal" style="font-size:13px; padding: 8px 16px;">Read Full Update</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Navigation Bar -->
+<div class="nav-bar">
+  <button class="nav-item active">
+    <div class="nav-icon-wrap">
+      <span class="material-symbols-rounded">home</span>
+    </div>
+    <span class="nav-label">Home</span>
+  </button>
+  <button class="nav-item">
+    <div class="nav-icon-wrap">
+      <span class="material-symbols-rounded">event</span>
+    </div>
+    <span class="nav-label">Events</span>
+  </button>
+  <button class="nav-item">
+    <div class="nav-icon-wrap">
+      <span class="material-symbols-rounded">star</span>
+    </div>
+    <span class="nav-label">Activities</span>
+  </button>
+  <button class="nav-item">
+    <div class="nav-icon-wrap">
+      <span class="material-symbols-rounded">folder</span>
+    </div>
+    <span class="nav-label">Files</span>
+  </button>
+  <button class="nav-item">
+    <div class="nav-icon-wrap">
+      <span class="material-symbols-rounded">menu</span>
+    </div>
+    <span class="nav-label">Menu</span>
+  </button>
+</div>
+
+<script>
+  let hearted = false;
+  let count = 24;
+  function toggleHeart() {
+    const btn = document.getElementById('heartBtn');
+    const countEl = document.getElementById('heartCount');
+    hearted = !hearted;
+    count += hearted ? 1 : -1;
+    btn.classList.toggle('active', hearted);
+    countEl.textContent = count;
+    const icon = btn.querySelector('.material-symbols-rounded');
+    icon.style.transform = 'scale(1.4)';
+    setTimeout(() => { icon.style.transform = hearted ? 'scale(1.1)' : 'scale(1)'; }, 180);
+  }
+</script>
+</body>
+</html>

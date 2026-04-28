@@ -2,8 +2,10 @@ import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import prisma from './prisma.js'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-jwt-secret'
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev-jwt-refresh-secret'
+if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET environment variable must be set')
+if (!process.env.JWT_REFRESH_SECRET) throw new Error('JWT_REFRESH_SECRET environment variable must be set')
+const JWT_SECRET: string = process.env.JWT_SECRET
+const JWT_REFRESH_SECRET: string = process.env.JWT_REFRESH_SECRET
 
 const ACCESS_TOKEN_EXPIRY = '15m'
 const REFRESH_TOKEN_EXPIRY_DAYS = 30
@@ -27,13 +29,19 @@ export async function generateRefreshToken(user: { id: string }): Promise<string
   const expiresAt = new Date()
   expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS)
 
-  await prisma.refreshToken.create({
-    data: {
-      token,
-      userId: user.id,
-      expiresAt,
-    },
-  })
+  await prisma.$transaction([
+    prisma.refreshToken.create({
+      data: {
+        token,
+        userId: user.id,
+        expiresAt,
+      },
+    }),
+    prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    }),
+  ])
 
   return token
 }

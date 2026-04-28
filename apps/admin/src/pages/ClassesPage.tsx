@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Plus, X, Pencil, Trash2, BookOpen } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { Class, YearGroup } from '@wasil/shared'
 import type { ClassWithDetails, StaffMember } from '@wasil/shared'
 
@@ -19,6 +19,7 @@ const CLASS_COLOR_PRESETS = [
 
 export function ClassesPage() {
   const theme = useTheme()
+  const toast = useToast()
   const { data: classesDetailed, refetch: refetchClasses } = useApi<ClassWithDetails[]>(() => api.classes.listAll(), [])
   const { data: staffList } = useApi<StaffMember[]>(() => api.staff.list(), [])
   const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
@@ -89,7 +90,7 @@ export function ClassesPage() {
       resetForm()
       refetchClasses()
     } catch (error) {
-      alert(`Failed to save class: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to save class: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -103,7 +104,7 @@ export function ClassesPage() {
       refetchClasses()
       setDeleteConfirm(null)
     } catch (error) {
-      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsDeleting(false)
     }

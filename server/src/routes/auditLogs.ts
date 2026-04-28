@@ -57,6 +57,7 @@ router.get('/', isAdmin, async (req, res) => {
         resourceType: log.resourceType,
         resourceId: log.resourceId,
         metadata: log.metadata,
+        changes: log.changes,
         ipAddress: log.ipAddress,
         createdAt: log.createdAt.toISOString(),
       })),

@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
-import { Plus, X, Pencil, Trash2 } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { Plus, X, Pencil, Trash2, Paperclip } from 'lucide-react'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { Message, Class, YearGroup, Group } from '@wasil/shared'
 import { MessageForm } from '../components/forms'
-import type { MessageFormData, AudienceOption } from '../components/forms'
+import type { MessageFormData, AudienceOption, AttachmentData } from '../components/forms'
 
 export function MessagesPage() {
   const theme = useTheme()
+  const toast = useToast()
   const { data: messages, refetch: refetchMessages } = useApi<Message[]>(() => api.messages.listAll(), [])
   const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
   const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
@@ -19,8 +20,9 @@ export function MessagesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null)
   const [formData, setFormData] = useState<MessageFormData>({
     title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false,
-    expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '',
+    scheduledAt: '', expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '',
   })
+  const [attachments, setAttachments] = useState<AttachmentData[]>([])
 
   const activeGroups = (groups || []).filter(g => g.isActive)
   const audienceOptions: AudienceOption[] = [
@@ -34,7 +36,7 @@ export function MessagesPage() {
     }),
     ...(classes || []).filter(c => !c.yearGroupId).map(c => ({ value: c.name, type: 'class' as const, id: c.id })),
     ...(activeGroups.length > 0 ? [
-      { value: '── Groups ──', type: 'divider' as const },
+      { value: '\u2500\u2500 Groups \u2500\u2500', type: 'divider' as const },
       ...activeGroups.map(g => ({ value: g.name, type: 'group' as const, id: g.id })),
     ] : []),
   ]
@@ -47,8 +49,10 @@ export function MessagesPage() {
         title: formData.title, content: formData.content, targetClass: formData.targetClass,
         classId: formData.classId || undefined, yearGroupId: formData.yearGroupId || undefined,
         groupId: formData.groupId || undefined,
-        isPinned: formData.isPinned, isUrgent: formData.isUrgent, expiresAt: formData.expiresAt || undefined,
+        isPinned: formData.isPinned, isUrgent: formData.isUrgent,
+        scheduledAt: formData.scheduledAt || undefined, expiresAt: formData.expiresAt || undefined,
         formId: formData.formId || undefined,
+        attachments: attachments.length > 0 ? attachments : undefined,
         ...(formData.hasAction && { actionType: formData.actionType, actionLabel: formData.actionLabel, actionDueDate: formData.actionDueDate, actionAmount: formData.actionAmount }),
       }
       if (editingMessage) {
@@ -60,7 +64,7 @@ export function MessagesPage() {
       resetForm()
       refetchMessages()
     } catch (error) {
-      alert(`Failed to save message: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to save message')
     } finally {
       setIsSubmitting(false)
     }
@@ -70,11 +74,20 @@ export function MessagesPage() {
     setFormData({
       title: message.title, content: message.content, targetClass: message.targetClass,
       isPinned: message.isPinned || false, isUrgent: message.isUrgent || false,
+      scheduledAt: message.scheduledAt ? message.scheduledAt.slice(0, 16) : '',
       expiresAt: message.expiresAt ? message.expiresAt.split('T')[0] : '',
       hasAction: !!message.actionType, actionType: message.actionType || 'consent',
       actionLabel: message.actionLabel || '', actionDueDate: message.actionDueDate || '', actionAmount: message.actionAmount || '',
       formId: message.formId || undefined,
     })
+    setAttachments(
+      (message.attachments || []).map(a => ({
+        fileName: a.fileName,
+        fileUrl: a.fileUrl,
+        fileType: a.fileType,
+        fileSize: a.fileSize,
+      }))
+    )
     setEditingMessage(message)
     setShowForm(true)
   }
@@ -82,7 +95,8 @@ export function MessagesPage() {
   const resetForm = () => {
     setShowForm(false)
     setEditingMessage(null)
-    setFormData({ title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false, expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '' })
+    setFormData({ title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false, scheduledAt: '', expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '' })
+    setAttachments([])
   }
 
   const handleDelete = async () => {
@@ -93,7 +107,7 @@ export function MessagesPage() {
       refetchMessages()
       setDeleteConfirm(null)
     } catch (error) {
-      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete')
     } finally {
       setIsDeleting(false)
     }
@@ -102,15 +116,24 @@ export function MessagesPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-slate-900">Messages</h2>
+        <h2 className="text-xl font-semibold text-slate-900">Posts</h2>
         <button onClick={() => showForm ? resetForm() : setShowForm(true)} className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white" style={{ backgroundColor: theme.colors.brandColor }}>
           {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          <span>{showForm ? 'Cancel' : 'New Message'}</span>
+          <span>{showForm ? 'Cancel' : 'New Post'}</span>
         </button>
       </div>
 
       {showForm && (
-        <MessageForm formData={formData} onChange={setFormData} onSubmit={handleSubmit} audienceOptions={audienceOptions} isSubmitting={isSubmitting} submitLabel={editingMessage ? 'Update Message' : 'Send Message'} />
+        <MessageForm
+          formData={formData}
+          onChange={setFormData}
+          onSubmit={handleSubmit}
+          audienceOptions={audienceOptions}
+          isSubmitting={isSubmitting}
+          submitLabel={editingMessage ? 'Update Message' : 'Send Message'}
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
+        />
       )}
 
       <div className="space-y-3">
@@ -120,12 +143,21 @@ export function MessagesPage() {
               <div className="flex-1">
                 <div className="flex items-center space-x-2">
                   <span className="text-xs px-2 py-1 rounded-full text-white" style={{ backgroundColor: theme.colors.brandColor }}>{message.targetClass}</span>
+                  {message.isScheduled && <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">Scheduled</span>}
                   {message.isPinned && <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">Pinned</span>}
                   {message.isUrgent && <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Urgent</span>}
                   {message.formId && <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">Form</span>}
+                  {message.attachments && message.attachments.length > 0 && (
+                    <span className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                      <Paperclip className="h-3 w-3" />
+                      {message.attachments.length}
+                    </span>
+                  )}
                 </div>
                 <h4 className="font-medium mt-2">{message.title}</h4>
-                <p className="text-sm text-gray-600 mt-1 line-clamp-2">{message.content}</p>
+                <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                  {message.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()}
+                </p>
                 <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
                   <span>{new Date(message.createdAt).toLocaleDateString()}</span>
                   {message.acknowledgmentCount !== undefined && <span>{message.acknowledgmentCount} acknowledged</span>}

@@ -1,6 +1,5 @@
 import React from 'react'
-import { FileText, ArrowRight, CheckCircle } from 'lucide-react'
-import { useTheme } from '@wasil/shared'
+import { MessageCircle, ArrowRight, Check } from 'lucide-react'
 import type { PulseSurvey } from '@wasil/shared'
 
 interface PulseBannerProps {
@@ -9,72 +8,119 @@ interface PulseBannerProps {
 }
 
 export function PulseBanner({ pulse, onStartSurvey }: PulseBannerProps) {
-  const theme = useTheme()
   const hasCompleted = !!pulse.userResponse
+
+  if (hasCompleted) {
+    return (
+      <div
+        style={{
+          borderRadius: '22px',
+          border: '1.5px solid rgba(91,169,123,0.2)',
+          backgroundColor: '#EDFAF2',
+          padding: '18px',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '14px',
+              backgroundColor: 'rgba(91,169,123,0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <Check style={{ width: '22px', height: '22px', color: '#5BA97B' }} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#5BA97B' }}>
+              Thank you for your feedback!
+            </h3>
+            <p style={{ fontSize: '13px', fontWeight: 500, color: '#7A6469', marginTop: '2px' }}>
+              {pulse.halfTermName} survey completed
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
-      className="rounded-2xl shadow-sm p-6"
-      style={
-        hasCompleted
-          ? { backgroundColor: 'white', border: '1px solid #e5e7eb' }
-          : { backgroundColor: '#fef9e7', border: '2px solid #D4AF37' }
-      }
+      style={{
+        borderRadius: '22px',
+        background: 'linear-gradient(135deg, #8B6EAE, #A78BC1)',
+        padding: '22px 20px',
+        color: '#FFFFFF',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
     >
-      <div className="flex items-start space-x-4">
-        <div
-          className="p-4 rounded-xl"
-          style={{ backgroundColor: hasCompleted ? '#dcfce7' : `${theme.colors.accentColor}50` }}
-        >
-          {hasCompleted ? (
-            <CheckCircle className="h-8 w-8 text-green-600" />
-          ) : (
-            <FileText className="h-8 w-8" style={{ color: theme.colors.brandColor }} />
-          )}
+      {/* Decorative circle */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '-20px',
+          right: '-20px',
+          width: '100px',
+          height: '100px',
+          borderRadius: '50px',
+          background: 'rgba(255,255,255,0.08)',
+        }}
+      />
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        <div className="flex items-center gap-3 mb-2">
+          <div
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '14px',
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <MessageCircle style={{ width: '22px', height: '22px', color: '#FFFFFF' }} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '17px', fontWeight: 800 }}>
+              1-Minute Parent Pulse
+            </h3>
+            <p style={{ fontSize: '13px', fontWeight: 500, opacity: 0.85 }}>
+              Share your experience of {pulse.halfTermName}
+            </p>
+          </div>
         </div>
-        <div className="flex-1">
-          {hasCompleted ? (
-            <>
-              <h2 className="text-xl font-bold text-green-700">
-                Thank You for Your Feedback!
-              </h2>
-              <p className="text-gray-600 mt-1">
-                You've completed the {pulse.halfTermName} Parent Pulse survey. Your feedback helps us improve.
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                Submitted on {new Date(pulse.userResponse!.createdAt).toLocaleDateString('en-GB', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                })}
-              </p>
-            </>
-          ) : (
-            <>
-              <h2 className="text-xl font-bold" style={{ color: theme.colors.brandColor }}>
-                1-Minute Parent Pulse
-              </h2>
-              <p className="text-gray-600 mt-1">
-                Help us improve! Share your experience of {pulse.halfTermName}.
-              </p>
-              <p className="text-sm text-gray-500 mt-1">
-                Closes: {new Date(pulse.closesAt).toLocaleDateString('en-GB')}
-              </p>
-            </>
-          )}
-        </div>
-      </div>
-
-      {!hasCompleted && (
+        <p style={{ fontSize: '12px', fontWeight: 600, opacity: 0.6, marginBottom: '14px' }}>
+          Closes {new Date(pulse.closesAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+        </p>
         <button
           onClick={onStartSurvey}
-          className="w-full mt-4 py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center space-x-2 transition-opacity hover:opacity-90"
-          style={{ backgroundColor: theme.colors.brandColor }}
+          style={{
+            width: '100%',
+            padding: '14px',
+            borderRadius: '14px',
+            backgroundColor: 'rgba(255,255,255,0.2)',
+            color: '#FFFFFF',
+            fontSize: '15px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+          }}
         >
           <span>Start Survey</span>
-          <ArrowRight className="h-5 w-5" />
+          <ArrowRight style={{ width: '18px', height: '18px' }} />
         </button>
-      )}
+      </div>
     </div>
   )
 }

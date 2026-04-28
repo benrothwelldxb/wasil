@@ -1,17 +1,25 @@
 import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Calendar, MapPin, Clock, Users, Check, X, HelpCircle } from 'lucide-react'
+import { Calendar, MapPin, Clock, Users, Check, X, HelpCircle, Download, CalendarPlus, List, Grid3X3, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useApi, useMutation } from '@wasil/shared'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { Event, EventRsvpStatus, Class } from '@wasil/shared'
 
+type ViewMode = 'list' | 'calendar'
+
 export function EventsPage() {
   const { t } = useTranslation()
   const theme = useTheme()
   const { user } = useAuth()
   const [selectedFilter, setSelectedFilter] = useState<string>('all')
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date()
+    return { year: now.getFullYear(), month: now.getMonth() }
+  })
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null)
 
   const { data: events, setData: setEvents, isLoading } = useApi<Event[]>(
     () => api.events.list(),
@@ -23,75 +31,77 @@ export function EventsPage() {
     []
   )
 
-  // Build class color map from actual class data
-  const classColorMap = useMemo(() => {
-    const map: Record<string, string> = {}
-    const CLASS_COLOR_HEX: Record<string, string> = {
-      'bg-gray-600': '#4B5563', 'bg-blue-600': '#2563EB', 'bg-red-600': '#DC2626',
-      'bg-green-600': '#16A34A', 'bg-purple-600': '#9333EA', 'bg-amber-500': '#F59E0B',
-      'bg-teal-600': '#0D9488', 'bg-pink-600': '#DB2777', 'bg-orange-600': '#EA580C',
-      'bg-indigo-600': '#4F46E5', 'bg-blue-500': '#3b82f6',
-    }
-    allClasses?.forEach(c => {
-      map[c.name] = CLASS_COLOR_HEX[c.colorBg] || '#4B5563'
-    })
-    return map
-  }, [allClasses])
-
   const { mutate: submitRsvp } = useMutation(api.events.rsvp)
 
-  // Get user's children's classes
+  // Get user's children's classes (deduplicated)
   const userClasses = useMemo(() => {
-    const classes = user?.children?.map((c) => c.className) || []
-    return [...new Set(classes)]
+    const classes: string[] = []
+    const seen = new Set<string>()
+    user?.studentLinks?.forEach(l => { if (!seen.has(l.className)) { seen.add(l.className); classes.push(l.className) } })
+    user?.children?.forEach(c => { if (!seen.has(c.className)) { seen.add(c.className); classes.push(c.className) } })
+    return classes
   }, [user])
 
   const filterOptions = ['all', 'Whole School', ...userClasses]
 
-  // Helper to check if an event is whole-school
   const isWholeSchool = (targetClass: string) =>
     targetClass === 'Whole School' || targetClass === 'all' || targetClass === 'All Parents'
 
-  // Filter and group events by month
-  const groupedEvents = useMemo(() => {
+  // All filtered events (used by both views)
+  const filteredEvents = useMemo(() => {
     if (!events) return []
+    if (selectedFilter === 'all') return events
+    if (selectedFilter === 'Whole School') return events.filter(e => isWholeSchool(e.targetClass))
+    return events.filter(e => e.targetClass === selectedFilter || isWholeSchool(e.targetClass))
+  }, [events, selectedFilter])
+
+  // Events indexed by date string for calendar
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, Event[]>()
+    filteredEvents.forEach(e => {
+      const key = e.date.split('T')[0]
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(e)
+    })
+    return map
+  }, [filteredEvents])
+
+  // Filter and split events into upcoming and past
+  const { upcomingGroups, pastEvents } = useMemo(() => {
+    if (!events) return { upcomingGroups: [], pastEvents: [] }
 
     let filtered = events
     if (selectedFilter !== 'all') {
       if (selectedFilter === 'Whole School') {
-        // Show all whole-school events regardless of how they're stored
         filtered = events.filter((e) => isWholeSchool(e.targetClass))
       } else {
-        // Show class-specific events + whole-school events
         filtered = events.filter(
           (e) => e.targetClass === selectedFilter || isWholeSchool(e.targetClass)
         )
       }
     }
 
-    // Sort by date
-    const sorted = [...filtered].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-    )
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
 
-    // Group by month
+    const upcoming = filtered.filter(e => new Date(e.date) >= now)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    const past = filtered.filter(e => new Date(e.date) < now)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
     const groups: Record<string, { monthLabel: string; events: Event[] }> = {}
-
-    sorted.forEach((event) => {
+    upcoming.forEach((event) => {
       const date = new Date(event.date)
       const monthKey = `${date.getFullYear()}-${date.getMonth()}`
-      const monthLabel = date.toLocaleDateString('en-GB', {
-        month: 'long',
-        year: 'numeric',
-      })
-
+      const monthLabel = date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
       if (!groups[monthKey]) {
         groups[monthKey] = { monthLabel, events: [] }
       }
       groups[monthKey].events.push(event)
     })
 
-    return Object.values(groups)
+    return { upcomingGroups: Object.values(groups), pastEvents: past }
   }, [events, selectedFilter])
 
   const handleRsvp = async (eventId: string, status: EventRsvpStatus) => {
@@ -108,182 +118,241 @@ export function EventsPage() {
     return {
       day: date.getDate(),
       weekday: date.toLocaleDateString('en-GB', { weekday: 'short' }),
-      month: date.toLocaleDateString('en-GB', { month: 'short' }),
+      month: date.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase(),
     }
   }
 
   const getFilterLabel = (filter: string) => {
-    if (filter === 'all') return t('events.allEvents')
-    if (filter === 'Whole School') return t('messages.wholeSchool')
+    if (filter === 'all') return t('events.allEvents', 'All')
+    if (filter === 'Whole School') return t('messages.wholeSchool', 'Whole School')
     return filter
-  }
-
-  const getRsvpButton = (event: Event) => {
-    if (!event.requiresRsvp) return null
-
-    const buttons = [
-      { status: 'attending' as EventRsvpStatus, icon: Check, label: t('events.attending'), color: 'green' },
-      { status: 'maybe' as EventRsvpStatus, icon: HelpCircle, label: t('events.maybe'), color: 'amber' },
-      { status: 'not_attending' as EventRsvpStatus, icon: X, label: t('events.notAttending'), color: 'red' },
-    ]
-
-    return (
-      <div className="flex items-center space-x-2 mt-3">
-        <span className="text-sm text-gray-500 mr-2">{t('events.rsvp')}</span>
-        {buttons.map(({ status, icon: Icon, label, color }) => {
-          const isSelected = event.userRsvp === status
-          return (
-            <button
-              key={status}
-              onClick={() => handleRsvp(event.id, status)}
-              className={`flex items-center space-x-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                isSelected
-                  ? `bg-${color}-100 text-${color}-700 border-2 border-${color}-500`
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-              style={
-                isSelected
-                  ? {
-                      backgroundColor: color === 'green' ? '#dcfce7' : color === 'amber' ? '#fef3c7' : '#fee2e2',
-                      color: color === 'green' ? '#15803d' : color === 'amber' ? '#b45309' : '#b91c1c',
-                      borderColor: color === 'green' ? '#22c55e' : color === 'amber' ? '#f59e0b' : '#ef4444',
-                      borderWidth: '2px',
-                    }
-                  : undefined
-              }
-            >
-              <Icon className="h-4 w-4" />
-              <span>{label}</span>
-            </button>
-          )
-        })}
-      </div>
-    )
   }
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="w-8 h-8 border-4 border-burgundy border-t-transparent rounded-full animate-spin" />
+        <div
+          className="w-8 h-8 border-4 rounded-full animate-spin"
+          style={{ borderColor: '#F0E4E6', borderTopColor: '#C4506E' }}
+        />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold" style={{ color: theme.colors.brandColor }}>
-          {t('events.title')}
+        <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
+          {t('events.title', 'Events')}
         </h1>
-        <p className="text-gray-600 mt-1">{t('events.subtitle')}</p>
+        <p className="text-sm font-medium mt-1" style={{ color: '#7A6469' }}>
+          {t('events.subtitle', 'Upcoming school events and activities')}
+        </p>
       </div>
 
-      {/* Filter Pills */}
-      <div className="flex flex-wrap gap-2">
+      {/* Filter Pills + Add to Calendar */}
+      <div className="flex flex-wrap items-center gap-2">
         {filterOptions.map((filter) => (
           <button
             key={filter}
             onClick={() => setSelectedFilter(filter)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-              selectedFilter === filter
-                ? 'text-white'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-            }`}
+            className="px-4 py-2 rounded-full text-sm font-bold transition-colors"
             style={
               selectedFilter === filter
-                ? { backgroundColor: theme.colors.brandColor }
-                : undefined
+                ? { backgroundColor: '#C4506E', color: '#FFFFFF' }
+                : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
             }
           >
             {getFilterLabel(filter)}
           </button>
         ))}
+        {/* View toggle + Add to Calendar */}
+        <div className="flex items-center gap-2 ml-auto">
+          <div
+            className="flex rounded-full overflow-hidden"
+            style={{ border: '1.5px solid #F0E4E6' }}
+          >
+            <button
+              onClick={() => setViewMode('list')}
+              className="px-3 py-1.5 flex items-center gap-1 text-xs font-bold transition-colors"
+              style={viewMode === 'list'
+                ? { backgroundColor: '#C4506E', color: '#FFFFFF' }
+                : { backgroundColor: '#FFFFFF', color: '#7A6469' }
+              }
+            >
+              <List className="h-3.5 w-3.5" />
+              List
+            </button>
+            <button
+              onClick={() => setViewMode('calendar')}
+              className="px-3 py-1.5 flex items-center gap-1 text-xs font-bold transition-colors"
+              style={viewMode === 'calendar'
+                ? { backgroundColor: '#C4506E', color: '#FFFFFF' }
+                : { backgroundColor: '#FFFFFF', color: '#7A6469' }
+              }
+            >
+              <Grid3X3 className="h-3.5 w-3.5" />
+              Calendar
+            </button>
+          </div>
+          <button
+            onClick={() => api.events.exportCalendar()}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors"
+            style={{ backgroundColor: '#FFF0F3', color: '#C4506E' }}
+            title="Add all events to your calendar"
+          >
+            <CalendarPlus className="h-3.5 w-3.5" />
+            Add to Calendar
+          </button>
+        </div>
       </div>
 
-      {/* Events List */}
-      {groupedEvents.length > 0 ? (
-        <div className="space-y-8">
-          {groupedEvents.map((group) => (
-            <div key={group.monthLabel}>
-              {/* Month Header */}
-              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                <Calendar className="h-5 w-5 mr-2" style={{ color: theme.colors.brandColor }} />
-                {group.monthLabel}
-              </h2>
+      {/* Calendar View */}
+      {viewMode === 'calendar' && (
+        <CalendarView
+          calendarMonth={calendarMonth}
+          setCalendarMonth={setCalendarMonth}
+          eventsByDate={eventsByDate}
+          selectedDate={selectedCalendarDate}
+          setSelectedDate={setSelectedCalendarDate}
+          handleRsvp={handleRsvp}
+          isWholeSchool={isWholeSchool}
+          t={t}
+        />
+      )}
 
-              {/* Events */}
-              <div className="space-y-4">
+      {/* List View — Upcoming Events */}
+      {viewMode === 'list' && upcomingGroups.length > 0 ? (
+        <div className="space-y-6">
+          {upcomingGroups.map((group) => (
+            <div key={group.monthLabel}>
+              <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: '#A8929A' }}>
+                {group.monthLabel}
+              </p>
+
+              <div className="space-y-3">
                 {group.events.map((event) => {
                   const dateInfo = formatDate(event.date)
-                  const classColor = event.classId
-                    ? (classColorMap[event.targetClass] || '#4B5563')
-                    : theme.colors.brandColor
 
                   return (
                     <div
                       key={event.id}
-                      className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+                      className="bg-white overflow-hidden"
+                      style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}
                     >
-                      <div className="flex">
-                        {/* Date Badge */}
-                        <div
-                          className="w-20 flex-shrink-0 flex flex-col items-center justify-center py-4"
-                          style={{ backgroundColor: classColor }}
-                        >
-                          <span className="text-white text-xs font-medium uppercase">
-                            {dateInfo.weekday}
-                          </span>
-                          <span className="text-white text-2xl font-bold">
-                            {dateInfo.day}
-                          </span>
-                          <span className="text-white text-xs font-medium uppercase">
-                            {dateInfo.month}
-                          </span>
-                        </div>
+                      <div className="p-[18px]">
+                        <div className="flex gap-4">
+                          {/* Date Block */}
+                          <div className="flex-shrink-0 text-center" style={{ width: '52px' }}>
+                            <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#C4506E' }}>
+                              {dateInfo.month}
+                            </div>
+                            <div className="text-[24px] font-extrabold leading-tight" style={{ color: '#2D2225' }}>
+                              {dateInfo.day}
+                            </div>
+                            <div className="text-[11px] font-semibold" style={{ color: '#A8929A' }}>
+                              {dateInfo.weekday}
+                            </div>
+                          </div>
 
-                        {/* Event Details */}
-                        <div className="flex-1 p-4">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h3 className="font-bold text-gray-900 text-lg">
+                          {/* Event Details */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="text-[16px] font-bold leading-snug" style={{ color: '#2D2225' }}>
                                 {event.title}
                               </h3>
-                              <span
-                                className="inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium text-white"
-                                style={{ backgroundColor: classColor }}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  api.events.exportEventCalendar(event.id, event.title)
+                                }}
+                                className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg"
+                                style={{ color: '#A8929A' }}
+                                title="Add to calendar"
                               >
-                                {isWholeSchool(event.targetClass) ? t('messages.wholeSchool') : event.targetClass}
-                              </span>
+                                <CalendarPlus className="h-4 w-4" />
+                              </button>
                             </div>
+
+                            <p className="text-[13px] font-semibold mt-0.5" style={{ color: '#7A6469' }}>
+                              {isWholeSchool(event.targetClass) ? t('messages.wholeSchool', 'Whole School') : event.targetClass}
+                            </p>
+
+                            {event.description && (
+                              <p className="text-sm font-medium mt-2 leading-relaxed" style={{ color: '#7A6469' }}>
+                                {event.description}
+                              </p>
+                            )}
+
+                            {/* Time & Location */}
+                            <div className="flex flex-wrap items-center gap-3 mt-2">
+                              {event.time && (
+                                <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#A8929A' }}>
+                                  <Clock className="h-3.5 w-3.5" />
+                                  {event.time}
+                                </span>
+                              )}
+                              {event.location && (
+                                <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#A8929A' }}>
+                                  <MapPin className="h-3.5 w-3.5" />
+                                  {event.location}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* RSVP */}
                             {event.requiresRsvp && (
-                              <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">
-                                {t('events.rsvpRequired')}
+                              <div className="flex items-center gap-2 mt-3">
+                                <button
+                                  onClick={() => handleRsvp(event.id, 'attending')}
+                                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-[13px] font-bold transition-colors"
+                                  style={
+                                    event.userRsvp === 'attending'
+                                      ? { backgroundColor: '#EDFAF2', color: '#5BA97B', border: '1.5px solid #5BA97B' }
+                                      : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
+                                  }
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                  {t('events.attending', 'Going')}
+                                </button>
+                                <button
+                                  onClick={() => handleRsvp(event.id, 'not_attending')}
+                                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-[13px] font-bold transition-colors"
+                                  style={
+                                    event.userRsvp === 'not_attending'
+                                      ? { backgroundColor: '#FEF2F2', color: '#D14D4D', border: '1.5px solid #D14D4D' }
+                                      : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
+                                  }
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                  {t('events.notAttending', "Can't go")}
+                                </button>
+                                <button
+                                  onClick={() => handleRsvp(event.id, 'maybe')}
+                                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-[13px] font-bold transition-colors"
+                                  style={
+                                    event.userRsvp === 'maybe'
+                                      ? { backgroundColor: '#FFF7EC', color: '#8B5E0F', border: '1.5px solid #E8A54B' }
+                                      : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
+                                  }
+                                >
+                                  <HelpCircle className="h-3.5 w-3.5" />
+                                  {t('events.maybe', 'Maybe')}
+                                </button>
+                              </div>
+                            )}
+
+                            {!event.requiresRsvp && event.userRsvp === 'attending' && (
+                              <span
+                                className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold mt-2"
+                                style={{ backgroundColor: '#EDFAF2', color: '#5BA97B' }}
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                                Attending
                               </span>
                             )}
                           </div>
-
-                          {event.description && (
-                            <p className="text-gray-600 mt-2">{event.description}</p>
-                          )}
-
-                          <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-gray-500">
-                            {event.time && (
-                              <span className="flex items-center">
-                                <Clock className="h-4 w-4 mr-1" />
-                                {event.time}
-                              </span>
-                            )}
-                            {event.location && (
-                              <span className="flex items-center">
-                                <MapPin className="h-4 w-4 mr-1" />
-                                {event.location}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* RSVP Buttons */}
-                          {getRsvpButton(event)}
                         </div>
                       </div>
                     </div>
@@ -293,10 +362,277 @@ export function EventsPage() {
             </div>
           ))}
         </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-          <Calendar className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-          <p className="text-gray-500">{t('events.noEvents')}</p>
+      ) : viewMode === 'list' ? (
+        <div
+          className="bg-white p-12 text-center"
+          style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}
+        >
+          <Calendar className="h-12 w-12 mx-auto mb-4" style={{ color: '#D8CDD0' }} />
+          <p className="font-medium" style={{ color: '#A8929A' }}>{t('events.noEvents', 'No upcoming events')}</p>
+        </div>
+      ) : null}
+
+      {/* Past Events */}
+      {viewMode === 'list' && pastEvents.length > 0 && (
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: '#A8929A' }}>
+            Past Events
+          </p>
+          <div className="space-y-1.5">
+            {pastEvents.map((event) => {
+              const date = new Date(event.date)
+              const dateStr = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
+              return (
+                <div
+                  key={event.id}
+                  className="flex items-center gap-3 px-4 py-3 bg-white"
+                  style={{ borderRadius: '14px', border: '1px solid #F0E4E6', opacity: 0.7 }}
+                >
+                  <span className="text-xs font-bold shrink-0" style={{ color: '#A8929A', width: '80px' }}>
+                    {dateStr}
+                  </span>
+                  <span className="text-sm font-semibold truncate" style={{ color: '#2D2225' }}>
+                    {event.title}
+                  </span>
+                  {event.location && (
+                    <span className="text-xs font-medium shrink-0 hidden sm:block" style={{ color: '#A8929A' }}>
+                      {event.location}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==========================================
+// Calendar View Component
+// ==========================================
+
+interface CalendarViewProps {
+  calendarMonth: { year: number; month: number }
+  setCalendarMonth: React.Dispatch<React.SetStateAction<{ year: number; month: number }>>
+  eventsByDate: Map<string, Event[]>
+  selectedDate: string | null
+  setSelectedDate: (date: string | null) => void
+  handleRsvp: (eventId: string, status: EventRsvpStatus) => void
+  isWholeSchool: (targetClass: string) => boolean
+  t: any
+}
+
+function CalendarView({ calendarMonth, setCalendarMonth, eventsByDate, selectedDate, setSelectedDate, handleRsvp, isWholeSchool, t }: CalendarViewProps) {
+  const { year, month } = calendarMonth
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+  const monthLabel = new Date(year, month).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+
+  // Build calendar grid
+  const firstDay = new Date(year, month, 1)
+  const lastDay = new Date(year, month + 1, 0)
+  const startDayOfWeek = (firstDay.getDay() + 6) % 7 // Monday = 0
+  const daysInMonth = lastDay.getDate()
+
+  const prevMonth = () => {
+    setCalendarMonth(prev => {
+      if (prev.month === 0) return { year: prev.year - 1, month: 11 }
+      return { ...prev, month: prev.month - 1 }
+    })
+    setSelectedDate(null)
+  }
+
+  const nextMonth = () => {
+    setCalendarMonth(prev => {
+      if (prev.month === 11) return { year: prev.year + 1, month: 0 }
+      return { ...prev, month: prev.month + 1 }
+    })
+    setSelectedDate(null)
+  }
+
+  const goToToday = () => {
+    setCalendarMonth({ year: today.getFullYear(), month: today.getMonth() })
+    setSelectedDate(todayStr)
+  }
+
+  // Events for selected date
+  const selectedEvents = selectedDate ? (eventsByDate.get(selectedDate) || []) : []
+
+  return (
+    <div className="space-y-4">
+      {/* Month navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={prevMonth}
+          className="w-9 h-9 rounded-full flex items-center justify-center"
+          style={{ backgroundColor: '#F5EEF0' }}
+        >
+          <ChevronLeft className="w-5 h-5" style={{ color: '#7A6469' }} />
+        </button>
+        <div className="text-center">
+          <h2 className="text-lg font-bold" style={{ color: '#2D2225' }}>{monthLabel}</h2>
+          {(year !== today.getFullYear() || month !== today.getMonth()) && (
+            <button onClick={goToToday} className="text-xs font-semibold" style={{ color: '#C4506E' }}>
+              Back to today
+            </button>
+          )}
+        </div>
+        <button
+          onClick={nextMonth}
+          className="w-9 h-9 rounded-full flex items-center justify-center"
+          style={{ backgroundColor: '#F5EEF0' }}
+        >
+          <ChevronRight className="w-5 h-5" style={{ color: '#7A6469' }} />
+        </button>
+      </div>
+
+      {/* Calendar grid */}
+      <div
+        className="bg-white rounded-[22px] overflow-hidden"
+        style={{ border: '1.5px solid #F0E4E6' }}
+      >
+        {/* Day headers */}
+        <div className="grid grid-cols-7">
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+            <div key={day} className="py-2 text-center text-[11px] font-bold uppercase" style={{ color: '#A8929A' }}>
+              {day}
+            </div>
+          ))}
+        </div>
+
+        {/* Day cells */}
+        <div className="grid grid-cols-7" style={{ borderTop: '1px solid #F0E4E6' }}>
+          {/* Empty cells before first day */}
+          {Array.from({ length: startDayOfWeek }).map((_, i) => (
+            <div key={`empty-${i}`} className="py-2 min-h-[52px]" style={{ backgroundColor: '#FAF8F6' }} />
+          ))}
+
+          {/* Day cells */}
+          {Array.from({ length: daysInMonth }).map((_, i) => {
+            const dayNum = i + 1
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
+            const dayEvents = eventsByDate.get(dateStr) || []
+            const isToday = dateStr === todayStr
+            const isSelected = dateStr === selectedDate
+            const hasEvents = dayEvents.length > 0
+
+            return (
+              <button
+                key={dayNum}
+                onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                className="py-1.5 min-h-[52px] flex flex-col items-center justify-start transition-colors relative"
+                style={{
+                  backgroundColor: isSelected ? '#FFF0F3' : isToday ? '#FAF5F7' : undefined,
+                  borderRight: '1px solid #F5EEF0',
+                  borderBottom: '1px solid #F5EEF0',
+                }}
+              >
+                <span
+                  className="text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full"
+                  style={{
+                    color: isSelected ? '#C4506E' : isToday ? '#C4506E' : '#2D2225',
+                    backgroundColor: isToday && !isSelected ? '#FFF0F3' : undefined,
+                  }}
+                >
+                  {dayNum}
+                </span>
+                {hasEvents && (
+                  <div className="flex gap-0.5 mt-0.5">
+                    {dayEvents.slice(0, 3).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: '#C4506E' }}
+                      />
+                    ))}
+                    {dayEvents.length > 3 && (
+                      <span className="text-[8px] font-bold" style={{ color: '#C4506E' }}>+{dayEvents.length - 3}</span>
+                    )}
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Selected date events */}
+      {selectedDate && (
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: '#A8929A' }}>
+            {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </p>
+          {selectedEvents.length > 0 ? (
+            <div className="space-y-2">
+              {selectedEvents.map(event => (
+                <div
+                  key={event.id}
+                  className="bg-white rounded-[18px] p-4"
+                  style={{ border: '1.5px solid #F0E4E6' }}
+                >
+                  <h3 className="text-[15px] font-bold" style={{ color: '#2D2225' }}>{event.title}</h3>
+                  <p className="text-xs font-semibold mt-0.5" style={{ color: '#7A6469' }}>
+                    {isWholeSchool(event.targetClass) ? 'Whole School' : event.targetClass}
+                  </p>
+                  {event.description && (
+                    <p className="text-sm mt-1" style={{ color: '#7A6469' }}>{event.description}</p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-3 mt-2">
+                    {event.time && (
+                      <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#A8929A' }}>
+                        <Clock className="h-3.5 w-3.5" />{event.time}
+                      </span>
+                    )}
+                    {event.location && (
+                      <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#A8929A' }}>
+                        <MapPin className="h-3.5 w-3.5" />{event.location}
+                      </span>
+                    )}
+                  </div>
+                  {event.requiresRsvp && (
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={() => handleRsvp(event.id, 'attending')}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold"
+                        style={event.userRsvp === 'attending'
+                          ? { backgroundColor: '#EDFAF2', color: '#5BA97B', border: '1.5px solid #5BA97B' }
+                          : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
+                        }
+                      >
+                        <Check className="h-3 w-3" />Going
+                      </button>
+                      <button
+                        onClick={() => handleRsvp(event.id, 'not_attending')}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold"
+                        style={event.userRsvp === 'not_attending'
+                          ? { backgroundColor: '#FEF2F2', color: '#D14D4D', border: '1.5px solid #D14D4D' }
+                          : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
+                        }
+                      >
+                        <X className="h-3 w-3" />Can't go
+                      </button>
+                      <button
+                        onClick={() => handleRsvp(event.id, 'maybe')}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold"
+                        style={event.userRsvp === 'maybe'
+                          ? { backgroundColor: '#FFF7EC', color: '#8B5E0F', border: '1.5px solid #E8A54B' }
+                          : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
+                        }
+                      >
+                        <HelpCircle className="h-3 w-3" />Maybe
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-center py-4" style={{ color: '#A8929A' }}>No events on this day</p>
+          )}
         </div>
       )}
     </div>

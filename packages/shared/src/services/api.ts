@@ -1,4 +1,6 @@
 import { config } from '../config'
+import { Preferences } from '@capacitor/preferences'
+import { Capacitor } from '@capacitor/core'
 import type {
   User,
   Message,
@@ -8,6 +10,7 @@ import type {
   FormType,
   FormStatus,
   FormResponseData,
+  FormAnalytics,
   Event,
   ScheduleItem,
   TermDate,
@@ -63,24 +66,91 @@ import type {
   EcaAttendanceStatus,
   EcaAllocationSuggestion,
   EcaSuggestionStatus,
+  ConsultationEvent,
+  ConsultationTeacher,
+  ConsultationBooking,
+  ConsultationStatus,
+  AnalyticsOverview,
+  AnalyticsMessagesResponse,
+  EngagementTrendResponse,
+  EcaStatsResponse,
+  EmergencyAlert,
+  EmergencyAlertCreateData,
+  SchoolService,
+  SchoolServiceWithStats,
+  ServiceRegistration,
+  ServiceRegistrationCreate,
+  ServiceStatus,
+  RegistrationStatus,
+  PaymentStatus,
 } from '../types'
 
 const API_URL = config.apiUrl
 
-// Token state
+// Token storage abstraction: uses Capacitor Preferences on native, localStorage in browser
+const isNative = (() => {
+  try {
+    return Capacitor.isNativePlatform()
+  } catch {
+    return false
+  }
+})()
+
+async function persistRefreshToken(token: string): Promise<void> {
+  if (isNative) {
+    await Preferences.set({ key: 'refreshToken', value: token })
+  } else {
+    localStorage.setItem('refreshToken', token)
+  }
+}
+
+async function removePersistedRefreshToken(): Promise<void> {
+  if (isNative) {
+    await Preferences.remove({ key: 'refreshToken' })
+  } else {
+    localStorage.removeItem('refreshToken')
+  }
+}
+
+async function loadPersistedRefreshToken(): Promise<string | null> {
+  if (isNative) {
+    const { value } = await Preferences.get({ key: 'refreshToken' })
+    return value
+  } else {
+    return localStorage.getItem('refreshToken')
+  }
+}
+
+// Token state (in-memory cache for synchronous reads, write-through to secure storage)
 let accessToken: string | null = null
-let refreshTokenValue: string | null = localStorage.getItem('refreshToken')
+let refreshTokenValue: string | null = null
+let _tokenStorageReady = false
+
+// Initialize tokens from secure storage. Must be called (and awaited) at app startup
+// before any authenticated API calls. AuthContext already has an async init phase.
+export async function initTokenStorage(): Promise<void> {
+  refreshTokenValue = await loadPersistedRefreshToken()
+  _tokenStorageReady = true
+}
+
+// Synchronous fallback for non-native: pre-populate from localStorage immediately
+// so code that runs before initTokenStorage still works in the browser.
+if (!isNative) {
+  refreshTokenValue = localStorage.getItem('refreshToken')
+  _tokenStorageReady = true
+}
 
 export function setTokens(access: string, refresh: string) {
   accessToken = access
   refreshTokenValue = refresh
-  localStorage.setItem('refreshToken', refresh)
+  // Write-through to persistent storage (fire-and-forget; errors are non-fatal)
+  persistRefreshToken(refresh).catch(() => {})
 }
 
 export function clearTokens() {
   accessToken = null
   refreshTokenValue = null
-  localStorage.removeItem('refreshToken')
+  removePersistedRefreshToken().catch(() => {})
 }
 
 export function getRefreshToken(): string | null {
@@ -168,23 +238,78 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }))
-    throw new Error(error.error || 'Request failed')
+    // Enrich rate limit errors with retry info
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After')
+      const minutes = retryAfter ? Math.ceil(parseInt(retryAfter) / 60) : 15
+      throw new Error(error.error || `Too many attempts. Please try again in ${minutes} minutes.`)
+    }
+    throw new Error(error.error || `Request failed (${response.status})`)
   }
 
   return response.json()
+}
+
+// 2FA error class
+export class TwoFactorRequiredError extends Error {
+  twoFactorSessionToken: string
+  constructor(sessionToken: string) {
+    super('Two-factor authentication required')
+    this.name = 'TwoFactorRequiredError'
+    this.twoFactorSessionToken = sessionToken
+  }
 }
 
 // Auth
 export const auth = {
   me: () => fetchApi<User>('/auth/me'),
   login: async (email: string, password: string) => {
-    const result = await fetchApi<{ user: User; accessToken: string; refreshToken: string }>('/auth/login', {
+    const result = await fetchApi<{ user?: User; accessToken?: string; refreshToken?: string; twoFactorRequired?: boolean; twoFactorSessionToken?: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    })
+
+    if (result.twoFactorRequired && result.twoFactorSessionToken) {
+      throw new TwoFactorRequiredError(result.twoFactorSessionToken)
+    }
+
+    if (result.accessToken && result.refreshToken) {
+      setTokens(result.accessToken, result.refreshToken)
+    }
+    return result.user!
+  },
+  verify2fa: async (sessionToken: string, code: string) => {
+    const result = await fetchApi<{ user: User; accessToken: string; refreshToken: string }>('/auth/2fa/verify', {
+      method: 'POST',
+      body: JSON.stringify({ sessionToken, code }),
     })
     setTokens(result.accessToken, result.refreshToken)
     return result.user
   },
+  recover2fa: async (sessionToken: string, code: string) => {
+    const result = await fetchApi<{ user: User; accessToken: string; refreshToken: string; recoveryCodesRemaining?: number }>('/auth/2fa/recover', {
+      method: 'POST',
+      body: JSON.stringify({ sessionToken, code }),
+    })
+    setTokens(result.accessToken, result.refreshToken)
+    return { user: result.user, recoveryCodesRemaining: result.recoveryCodesRemaining }
+  },
+  setup2fa: () =>
+    fetchApi<{ qrCode: string; secret: string; recoveryCodes: string[] }>('/auth/2fa/setup', {
+      method: 'POST',
+    }),
+  confirmSetup2fa: (code: string) =>
+    fetchApi<{ success: boolean }>('/auth/2fa/confirm-setup', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  disable2fa: (code: string) =>
+    fetchApi<{ success: boolean }>('/auth/2fa/disable', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  get2faStatus: () =>
+    fetchApi<{ enabled: boolean; setupAt: string | null }>('/auth/2fa/status'),
   demoLogin: async (email: string, role?: string) => {
     const result = await fetchApi<{ user: User; accessToken: string; refreshToken: string }>('/auth/demo-login', {
       method: 'POST',
@@ -210,6 +335,14 @@ export const auth = {
 export const messages = {
   list: () => fetchApi<Message[]>('/api/messages'),
   listAll: () => fetchApi<Message[]>('/api/messages/all'),
+  uploadAttachment: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return fetchApi<{ fileName: string; fileUrl: string; fileType: string; fileSize: number }>('/api/messages/upload', {
+      method: 'POST',
+      body: formData,
+    })
+  },
   create: (data: {
     title: string
     content: string
@@ -225,6 +358,7 @@ export const messages = {
     isUrgent?: boolean
     expiresAt?: string
     formId?: string
+    attachments?: { fileName: string; fileUrl: string; fileType: string; fileSize: number }[]
   }) =>
     fetchApi<Message>('/api/messages', {
       method: 'POST',
@@ -245,6 +379,7 @@ export const messages = {
     isUrgent?: boolean
     expiresAt?: string
     formId?: string
+    attachments?: { fileName: string; fileUrl: string; fileType: string; fileSize: number }[]
   }) =>
     fetchApi<Message>(`/api/messages/${id}`, {
       method: 'PUT',
@@ -323,6 +458,8 @@ export const forms = {
     fetchApi<{ message: string }>(`/api/forms/${id}/export-token`, {
       method: 'DELETE',
     }),
+  getAnalytics: (id: string) =>
+    fetchApi<FormAnalytics>(`/api/forms/${id}/analytics`),
 }
 
 // Events
@@ -370,6 +507,10 @@ export const events = {
     fetchApi<{ message: string }>(`/api/events/${id}`, {
       method: 'DELETE',
     }),
+  exportCalendar: () =>
+    downloadFile('/api/events/calendar.ics', 'school-events.ics'),
+  exportEventCalendar: (id: string, title: string) =>
+    downloadFile(`/api/events/${id}/calendar.ics`, `${title.replace(/[^a-zA-Z0-9]/g, '_')}.ics`),
 }
 
 // Schedule
@@ -439,6 +580,8 @@ export const termDates = {
     fetchApi<{ message: string; count: number }>('/api/term-dates/seed', {
       method: 'POST',
     }),
+  exportCalendar: () =>
+    downloadFile('/api/term-dates/calendar.ics', 'term-dates.ics'),
 }
 
 // Weekly Message
@@ -450,6 +593,8 @@ export const weeklyMessage = {
     content: string
     weekOf: string
     isCurrent?: boolean
+    imageUrl?: string
+    scheduledAt?: string
   }) =>
     fetchApi<WeeklyMessage>('/api/weekly-message', {
       method: 'POST',
@@ -508,6 +653,32 @@ export const knowledge = {
     }),
 }
 
+// Helper to download a file with auth (generic)
+async function downloadFile(url: string, filename: string): Promise<void> {
+  const headers: Record<string, string> = {}
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`
+  }
+
+  const response = await fetch(`${API_URL}${url}`, { headers })
+
+  if (response.status === 401 && refreshTokenValue) {
+    const refreshed = await tryRefresh()
+    if (refreshed) {
+      headers['Authorization'] = `Bearer ${accessToken}`
+      const retryResponse = await fetch(`${API_URL}${url}`, { headers })
+      if (!retryResponse.ok) throw new Error('Download failed')
+      const blob = await retryResponse.blob()
+      triggerDownload(blob, filename)
+      return
+    }
+  }
+
+  if (!response.ok) throw new Error('Download failed')
+  const blob = await response.blob()
+  triggerDownload(blob, filename)
+}
+
 // Helper to download CSV with auth
 async function downloadCSV(url: string, filename: string): Promise<void> {
   const headers: Record<string, string> = {}
@@ -554,12 +725,15 @@ export const pulse = {
   optionalQuestions: () => fetchApi<PulseOptionalQuestion[]>('/api/pulse/optional-questions'),
   exportCSV: (id: string, halfTermName: string) =>
     downloadCSV(`/api/pulse/${id}/export`, `pulse_${halfTermName.replace(/[^a-zA-Z0-9]/g, '_')}.csv`),
+  comparison: () =>
+    fetchApi<{ comparison: import('../types').PulseComparison[] }>('/api/pulse/comparison'),
   create: (data: {
     halfTermName: string
     status?: string
     opensAt: string
     closesAt: string
     additionalQuestionKey?: string | null
+    customQuestions?: Array<{ id: string; text: string; type: 'LIKERT_5' | 'TEXT_OPTIONAL' }>
   }) =>
     fetchApi<PulseSurvey>('/api/pulse', {
       method: 'POST',
@@ -570,6 +744,7 @@ export const pulse = {
     opensAt: string
     closesAt: string
     additionalQuestionKey?: string | null
+    customQuestions?: Array<{ id: string; text: string; type: 'LIKERT_5' | 'TEXT_OPTIONAL' }>
   }) =>
     fetchApi<PulseSurvey>(`/api/pulse/${id}`, {
       method: 'PUT',
@@ -734,7 +909,11 @@ export interface StaffMember {
   email: string
   name: string
   role: 'STAFF' | 'ADMIN'
+  position?: string | null
   avatarUrl?: string
+  hasPassword?: boolean
+  twoFactorEnabled?: boolean
+  lastLoginAt?: string | null
   assignedClasses: Array<{ id: string; name: string }>
   createdAt: string
 }
@@ -777,22 +956,49 @@ export const staff = {
     fetchApi<{ message: string }>(`/api/staff/${id}`, {
       method: 'DELETE',
     }),
+  sendLogin: (id: string) =>
+    fetchApi<{ message: string }>(`/api/staff/${id}/send-login`, {
+      method: 'POST',
+    }),
+  reset2fa: (id: string) =>
+    fetchApi<{ message: string }>(`/api/staff/${id}/reset-2fa`, {
+      method: 'POST',
+    }),
 }
 
 // Schools (Super Admin)
-export interface SchoolWithCount extends School {
-  _count?: { users: number }
-  createdAt?: string
-  updatedAt?: string
-}
+import type { SchoolWithCount, SchoolStats, SystemStats, SchoolUser, CreateSchoolData, CreateAdminData, CreateAdminResponse } from '../types'
 
 export const schools = {
-  list: () => fetchApi<SchoolWithCount[]>('/api/schools'),
+  list: (includeArchived = false) =>
+    fetchApi<SchoolWithCount[]>(`/api/schools${includeArchived ? '?includeArchived=true' : ''}`),
   get: (id: string) => fetchApi<SchoolWithCount>(`/api/schools/${id}`),
+  create: (data: CreateSchoolData) =>
+    fetchApi<School>('/api/schools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   updateBranding: (id: string, data: Partial<School>) =>
     fetchApi<School>(`/api/schools/${id}/branding`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    }),
+  archive: (id: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/api/schools/${id}`, {
+      method: 'DELETE',
+    }),
+  getStats: (id: string) => fetchApi<SchoolStats>(`/api/schools/${id}/stats`),
+  getSystemStats: () => fetchApi<SystemStats>('/api/schools/system-stats'),
+  getUsers: (id: string, role?: string) =>
+    fetchApi<SchoolUser[]>(`/api/schools/${id}/users${role ? `?role=${role}` : ''}`),
+  createAdmin: (id: string, data: CreateAdminData) =>
+    fetchApi<CreateAdminResponse>(`/api/schools/${id}/admins`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  removeUser: (schoolId: string, userId: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/api/schools/${schoolId}/users/${userId}`, {
+      method: 'DELETE',
     }),
 }
 
@@ -837,6 +1043,13 @@ export const notifications = {
   markAllRead: () =>
     fetchApi<{ success: boolean }>('/api/notifications/read-all', {
       method: 'POST',
+    }),
+  getPreferences: () =>
+    fetchApi<import('../types').NotificationPreferences>('/api/notifications/preferences'),
+  updatePreferences: (data: Partial<import('../types').NotificationPreferences>) =>
+    fetchApi<import('../types').NotificationPreferences>('/api/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
 }
 
@@ -963,6 +1176,17 @@ export const students = {
   clearSeed: () =>
     fetchApi<{ studentsDeleted: number; parentsDeleted: number }>('/api/students/seed', {
       method: 'DELETE',
+    }),
+  bulkReassign: (reassignments: Array<{
+    studentId?: string
+    externalId?: string
+    firstName?: string
+    lastName?: string
+    newClassName: string
+  }>) =>
+    fetchApi<{ updated: number; skipped: number; total: number; errors?: string[] }>('/api/students/bulk-reassign', {
+      method: 'POST',
+      body: JSON.stringify({ reassignments }),
     }),
 }
 
@@ -1327,6 +1551,352 @@ export const eca = {
   },
 }
 
+// Consultations (Parents' Evening)
+export const consultations = {
+  // Admin endpoints
+  list: () => fetchApi<ConsultationEvent[]>('/api/consultations'),
+  get: (id: string) => fetchApi<ConsultationEvent>(`/api/consultations/${id}`),
+  create: (data: {
+    title: string
+    description?: string
+    date: string
+    endDate?: string
+    slotDuration?: number
+    breakDuration?: number
+    targetClass?: string
+  }) =>
+    fetchApi<ConsultationEvent>('/api/consultations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: {
+    title?: string
+    description?: string
+    date?: string
+    endDate?: string
+    status?: ConsultationStatus
+    slotDuration?: number
+    breakDuration?: number
+    targetClass?: string
+  }) =>
+    fetchApi<ConsultationEvent>(`/api/consultations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/consultations/${id}`, {
+      method: 'DELETE',
+    }),
+  addTeacher: (id: string, data: {
+    teacherId: string
+    location?: string
+    locationType?: string
+    startTime: string
+    endTime: string
+  }) =>
+    fetchApi<ConsultationTeacher>(`/api/consultations/${id}/teachers`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  removeTeacher: (id: string, ctId: string) =>
+    fetchApi<{ message: string }>(`/api/consultations/${id}/teachers/${ctId}`, {
+      method: 'DELETE',
+    }),
+  addCustomSlot: (id: string, ctId: string, data: { startTime: string; endTime: string; date?: string }) =>
+    fetchApi<{ id: string; startTime: string; endTime: string; date?: string; isCustom: boolean }>(`/api/consultations/${id}/teachers/${ctId}/slots`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteSlot: (id: string, ctId: string, slotId: string) =>
+    fetchApi<{ message: string }>(`/api/consultations/${id}/teachers/${ctId}/slots/${slotId}`, {
+      method: 'DELETE',
+    }),
+  getBookings: (id: string) =>
+    fetchApi<{
+      bookings: Array<ConsultationBooking & {
+        parentEmail?: string
+        teacherId?: string
+      }>
+      stats: { totalSlots: number; bookedSlots: number }
+    }>(`/api/consultations/${id}/bookings`),
+  getGoogleAuthUrl: () =>
+    fetchApi<{ url: string; configured: boolean }>('/api/consultations/google-auth-url'),
+
+  // Parent endpoints
+  parent: {
+    list: () => fetchApi<ConsultationEvent[]>('/api/consultations/parent'),
+    get: (id: string) => fetchApi<ConsultationEvent>(`/api/consultations/parent/${id}`),
+    book: (data: { slotId: string; studentId: string; studentName: string; notes?: string }) =>
+      fetchApi<ConsultationBooking>('/api/consultations/parent/book', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    cancelBooking: (bookingId: string) =>
+      fetchApi<{ message: string }>(`/api/consultations/parent/bookings/${bookingId}`, {
+        method: 'DELETE',
+      }),
+  },
+}
+
+export const analytics = {
+  overview: () =>
+    fetchApi<AnalyticsOverview>('/api/analytics/overview'),
+  messages: () =>
+    fetchApi<AnalyticsMessagesResponse>('/api/analytics/messages'),
+  engagementTrend: () =>
+    fetchApi<EngagementTrendResponse>('/api/analytics/engagement-trend'),
+  ecaStats: () =>
+    fetchApi<EcaStatsResponse>('/api/analytics/eca-stats'),
+}
+
+export const emergencyAlerts = {
+  // Admin endpoints
+  list: () =>
+    fetchApi<EmergencyAlert[]>('/api/emergency-alerts'),
+  get: (id: string) =>
+    fetchApi<EmergencyAlert>(`/api/emergency-alerts/${id}`),
+  create: (data: EmergencyAlertCreateData) =>
+    fetchApi<EmergencyAlert & { parentCount: number }>('/api/emergency-alerts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  resolve: (id: string) =>
+    fetchApi<{ id: string; status: string; resolvedAt: string; resolvedBy: string }>(`/api/emergency-alerts/${id}/resolve`, {
+      method: 'PUT',
+    }),
+  resend: (id: string) =>
+    fetchApi<{ message: string; resent: number; total: number }>(`/api/emergency-alerts/${id}/resend`, {
+      method: 'POST',
+    }),
+
+  // Parent endpoints
+  active: () =>
+    fetchApi<EmergencyAlert[]>('/api/emergency-alerts/active'),
+  acknowledge: (id: string, device?: string) =>
+    fetchApi<{ acknowledged: boolean; acknowledgedAt: string }>(`/api/emergency-alerts/${id}/acknowledge`, {
+      method: 'POST',
+      body: JSON.stringify({ device }),
+    }),
+  getAcknowledgments: (id: string) =>
+    fetchApi<{ totalParents: number; acknowledged: number; rate: number; acknowledgments: Array<{ parentId: string; parentName: string; parentEmail: string; acknowledgedAt: string; device?: string }> }>(`/api/emergency-alerts/${id}/acknowledgments`),
+}
+
+// School Services (Wraparound Care)
+export const schoolServices = {
+  // Admin endpoints
+  list: () => fetchApi<SchoolService[]>('/api/school-services'),
+  get: (id: string) => fetchApi<SchoolServiceWithStats>(`/api/school-services/${id}`),
+  create: (data: Partial<SchoolService> & { name: string; days: string[]; startTime: string; endTime: string }) =>
+    fetchApi<SchoolService>('/api/school-services', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<SchoolService>) =>
+    fetchApi<SchoolService>(`/api/school-services/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/school-services/${id}`, {
+      method: 'DELETE',
+    }),
+  updateStatus: (id: string, status: ServiceStatus) =>
+    fetchApi<SchoolService>(`/api/school-services/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+  getRegistrations: (id: string) =>
+    fetchApi<ServiceRegistration[]>(`/api/school-services/${id}/registrations`),
+  updateRegistrationStatus: (regId: string, status: RegistrationStatus) =>
+    fetchApi<ServiceRegistration>(`/api/school-services/registrations/${regId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+  updatePaymentStatus: (regId: string, paymentStatus: PaymentStatus) =>
+    fetchApi<ServiceRegistration>(`/api/school-services/registrations/${regId}/payment`, {
+      method: 'PUT',
+      body: JSON.stringify({ paymentStatus }),
+    }),
+
+  // Parent endpoints
+  parent: {
+    list: () => fetchApi<SchoolService[]>('/api/school-services/parent'),
+    get: (id: string) => fetchApi<SchoolService>(`/api/school-services/parent/${id}`),
+    register: (data: ServiceRegistrationCreate) =>
+      fetchApi<ServiceRegistration>('/api/school-services/parent/register', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    cancelRegistration: (regId: string) =>
+      fetchApi<{ message: string }>(`/api/school-services/parent/registrations/${regId}`, {
+        method: 'DELETE',
+      }),
+    myRegistrations: () =>
+      fetchApi<ServiceRegistration[]>('/api/school-services/parent/my-registrations'),
+  },
+}
+
+// Inbox (Two-Way Messaging)
+import type {
+  ConversationListItem,
+  ConversationDetail,
+  ConversationMessageItem,
+  AvailableContactsResponse,
+  SchoolContactInfo,
+} from '../types'
+
+export const inbox = {
+  // Parent endpoints
+  conversations: () =>
+    fetchApi<ConversationListItem[]>('/api/inbox/conversations'),
+  conversation: (id: string) =>
+    fetchApi<ConversationDetail>(`/api/inbox/conversations/${id}`),
+  createConversation: (data: { staffId: string; studentId?: string; schoolContactId?: string }) =>
+    fetchApi<{ id: string; created: boolean }>('/api/inbox/conversations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  sendMessage: (conversationId: string, data: { content: string; replyToId?: string; attachments?: Array<{ fileName: string; fileUrl: string; fileType: string; fileSize: number }> }) =>
+    fetchApi<ConversationMessageItem>(`/api/inbox/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  archiveConversation: (id: string) =>
+    fetchApi<{ success: boolean }>(`/api/inbox/conversations/${id}/archive`, {
+      method: 'PATCH',
+    }),
+  muteConversation: (conversationId: string, muted: boolean) =>
+    fetchApi<{ success: boolean; muted: boolean }>(`/api/inbox/conversations/${conversationId}/mute`, {
+      method: 'PATCH',
+      body: JSON.stringify({ muted }),
+    }),
+  searchMessages: (conversationId: string, query: string) =>
+    fetchApi<ConversationMessageItem[]>(`/api/inbox/conversations/${conversationId}/search?q=${encodeURIComponent(query)}`),
+  deleteMessage: (conversationId: string, messageId: string) =>
+    fetchApi<{ success: boolean }>(`/api/inbox/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'DELETE',
+    }),
+  reactToMessage: (conversationId: string, messageId: string, emoji: string) =>
+    fetchApi<{ id: string; emoji: string }>(`/api/inbox/conversations/${conversationId}/messages/${messageId}/react`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji }),
+    }),
+  removeReaction: (conversationId: string, messageId: string, emoji: string) =>
+    fetchApi<{ success: boolean }>(`/api/inbox/conversations/${conversationId}/messages/${messageId}/react/${emoji}`, {
+      method: 'DELETE',
+    }),
+  exportConversation: async (conversationId: string) => {
+    const token = getAccessToken()
+    const response = await fetch(`${config.apiUrl}/api/inbox/conversations/${conversationId}/export`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+    if (!response.ok) throw new Error('Export failed')
+    const text = await response.text()
+    const blob = new Blob([text], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `conversation-export-${new Date().toISOString().split('T')[0]}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  },
+  availableContacts: () =>
+    fetchApi<AvailableContactsResponse>('/api/inbox/contacts/available'),
+
+  // Staff/Admin endpoints
+  staffConversations: (classId?: string) => {
+    const query = classId ? `?classId=${classId}` : ''
+    return fetchApi<ConversationListItem[]>(`/api/inbox/staff/conversations${query}`)
+  },
+  staffCreateConversation: (data: { parentId: string; studentId?: string }) =>
+    fetchApi<{ id: string; created: boolean }>('/api/inbox/staff/conversations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // Shared
+  unreadCount: () =>
+    fetchApi<{ count: number }>('/api/inbox/unread-count'),
+
+  // Admin contact management
+  contacts: () =>
+    fetchApi<SchoolContactInfo[]>('/api/inbox/contacts'),
+  createContact: (data: { name: string; description?: string; icon?: string; assignedUserId: string; order?: number }) =>
+    fetchApi<SchoolContactInfo>('/api/inbox/contacts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateContact: (id: string, data: { name?: string; description?: string; icon?: string; assignedUserId?: string; order?: number }) =>
+    fetchApi<SchoolContactInfo>(`/api/inbox/contacts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteContact: (id: string) =>
+    fetchApi<{ success: boolean }>(`/api/inbox/contacts/${id}`, {
+      method: 'DELETE',
+    }),
+}
+
+// Search
+export interface SearchResult {
+  type: string
+  id: string
+  title: string
+  subtitle?: string
+  date?: string
+  route?: string
+}
+
+export const search = {
+  query: (q: string) =>
+    fetchApi<{ results: SearchResult[] }>(`/api/search?q=${encodeURIComponent(q)}`),
+}
+
+// Cafeteria
+import type { CafeteriaMenu } from '../types'
+
+export const cafeteria = {
+  current: () => fetchApi<CafeteriaMenu | null>('/api/cafeteria/current'),
+  week: (date: string) => fetchApi<CafeteriaMenu | null>(`/api/cafeteria/week/${date}`),
+  // Admin
+  listAll: () => fetchApi<CafeteriaMenu[]>('/api/cafeteria/all'),
+  get: (id: string) => fetchApi<CafeteriaMenu>(`/api/cafeteria/${id}`),
+  create: (data: {
+    weekOf: string
+    title?: string
+    imageUrl?: string
+    orderUrl?: string
+    items?: Array<{ dayOfWeek: number; mealType?: string; name: string; description?: string; dietaryTags?: string[]; calories?: number; isDefault?: boolean }>
+  }) => fetchApi<CafeteriaMenu>('/api/cafeteria', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: {
+    title?: string
+    imageUrl?: string
+    orderUrl?: string
+    isPublished?: boolean
+    items?: Array<{ dayOfWeek: number; mealType?: string; name: string; description?: string; dietaryTags?: string[]; calories?: number; isDefault?: boolean }>
+  }) => fetchApi<{ success: boolean }>(`/api/cafeteria/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: string) => fetchApi<{ success: boolean }>(`/api/cafeteria/${id}`, { method: 'DELETE' }),
+  duplicate: (id: string, weekOf: string) =>
+    fetchApi<{ id: string; weekOf: string }>(`/api/cafeteria/${id}/duplicate`, { method: 'POST', body: JSON.stringify({ weekOf }) }),
+}
+
+// Inclusion
+export const inclusion = {
+  myChildrenIeps: () =>
+    fetchApi<import('../types').StudentIep[]>('/api/inclusion/my-children'),
+  apiKeys: () =>
+    fetchApi<Array<{ id: string; label: string; isActive: boolean; lastUsedAt: string | null; createdAt: string }>>('/api/inclusion/api-keys'),
+  createApiKey: (label: string) =>
+    fetchApi<{ id: string; label: string; key: string; createdAt: string }>('/api/inclusion/api-keys', {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    }),
+  revokeApiKey: (id: string) =>
+    fetchApi<{ success: boolean }>(`/api/inclusion/api-keys/${id}`, {
+      method: 'DELETE',
+    }),
+}
+
 export default {
   auth,
   messages,
@@ -1352,4 +1922,12 @@ export default {
   links,
   groups,
   eca,
+  consultations,
+  analytics,
+  emergencyAlerts,
+  schoolServices,
+  inbox,
+  search,
+  cafeteria,
+  inclusion,
 }

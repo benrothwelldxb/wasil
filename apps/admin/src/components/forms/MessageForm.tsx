@@ -1,6 +1,15 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
+import { Paperclip, X, Upload, FileText, Image } from 'lucide-react'
+import { RichTextEditor } from './RichTextEditor'
 import { useTheme, useApi, api } from '@wasil/shared'
 import type { Form } from '@wasil/shared'
+
+export interface AttachmentData {
+  fileName: string
+  fileUrl: string
+  fileType: string
+  fileSize: number
+}
 
 export interface MessageFormData {
   title: string
@@ -11,6 +20,7 @@ export interface MessageFormData {
   groupId?: string
   isPinned: boolean
   isUrgent: boolean
+  scheduledAt: string
   expiresAt: string
   hasAction: boolean
   actionType: string
@@ -34,6 +44,8 @@ interface MessageFormProps {
   targetClassOptions?: string[]
   isSubmitting: boolean
   submitLabel?: string
+  attachments: AttachmentData[]
+  onAttachmentsChange: (attachments: AttachmentData[]) => void
 }
 
 const FORM_TYPE_LABELS: Record<string, string> = {
@@ -45,6 +57,16 @@ const FORM_TYPE_LABELS: Record<string, string> = {
   'quick-poll': 'Poll',
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function isImageType(fileType: string): boolean {
+  return fileType.startsWith('image/')
+}
+
 export function MessageForm({
   formData,
   onChange,
@@ -53,9 +75,13 @@ export function MessageForm({
   targetClassOptions,
   isSubmitting,
   submitLabel = 'Send Message',
+  attachments,
+  onAttachmentsChange,
 }: MessageFormProps) {
   const theme = useTheme()
   const { data: availableForms } = useApi<Form[]>(() => api.forms.listAvailable(), [])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isUploading, setIsUploading] = useState(false)
 
   const handleAudienceChange = (value: string) => {
     if (audienceOptions) {
@@ -72,6 +98,30 @@ export function MessageForm({
       }
     }
     onChange({ ...formData, targetClass: value, classId: undefined, yearGroupId: undefined, groupId: undefined })
+  }
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    setIsUploading(true)
+    try {
+      const newAttachments: AttachmentData[] = []
+      for (const file of Array.from(files)) {
+        const result = await api.messages.uploadAttachment(file)
+        newAttachments.push(result)
+      }
+      onAttachmentsChange([...attachments, ...newAttachments])
+    } catch (error) {
+      alert(`Failed to upload: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const removeAttachment = (index: number) => {
+    onAttachmentsChange(attachments.filter((_, i) => i !== index))
   }
 
   const options = audienceOptions
@@ -95,12 +145,10 @@ export function MessageForm({
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Content</label>
-          <textarea
+          <RichTextEditor
             value={formData.content}
-            onChange={(e) => onChange({ ...formData, content: e.target.value })}
-            rows={4}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            required
+            onChange={(html) => onChange({ ...formData, content: html })}
+            placeholder="Write your message content..."
           />
         </div>
         <div>
@@ -118,7 +166,7 @@ export function MessageForm({
                   </option>
                 ) : (
                   <option key={`${opt.type}-${opt.id || opt.value}`} value={opt.value}>
-                    {opt.type === 'class' ? `  └ ${opt.value}` : opt.type === 'group' ? `  👥 ${opt.value}` : opt.value}
+                    {opt.type === 'class' ? `  \u2514 ${opt.value}` : opt.type === 'group' ? `  ${opt.value}` : opt.value}
                   </option>
                 )
               ))
@@ -128,6 +176,64 @@ export function MessageForm({
               ))
             )}
           </select>
+        </div>
+
+        {/* Attachments */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Attachments</label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50"
+          >
+            {isUploading ? (
+              <>
+                <Upload className="h-4 w-4 animate-pulse" />
+                Uploading...
+              </>
+            ) : (
+              <>
+                <Paperclip className="h-4 w-4" />
+                Attach Files
+              </>
+            )}
+          </button>
+          <p className="text-xs text-gray-500 mt-1">Images, PDF, Word documents (max 16 MB each)</p>
+
+          {attachments.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {attachments.map((attachment, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                >
+                  {isImageType(attachment.fileType) ? (
+                    <Image className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                  ) : (
+                    <FileText className="h-4 w-4 text-red-500 flex-shrink-0" />
+                  )}
+                  <span className="flex-1 truncate text-gray-700">{attachment.fileName}</span>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{formatFileSize(attachment.fileSize)}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(index)}
+                    className="p-0.5 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Attach Form */}
@@ -156,15 +262,27 @@ export function MessageForm({
           )}
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Show Until (optional)</label>
-          <input
-            type="date"
-            value={formData.expiresAt}
-            onChange={(e) => onChange({ ...formData, expiresAt: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <p className="text-xs text-gray-500 mt-1">Message will be hidden from parents after this date</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Schedule For (optional)</label>
+            <input
+              type="datetime-local"
+              value={formData.scheduledAt}
+              onChange={(e) => onChange({ ...formData, scheduledAt: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+            <p className="text-xs text-gray-500 mt-1">Leave empty to publish immediately</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Show Until (optional)</label>
+            <input
+              type="date"
+              value={formData.expiresAt}
+              onChange={(e) => onChange({ ...formData, expiresAt: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+            <p className="text-xs text-gray-500 mt-1">Auto-hide after this date</p>
+          </div>
         </div>
         <div className="flex items-center flex-wrap gap-4">
           <div className="flex items-center space-x-2">
@@ -198,7 +316,7 @@ export function MessageForm({
         )}
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isUploading}
           className="w-full py-2 rounded-lg text-white font-medium disabled:opacity-50"
           style={{ backgroundColor: theme.colors.brandColor }}
         >

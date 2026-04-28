@@ -34,6 +34,7 @@ export interface EcaSettings {
   selectionMode: EcaSelectionMode
   schoolWeek: EcaSchoolWeek
   attendanceEnabled: boolean
+  showCost: boolean
   maxPriorityChoices: number
   maxChoicesPerDay: number
   createdAt: string
@@ -97,6 +98,8 @@ export interface EcaActivity {
     id: string
     name: string
   } | null
+  cost?: number | null
+  costDescription?: string | null
   isActive: boolean
   isCancelled: boolean
   cancelReason?: string | null

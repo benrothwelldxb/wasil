@@ -7,6 +7,7 @@ import { loadLanguage } from './i18n'
 import { initPushNotifications, setupPushListeners, isPushSupported } from './services/pushNotifications'
 import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
+import { BottomTabBar } from './components/layout/BottomTabBar'
 import { SideMenu } from './components/layout/SideMenu'
 import { LoginView } from './components/LoginView'
 import { RegisterPage } from './pages/RegisterPage'
@@ -14,10 +15,17 @@ import { ParentDashboard } from './pages/ParentDashboard'
 import { TermDatesPage } from './pages/TermDatesPage'
 import { EventsPage } from './pages/EventsPage'
 import { PrincipalUpdatesPage } from './pages/PrincipalUpdatesPage'
-import { PoliciesPage } from './pages/PoliciesPage'
-import { FilesPage } from './pages/FilesPage'
-import { LinksPage } from './pages/LinksPage'
+import { ResourcesPage } from './pages/ResourcesPage'
 import { EcaPage } from './pages/EcaPage'
+import { ConsultationsPage } from './pages/ConsultationsPage'
+import { SchoolServicesPage } from './pages/SchoolServicesPage'
+import { NotificationSettingsPage } from './pages/NotificationSettingsPage'
+import { SearchPage } from './pages/SearchPage'
+import { InclusionPage } from './pages/InclusionPage'
+import { CafeteriaPage } from './pages/CafeteriaPage'
+import { InboxPage } from './pages/InboxPage'
+import { NewConversationPage } from './pages/NewConversationPage'
+import { ConversationPage } from './pages/ConversationPage'
 
 const ADMIN_APP_URL = import.meta.env.VITE_ADMIN_URL || 'http://localhost:3001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
@@ -60,10 +68,13 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-cream flex flex-col">
       <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen(!menuOpen)} />
       <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
-      <main className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full">
+      <main
+        className="max-w-7xl mx-auto px-5 flex-1 w-full"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)', paddingBottom: '100px' }}
+      >
         {children}
       </main>
-      <Footer />
+      <BottomTabBar onMorePress={() => setMenuOpen(true)} />
     </div>
   )
 }
@@ -239,24 +250,53 @@ export default function App() {
         element={<ProtectedRoute><AppLayout><PrincipalUpdatesPage /></AppLayout></ProtectedRoute>}
       />
       <Route
-        path="/knowledge-base"
-        element={<ProtectedRoute><AppLayout><KnowledgeBasePage /></AppLayout></ProtectedRoute>}
+        path="/resources"
+        element={<ProtectedRoute><AppLayout><ResourcesPage /></AppLayout></ProtectedRoute>}
       />
-      <Route
-        path="/policies"
-        element={<ProtectedRoute><AppLayout><PoliciesPage /></AppLayout></ProtectedRoute>}
-      />
-      <Route
-        path="/files"
-        element={<ProtectedRoute><AppLayout><FilesPage /></AppLayout></ProtectedRoute>}
-      />
-      <Route
-        path="/links"
-        element={<ProtectedRoute><AppLayout><LinksPage /></AppLayout></ProtectedRoute>}
-      />
+      {/* Redirects from old individual pages */}
+      <Route path="/knowledge-base" element={<Navigate to="/resources" replace />} />
+      <Route path="/policies" element={<Navigate to="/resources" replace />} />
+      <Route path="/files" element={<Navigate to="/resources" replace />} />
+      <Route path="/links" element={<Navigate to="/resources" replace />} />
       <Route
         path="/activities"
         element={<ProtectedRoute><AppLayout><EcaPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/consultations"
+        element={<ProtectedRoute><AppLayout><ConsultationsPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/school-services"
+        element={<ProtectedRoute><AppLayout><SchoolServicesPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/lunch-menu"
+        element={<ProtectedRoute><AppLayout><CafeteriaPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/inclusion"
+        element={<ProtectedRoute><AppLayout><InclusionPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/search"
+        element={<ProtectedRoute><SearchPage /></ProtectedRoute>}
+      />
+      <Route
+        path="/notifications/settings"
+        element={<ProtectedRoute><AppLayout><NotificationSettingsPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/inbox"
+        element={<ProtectedRoute><AppLayout><InboxPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/inbox/new"
+        element={<ProtectedRoute><AppLayout><NewConversationPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/inbox/:id"
+        element={<ProtectedRoute><ConversationPage /></ProtectedRoute>}
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

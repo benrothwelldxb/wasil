@@ -2,18 +2,230 @@ import { Router, Request, Response } from 'express'
 import passport from 'passport'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
+import rateLimit from 'express-rate-limit'
+import { z } from 'zod'
+import QRCode from 'qrcode'
 import prisma from '../services/prisma.js'
 import { isAuthenticated } from '../middleware/auth.js'
+import { validate } from '../middleware/validate.js'
 import { generateAccessToken, generateRefreshToken, revokeRefreshToken, rotateRefreshToken } from '../services/jwt.js'
 import { sendMagicLinkEmail, sendInvitationEmail } from '../services/email.js'
+import { serializeUser } from '../services/serializers.js'
+import {
+  generateSecret as generateTotpSecret,
+  verifyToken as verifyTotpToken,
+  generateRecoveryCodes,
+  hashRecoveryCodes,
+  verifyRecoveryCode,
+  encryptSecret,
+  decryptSecret,
+} from '../services/totp.js'
+
+// --- Zod schemas for input validation ---
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/
+const PASSWORD_ERROR = 'Password must be at least 8 characters with uppercase, lowercase, and a number'
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+})
+
+const registerSchema = z.object({
+  invitationId: z.string().uuid().optional(),
+  accessCode: z.string().optional(),
+  email: z.string().email(),
+  password: z.string().min(8).regex(PASSWORD_REGEX, PASSWORD_ERROR),
+  name: z.string().optional(),
+})
+
+const setPasswordSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8).regex(PASSWORD_REGEX, PASSWORD_ERROR),
+  adminSecret: z.string().optional(),
+  name: z.string().optional(),
+  schoolName: z.string().optional(),
+  role: z.string().optional(),
+})
+
+const magicLinkRequestSchema = z.object({
+  email: z.string().email(),
+})
+
+const exchangeCodeSchema = z.object({
+  code: z.string().min(1),
+})
+
+const twoFactorVerifySchema = z.object({
+  sessionToken: z.string().min(1),
+  code: z.string().length(6),
+})
+
+const twoFactorRecoverSchema = z.object({
+  sessionToken: z.string().min(1),
+  code: z.string().min(1),
+})
+
+const twoFactorConfirmSchema = z.object({
+  code: z.string().length(6),
+})
+
+const twoFactorDisableSchema = z.object({
+  code: z.string().length(6),
+})
 
 const SALT_ROUNDS = 12
+const LOCKOUT_THRESHOLD = 10
+const LOCKOUT_DURATION_MS = 30 * 60 * 1000 // 30 minutes
 
 const router = Router()
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000'
 const PARENT_APP_URL = process.env.PARENT_APP_URL || 'http://localhost:3000'
+const ADMIN_APP_URL = process.env.ADMIN_APP_URL || process.env.ADMIN_URL || 'http://localhost:3001'
 const MAGIC_LINK_EXPIRY_MINUTES = 15
+
+// --- Temporary auth code store for OAuth redirects ---
+const authCodeStore = new Map<string, { accessToken: string; refreshToken: string; expiresAt: number }>()
+
+function generateAuthCode(accessToken: string, refreshToken: string): string {
+  const code = crypto.randomBytes(32).toString('hex')
+  authCodeStore.set(code, {
+    accessToken,
+    refreshToken,
+    expiresAt: Date.now() + 60 * 1000, // 60 seconds TTL
+  })
+  return code
+}
+
+function exchangeAuthCode(code: string): { accessToken: string; refreshToken: string } | null {
+  const entry = authCodeStore.get(code)
+  if (!entry) return null
+  authCodeStore.delete(code)
+  if (Date.now() > entry.expiresAt) return null
+  return { accessToken: entry.accessToken, refreshToken: entry.refreshToken }
+}
+
+// --- OAuth CSRF state store (with source tracking) ---
+const oauthStateStore = new Map<string, { expiresAt: number; source: 'admin' | 'parent' }>()
+
+function generateOAuthState(source: 'admin' | 'parent' = 'parent'): string {
+  const state = crypto.randomBytes(32).toString('hex')
+  oauthStateStore.set(state, {
+    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes TTL
+    source,
+  })
+  return state
+}
+
+function validateOAuthState(state: string | undefined): { valid: boolean; source: 'admin' | 'parent' } {
+  if (!state) return { valid: false, source: 'parent' }
+  const entry = oauthStateStore.get(state)
+  if (!entry) return { valid: false, source: 'parent' }
+  oauthStateStore.delete(state)
+  if (Date.now() > entry.expiresAt) return { valid: false, source: 'parent' }
+  return { valid: true, source: entry.source }
+}
+
+// --- 2FA Session Store (pending 2FA verification after password login) ---
+const twoFactorSessionStore = new Map<string, { userId: string; expiresAt: number; attempts: number }>()
+
+function createTwoFactorSession(userId: string): string {
+  const token = crypto.randomBytes(32).toString('hex')
+  twoFactorSessionStore.set(token, {
+    userId,
+    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes TTL
+    attempts: 0,
+  })
+  return token
+}
+
+function validateTwoFactorSession(token: string): { valid: boolean; userId: string } {
+  const entry = twoFactorSessionStore.get(token)
+  if (!entry) return { valid: false, userId: '' }
+  if (Date.now() > entry.expiresAt) {
+    twoFactorSessionStore.delete(token)
+    return { valid: false, userId: '' }
+  }
+  if (entry.attempts >= 5) {
+    twoFactorSessionStore.delete(token)
+    return { valid: false, userId: '' }
+  }
+  entry.attempts++
+  return { valid: true, userId: entry.userId }
+}
+
+// --- 2FA Setup Store (pending secret during setup) ---
+const twoFactorSetupStore = new Map<string, { secret: string; recoveryCodes: string[]; hashedCodes: string[]; expiresAt: number }>()
+
+// Clean up expired codes periodically
+setInterval(() => {
+  const now = Date.now()
+  for (const [code, entry] of authCodeStore) {
+    if (now > entry.expiresAt) authCodeStore.delete(code)
+  }
+  for (const [state, entry] of oauthStateStore) {
+    if (now > entry.expiresAt) oauthStateStore.delete(state)
+  }
+  for (const [token, entry] of twoFactorSessionStore) {
+    if (now > entry.expiresAt) twoFactorSessionStore.delete(token)
+  }
+  for (const [userId, entry] of twoFactorSetupStore) {
+    if (now > entry.expiresAt) twoFactorSetupStore.delete(userId)
+  }
+}, 60 * 1000)
+
+// Export the authCodeStore for cleanup from other modules
+export { authCodeStore }
+
+// --- Rate limiters ---
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: { error: 'Too many login attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const emailLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => req.body?.email?.toLowerCase() || 'unknown',
+  message: { error: 'Too many login attempts for this account' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const magicLinkLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  message: { error: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many registration attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const setPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const magicLinkVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many verification attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
 
 // Get current user
 router.get('/me', isAuthenticated, async (req, res) => {
@@ -55,40 +267,12 @@ router.get('/me', isAuthenticated, async (req, res) => {
       return res.status(404).json({ error: 'User not found' })
     }
 
+    // Determine if 2FA is required for this user's role
+    const twoFactorRequired = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
+
     res.json({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      schoolId: user.schoolId,
-      avatarUrl: user.avatarUrl,
-      preferredLanguage: user.preferredLanguage,
-      children: user.children.map(child => ({
-        id: child.id,
-        name: child.name,
-        classId: child.classId,
-        className: child.class.name,
-        teacherName: child.class.assignedStaff?.[0]?.user?.name || null,
-      })),
-      studentLinks: user.studentLinks.map(link => ({
-        studentId: link.student.id,
-        studentName: `${link.student.firstName} ${link.student.lastName}`,
-        className: link.student.class.name,
-        teacherName: link.student.class.assignedStaff?.[0]?.user?.name || null,
-      })),
-      school: {
-        id: user.school.id,
-        name: user.school.name,
-        shortName: user.school.shortName,
-        city: user.school.city,
-        academicYear: user.school.academicYear,
-        brandColor: user.school.brandColor,
-        accentColor: user.school.accentColor,
-        tagline: user.school.tagline,
-        logoUrl: user.school.logoUrl,
-        logoIconUrl: user.school.logoIconUrl,
-        paymentUrl: user.school.paymentUrl,
-      },
+      ...serializeUser(user),
+      twoFactorRequired,
     })
   } catch (error) {
     console.error('Error fetching user:', error)
@@ -97,53 +281,93 @@ router.get('/me', isAuthenticated, async (req, res) => {
 })
 
 // Google OAuth
-router.get('/google', passport.authenticate('google', {
-  scope: ['profile', 'email'],
-  session: false,
-}))
+router.get('/google', (req: Request, res: Response, next) => {
+  const source = req.query.source === 'admin' ? 'admin' : 'parent'
+  const state = generateOAuthState(source as 'admin' | 'parent')
+  passport.authenticate('google', {
+    scope: ['profile', 'email'],
+    session: false,
+    state,
+  })(req, res, next)
+})
 
 router.get('/google/callback', (req: Request, res: Response) => {
+  const state = req.query.state as string | undefined
+  const { valid, source } = validateOAuthState(state)
+  const redirectBase = source === 'admin' ? ADMIN_APP_URL : CLIENT_URL
+
+  if (!valid) {
+    return res.redirect(`${redirectBase}/login?error=invalid_state`)
+  }
+
   passport.authenticate('google', { session: false }, async (err: Error | null, user: Express.User | false) => {
     if (err || !user) {
-      return res.redirect(`${CLIENT_URL}/login?error=auth_failed`)
+      return res.redirect(`${redirectBase}/login?error=auth_failed`)
     }
 
     try {
       const accessToken = generateAccessToken(user)
       const refreshToken = await generateRefreshToken(user)
-      res.redirect(`${CLIENT_URL}/auth/callback?token=${encodeURIComponent(accessToken)}&refresh=${encodeURIComponent(refreshToken)}`)
+      const code = generateAuthCode(accessToken, refreshToken)
+      res.redirect(`${redirectBase}/auth/callback?code=${encodeURIComponent(code)}`)
     } catch {
-      res.redirect(`${CLIENT_URL}/login?error=auth_failed`)
+      res.redirect(`${redirectBase}/login?error=auth_failed`)
     }
   })(req, res)
 })
 
 // Microsoft OAuth
-router.get('/microsoft', passport.authenticate('azuread-openidconnect', {
-  scope: ['profile', 'email', 'openid'],
-  session: false,
-}))
+router.get('/microsoft', (req: Request, res: Response, next) => {
+  const source = req.query.source === 'admin' ? 'admin' : 'parent'
+  const state = generateOAuthState(source as 'admin' | 'parent')
+  passport.authenticate('azuread-openidconnect', {
+    scope: ['profile', 'email', 'openid'],
+    session: false,
+    state,
+  })(req, res, next)
+})
 
 router.get('/microsoft/callback', (req: Request, res: Response) => {
+  const state = req.query.state as string | undefined
+  const { valid, source } = validateOAuthState(state)
+  const redirectBase = source === 'admin' ? ADMIN_APP_URL : CLIENT_URL
+
+  if (!valid) {
+    return res.redirect(`${redirectBase}/login?error=invalid_state`)
+  }
+
   passport.authenticate('azuread-openidconnect', { session: false }, async (err: Error | null, user: Express.User | false) => {
     if (err || !user) {
-      return res.redirect(`${CLIENT_URL}/login?error=auth_failed`)
+      return res.redirect(`${redirectBase}/login?error=auth_failed`)
     }
 
     try {
       const accessToken = generateAccessToken(user)
       const refreshToken = await generateRefreshToken(user)
-      res.redirect(`${CLIENT_URL}/auth/callback?token=${encodeURIComponent(accessToken)}&refresh=${encodeURIComponent(refreshToken)}`)
+      const code = generateAuthCode(accessToken, refreshToken)
+      res.redirect(`${redirectBase}/auth/callback?code=${encodeURIComponent(code)}`)
     } catch {
-      res.redirect(`${CLIENT_URL}/login?error=auth_failed`)
+      res.redirect(`${redirectBase}/login?error=auth_failed`)
     }
   })(req, res)
 })
 
-// Demo login (for development only)
+// Exchange auth code for tokens (used by OAuth callback)
+router.post('/exchange-code', validate(exchangeCodeSchema), (req, res) => {
+  const { code } = req.body
+
+  const tokens = exchangeAuthCode(code)
+  if (!tokens) {
+    return res.status(401).json({ error: 'Invalid or expired code' })
+  }
+
+  res.json(tokens)
+})
+
+// Demo login (for development only — requires DEMO_LOGIN_ENABLED env var)
 router.post('/demo-login', async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(403).json({ error: 'Demo login not available in production' })
+  if (process.env.NODE_ENV === 'production' || !process.env.DEMO_LOGIN_ENABLED) {
+    return res.status(403).json({ error: 'Demo login not available' })
   }
 
   const { email } = req.body
@@ -166,38 +390,7 @@ router.post('/demo-login', async (req, res) => {
     const refreshToken = await generateRefreshToken(user)
 
     res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        schoolId: user.schoolId,
-        avatarUrl: user.avatarUrl,
-        preferredLanguage: user.preferredLanguage,
-        children: user.children.map(child => ({
-          id: child.id,
-          name: child.name,
-          classId: child.classId,
-          className: child.class.name,
-        })),
-        studentLinks: user.studentLinks.map(link => ({
-          studentId: link.student.id,
-          studentName: `${link.student.firstName} ${link.student.lastName}`,
-          className: link.student.class.name,
-        })),
-        school: {
-          id: user.school.id,
-          name: user.school.name,
-          shortName: user.school.shortName,
-          city: user.school.city,
-          academicYear: user.school.academicYear,
-          brandColor: user.school.brandColor,
-          accentColor: user.school.accentColor,
-          tagline: user.school.tagline,
-          logoUrl: user.school.logoUrl,
-          logoIconUrl: user.school.logoIconUrl,
-        },
-      },
+      user: serializeUser(user),
       accessToken,
       refreshToken,
     })
@@ -208,12 +401,8 @@ router.post('/demo-login', async (req, res) => {
 })
 
 // Email/password login (for admin/staff)
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, emailLoginLimiter, validate(loginSchema), async (req, res) => {
   const { email, password } = req.body
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' })
-  }
 
   try {
     const user = await prisma.user.findUnique({
@@ -229,6 +418,12 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
+    // Check account lockout
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const minutesLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000)
+      return res.status(423).json({ error: `Account locked. Try again in ${minutesLeft} minutes.` })
+    }
+
     // Check if user has password auth enabled
     if (!user.passwordHash) {
       return res.status(401).json({ error: 'Password login not enabled for this account' })
@@ -237,45 +432,40 @@ router.post('/login', async (req, res) => {
     // Verify password
     const isValid = await bcrypt.compare(password, user.passwordHash)
     if (!isValid) {
+      // Increment failed attempts
+      const newAttempts = user.failedLoginAttempts + 1
+      const updateData: { failedLoginAttempts: number; lockedUntil?: Date } = {
+        failedLoginAttempts: newAttempts,
+      }
+      if (newAttempts >= LOCKOUT_THRESHOLD) {
+        updateData.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS)
+      }
+      await prisma.user.update({ where: { id: user.id }, data: updateData })
       return res.status(401).json({ error: 'Invalid email or password' })
     }
+
+    // Reset failed login attempts on success
+    if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts: 0, lockedUntil: null },
+      })
+    }
+
+    // Check if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      const sessionToken = createTwoFactorSession(user.id)
+      return res.json({ twoFactorRequired: true, twoFactorSessionToken: sessionToken })
+    }
+
+    // Update last login
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
 
     const accessToken = generateAccessToken(user)
     const refreshToken = await generateRefreshToken(user)
 
     res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        schoolId: user.schoolId,
-        avatarUrl: user.avatarUrl,
-        preferredLanguage: user.preferredLanguage,
-        children: user.children.map(child => ({
-          id: child.id,
-          name: child.name,
-          classId: child.classId,
-          className: child.class.name,
-        })),
-        studentLinks: user.studentLinks.map(link => ({
-          studentId: link.student.id,
-          studentName: `${link.student.firstName} ${link.student.lastName}`,
-          className: link.student.class.name,
-        })),
-        school: {
-          id: user.school.id,
-          name: user.school.name,
-          shortName: user.school.shortName,
-          city: user.school.city,
-          academicYear: user.school.academicYear,
-          brandColor: user.school.brandColor,
-          accentColor: user.school.accentColor,
-          tagline: user.school.tagline,
-          logoUrl: user.school.logoUrl,
-          logoIconUrl: user.school.logoIconUrl,
-        },
-      },
+      user: serializeUser(user),
       accessToken,
       refreshToken,
     })
@@ -286,16 +476,8 @@ router.post('/login', async (req, res) => {
 })
 
 // Set password (for admin/staff accounts) - also bootstraps admin if needed
-router.post('/set-password', async (req, res) => {
+router.post('/set-password', setPasswordLimiter, validate(setPasswordSchema), async (req, res) => {
   const { email, password, adminSecret, name, schoolName, role } = req.body
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' })
-  }
-
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' })
-  }
 
   // Require admin secret for setting passwords (simple security measure)
   const expectedSecret = process.env.ADMIN_SETUP_SECRET
@@ -310,6 +492,12 @@ router.post('/set-password', async (req, res) => {
 
     // Bootstrap: create school and admin user if they don't exist
     if (!user) {
+      // Only allow bootstrap if no admin exists yet
+      const existingAdmin = await prisma.user.findFirst({ where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } } })
+      if (existingAdmin) {
+        return res.status(403).json({ error: 'Admin account already exists. Cannot bootstrap.' })
+      }
+
       // Check if any school exists
       let school = await prisma.school.findFirst()
 
@@ -328,9 +516,9 @@ router.post('/set-password', async (req, res) => {
         console.log('Bootstrap: Created school', school.id)
       }
 
-      // Create admin user
+      // Create admin user (SUPER_ADMIN cannot be created via this endpoint)
       const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
-      const userRole = role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN'
+      const userRole = (role === 'ADMIN' || role === 'STAFF') ? role : 'ADMIN'
       user = await prisma.user.create({
         data: {
           email: email.toLowerCase(),
@@ -353,13 +541,13 @@ router.post('/set-password', async (req, res) => {
     // Hash and store password
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
 
-    // Update user with password and optionally role
-    if (role === 'SUPER_ADMIN' || role === 'ADMIN' || role === 'STAFF') {
+    // Update user with password and optionally role (SUPER_ADMIN not allowed via this endpoint)
+    if (role === 'ADMIN' || role === 'STAFF') {
       await prisma.user.update({
         where: { id: user.id },
         data: {
           passwordHash,
-          role: role as 'SUPER_ADMIN' | 'ADMIN' | 'STAFF',
+          role: role as 'ADMIN' | 'STAFF',
         },
       })
       return res.json({ message: 'Password set successfully', roleUpdated: true })
@@ -378,19 +566,11 @@ router.post('/set-password', async (req, res) => {
 })
 
 // Register parent with password (from invitation)
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, validate(registerSchema), async (req, res) => {
   const { invitationId, accessCode, email, password, name } = req.body
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' })
-  }
 
   if (!invitationId && !accessCode) {
     return res.status(400).json({ error: 'Invitation ID or access code is required' })
-  }
-
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' })
   }
 
   try {
@@ -502,39 +682,7 @@ router.post('/register', async (req, res) => {
     const refreshToken = await generateRefreshToken(fullUser)
 
     res.json({
-      user: {
-        id: fullUser.id,
-        email: fullUser.email,
-        name: fullUser.name,
-        role: fullUser.role,
-        schoolId: fullUser.schoolId,
-        avatarUrl: fullUser.avatarUrl,
-        preferredLanguage: fullUser.preferredLanguage,
-        children: fullUser.children.map(child => ({
-          id: child.id,
-          name: child.name,
-          classId: child.classId,
-          className: child.class.name,
-        })),
-        studentLinks: fullUser.studentLinks.map(link => ({
-          studentId: link.student.id,
-          studentName: `${link.student.firstName} ${link.student.lastName}`,
-          className: link.student.class.name,
-        })),
-        school: {
-          id: fullUser.school.id,
-          name: fullUser.school.name,
-          shortName: fullUser.school.shortName,
-          city: fullUser.school.city,
-          academicYear: fullUser.school.academicYear,
-          brandColor: fullUser.school.brandColor,
-          accentColor: fullUser.school.accentColor,
-          tagline: fullUser.school.tagline,
-          logoUrl: fullUser.school.logoUrl,
-          logoIconUrl: fullUser.school.logoIconUrl,
-          paymentUrl: fullUser.school.paymentUrl,
-        },
-      },
+      user: serializeUser(fullUser),
       accessToken,
       refreshToken,
     })
@@ -545,12 +693,8 @@ router.post('/register', async (req, res) => {
 })
 
 // Request magic link for login (existing users only)
-router.post('/magic-link/request', async (req, res) => {
+router.post('/magic-link/request', magicLinkLimiter, validate(magicLinkRequestSchema), async (req, res) => {
   const { email } = req.body
-
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' })
-  }
 
   try {
     // Find existing user
@@ -610,7 +754,7 @@ router.post('/magic-link/request', async (req, res) => {
 })
 
 // Verify magic link token and return JWT tokens
-router.post('/magic-link/verify', async (req, res) => {
+router.post('/magic-link/verify', magicLinkVerifyLimiter, async (req, res) => {
   const { token } = req.body
 
   if (!token) {
@@ -656,42 +800,17 @@ router.post('/magic-link/verify', async (req, res) => {
         return res.status(401).json({ error: 'User not found' })
       }
 
+      // Check if 2FA is enabled — magic link login also requires 2FA
+      if (user.twoFactorEnabled) {
+        const sessionToken = createTwoFactorSession(user.id)
+        return res.json({ twoFactorRequired: true, twoFactorSessionToken: sessionToken })
+      }
+
       const accessToken = generateAccessToken(user)
       const refreshToken = await generateRefreshToken(user)
 
       return res.json({
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          schoolId: user.schoolId,
-          avatarUrl: user.avatarUrl,
-          preferredLanguage: user.preferredLanguage,
-          children: user.children.map(child => ({
-            id: child.id,
-            name: child.name,
-            classId: child.classId,
-            className: child.class.name,
-          })),
-          studentLinks: user.studentLinks.map(link => ({
-            studentId: link.student.id,
-            studentName: `${link.student.firstName} ${link.student.lastName}`,
-            className: link.student.class.name,
-          })),
-          school: {
-            id: user.school.id,
-            name: user.school.name,
-            shortName: user.school.shortName,
-            city: user.school.city,
-            academicYear: user.school.academicYear,
-            brandColor: user.school.brandColor,
-            accentColor: user.school.accentColor,
-            tagline: user.school.tagline,
-            logoUrl: user.school.logoUrl,
-            logoIconUrl: user.school.logoIconUrl,
-          },
-        },
+        user: serializeUser(user),
         accessToken,
         refreshToken,
       })
@@ -806,38 +925,7 @@ router.post('/magic-link/verify', async (req, res) => {
       const refreshToken = await generateRefreshToken(fullUser)
 
       return res.json({
-        user: {
-          id: fullUser.id,
-          email: fullUser.email,
-          name: fullUser.name,
-          role: fullUser.role,
-          schoolId: fullUser.schoolId,
-          avatarUrl: fullUser.avatarUrl,
-          preferredLanguage: fullUser.preferredLanguage,
-          children: fullUser.children.map(child => ({
-            id: child.id,
-            name: child.name,
-            classId: child.classId,
-            className: child.class.name,
-          })),
-          studentLinks: fullUser.studentLinks.map(link => ({
-            studentId: link.student.id,
-            studentName: `${link.student.firstName} ${link.student.lastName}`,
-            className: link.student.class.name,
-          })),
-          school: {
-            id: fullUser.school.id,
-            name: fullUser.school.name,
-            shortName: fullUser.school.shortName,
-            city: fullUser.school.city,
-            academicYear: fullUser.school.academicYear,
-            brandColor: fullUser.school.brandColor,
-            accentColor: fullUser.school.accentColor,
-            tagline: fullUser.school.tagline,
-            logoUrl: fullUser.school.logoUrl,
-            logoIconUrl: fullUser.school.logoIconUrl,
-          },
-        },
+        user: serializeUser(fullUser),
         accessToken,
         refreshToken,
         isNewUser: true,
@@ -935,6 +1023,241 @@ router.post('/magic-link/send-registration', async (req, res) => {
   }
 })
 
+// ==========================================
+// 2FA Endpoints
+// ==========================================
+
+// Setup 2FA — generate secret + QR code + recovery codes
+router.post('/2fa/setup', isAuthenticated, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } })
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    if (user.twoFactorEnabled) {
+      return res.status(400).json({ error: '2FA is already enabled' })
+    }
+
+    const { secret, otpauthUri } = generateTotpSecret(user.email)
+    const recoveryCodes = generateRecoveryCodes(8)
+    const hashedCodes = await hashRecoveryCodes(recoveryCodes)
+
+    // Store pending setup (10 min TTL)
+    twoFactorSetupStore.set(user.id, {
+      secret,
+      recoveryCodes,
+      hashedCodes,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    })
+
+    // Generate QR code data URL
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUri)
+
+    res.json({
+      qrCode: qrCodeDataUrl,
+      secret, // manual entry fallback
+      recoveryCodes, // show once, user must save
+    })
+  } catch (error) {
+    console.error('2FA setup error:', error)
+    res.status(500).json({ error: 'Failed to setup 2FA' })
+  }
+})
+
+// Confirm 2FA setup — user proves they have the authenticator configured
+router.post('/2fa/confirm-setup', isAuthenticated, validate(twoFactorConfirmSchema), async (req, res) => {
+  try {
+    const userId = req.user!.id
+    const { code } = req.body
+
+    const pending = twoFactorSetupStore.get(userId)
+    if (!pending || Date.now() > pending.expiresAt) {
+      twoFactorSetupStore.delete(userId)
+      return res.status(400).json({ error: 'Setup session expired. Please start again.' })
+    }
+
+    // Verify the TOTP code
+    if (!verifyTotpToken(pending.secret, code)) {
+      return res.status(400).json({ error: 'Invalid code. Please try again.' })
+    }
+
+    // Save to database
+    const encryptedSecret = encryptSecret(pending.secret)
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorSecret: encryptedSecret,
+        twoFactorEnabled: true,
+        twoFactorRecoveryCodes: JSON.stringify(pending.hashedCodes),
+        twoFactorSetupAt: new Date(),
+      },
+    })
+
+    twoFactorSetupStore.delete(userId)
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('2FA confirm setup error:', error)
+    res.status(500).json({ error: 'Failed to confirm 2FA setup' })
+  }
+})
+
+// Verify 2FA code after password login
+router.post('/2fa/verify', validate(twoFactorVerifySchema), async (req, res) => {
+  const { sessionToken, code } = req.body
+
+  const session = validateTwoFactorSession(sessionToken)
+  if (!session.valid) {
+    return res.status(401).json({ error: 'Invalid or expired session. Please login again.' })
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      include: {
+        children: { include: { class: true } },
+        studentLinks: { include: { student: { include: { class: true } } } },
+        school: true,
+      },
+    })
+
+    if (!user || !user.twoFactorSecret) {
+      return res.status(401).json({ error: 'Invalid session' })
+    }
+
+    const secret = decryptSecret(user.twoFactorSecret)
+    if (!verifyTotpToken(secret, code)) {
+      return res.status(401).json({ error: 'Invalid code' })
+    }
+
+    // Success — consume the session token
+    twoFactorSessionStore.delete(sessionToken)
+
+    // Update last login
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+
+    const accessToken = generateAccessToken(user)
+    const refreshToken = await generateRefreshToken(user)
+
+    res.json({
+      user: serializeUser(user),
+      accessToken,
+      refreshToken,
+    })
+  } catch (error) {
+    console.error('2FA verify error:', error)
+    res.status(500).json({ error: 'Verification failed' })
+  }
+})
+
+// Use recovery code to login
+router.post('/2fa/recover', validate(twoFactorRecoverSchema), async (req, res) => {
+  const { sessionToken, code } = req.body
+
+  const session = validateTwoFactorSession(sessionToken)
+  if (!session.valid) {
+    return res.status(401).json({ error: 'Invalid or expired session. Please login again.' })
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      include: {
+        children: { include: { class: true } },
+        studentLinks: { include: { student: { include: { class: true } } } },
+        school: true,
+      },
+    })
+
+    if (!user || !user.twoFactorRecoveryCodes) {
+      return res.status(401).json({ error: 'Invalid session' })
+    }
+
+    const hashedCodes: string[] = JSON.parse(user.twoFactorRecoveryCodes)
+    const result = await verifyRecoveryCode(code, hashedCodes)
+
+    if (!result.valid) {
+      return res.status(401).json({ error: 'Invalid recovery code' })
+    }
+
+    // Remove used code
+    hashedCodes.splice(result.index, 1)
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorRecoveryCodes: JSON.stringify(hashedCodes),
+        lastLoginAt: new Date(),
+      },
+    })
+
+    // Consume the session token
+    twoFactorSessionStore.delete(sessionToken)
+
+    const accessToken = generateAccessToken(user)
+    const refreshToken = await generateRefreshToken(user)
+
+    res.json({
+      user: serializeUser(user),
+      accessToken,
+      refreshToken,
+      recoveryCodesRemaining: hashedCodes.length,
+    })
+  } catch (error) {
+    console.error('2FA recover error:', error)
+    res.status(500).json({ error: 'Recovery failed' })
+  }
+})
+
+// Disable 2FA (requires current TOTP code)
+router.post('/2fa/disable', isAuthenticated, validate(twoFactorDisableSchema), async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } })
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+      return res.status(400).json({ error: '2FA is not enabled' })
+    }
+
+    const secret = decryptSecret(user.twoFactorSecret)
+    if (!verifyTotpToken(secret, req.body.code)) {
+      return res.status(401).json({ error: 'Invalid code' })
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorSecret: null,
+        twoFactorEnabled: false,
+        twoFactorRecoveryCodes: null,
+        twoFactorSetupAt: null,
+      },
+    })
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('2FA disable error:', error)
+    res.status(500).json({ error: 'Failed to disable 2FA' })
+  }
+})
+
+// Get 2FA status
+router.get('/2fa/status', isAuthenticated, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { twoFactorEnabled: true, twoFactorSetupAt: true },
+    })
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    res.json({
+      enabled: user.twoFactorEnabled,
+      setupAt: user.twoFactorSetupAt?.toISOString() || null,
+    })
+  } catch (error) {
+    console.error('2FA status error:', error)
+    res.status(500).json({ error: 'Failed to get 2FA status' })
+  }
+})
+
 // Logout
 router.post('/logout', async (req, res) => {
   const { refreshToken } = req.body
@@ -957,6 +1280,38 @@ router.post('/token/refresh', async (req, res) => {
   }
 
   res.json(result)
+})
+
+// ==========================================
+// Google Calendar OAuth callback
+// ==========================================
+router.get('/google-calendar/callback', async (req: Request, res: Response) => {
+  try {
+    const { code, state: schoolId } = req.query
+
+    if (!code || !schoolId || typeof code !== 'string' || typeof schoolId !== 'string') {
+      return res.status(400).send('Missing code or school ID')
+    }
+
+    const { exchangeGoogleCode } = await import('../services/googleMeet.js')
+    const { refreshToken, email } = await exchangeGoogleCode(code)
+
+    await prisma.school.update({
+      where: { id: schoolId },
+      data: {
+        googleCalendarRefreshToken: refreshToken,
+        googleCalendarEmail: email,
+      },
+    })
+
+    // Redirect back to admin with success
+    const adminUrl = process.env.ADMIN_URL || 'http://localhost:3001'
+    res.redirect(`${adminUrl}/consultations?google_calendar=connected`)
+  } catch (error) {
+    console.error('Google Calendar OAuth callback error:', error)
+    const adminUrl = process.env.ADMIN_URL || 'http://localhost:3001'
+    res.redirect(`${adminUrl}/consultations?google_calendar=error`)
+  }
 })
 
 export default router

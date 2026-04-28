@@ -76,6 +76,42 @@ export async function sendNotification({ req, type, title, body, resourceType, r
 
     if (parentUserIds.length === 0) return
 
+    // Map notification type to preference key
+    const PREF_MAP: Record<string, string> = {
+      MESSAGE: 'posts',
+      WEEKLY_MESSAGE: 'weeklyUpdates',
+      DIRECT_MESSAGE: 'directMessages',
+      EMERGENCY_ALERT: 'emergencyAlerts',
+      FORM: 'forms',
+      EVENT: 'events',
+      PULSE_SURVEY: 'pulseSurveys',
+      ECA_REGISTRATION_OPEN: 'ecaUpdates',
+      ECA_REGISTRATION_CLOSING: 'ecaUpdates',
+      ECA_ALLOCATION_RESULTS: 'ecaUpdates',
+      ECA_INVITATION: 'ecaUpdates',
+      CONSULTATION: 'consultations',
+      SCHOOL_SERVICE: 'schoolServices',
+    }
+
+    const prefKey = PREF_MAP[type]
+
+    // Filter out users who have disabled this notification type
+    if (prefKey) {
+      const prefs = await prisma.notificationPreference.findMany({
+        where: {
+          userId: { in: parentUserIds },
+          [prefKey]: false,
+        },
+        select: { userId: true },
+      })
+      const disabledUserIds = new Set(prefs.map(p => p.userId))
+      if (disabledUserIds.size > 0) {
+        parentUserIds = parentUserIds.filter(id => !disabledUserIds.has(id))
+      }
+    }
+
+    if (parentUserIds.length === 0) return
+
     // Bulk-create Notification rows
     await prisma.notification.createMany({
       data: parentUserIds.map(userId => ({

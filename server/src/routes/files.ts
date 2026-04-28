@@ -10,6 +10,20 @@ const fileUpload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
 })
 
+const ALLOWED_MIME_TYPES = [
+  'application/pdf', 'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/csv', 'text/plain',
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+  'video/mp4', 'video/quicktime',
+  'audio/mpeg', 'audio/wav',
+  'application/zip', 'application/x-rar-compressed',
+]
+
 const router = Router()
 
 // Get all folders and root-level files
@@ -222,6 +236,11 @@ router.post('/file', isAdmin, fileUpload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'File is required' })
     }
 
+    // Validate file type against allowlist
+    if (!ALLOWED_MIME_TYPES.includes(uploaded.mimetype)) {
+      return res.status(400).json({ error: 'File type not allowed' })
+    }
+
     const key = generateKey('files', uploaded.originalname)
     const fileUrl = await uploadFile(uploaded.buffer, key, uploaded.mimetype)
 
@@ -257,16 +276,19 @@ router.post('/file', isAdmin, fileUpload.single('file'), async (req, res) => {
 // Delete file (admin only)
 router.delete('/file/:id', isAdmin, async (req, res) => {
   try {
+    const user = req.user!
     const { id } = req.params
 
-    const file = await prisma.schoolFile.findUnique({ where: { id } })
-    if (file) {
-      try {
-        const key = new URL(file.fileUrl).pathname.replace(/^\//, '')
-        await deleteR2File(key)
-      } catch {
-        // Ignore R2 deletion errors (legacy local files)
-      }
+    const file = await prisma.schoolFile.findFirst({ where: { id, schoolId: user.schoolId } })
+    if (!file) {
+      return res.status(404).json({ error: 'File not found' })
+    }
+
+    try {
+      const key = new URL(file.fileUrl).pathname.replace(/^\//, '')
+      await deleteR2File(key)
+    } catch {
+      // Ignore R2 deletion errors (legacy local files)
     }
 
     await prisma.schoolFile.delete({

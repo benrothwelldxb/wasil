@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react'
 import { useTheme, api } from '@wasil/shared'
 import type { AuditLog, AuditAction, AuditResourceType, AuditLogListResponse } from '@wasil/shared'
 
@@ -7,9 +7,10 @@ const ACTION_OPTIONS: AuditAction[] = ['CREATE', 'UPDATE', 'DELETE']
 
 const RESOURCE_TYPE_OPTIONS: AuditResourceType[] = [
   'MESSAGE', 'SURVEY', 'EVENT', 'WEEKLY_MESSAGE', 'TERM_DATE',
-  'PULSE_SURVEY', 'YEAR_GROUP', 'CLASS', 'STAFF', 'POLICY',
+  'PULSE_SURVEY', 'YEAR_GROUP', 'CLASS', 'STAFF', 'STUDENT', 'POLICY',
   'FILE', 'FOLDER', 'SCHEDULE_ITEM', 'KNOWLEDGE_CATEGORY',
-  'KNOWLEDGE_ARTICLE', 'SCHOOL',
+  'KNOWLEDGE_ARTICLE', 'SCHOOL', 'FORM', 'PARENT_INVITATION',
+  'GROUP', 'GROUP_CATEGORY', 'ECA_TERM', 'ECA_ACTIVITY', 'ECA_ALLOCATION',
 ]
 
 const ACTION_COLORS: Record<AuditAction, { bg: string; text: string }> = {
@@ -35,12 +36,52 @@ function formatMetadata(metadata: Record<string, unknown> | null): string {
   return parts.join(', ') || '—'
 }
 
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return '(empty)'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'string' && value.length === 0) return '(empty)'
+  return String(value)
+}
+
+function formatFieldName(field: string): string {
+  return field
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, s => s.toUpperCase())
+    .replace(/_/g, ' ')
+    .trim()
+}
+
+function ChangeDiff({ changes }: { changes: Record<string, { from: unknown; to: unknown }> }) {
+  const entries = Object.entries(changes)
+  if (entries.length === 0) return null
+
+  return (
+    <div className="space-y-1.5">
+      {entries.map(([field, { from, to }]) => (
+        <div key={field} className="flex items-start gap-2 text-xs">
+          <span className="font-medium text-slate-600 min-w-[100px] shrink-0">
+            {formatFieldName(field)}
+          </span>
+          <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded line-through max-w-[200px] truncate">
+            {formatValue(from)}
+          </span>
+          <ArrowRight className="w-3 h-3 text-slate-400 mt-0.5 shrink-0" />
+          <span className="text-green-700 bg-green-50 px-1.5 py-0.5 rounded max-w-[200px] truncate">
+            {formatValue(to)}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function AuditLogPage() {
   const theme = useTheme()
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 })
   const [isLoading, setIsLoading] = useState(true)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
 
   const [filterAction, setFilterAction] = useState('')
   const [filterResourceType, setFilterResourceType] = useState('')
@@ -84,7 +125,7 @@ export function AuditLogPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Audit Log</h1>
-        <p className="text-sm text-slate-500 mt-1">Track all admin actions across your school</p>
+        <p className="text-sm text-slate-500 mt-1">Track all admin actions across your school. Logs are retained for 1 year.</p>
       </div>
 
       {/* Filter Bar */}
@@ -167,6 +208,7 @@ export function AuditLogPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-4 py-3 font-medium text-slate-500 w-8"></th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500">Timestamp</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500">User</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500">Action</th>
@@ -178,31 +220,56 @@ export function AuditLogPage() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400">Loading...</td>
+                  <td colSpan={7} className="px-4 py-12 text-center text-slate-400">Loading...</td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400">No audit logs found</td>
+                  <td colSpan={7} className="px-4 py-12 text-center text-slate-400">No audit logs found</td>
                 </tr>
               ) : (
-                logs.map(log => (
-                  <tr key={log.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                      {new Date(log.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-slate-900 font-medium">{log.userName}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[log.action].bg} ${ACTION_COLORS[log.action].text}`}>
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{formatResourceType(log.resourceType)}</td>
-                    <td className="px-4 py-3 text-slate-500 max-w-xs truncate">
-                      {formatMetadata(log.metadata)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-400 text-xs font-mono">{log.ipAddress || '—'}</td>
-                  </tr>
-                ))
+                logs.map(log => {
+                  const hasChanges = log.changes && Object.keys(log.changes).length > 0
+                  const isExpanded = expandedRow === log.id
+                  return (
+                    <React.Fragment key={log.id}>
+                      <tr
+                        className={`border-b border-slate-50 hover:bg-slate-50/50 ${hasChanges ? 'cursor-pointer' : ''}`}
+                        onClick={() => hasChanges && setExpandedRow(isExpanded ? null : log.id)}
+                      >
+                        <td className="px-4 py-3 text-slate-400">
+                          {hasChanges && (
+                            isExpanded
+                              ? <ChevronUp className="w-3.5 h-3.5" />
+                              : <ChevronDown className="w-3.5 h-3.5" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                          {new Date(log.createdAt).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-slate-900 font-medium">{log.userName}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[log.action].bg} ${ACTION_COLORS[log.action].text}`}>
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{formatResourceType(log.resourceType)}</td>
+                        <td className="px-4 py-3 text-slate-500 max-w-xs truncate">
+                          {formatMetadata(log.metadata)}
+                        </td>
+                        <td className="px-4 py-3 text-slate-400 text-xs font-mono">{log.ipAddress || '—'}</td>
+                      </tr>
+                      {isExpanded && hasChanges && (
+                        <tr className="bg-slate-50/80">
+                          <td></td>
+                          <td colSpan={6} className="px-4 py-3">
+                            <div className="text-xs font-medium text-slate-500 mb-2">Changes</div>
+                            <ChangeDiff changes={log.changes!} />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  )
+                })
               )}
             </tbody>
           </table>

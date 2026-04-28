@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
-import { isAuthenticated, isAdmin } from '../middleware/auth.js'
+import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
 import { translateTexts } from '../services/translation.js'
 
 const router = Router()
@@ -8,7 +8,7 @@ const router = Router()
 // Get schedule items
 router.get('/', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
     // Get class IDs from both children (legacy) and studentLinks (new)
     const childClassIds = user.children?.map(c => c.classId) || []
     const studentClassIds = (user.studentLinks?.map(l => l.student?.classId).filter((id): id is string => !!id)) || []

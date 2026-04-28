@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Wasil - Option 5: Clean & Minimal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --white: #FFFFFF;
+    --off-white: #FAFAFA;
+    --gray-50: #F5F5F5;
+    --gray-100: #EEEEEE;
+    --gray-200: #E0E0E0;
+    --gray-400: #BDBDBD;
+    --gray-600: #757575;
+    --gray-800: #424242;
+    --gray-900: #1A1A1A;
+    --accent: #7f0029;
+    --accent-soft: #7f00290a;
+    --accent-medium: #7f002918;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Instrument Sans', -apple-system, sans-serif;
+    background: var(--white);
+    color: var(--gray-900);
+    max-width: 390px;
+    margin: 0 auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
+  }
+
+  .serif { font-family: 'Fraunces', Georgia, serif; }
+
+  .content {
+    padding: 60px 24px 110px;
+  }
+
+  /* Greeting */
+  .greeting {
+    margin-bottom: 40px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--gray-100);
+  }
+  .greeting .date {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--gray-400);
+    margin-bottom: 8px;
+  }
+  .greeting h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 36px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    color: var(--gray-900);
+  }
+  .greeting h1 .first-name {
+    color: var(--accent);
+  }
+
+  /* Alert Strip */
+  .alert-strip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--gray-100);
+    margin-bottom: 32px;
+    cursor: pointer;
+  }
+  .alert-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .alert-text {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--gray-800);
+  }
+  .alert-text span {
+    color: var(--gray-600);
+    font-weight: 400;
+  }
+  .alert-arrow {
+    color: var(--gray-400);
+    font-size: 16px;
+  }
+
+  /* Section */
+  .section {
+    margin-bottom: 36px;
+  }
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--gray-400);
+    margin-bottom: 16px;
+  }
+
+  /* Activity Row */
+  .activity-list {
+    border-top: 1px solid var(--gray-100);
+  }
+  .activity-row {
+    display: flex;
+    align-items: flex-start;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--gray-100);
+    gap: 16px;
+  }
+  .activity-time {
+    width: 52px;
+    flex-shrink: 0;
+    text-align: right;
+    padding-top: 2px;
+  }
+  .activity-time .time-start {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--gray-900);
+    font-variant-numeric: tabular-nums;
+  }
+  .activity-time .time-end {
+    font-size: 12px;
+    color: var(--gray-400);
+    font-variant-numeric: tabular-nums;
+  }
+  .activity-divider {
+    width: 2px;
+    min-height: 44px;
+    border-radius: 1px;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .activity-content h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .activity-content .detail {
+    font-size: 13px;
+    color: var(--gray-600);
+    line-height: 1.5;
+  }
+  .activity-content .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-top: 6px;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  /* Registration CTA */
+  .registration-cta {
+    background: var(--gray-900);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 36px;
+    color: var(--white);
+    cursor: pointer;
+    transition: transform 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .registration-cta:active { transform: scale(0.98); }
+  .registration-cta::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 120px;
+    height: 100%;
+    background: linear-gradient(135deg, transparent, rgba(127, 0, 41, 0.3));
+  }
+  .registration-cta h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    position: relative;
+    z-index: 1;
+    letter-spacing: -0.02em;
+  }
+  .registration-cta p {
+    font-size: 14px;
+    opacity: 0.6;
+    margin-bottom: 14px;
+    position: relative;
+    z-index: 1;
+  }
+  .registration-cta .cta-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Message Row */
+  .message-list {
+    border-top: 1px solid var(--gray-100);
+  }
+  .message-row {
+    padding: 18px 0;
+    border-bottom: 1px solid var(--gray-100);
+    cursor: pointer;
+  }
+  .message-row:active { background: var(--gray-50); margin: 0 -24px; padding: 18px 24px; }
+  .msg-top-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .msg-from {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .msg-unread {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .msg-date {
+    font-size: 12px;
+    color: var(--gray-400);
+    font-variant-numeric: tabular-nums;
+  }
+  .msg-subject {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    line-height: 1.3;
+  }
+  .msg-preview {
+    font-size: 14px;
+    color: var(--gray-600);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .msg-consent-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 10px 20px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Instrument Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+  .msg-consent-btn:active { transform: scale(0.96); }
+
+  /* Principal Section */
+  .principal-section {
+    background: var(--off-white);
+    margin: 0 -24px;
+    padding: 28px 24px;
+    border-top: 1px solid var(--gray-100);
+    margin-bottom: 0;
+  }
+  .principal-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .principal-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    background: var(--gray-900);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .principal-info h3 {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .principal-info p {
+    font-size: 12px;
+    color: var(--gray-600);
+  }
+  .principal-quote {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--gray-800);
+    font-style: italic;
+    padding-left: 16px;
+    border-left: 2px solid var(--accent);
+    margin-bottom: 16px;
+  }
+  .principal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .heart-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'Instrument Sans', sans-serif;
+    font-size: 14px;
+    color: var(--gray-600);
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  .heart-btn .h-icon {
+    font-size: 20px;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .heart-btn.active { color: var(--accent); background: var(--accent-medium); }
+  .heart-btn.active .h-icon { transform: scale(1.15); }
+  .read-more {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+    letter-spacing: -0.01em;
+  }
+
+  /* Tab Bar */
+  .tab-bar {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    height: 80px;
+    background: var(--white);
+    border-top: 1px solid var(--gray-100);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-around;
+    padding-top: 8px;
+    z-index: 100;
+  }
+  .tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 12px;
+  }
+  .tab-item svg { width: 22px; height: 22px; }
+  .tab-item .tab-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .tab-item.active svg { color: var(--accent); }
+  .tab-item.active .tab-label { color: var(--accent); }
+  .tab-item:not(.active) svg { color: var(--gray-400); }
+  .tab-item:not(.active) .tab-label { color: var(--gray-400); }
+
+  /* Animations */
+  @keyframes cleanFade {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .fade { animation: cleanFade 0.5s ease both; }
+  .f1 { animation-delay: 0.03s; }
+  .f2 { animation-delay: 0.06s; }
+  .f3 { animation-delay: 0.09s; }
+  .f4 { animation-delay: 0.12s; }
+  .f5 { animation-delay: 0.15s; }
+  .f6 { animation-delay: 0.18s; }
+  .f7 { animation-delay: 0.21s; }
+  .f8 { animation-delay: 0.24s; }
+
+  @media (min-width: 420px) {
+    body {
+      border-left: 1px solid var(--gray-100);
+      border-right: 1px solid var(--gray-100);
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="content">
+
+  <!-- Greeting -->
+  <div class="greeting fade f1">
+    <p class="date">Monday, 21 April 2026</p>
+    <h1>Hello, <span class="first-name">Ben</span></h1>
+  </div>
+
+  <!-- Alert -->
+  <div class="alert-strip fade f2">
+    <div class="alert-dot"></div>
+    <div class="alert-text">1 form requires action <span>&middot; due in 3 days</span></div>
+    <span class="alert-arrow">&rsaquo;</span>
+  </div>
+
+  <!-- Today's Schedule -->
+  <div class="section fade f3">
+    <div class="section-label">Today's Schedule</div>
+    <div class="activity-list">
+      <div class="activity-row">
+        <div class="activity-time">
+          <div class="time-start">3:15</div>
+          <div class="time-end">4:00</div>
+        </div>
+        <div class="activity-divider" style="background: #1565C0;"></div>
+        <div class="activity-content">
+          <h4>Swimming</h4>
+          <div class="detail">Lara &middot; Sports Hall</div>
+          <span class="tag">After School</span>
+        </div>
+      </div>
+      <div class="activity-row">
+        <div class="activity-time">
+          <div class="time-start">3:15</div>
+          <div class="time-end">4:15</div>
+        </div>
+        <div class="activity-divider" style="background: #2E7D32;"></div>
+        <div class="activity-content">
+          <h4>Football</h4>
+          <div class="detail">Oscar &middot; Main Pitch</div>
+          <span class="tag">After School</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Registration CTA -->
+  <div class="registration-cta fade f4">
+    <h3>Activity Registration</h3>
+    <p>Sign up for clubs and activities</p>
+    <div class="cta-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      3 days remaining
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="section fade f5">
+    <div class="section-label">Messages</div>
+    <div class="message-list">
+      <div class="message-row">
+        <div class="msg-top-row">
+          <span class="msg-from">
+            <span class="msg-unread"></span>
+            Year 3 Team
+          </span>
+          <span class="msg-date">Today</span>
+        </div>
+        <div class="msg-subject">Field Trip to Science Museum</div>
+        <div class="msg-preview">Dear parents, we are excited to announce a field trip to the Science Museum on Thursday 1st May. Please provide consent by 24th April.</div>
+        <button class="msg-consent-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Give Consent
+        </button>
+      </div>
+      <div class="message-row fade f6">
+        <div class="msg-top-row">
+          <span class="msg-from">Whole School</span>
+          <span class="msg-date">Yesterday</span>
+        </div>
+        <div class="msg-subject">Annual Sports Day</div>
+        <div class="msg-preview">Sports Day will be held on Friday 16th May. Students should come in house colours. Parents welcome from 9:00 AM.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Principal -->
+  <div class="principal-section fade f7">
+    <div class="section-label" style="color: var(--gray-400);">From the Principal</div>
+    <div class="principal-header">
+      <div class="principal-avatar">MH</div>
+      <div class="principal-info">
+        <h3>Mrs. Harrison</h3>
+        <p>Week of 21 April</p>
+      </div>
+    </div>
+    <div class="principal-quote">
+      What a wonderful start to the summer term! It's been lovely seeing the children back and settled after the holiday...
+    </div>
+    <div class="principal-actions">
+      <button class="heart-btn" id="heartBtn" onclick="toggleHeart()">
+        <span class="h-icon">&#9825;</span>
+        <span id="heartCount">24</span>
+      </button>
+      <a href="#" class="read-more">Read full update &rsaquo;</a>
+    </div>
+  </div>
+</div>
+
+<!-- Tab Bar -->
+<div class="tab-bar">
+  <button class="tab-item active">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l-10 9h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
+    <span class="tab-label">HOME</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span class="tab-label">EVENTS</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    <span class="tab-label">ACTIVITIES</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span class="tab-label">FILES</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    <span class="tab-label">MORE</span>
+  </button>
+</div>
+
+<script>
+  let hearted = false;
+  let count = 24;
+  function toggleHeart() {
+    const btn = document.getElementById('heartBtn');
+    const countEl = document.getElementById('heartCount');
+    hearted = !hearted;
+    count += hearted ? 1 : -1;
+    btn.classList.toggle('active', hearted);
+    btn.querySelector('.h-icon').innerHTML = hearted ? '&#9829;' : '&#9825;';
+    countEl.textContent = count;
+    const icon = btn.querySelector('.h-icon');
+    icon.style.transform = 'scale(1.4)';
+    setTimeout(() => { icon.style.transform = hearted ? 'scale(1.15)' : 'scale(1)'; }, 180);
+  }
+</script>
+</body>
+</html>

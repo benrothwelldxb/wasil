@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, X, Pencil, Trash2, Play, Square, ClipboardList, Activity, ChevronDown, ChevronUp, MessageSquare, Download } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
-import type { PulseSurvey, PulseSurveyStatus, PulseAnalytics, PulseOptionalQuestion } from '@wasil/shared'
+import type { PulseSurvey, PulseSurveyStatus, PulseAnalytics, PulseOptionalQuestion, PulseCustomQuestion, PulseComparison } from '@wasil/shared'
 
 interface PulseForm {
   halfTermName: string
   opensAt: string
   closesAt: string
   additionalQuestionKey: string
+  customQuestions: PulseCustomQuestion[]
 }
 
 const emptyForm: PulseForm = {
@@ -15,6 +16,7 @@ const emptyForm: PulseForm = {
   opensAt: '',
   closesAt: '',
   additionalQuestionKey: '',
+  customQuestions: [],
 }
 
 const statusBadge: Record<PulseSurveyStatus, { bg: string; text: string; label: string }> = {
@@ -279,20 +281,17 @@ export function PulsePage() {
     e.preventDefault()
     setIsSubmitting(true)
     try {
+      const payload = {
+        halfTermName: form.halfTermName,
+        opensAt: form.opensAt,
+        closesAt: form.closesAt,
+        additionalQuestionKey: form.additionalQuestionKey || null,
+        customQuestions: form.customQuestions.filter(q => q.text.trim()),
+      }
       if (editingSurvey) {
-        await api.pulse.update(editingSurvey.id, {
-          halfTermName: form.halfTermName,
-          opensAt: form.opensAt,
-          closesAt: form.closesAt,
-          additionalQuestionKey: form.additionalQuestionKey || null,
-        })
+        await api.pulse.update(editingSurvey.id, payload)
       } else {
-        await api.pulse.create({
-          halfTermName: form.halfTermName,
-          opensAt: form.opensAt,
-          closesAt: form.closesAt,
-          additionalQuestionKey: form.additionalQuestionKey || null,
-        })
+        await api.pulse.create(payload)
       }
       setShowForm(false)
       setEditingSurvey(null)
@@ -312,6 +311,7 @@ export function PulsePage() {
       opensAt: survey.opensAt.split('T')[0],
       closesAt: survey.closesAt.split('T')[0],
       additionalQuestionKey: survey.additionalQuestionKey || '',
+      customQuestions: (survey as any).customQuestions || [],
     })
     setShowForm(true)
   }
@@ -353,7 +353,7 @@ export function PulsePage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-2">
         <h2 className="text-xl font-semibold text-slate-900">Parent Pulse</h2>
         <button
           onClick={() => { setShowForm(true); setEditingSurvey(null); setForm(emptyForm) }}
@@ -364,6 +364,9 @@ export function PulsePage() {
           New Pulse Survey
         </button>
       </div>
+      <p className="text-sm text-slate-500 mb-6">
+        Send short, anonymous surveys each half-term to gauge parent satisfaction, identify concerns early, and track sentiment over time. Results are aggregated — individual responses are never shared.
+      </p>
 
       {/* Form */}
       {showForm && (
@@ -411,17 +414,17 @@ export function PulsePage() {
               </div>
             </div>
 
-            {/* Optional Question Selector */}
+            {/* Optional Question from presets */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Optional Additional Question
+                Preset Additional Question
               </label>
               <select
                 value={form.additionalQuestionKey}
                 onChange={(e) => setForm((f) => ({ ...f, additionalQuestionKey: e.target.value }))}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               >
-                <option value="">None - Use 7 core questions only</option>
+                <option value="">None</option>
                 {(optionalQuestions || []).map((q) => (
                   <option key={q.key} value={q.key}>
                     {q.text}
@@ -429,7 +432,69 @@ export function PulsePage() {
                 ))}
               </select>
               <p className="mt-1 text-xs text-slate-400">
-                Add one optional question to the standard 7 core questions
+                Pick from common school survey questions
+              </p>
+            </div>
+
+            {/* Custom Questions */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Custom Questions
+              </label>
+              <div className="space-y-2">
+                {form.customQuestions.map((cq, idx) => (
+                  <div key={cq.id} className="flex items-start gap-2">
+                    <input
+                      type="text"
+                      value={cq.text}
+                      onChange={(e) => {
+                        const updated = [...form.customQuestions]
+                        updated[idx] = { ...updated[idx], text: e.target.value }
+                        setForm(f => ({ ...f, customQuestions: updated }))
+                      }}
+                      placeholder="Enter your question..."
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <select
+                      value={cq.type}
+                      onChange={(e) => {
+                        const updated = [...form.customQuestions]
+                        updated[idx] = { ...updated[idx], type: e.target.value as 'LIKERT_5' | 'TEXT_OPTIONAL' }
+                        setForm(f => ({ ...f, customQuestions: updated }))
+                      }}
+                      className="px-2 py-2 border border-slate-300 rounded-lg text-sm"
+                    >
+                      <option value="LIKERT_5">Rating (1-5)</option>
+                      <option value="TEXT_OPTIONAL">Free Text</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm(f => ({ ...f, customQuestions: f.customQuestions.filter((_, i) => i !== idx) }))
+                      }}
+                      className="p-2 text-slate-400 hover:text-red-500"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm(f => ({
+                      ...f,
+                      customQuestions: [...f.customQuestions, { id: `cq_${Date.now()}`, text: '', type: 'LIKERT_5' }],
+                    }))
+                  }}
+                  className="flex items-center gap-1 text-sm hover:underline"
+                  style={{ color: theme.colors.brandColor }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add custom question
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                Add your own questions alongside the 7 core questions
               </p>
             </div>
 
@@ -472,6 +537,9 @@ export function PulsePage() {
         )}
       </div>
 
+      {/* Term Comparison */}
+      <PulseComparisonSection />
+
       {/* Delete Confirmation */}
       {deleteTarget && (
         <ConfirmModal
@@ -483,6 +551,88 @@ export function PulsePage() {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
+    </div>
+  )
+}
+
+// Core question labels for comparison table
+const CORE_LABELS: Record<string, string> = {
+  core_quality: 'Education Quality',
+  core_belonging: 'Belonging & Safety',
+  core_communication: 'Communication',
+  core_responsiveness: 'Responsiveness',
+  core_expectations: 'Expectations',
+  core_overall_satisfaction: 'Overall Satisfaction',
+}
+
+function PulseComparisonSection() {
+  const { data, isLoading } = useApi<{ comparison: PulseComparison[] }>(
+    () => api.pulse.comparison(),
+    []
+  )
+
+  if (isLoading || !data || data.comparison.length < 2) return null
+
+  const surveys = data.comparison
+  const coreKeys = Object.keys(CORE_LABELS)
+
+  return (
+    <div className="mt-8">
+      <h3 className="text-lg font-semibold text-slate-900 mb-4">Term-over-Term Comparison</h3>
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">Question</th>
+                {surveys.map(s => (
+                  <th key={s.id} className="text-center px-4 py-3 font-semibold text-slate-700 whitespace-nowrap">
+                    {s.halfTermName}
+                    <div className="text-xs font-normal text-slate-400">{s.responseCount} responses</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {coreKeys.map(key => (
+                <tr key={key} className="border-b border-slate-100">
+                  <td className="px-4 py-2.5 text-slate-700">{CORE_LABELS[key]}</td>
+                  {surveys.map((s, sIdx) => {
+                    const val = s.coreAverages[key]
+                    const prev = sIdx > 0 ? surveys[sIdx - 1].coreAverages[key] : null
+                    const diff = val != null && prev != null ? val - prev : null
+
+                    return (
+                      <td key={s.id} className="text-center px-4 py-2.5">
+                        {val != null ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span
+                              className="font-bold"
+                              style={{ color: val >= 4 ? '#2D8B4E' : val >= 3 ? '#8B5E0F' : '#D14D4D' }}
+                            >
+                              {val.toFixed(1)}
+                            </span>
+                            {diff != null && diff !== 0 && (
+                              <span
+                                className="text-xs font-semibold"
+                                style={{ color: diff > 0 ? '#2D8B4E' : '#D14D4D' }}
+                              >
+                                {diff > 0 ? '+' : ''}{diff.toFixed(1)}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

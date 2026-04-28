@@ -1,10 +1,11 @@
 import React, { useState, useRef } from 'react'
 import { Plus, X, Pencil, Trash2, FileText } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { Policy } from '@wasil/shared'
 
 export function PoliciesPage() {
   const theme = useTheme()
+  const toast = useToast()
   const { data: policiesList, refetch: refetchPolicies } = useApi<Policy[]>(() => api.policies.list(), [])
 
   const [showForm, setShowForm] = useState(false)
@@ -55,7 +56,7 @@ export function PoliciesPage() {
       resetForm()
       refetchPolicies()
     } catch (error) {
-      alert(`Failed to save policy: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to save policy: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -69,7 +70,7 @@ export function PoliciesPage() {
       refetchPolicies()
       setDeleteConfirm(null)
     } catch (error) {
-      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsDeleting(false)
     }

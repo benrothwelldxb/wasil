@@ -84,31 +84,58 @@ export function parseCSVLine(line: string): string[] {
 
 /**
  * Parse CSV content for bulk import
- * Expected format: Parent Email, Parent Name, Child Name, Class Name
+ * Supports two formats:
+ *   Format 1 (UPN): Parent Email, Parent Name, Child UPN
+ *   Format 2 (Legacy): Parent Email, Parent Name, Child Name, Class Name
+ * Auto-detected from header row
  */
 export interface BulkImportRow {
   parentEmail: string
   parentName: string
-  childName: string
-  className: string
+  childUPN?: string
+  childName?: string
+  className?: string
 }
 
-export function parseCSV(content: string): BulkImportRow[] {
-  const lines = content.split('\n').filter(line => line.trim())
-  if (lines.length < 2) return []
+export type BulkImportFormat = 'upn' | 'legacy'
 
-  // Skip header row
+export function detectCSVFormat(header: string): BulkImportFormat {
+  const cols = parseCSVLine(header.toLowerCase())
+  if (cols.some(c => c.includes('upn') || c.includes('external'))) return 'upn'
+  if (cols.length <= 3) return 'upn' // 3 columns = email, name, UPN
+  return 'legacy'
+}
+
+export function parseCSV(content: string): { rows: BulkImportRow[]; format: BulkImportFormat } {
+  const lines = content.split('\n').filter(line => line.trim())
+  if (lines.length < 2) return { rows: [], format: 'upn' }
+
+  const format = detectCSVFormat(lines[0])
   const dataLines = lines.slice(1)
 
-  return dataLines.map(line => {
-    const [parentEmail, parentName, childName, className] = parseCSVLine(line)
-    return {
-      parentEmail: parentEmail || '',
-      parentName: parentName || '',
-      childName: childName || '',
-      className: className || '',
+  const rows = dataLines.map(line => {
+    const fields = parseCSVLine(line)
+    if (format === 'upn') {
+      return {
+        parentEmail: fields[0] || '',
+        parentName: fields[1] || '',
+        childUPN: fields[2] || '',
+      }
+    } else {
+      return {
+        parentEmail: fields[0] || '',
+        parentName: fields[1] || '',
+        childName: fields[2] || '',
+        className: fields[3] || '',
+      }
     }
-  }).filter(row => row.parentEmail && row.childName && row.className)
+  }).filter(row => {
+    if (!row.parentEmail) return false
+    if (format === 'upn') return !!row.childUPN
+    return !!row.childName && !!row.className
+  })
+
+  return { rows, format }
 }
 
 /**
@@ -117,7 +144,7 @@ export function parseCSV(content: string): BulkImportRow[] {
 export interface GroupedImport {
   parentEmail: string
   parentName: string
-  children: Array<{ childName: string; className: string }>
+  children: Array<{ childUPN?: string; childName?: string; className?: string }>
 }
 
 export function groupByParent(rows: BulkImportRow[]): GroupedImport[] {
@@ -133,6 +160,7 @@ export function groupByParent(rows: BulkImportRow[]): GroupedImport[] {
       })
     }
     grouped.get(key)!.children.push({
+      childUPN: row.childUPN,
       childName: row.childName,
       className: row.className,
     })

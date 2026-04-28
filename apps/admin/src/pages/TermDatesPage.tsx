@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Plus, X, Pencil, Trash2, Calendar, Database } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { TermDate, TermDateType } from '@wasil/shared'
 
 interface TermDateForm {
@@ -54,6 +54,7 @@ const typeBadgeClasses: Record<string, string> = {
 
 export function TermDatesPage() {
   const theme = useTheme()
+  const toast = useToast()
   const { data: termDates, refetch } = useApi<TermDate[]>(() => api.termDates.list(), [])
 
   const [showForm, setShowForm] = useState(false)
@@ -71,7 +72,7 @@ export function TermDatesPage() {
       refetch()
     } catch (err) {
       console.error('Failed to seed term dates:', err)
-      alert('Failed to seed term dates')
+      toast.error('Failed to seed term dates')
     } finally {
       setIsSeeding(false)
     }

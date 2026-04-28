@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
-import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
+import { logAudit, computeChanges } from '../services/audit.js'
+import { sendEcaRegistrationOpenNotification, sendEcaAllocationResultsNotification, sendEcaInvitationNotification } from '../services/notify.js'
 import { runAllocation, previewAllocation } from '../services/ecaAllocation.js'
 import { generateAttendanceRegisterHtml, generateBlankRegisterHtml } from '../services/ecaPdf.js'
 
@@ -44,13 +45,14 @@ router.get('/settings', isAdmin, async (req, res) => {
 router.put('/settings', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { selectionMode, attendanceEnabled, maxPriorityChoices, maxChoicesPerDay } = req.body
+    const { selectionMode, attendanceEnabled, showCost, maxPriorityChoices, maxChoicesPerDay } = req.body
 
     const settings = await prisma.ecaSettings.upsert({
       where: { schoolId: user.schoolId },
       update: {
         selectionMode,
         attendanceEnabled,
+        ...(showCost !== undefined && { showCost }),
         maxPriorityChoices,
         maxChoicesPerDay,
       },
@@ -58,6 +60,7 @@ router.put('/settings', isAdmin, async (req, res) => {
         schoolId: user.schoolId,
         selectionMode: selectionMode || 'FIRST_COME_FIRST_SERVED',
         attendanceEnabled: attendanceEnabled || false,
+        showCost: showCost || false,
         maxPriorityChoices: maxPriorityChoices || 1,
         maxChoicesPerDay: maxChoicesPerDay || 3,
       },
@@ -260,7 +263,8 @@ router.put('/terms/:id', isAdmin, async (req, res) => {
       },
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'ECA_TERM', resourceId: term.id, metadata: { name: term.name } })
+    const changes = computeChanges(existing as any, term as any, ['name', 'termNumber', 'status'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'ECA_TERM', resourceId: term.id, metadata: { name: term.name }, changes })
 
     res.json({
       ...term,
@@ -344,6 +348,17 @@ router.patch('/terms/:id/status', isAdmin, async (req, res) => {
 
     logAudit({ req, action: 'UPDATE', resourceType: 'ECA_TERM', resourceId: id, metadata: { name: term.name, status } })
 
+    // Send notification when registration opens
+    if (status === 'REGISTRATION_OPEN') {
+      sendEcaRegistrationOpenNotification({
+        req,
+        termId: id,
+        termName: term.name,
+        registrationCloses: term.registrationCloses,
+        schoolId: user.schoolId,
+      }).catch(err => console.error('Failed to send ECA registration open notification:', err))
+    }
+
     res.json({
       ...updated,
       startDate: updated.startDate.toISOString(),
@@ -379,6 +394,8 @@ router.post('/terms/:id/activities', isAdmin, async (req, res) => {
       minCapacity,
       maxCapacity,
       staffId,
+      cost,
+      costDescription,
     } = req.body
 
     // Verify term exists
@@ -431,6 +448,8 @@ router.post('/terms/:id/activities', isAdmin, async (req, res) => {
         minCapacity: minCapacity || null,
         maxCapacity: maxCapacity || null,
         staffId: staffId || null,
+        cost: cost != null ? parseFloat(cost) : null,
+        costDescription: costDescription || null,
       },
       include: {
         category: { select: { id: true, name: true, icon: true, color: true } },
@@ -473,6 +492,8 @@ router.put('/activities/:id', isAdmin, async (req, res) => {
       maxCapacity,
       staffId,
       isActive,
+      cost,
+      costDescription,
     } = req.body
 
     const existing = await prisma.ecaActivity.findFirst({
@@ -501,6 +522,8 @@ router.put('/activities/:id', isAdmin, async (req, res) => {
         maxCapacity: maxCapacity !== undefined ? maxCapacity : existing.maxCapacity,
         staffId: staffId !== undefined ? (staffId || null) : existing.staffId,
         isActive: isActive ?? existing.isActive,
+        cost: cost !== undefined ? (cost != null ? parseFloat(cost) : null) : existing.cost,
+        costDescription: costDescription !== undefined ? (costDescription || null) : existing.costDescription,
       },
       include: {
         category: { select: { id: true, name: true, icon: true, color: true } },
@@ -527,7 +550,8 @@ router.put('/activities/:id', isAdmin, async (req, res) => {
       }
     }
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'ECA_ACTIVITY', resourceId: activity.id, metadata: { name: activity.name } })
+    const changes = computeChanges(existing as any, activity as any, ['name', 'description', 'capacity', 'dayOfWeek', 'timeSlot', 'location', 'cost'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'ECA_ACTIVITY', resourceId: activity.id, metadata: { name: activity.name }, changes })
 
     res.json({
       ...activity,
@@ -894,6 +918,18 @@ router.post('/activities/:id/invite', isAdmin, async (req, res) => {
       })
     )
 
+    // Send invitation notifications to parents
+    for (const inv of invitations.filter(Boolean)) {
+      sendEcaInvitationNotification({
+        req,
+        activityId: id,
+        activityName: activity.name,
+        studentId: inv!.student.id,
+        isTryout: inv!.isTryout,
+        schoolId: user.schoolId,
+      }).catch(err => console.error('Failed to send ECA invitation notification:', err))
+    }
+
     res.json({
       created: invitations.filter(Boolean).length,
       invitations: invitations.filter(Boolean).map(i => ({
@@ -1077,7 +1113,13 @@ router.post('/terms/:id/publish-allocation', isAdmin, async (req, res) => {
       }
     }
 
-    // TODO: Send notifications to parents
+    // Send allocation results notification to parents
+    sendEcaAllocationResultsNotification({
+      req,
+      termId: id,
+      termName: term.name,
+      schoolId: user.schoolId,
+    }).catch(err => console.error('Failed to send ECA allocation results notification:', err))
 
     logAudit({ req, action: 'UPDATE', resourceType: 'ECA_TERM', resourceId: id, metadata: { termName: term.name, action: 'published_allocation' } })
 
@@ -1457,7 +1499,7 @@ router.get('/parent/terms', isAuthenticated, async (req, res) => {
 // Get term with eligible activities for parent's children
 router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
     const { id } = req.params
     const { studentId } = req.query
     console.log('[ECA Debug] GET /parent/terms/:id called - termId:', id, 'studentId:', studentId, 'user:', user.email)
@@ -1622,7 +1664,7 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
 // Get current selections
 router.get('/parent/terms/:id/selections', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
     const { id } = req.params
 
     const studentLinks = user.studentLinks || []
@@ -1678,7 +1720,7 @@ router.get('/parent/terms/:id/selections', isAuthenticated, async (req, res) => 
 // Submit selections
 router.post('/parent/terms/:id/selections', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
     const { id } = req.params
     const { studentId, selections } = req.body
 
@@ -1739,7 +1781,7 @@ router.post('/parent/terms/:id/selections', isAuthenticated, async (req, res) =>
 // Get all allocations for parent's children
 router.get('/parent/allocations', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
 
     const studentLinks = user.studentLinks || []
     const studentIds = studentLinks.map(l => l.studentId)
@@ -1823,7 +1865,7 @@ router.get('/parent/allocations', isAuthenticated, async (req, res) => {
 // Get pending invitations for parent's children
 router.get('/parent/invitations', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
 
     const studentLinks = user.studentLinks || []
     const studentIds = studentLinks.map(l => l.studentId)
@@ -1873,7 +1915,7 @@ router.get('/parent/invitations', isAuthenticated, async (req, res) => {
 // Respond to invitation
 router.post('/parent/invitations/:id/respond', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
     const { id } = req.params
     const { accept } = req.body
 

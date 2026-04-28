@@ -1,23 +1,142 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import prisma from '../services/prisma.js'
-import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { isAuthenticated, isAdmin, loadUserWithRelations, type UserWithRelations } from '../middleware/auth.js'
+import { validate } from '../middleware/validate.js'
+import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
+import { generateICS } from '../services/ics.js'
+import type { ICSEvent } from '../services/ics.js'
 
 const router = Router()
+
+const createEventSchema = z.object({
+  title: z.string().min(1).max(500),
+  description: z.string().optional(),
+  date: z.string().min(1),
+  time: z.string().optional(),
+  location: z.string().optional(),
+  targetClass: z.string().min(1),
+  classId: z.string().optional(),
+  yearGroupId: z.string().optional(),
+  groupId: z.string().optional(),
+  requiresRsvp: z.boolean().optional(),
+})
+
+const updateEventSchema = createEventSchema.partial()
+
+// Helper to get filtered events for a user
+async function getEventsForUser(user: UserWithRelations) {
+  const childClassIds = user.children?.map(c => c.classId) || []
+  const studentClassIds = (user.studentLinks?.map(l => l.student?.classId).filter((id): id is string => !!id)) || []
+  const allClassIds = [...new Set([...childClassIds, ...studentClassIds])]
+  const studentIds = user.studentLinks?.map(l => l.studentId) || []
+
+  const childClasses = allClassIds.length > 0
+    ? await prisma.class.findMany({
+        where: { id: { in: allClassIds } },
+        select: { yearGroupId: true },
+      })
+    : []
+  const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
+
+  const childGroupLinks = studentIds.length > 0
+    ? await prisma.studentGroupLink.findMany({
+        where: { studentId: { in: studentIds } },
+        select: { groupId: true },
+      })
+    : []
+  const childGroupIds = [...new Set(childGroupLinks.map(l => l.groupId))]
+
+  return prisma.event.findMany({
+    where: {
+      schoolId: user.schoolId,
+      OR: [
+        { targetClass: 'Whole School' },
+        { targetClass: 'all' },
+        { classId: { in: allClassIds } },
+        ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
+        ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
+      ],
+    },
+    orderBy: { date: 'asc' },
+  })
+}
+
+// Export all events as ICS calendar file
+router.get('/calendar.ics', isAuthenticated, async (req, res) => {
+  try {
+    const user = (await loadUserWithRelations(req.user!.id))!
+    const events = await getEventsForUser(user)
+
+    const icsEvents: ICSEvent[] = events.map(event => ({
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      date: event.date.toISOString().split('T')[0],
+      startTime: event.time,
+      location: event.location,
+      allDay: !event.time,
+    }))
+
+    const ics = generateICS(icsEvents, 'School Events')
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
+    res.setHeader('Content-Disposition', 'attachment; filename="school-events.ics"')
+    res.send(ics)
+  } catch (error) {
+    console.error('Error generating events ICS:', error)
+    res.status(500).json({ error: 'Failed to generate calendar file' })
+  }
+})
+
+// Export single event as ICS
+router.get('/:id/calendar.ics', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const event = await prisma.event.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' })
+    }
+
+    const icsEvents: ICSEvent[] = [{
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      date: event.date.toISOString().split('T')[0],
+      startTime: event.time,
+      location: event.location,
+      allDay: !event.time,
+    }]
+
+    const ics = generateICS(icsEvents, event.title)
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="${event.title.replace(/[^a-zA-Z0-9]/g, '_')}.ics"`)
+    res.send(ics)
+  } catch (error) {
+    console.error('Error generating event ICS:', error)
+    res.status(500).json({ error: 'Failed to generate calendar file' })
+  }
+})
 
 // Get events (filtered by user's children's classes and groups)
 router.get('/', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
-    // Get class IDs from both children (legacy) and studentLinks (new)
+    const user = (await loadUserWithRelations(req.user!.id))!
+
+    // Use shared helper for filtering, then add RSVP include
     const childClassIds = user.children?.map(c => c.classId) || []
     const studentClassIds = (user.studentLinks?.map(l => l.student?.classId).filter((id): id is string => !!id)) || []
     const allClassIds = [...new Set([...childClassIds, ...studentClassIds])]
     const studentIds = user.studentLinks?.map(l => l.studentId) || []
 
-    // Get year group IDs from children's classes
     const childClasses = allClassIds.length > 0
       ? await prisma.class.findMany({
           where: { id: { in: allClassIds } },
@@ -26,7 +145,6 @@ router.get('/', isAuthenticated, async (req, res) => {
       : []
     const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
 
-    // Get groups where parent's children are members
     const childGroupLinks = studentIds.length > 0
       ? await prisma.studentGroupLink.findMany({
           where: { studentId: { in: studentIds } },
@@ -145,7 +263,7 @@ router.get('/all', isAdmin, async (req, res) => {
 })
 
 // Create event (admin only)
-router.post('/', isAdmin, async (req, res) => {
+router.post('/', isAdmin, validate(createEventSchema), async (req, res) => {
   try {
     const user = req.user!
     const { title, description, date, time, location, targetClass, classId, yearGroupId, groupId, requiresRsvp } = req.body
@@ -226,7 +344,7 @@ router.post('/:id/rsvp', isAuthenticated, async (req, res) => {
 })
 
 // Update event (admin only)
-router.put('/:id', isAdmin, async (req, res) => {
+router.put('/:id', isAdmin, validate(updateEventSchema), async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
@@ -274,7 +392,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       updatedAt: event.updatedAt.toISOString(),
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'EVENT', resourceId: event.id, metadata: { title: event.title } })
+    const changes = computeChanges(existing as any, event as any, ['title', 'description', 'date', 'time', 'location', 'targetClass', 'requiresRsvp'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'EVENT', resourceId: event.id, metadata: { title: event.title }, changes })
   } catch (error) {
     console.error('Error updating event:', error)
     res.status(500).json({ error: 'Failed to update event' })

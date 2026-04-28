@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Plus, X, Trash2, Upload, Users, RefreshCw, Mail, Copy, QrCode, CheckCircle, XCircle, Clock, Eye } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { Class, ParentInvitation, InvitationStatus } from '@wasil/shared'
 import { StudentSearchSelect } from '../components/StudentSearchSelect'
 
@@ -23,6 +23,7 @@ interface BulkImportResult {
 
 export function ParentsPage() {
   const theme = useTheme()
+  const toast = useToast()
   const [statusFilter, setStatusFilter] = useState<InvitationStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -88,7 +89,7 @@ export function ParentsPage() {
     if (useStudentSearch) {
       // New approach: use selected students
       if (selectedStudents.length === 0) {
-        alert('Please select at least one student')
+        toast.warning('Please select at least one student')
         return
       }
       setIsSubmitting(true)
@@ -103,7 +104,7 @@ export function ParentsPage() {
         resetForm()
         refetchInvitations()
       } catch (error) {
-        alert(`Failed to create invitation: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        toast.error(`Failed to create invitation: ${error instanceof Error ? error.message : 'Unknown error'}`)
       } finally {
         setIsSubmitting(false)
       }
@@ -111,7 +112,7 @@ export function ParentsPage() {
       // Legacy approach: use child names
       const validChildren = children.filter(c => c.childName.trim() && c.classId)
       if (validChildren.length === 0) {
-        alert('Please add at least one child with a name and class')
+        toast.warning('Please add at least one child with a name and class')
         return
       }
       setIsSubmitting(true)
@@ -126,7 +127,7 @@ export function ParentsPage() {
         resetForm()
         refetchInvitations()
       } catch (error) {
-        alert(`Failed to create invitation: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        toast.error(`Failed to create invitation: ${error instanceof Error ? error.message : 'Unknown error'}`)
       } finally {
         setIsSubmitting(false)
       }
@@ -141,7 +142,7 @@ export function ParentsPage() {
       setBulkResult({ created: result.created, skipped: result.skipped, errors: result.errors })
       refetchInvitations()
     } catch (error) {
-      alert(`Bulk import failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Bulk import failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsBulkImporting(false)
     }
@@ -155,7 +156,7 @@ export function ParentsPage() {
       refetchInvitations()
       setRevokeConfirm(null)
     } catch (error) {
-      alert(`Failed to revoke: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to revoke: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsRevoking(false)
     }
@@ -170,16 +171,16 @@ export function ParentsPage() {
         setShowDetails(updated)
       }
     } catch (error) {
-      alert(`Failed to regenerate: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to regenerate: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
   const handleResend = async (id: string) => {
     try {
       await api.parentInvitations.resend(id)
-      alert('Email sent successfully')
+      toast.success('Email sent successfully')
     } catch (error) {
-      alert(`Failed to resend: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to resend: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -252,14 +253,14 @@ export function ParentsPage() {
         <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 space-y-4">
           <h3 className="font-medium text-gray-900">Bulk Import Invitations</h3>
           <p className="text-sm text-gray-500">
-            Paste CSV data with headers: Parent Email, Parent Name, Child Name, Class Name
+            Paste CSV data. Use <strong>Child UPN</strong> (recommended) or Child Name + Class Name.
           </p>
           <textarea
             value={bulkText}
             onChange={e => setBulkText(e.target.value)}
             rows={8}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-            placeholder={"Parent Email,Parent Name,Child Name,Class Name\njohn@example.com,John Smith,Emma Smith,Y1 Blue\njohn@example.com,John Smith,James Smith,Y3 Red"}
+            placeholder={"Parent Email,Parent Name,Child UPN\njohn@example.com,John Smith,A123456789\njohn@example.com,John Smith,A987654321\n\n--- OR legacy format ---\nParent Email,Parent Name,Child Name,Class Name\njohn@example.com,John Smith,Emma Smith,Y1 Blue"}
           />
           <div className="flex items-center space-x-4">
             <div>

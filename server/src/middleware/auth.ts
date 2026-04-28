@@ -12,37 +12,57 @@ declare global {
       role: 'PARENT' | 'STAFF' | 'ADMIN' | 'SUPER_ADMIN'
       schoolId: string
       preferredLanguage: string
-      children?: Array<{
-        id: string
-        name: string
-        classId: string
-        class: {
-          id: string
-          name: string
-        }
-      }>
-      studentLinks?: Array<{
-        studentId: string
-        student: {
-          id: string
-          firstName: string
-          lastName: string
-          classId: string
-          class: {
-            id: string
-            name: string
-          }
-        }
-      }>
-      assignedClasses?: Array<{
-        classId: string
-        class: {
-          id: string
-          name: string
-        }
-      }>
     }
   }
+}
+
+// Full user type with relations – used by routes that call loadUserWithRelations()
+export interface UserWithRelations extends Express.User {
+  children?: Array<{
+    id: string
+    name: string
+    classId: string
+    class: {
+      id: string
+      name: string
+    }
+  }>
+  studentLinks?: Array<{
+    studentId: string
+    student: {
+      id: string
+      firstName: string
+      lastName: string
+      classId: string
+      class: {
+        id: string
+        name: string
+      }
+    }
+  }>
+  assignedClasses?: Array<{
+    classId: string
+    class: {
+      id: string
+      name: string
+    }
+  }>
+}
+
+/**
+ * Load full user with children, studentLinks, and assignedClasses.
+ * Call this in route handlers that need the related data instead of
+ * relying on the auth middleware to eager-load everything.
+ */
+export async function loadUserWithRelations(userId: string): Promise<UserWithRelations | null> {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      children: { include: { class: true } },
+      studentLinks: { include: { student: { include: { class: true } } } },
+      assignedClasses: { include: { class: true } },
+    },
+  }) as Promise<UserWithRelations | null>
 }
 
 export async function isAuthenticated(req: Request, res: Response, next: NextFunction) {
@@ -57,10 +77,13 @@ export async function isAuthenticated(req: Request, res: Response, next: NextFun
 
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
-      include: {
-        children: { include: { class: true } },
-        studentLinks: { include: { student: { include: { class: true } } } },
-        assignedClasses: { include: { class: true } },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        schoolId: true,
+        preferredLanguage: true,
       },
     })
 
@@ -111,7 +134,7 @@ export function isSuperAdmin(req: Request, res: Response, next: NextFunction) {
 }
 
 // Check if user can send to a specific class or whole school
-export function canSendToTarget(req: Request, res: Response, next: NextFunction) {
+export async function canSendToTarget(req: Request, res: Response, next: NextFunction) {
   const user = req.user
   if (!user) {
     return res.status(401).json({ error: 'Unauthorized' })
@@ -128,9 +151,15 @@ export function canSendToTarget(req: Request, res: Response, next: NextFunction)
       return res.status(403).json({ error: 'Only admins can send whole-school messages' })
     }
 
-    const assignedClassIds = user.assignedClasses?.map(ac => ac.classId) || []
-    if (classId && !assignedClassIds.includes(classId)) {
-      return res.status(403).json({ error: 'You can only send messages to your assigned classes' })
+    if (classId) {
+      const assignedClasses = await prisma.staffClassAssignment.findMany({
+        where: { userId: user.id },
+        select: { classId: true },
+      })
+      const assignedClassIds = assignedClasses.map(ac => ac.classId)
+      if (!assignedClassIds.includes(classId)) {
+        return res.status(403).json({ error: 'You can only send messages to your assigned classes' })
+      }
     }
 
     return next()

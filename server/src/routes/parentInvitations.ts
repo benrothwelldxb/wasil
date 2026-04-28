@@ -355,8 +355,8 @@ router.post('/bulk', isAdmin, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'CSV content is required' })
     }
 
-    // Parse CSV
-    const rows = parseCSV(csvContent)
+    // Parse CSV (auto-detects UPN vs legacy format)
+    const { rows, format } = parseCSV(csvContent)
     if (rows.length === 0) {
       return res.status(400).json({ error: 'No valid rows found in CSV' })
     }
@@ -364,21 +364,53 @@ router.post('/bulk', isAdmin, async (req: Request, res: Response) => {
     // Group by parent
     const grouped = groupByParent(rows)
 
-    // Get all unique class names and map to IDs
-    const classNames = [...new Set(rows.map(r => r.className))]
-    const classes = await prisma.class.findMany({
-      where: { schoolId: user.schoolId, name: { in: classNames } },
-    })
+    // Resolve children — either by UPN or by class name
+    let studentsByUPN = new Map<string, { id: string; firstName: string; lastName: string; classId: string; className: string }>()
+    let classNameToId = new Map<string, string>()
 
-    const classNameToId = new Map(classes.map(c => [c.name, c.id]))
-
-    // Validate all class names exist
-    const missingClasses = classNames.filter(name => !classNameToId.has(name))
-    if (missingClasses.length > 0) {
-      return res.status(400).json({
-        error: 'Some class names not found',
-        missingClasses,
+    if (format === 'upn') {
+      // Look up students by externalId (UPN)
+      const upns = [...new Set(rows.map(r => r.childUPN).filter(Boolean) as string[])]
+      const students = await prisma.student.findMany({
+        where: { schoolId: user.schoolId, externalId: { in: upns } },
+        include: { class: { select: { id: true, name: true } } },
       })
+
+      students.forEach(s => {
+        if (s.externalId) {
+          studentsByUPN.set(s.externalId, {
+            id: s.id,
+            firstName: s.firstName,
+            lastName: s.lastName,
+            classId: s.classId,
+            className: s.class.name,
+          })
+        }
+      })
+
+      // Check for missing UPNs
+      const missingUPNs = upns.filter(u => !studentsByUPN.has(u))
+      if (missingUPNs.length > 0) {
+        return res.status(400).json({
+          error: `${missingUPNs.length} student UPN(s) not found in the system`,
+          missingUPNs,
+        })
+      }
+    } else {
+      // Legacy: look up by class name
+      const classNames = [...new Set(rows.map(r => r.className).filter(Boolean) as string[])]
+      const classes = await prisma.class.findMany({
+        where: { schoolId: user.schoolId, name: { in: classNames } },
+      })
+      classNameToId = new Map(classes.map(c => [c.name, c.id]))
+
+      const missingClasses = classNames.filter(name => !classNameToId.has(name))
+      if (missingClasses.length > 0) {
+        return res.status(400).json({
+          error: 'Some class names not found',
+          missingClasses,
+        })
+      }
     }
 
     const expiresAt = expiresInDays
@@ -386,7 +418,7 @@ router.post('/bulk', isAdmin, async (req: Request, res: Response) => {
       : getDefaultExpiryDate()
 
     // Create invitations
-    const created: Array<{ parentEmail: string; accessCode: string; childCount: number }> = []
+    const created: Array<{ parentEmail: string; accessCode: string; childCount: number; children: string[] }> = []
     const errors: string[] = []
 
     for (const group of grouped) {
@@ -407,29 +439,68 @@ router.post('/bulk', isAdmin, async (req: Request, res: Response) => {
 
         const magicToken = generateMagicToken()
 
-        await prisma.parentInvitation.create({
-          data: {
-            schoolId: user.schoolId,
-            accessCode,
-            magicToken,
-            parentEmail: group.parentEmail,
-            parentName: group.parentName || null,
-            expiresAt,
-            createdById: user.id,
-            childLinks: {
-              create: group.children.map(c => ({
-                childName: c.childName,
-                classId: classNameToId.get(c.className)!,
-              })),
-            },
-          },
-        })
+        if (format === 'upn') {
+          // UPN format: create invitation + link to existing students
+          const studentIds: string[] = []
+          const childNames: string[] = []
+          for (const child of group.children) {
+            if (child.childUPN) {
+              const student = studentsByUPN.get(child.childUPN)
+              if (student) {
+                studentIds.push(student.id)
+                childNames.push(`${student.firstName} ${student.lastName}`)
+              }
+            }
+          }
 
-        created.push({
-          parentEmail: group.parentEmail,
-          accessCode,
-          childCount: group.children.length,
-        })
+          await prisma.parentInvitation.create({
+            data: {
+              schoolId: user.schoolId,
+              accessCode,
+              magicToken,
+              parentEmail: group.parentEmail,
+              parentName: group.parentName || null,
+              expiresAt,
+              createdById: user.id,
+              studentLinks: {
+                create: studentIds.map(sid => ({ studentId: sid })),
+              },
+            },
+          })
+
+          created.push({
+            parentEmail: group.parentEmail,
+            accessCode,
+            childCount: studentIds.length,
+            children: childNames,
+          })
+        } else {
+          // Legacy format: create with child name + class
+          await prisma.parentInvitation.create({
+            data: {
+              schoolId: user.schoolId,
+              accessCode,
+              magicToken,
+              parentEmail: group.parentEmail,
+              parentName: group.parentName || null,
+              expiresAt,
+              createdById: user.id,
+              childLinks: {
+                create: group.children.map(c => ({
+                  childName: c.childName!,
+                  classId: classNameToId.get(c.className!)!,
+                })),
+              },
+            },
+          })
+
+          created.push({
+            parentEmail: group.parentEmail,
+            accessCode,
+            childCount: group.children.length,
+            children: group.children.map(c => c.childName!),
+          })
+        }
       } catch (err) {
         console.error(`Error creating invitation for ${group.parentEmail}:`, err)
         errors.push(`${group.parentEmail}: Failed to create invitation`)
@@ -441,10 +512,11 @@ router.post('/bulk', isAdmin, async (req: Request, res: Response) => {
       action: 'CREATE',
       resourceType: 'PARENT_INVITATION',
       resourceId: 'bulk',
-      metadata: { count: created.length },
+      metadata: { count: created.length, format },
     })
 
     res.status(201).json({
+      format,
       created: created.length,
       skipped: grouped.length - created.length,
       invitations: created,

@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Wasil - Option 7: Editorial & Premium</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --parchment: #FAF7F2;
+    --cream: #F4EFE8;
+    --ink: #1C1917;
+    --ink-medium: #44403C;
+    --ink-light: #78716C;
+    --ink-faint: #A8A29E;
+    --burgundy: #7f0029;
+    --burgundy-soft: rgba(127, 0, 41, 0.06);
+    --burgundy-medium: rgba(127, 0, 41, 0.12);
+    --gold: #B8860B;
+    --gold-light: rgba(184, 134, 11, 0.08);
+    --rule: #E7E0D8;
+    --rule-dark: #D6CFC5;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Source Sans 3', Georgia, serif;
+    background: var(--parchment);
+    color: var(--ink);
+    max-width: 390px;
+    margin: 0 auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .display { font-family: 'Playfair Display', Georgia, serif; }
+
+  /* Masthead */
+  .masthead {
+    padding: 52px 24px 0;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .masthead .school-mark {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: var(--burgundy);
+    margin-bottom: 4px;
+  }
+  .masthead .edition {
+    font-size: 12px;
+    color: var(--ink-light);
+    font-weight: 400;
+    letter-spacing: 0.02em;
+  }
+  .masthead-rule {
+    height: 2px;
+    background: var(--ink);
+    margin: 12px 24px 4px;
+  }
+  .masthead-rule-thin {
+    height: 0.5px;
+    background: var(--ink);
+    margin: 4px 24px 0;
+  }
+
+  .content {
+    padding: 0 24px 110px;
+  }
+
+  /* Greeting Banner */
+  .greeting-banner {
+    padding: 20px 0 16px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .greeting-banner h1 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+  }
+  .greeting-banner h1 .name {
+    font-style: italic;
+    color: var(--burgundy);
+  }
+  .greeting-banner .date-block {
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .greeting-banner .day-name {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--ink-light);
+    font-weight: 600;
+  }
+  .greeting-banner .day-num {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--burgundy);
+  }
+  .greeting-banner .month {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--ink-light);
+    font-weight: 600;
+  }
+
+  /* Alert Banner */
+  .alert-banner {
+    background: var(--gold-light);
+    border-left: 3px solid var(--gold);
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #8B6914;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .alert-banner strong { font-weight: 700; }
+
+  /* Two Column Layout */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .schedule-card {
+    background: var(--cream);
+    padding: 16px;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .schedule-card:active { transform: scale(0.97); }
+  .schedule-card .card-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-faint);
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .schedule-card .card-name {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    line-height: 1.15;
+  }
+  .schedule-card .card-child {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--burgundy);
+    margin-bottom: 4px;
+  }
+  .schedule-card .card-detail {
+    font-size: 12px;
+    color: var(--ink-light);
+    line-height: 1.5;
+  }
+  .schedule-card .card-time {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-top: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Registration Feature */
+  .reg-feature {
+    border: 2px solid var(--ink);
+    padding: 24px 20px;
+    margin-bottom: 24px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--parchment);
+  }
+  .reg-feature:active { transform: scale(0.98); }
+  .reg-feature .reg-label {
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    background: var(--parchment);
+    padding: 0 8px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-weight: 700;
+    color: var(--burgundy);
+  }
+  .reg-feature h2 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.15;
+    margin-bottom: 6px;
+    letter-spacing: -0.01em;
+  }
+  .reg-feature p {
+    font-size: 14px;
+    color: var(--ink-light);
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+  .reg-feature .deadline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: var(--burgundy);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* Divider */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .divider-line {
+    flex: 1;
+    height: 0.5px;
+    background: var(--rule-dark);
+  }
+  .divider-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--ink-faint);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  /* Message Article */
+  .message-article {
+    margin-bottom: 22px;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--rule);
+    cursor: pointer;
+  }
+  .message-article:active { opacity: 0.7; }
+  .msg-byline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .msg-source {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--burgundy);
+  }
+  .msg-dot { color: var(--ink-faint); font-size: 8px; }
+  .msg-date { font-size: 12px; color: var(--ink-faint); }
+  .msg-unread {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--burgundy);
+    margin-left: auto;
+  }
+  .msg-headline {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+  .msg-lede {
+    font-size: 15px;
+    color: var(--ink-medium);
+    line-height: 1.6;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .msg-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 14px;
+    padding: 10px 22px;
+    background: var(--burgundy);
+    color: #fff;
+    border: none;
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .msg-action:active { transform: scale(0.95); }
+
+  /* Principal Column */
+  .principal-column {
+    background: var(--cream);
+    margin: 0 -24px;
+    padding: 24px;
+    border-top: 2px solid var(--ink);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 24px;
+  }
+  .col-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .col-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 26px;
+    background: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--parchment);
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .col-meta h3 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .col-meta p {
+    font-size: 13px;
+    color: var(--ink-light);
+    font-style: italic;
+  }
+  .col-quote {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 19px;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--ink-medium);
+    margin-bottom: 16px;
+    text-indent: -0.4em;
+  }
+  .col-quote::before {
+    content: '\201C';
+    font-size: 32px;
+    color: var(--burgundy);
+    line-height: 0;
+    vertical-align: -0.15em;
+    margin-right: 2px;
+  }
+  .col-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .heart-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 14px;
+    color: var(--ink-light);
+    padding: 6px 10px;
+    transition: all 0.2s;
+  }
+  .heart-btn .h-icon {
+    font-size: 20px;
+    color: var(--ink-faint);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .heart-btn.active { color: var(--burgundy); }
+  .heart-btn.active .h-icon { color: var(--burgundy); transform: scale(1.15); }
+  .continue-link {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--burgundy);
+    text-decoration: none;
+  }
+
+  /* Tab Bar */
+  .tab-bar {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    height: 80px;
+    background: rgba(250, 247, 242, 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--rule);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-around;
+    padding-top: 8px;
+    z-index: 100;
+  }
+  .tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 14px;
+  }
+  .tab-item svg { width: 22px; height: 22px; }
+  .tab-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .tab-item.active svg { color: var(--burgundy); }
+  .tab-item.active .tab-label { color: var(--burgundy); }
+  .tab-item:not(.active) svg { color: var(--ink-faint); }
+  .tab-item:not(.active) .tab-label { color: var(--ink-faint); }
+
+  /* Animations */
+  @keyframes editFade {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .fade { animation: editFade 0.6s ease both; }
+  .e1 { animation-delay: 0.05s; }
+  .e2 { animation-delay: 0.1s; }
+  .e3 { animation-delay: 0.15s; }
+  .e4 { animation-delay: 0.2s; }
+  .e5 { animation-delay: 0.25s; }
+  .e6 { animation-delay: 0.3s; }
+  .e7 { animation-delay: 0.35s; }
+
+  @media (min-width: 420px) {
+    body {
+      border-left: 1px solid var(--rule);
+      border-right: 1px solid var(--rule);
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Masthead -->
+<div class="masthead fade e1">
+  <div class="school-mark">Wasil &middot; Parent Portal</div>
+  <div class="edition">Your daily school briefing</div>
+</div>
+<div class="masthead-rule fade e1"></div>
+<div class="masthead-rule-thin fade e1"></div>
+
+<div class="content">
+
+  <!-- Greeting -->
+  <div class="greeting-banner fade e2">
+    <h1>Good morning,<br><span class="name">Ben</span></h1>
+    <div class="date-block">
+      <div class="day-name">Monday</div>
+      <div class="day-num">21</div>
+      <div class="month">April</div>
+    </div>
+  </div>
+
+  <!-- Alert -->
+  <div class="alert-banner fade e2">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B6914" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span><strong>Action required:</strong> 1 consent form due in 3 days</span>
+  </div>
+
+  <!-- Today's Schedule -->
+  <div class="divider fade e3">
+    <span class="divider-line"></span>
+    <span class="divider-label">Today's Schedule</span>
+    <span class="divider-line"></span>
+  </div>
+
+  <div class="two-col fade e3">
+    <div class="schedule-card">
+      <div class="card-label">After School</div>
+      <div class="card-name">Swimming</div>
+      <div class="card-child">Lara</div>
+      <div class="card-detail">Sports Hall</div>
+      <div class="card-time">3:15 &ndash; 4:00</div>
+    </div>
+    <div class="schedule-card">
+      <div class="card-label">After School</div>
+      <div class="card-name">Football</div>
+      <div class="card-child">Oscar</div>
+      <div class="card-detail">Main Pitch</div>
+      <div class="card-time">3:15 &ndash; 4:15</div>
+    </div>
+  </div>
+
+  <!-- Registration Feature -->
+  <div class="reg-feature fade e4">
+    <span class="reg-label">Now Open</span>
+    <h2>Activity Registration</h2>
+    <p>Choose clubs and extra-curricular activities for your children next term.</p>
+    <span class="deadline">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Closes in 3 days
+    </span>
+  </div>
+
+  <!-- Messages -->
+  <div class="divider fade e5">
+    <span class="divider-line"></span>
+    <span class="divider-label">Messages</span>
+    <span class="divider-line"></span>
+  </div>
+
+  <div class="message-article fade e5">
+    <div class="msg-byline">
+      <span class="msg-source">Year 3 Team</span>
+      <span class="msg-dot">&bull;</span>
+      <span class="msg-date">Today</span>
+      <div class="msg-unread"></div>
+    </div>
+    <div class="msg-headline">Field Trip to the Science Museum</div>
+    <div class="msg-lede">Dear parents, we are excited to announce a field trip to the Science Museum on Thursday 1st May. This will be an all-day excursion. Please provide your consent below by Thursday 24th April.</div>
+    <button class="msg-action">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Give Consent
+    </button>
+  </div>
+
+  <div class="message-article fade e6" style="border-bottom: none; padding-bottom: 0; margin-bottom: 0;">
+    <div class="msg-byline">
+      <span class="msg-source">Whole School</span>
+      <span class="msg-dot">&bull;</span>
+      <span class="msg-date">Yesterday</span>
+    </div>
+    <div class="msg-headline">Annual Sports Day</div>
+    <div class="msg-lede">Sports Day will be held on Friday 16th May on the school grounds. All students should come dressed in their house colours. Parents and family members are warmly welcome to attend from 9:00 AM.</div>
+  </div>
+
+  <!-- Principal -->
+  <div class="principal-column fade e7">
+    <div class="divider" style="margin-top: 0;">
+      <span class="divider-line" style="background: var(--rule-dark);"></span>
+      <span class="divider-label">The Principal's Column</span>
+      <span class="divider-line" style="background: var(--rule-dark);"></span>
+    </div>
+    <div class="col-header">
+      <div class="col-avatar">MH</div>
+      <div class="col-meta">
+        <h3>Mrs. Harrison</h3>
+        <p>Week of 21 April, 2026</p>
+      </div>
+    </div>
+    <div class="col-quote">
+      What a wonderful start to the summer term! It's been lovely seeing the children back and settled after the holiday. A special well done to Year 5 for their assembly this morning&hellip;
+    </div>
+    <div class="col-footer">
+      <button class="heart-btn" id="heartBtn" onclick="toggleHeart()">
+        <span class="h-icon">&#9825;</span>
+        <span id="heartCount">24</span>
+      </button>
+      <a href="#" class="continue-link">Continue Reading &rsaquo;</a>
+    </div>
+  </div>
+</div>
+
+<!-- Tab Bar -->
+<div class="tab-bar">
+  <button class="tab-item active">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l-10 9h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
+    <span class="tab-label">Home</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span class="tab-label">Events</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    <span class="tab-label">Activities</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span class="tab-label">Files</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    <span class="tab-label">More</span>
+  </button>
+</div>
+
+<script>
+  let hearted = false;
+  let count = 24;
+  function toggleHeart() {
+    const btn = document.getElementById('heartBtn');
+    const countEl = document.getElementById('heartCount');
+    hearted = !hearted;
+    count += hearted ? 1 : -1;
+    btn.classList.toggle('active', hearted);
+    btn.querySelector('.h-icon').innerHTML = hearted ? '&#9829;' : '&#9825;';
+    countEl.textContent = count;
+    const icon = btn.querySelector('.h-icon');
+    icon.style.transform = 'scale(1.4)';
+    setTimeout(() => { icon.style.transform = hearted ? 'scale(1.15)' : 'scale(1)'; }, 180);
+  }
+</script>
+</body>
+</html>

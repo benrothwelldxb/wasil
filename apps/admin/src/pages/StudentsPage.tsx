@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, X, Upload, Users, Search, Pencil, Trash2, Sparkles, AlertTriangle } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { Class, Student } from '@wasil/shared'
 
 interface BulkImportResult {
@@ -11,6 +11,7 @@ interface BulkImportResult {
 
 export function StudentsPage() {
   const theme = useTheme()
+  const toast = useToast()
   const [searchQuery, setSearchQuery] = useState('')
   const [classFilter, setClassFilter] = useState('')
   const [page, setPage] = useState(1)
@@ -63,11 +64,11 @@ export function StudentsPage() {
       let message = `Test data created: ${result.studentsCreated} students, ${result.parentsCreated} parents`
       if (result.ecaActivitiesCreated > 0) message += `, ${result.ecaActivitiesCreated} ECA activities`
       if (result.ecaSelectionsCreated > 0) message += `, ${result.ecaSelectionsCreated} ECA selections`
-      alert(message)
+      toast.success(message)
       refetchStudents()
       api.students.seedStats().then(setSeedStats).catch(console.error)
     } catch (error) {
-      alert(`Failed to seed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to seed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSeeding(false)
     }
@@ -78,11 +79,11 @@ export function StudentsPage() {
     setIsClearing(true)
     try {
       const result = await api.students.clearSeed()
-      alert(`Test data cleared: ${result.studentsDeleted} students, ${result.parentsDeleted} parents`)
+      toast.success(`Test data cleared: ${result.studentsDeleted} students, ${result.parentsDeleted} parents`)
       refetchStudents()
       api.students.seedStats().then(setSeedStats).catch(console.error)
     } catch (error) {
-      alert(`Failed to clear: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to clear: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsClearing(false)
     }
@@ -113,7 +114,7 @@ export function StudentsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!firstName.trim() || !lastName.trim() || !classId) {
-      alert('First name, last name, and class are required')
+      toast.warning('First name, last name, and class are required')
       return
     }
 
@@ -137,7 +138,7 @@ export function StudentsPage() {
       resetForm()
       refetchStudents()
     } catch (error) {
-      alert(`Failed to ${editingStudent ? 'update' : 'create'} student: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to ${editingStudent ? 'update' : 'create'} student: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -170,7 +171,7 @@ export function StudentsPage() {
     }
 
     if (students.length === 0) {
-      alert('No valid rows found in CSV')
+      toast.warning('No valid rows found in CSV')
       return
     }
 
@@ -180,7 +181,7 @@ export function StudentsPage() {
       setBulkResult({ created: result.created, skipped: result.skipped, errors: result.errors })
       refetchStudents()
     } catch (error) {
-      alert(`Bulk import failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Bulk import failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsBulkImporting(false)
     }
@@ -194,7 +195,7 @@ export function StudentsPage() {
       refetchStudents()
       setDeleteConfirm(null)
     } catch (error) {
-      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsDeleting(false)
     }
@@ -522,9 +523,32 @@ export function StudentsPage() {
                   <span className="font-medium text-gray-900">{student.fullName}</span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-sm px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                    {student.className}
-                  </span>
+                  {(() => {
+                    const cls = classes?.find(c => c.name === student.className)
+                    const COLOR_MAP: Record<string, { bg: string; text: string }> = {
+                      'bg-blue-600': { bg: '#DBEAFE', text: '#1E40AF' },
+                      'bg-blue-500': { bg: '#DBEAFE', text: '#1D4ED8' },
+                      'bg-red-600': { bg: '#FEE2E2', text: '#991B1B' },
+                      'bg-green-600': { bg: '#DCFCE7', text: '#166534' },
+                      'bg-purple-600': { bg: '#F3E8FF', text: '#6B21A8' },
+                      'bg-amber-500': { bg: '#FEF3C7', text: '#92400E' },
+                      'bg-teal-600': { bg: '#CCFBF1', text: '#115E59' },
+                      'bg-pink-600': { bg: '#FCE7F3', text: '#9D174D' },
+                      'bg-orange-600': { bg: '#FFEDD5', text: '#9A3412' },
+                      'bg-indigo-600': { bg: '#E0E7FF', text: '#3730A3' },
+                      'bg-gray-600': { bg: '#F3F4F6', text: '#374151' },
+                      'bg-yellow-500': { bg: '#FEF9C3', text: '#854D0E' },
+                    }
+                    const colors = cls ? (COLOR_MAP[cls.colorBg] || { bg: '#F3F4F6', text: '#374151' }) : { bg: '#DBEAFE', text: '#1E40AF' }
+                    return (
+                      <span
+                        className="text-sm px-2.5 py-0.5 rounded-full font-medium"
+                        style={{ backgroundColor: colors.bg, color: colors.text }}
+                      >
+                        {student.className}
+                      </span>
+                    )
+                  })()}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500">
                   {student.externalId || '-'}

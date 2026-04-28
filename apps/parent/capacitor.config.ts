@@ -9,12 +9,10 @@ const config: CapacitorConfig = {
       presentationOptions: ['badge', 'sound', 'alert'],
     },
   },
-  // For development - comment out for production builds
-  server: {
-    // Use your local machine IP for testing on physical device
-    // url: 'http://192.168.1.x:3004',
-    cleartext: true,
-  },
+  // For development - uncomment url for testing on physical device
+  // server: {
+  //   url: 'http://192.168.1.x:3004',
+  // },
 };
 
 export default config;

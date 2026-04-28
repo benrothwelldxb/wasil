@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Wasil - Option 4: Warm & Approachable</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --warm-bg: #FFF8F4;
+    --warm-card: #FFFFFF;
+    --warm-rose: #C4506E;
+    --warm-rose-light: #FFF0F3;
+    --warm-rose-lighter: #FFF7F9;
+    --warm-coral: #E8785B;
+    --warm-sand: #F5EDE6;
+    --warm-amber: #E8A54B;
+    --warm-amber-light: #FFF7EC;
+    --warm-green: #5BA97B;
+    --warm-green-light: #EDFAF2;
+    --warm-blue: #5B8EC4;
+    --warm-blue-light: #EDF4FC;
+    --text-primary: #2D2225;
+    --text-secondary: #7A6469;
+    --text-tertiary: #A8929A;
+    --border: #F0E4E6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Nunito', -apple-system, sans-serif;
+    background: var(--warm-bg);
+    color: var(--text-primary);
+    max-width: 390px;
+    margin: 0 auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Decorative background shapes */
+  .bg-decoration {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    height: 300px;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+  .bg-blob-1 {
+    position: absolute;
+    top: -80px;
+    right: -40px;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(196, 80, 110, 0.06) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .bg-blob-2 {
+    position: absolute;
+    top: 40px;
+    left: -60px;
+    width: 180px;
+    height: 180px;
+    background: radial-gradient(circle, rgba(232, 120, 91, 0.05) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .content {
+    position: relative;
+    z-index: 1;
+    padding: 56px 20px 110px;
+  }
+
+  /* Greeting */
+  .greeting {
+    margin-bottom: 24px;
+  }
+  .greeting .wave {
+    font-size: 32px;
+    display: inline-block;
+    animation: wave 1.5s ease-in-out 0.5s 1;
+    transform-origin: 70% 70%;
+  }
+  @keyframes wave {
+    0%, 100% { transform: rotate(0deg); }
+    15% { transform: rotate(14deg); }
+    30% { transform: rotate(-8deg); }
+    45% { transform: rotate(14deg); }
+    60% { transform: rotate(-4deg); }
+    75% { transform: rotate(10deg); }
+  }
+  .greeting h1 {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1.15;
+    margin-top: 4px;
+  }
+  .greeting .date {
+    font-size: 15px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-top: 4px;
+  }
+
+  /* Action Needed */
+  .action-needed {
+    background: var(--warm-amber-light);
+    border: 1.5px solid rgba(232, 165, 75, 0.25);
+    border-radius: 18px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 24px;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+  .action-needed:active { transform: scale(0.98); }
+  .action-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: rgba(232, 165, 75, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  .action-text h4 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #8B5E0F;
+  }
+  .action-text p {
+    font-size: 13px;
+    color: #B07A1B;
+    font-weight: 500;
+  }
+
+  /* Section Title */
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-bottom: 14px;
+  }
+
+  /* Child Cards */
+  .child-card {
+    background: var(--warm-card);
+    border-radius: 22px;
+    padding: 18px;
+    margin-bottom: 14px;
+    border: 1.5px solid var(--border);
+    transition: transform 0.2s;
+  }
+  .child-card:active { transform: scale(0.98); }
+  .child-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .child-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 800;
+    color: #fff;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .child-avatar .initial-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.15);
+  }
+  .child-info h3 {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .child-info .class-badge {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  .child-activity {
+    background: var(--warm-bg);
+    border-radius: 16px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .activity-emoji {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .activity-details h4 {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .activity-details .meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    line-height: 1.4;
+  }
+  .activity-details .meta .loc {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+  }
+  .after-school-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-top: 6px;
+  }
+
+  /* ECA Registration Banner */
+  .eca-banner {
+    background: linear-gradient(135deg, var(--warm-rose), var(--warm-coral));
+    border-radius: 22px;
+    padding: 22px 20px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+  .eca-banner:active { transform: scale(0.98); }
+  .eca-decoration {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 120px;
+    height: 120px;
+    opacity: 0.1;
+    font-size: 90px;
+    line-height: 1;
+  }
+  .eca-decoration-2 {
+    position: absolute;
+    bottom: -15px;
+    left: 10px;
+    width: 80px;
+    height: 80px;
+    opacity: 0.08;
+    font-size: 60px;
+    line-height: 1;
+  }
+  .eca-banner-content {
+    position: relative;
+    z-index: 1;
+    color: #fff;
+  }
+  .eca-banner-content h3 {
+    font-size: 19px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+  .eca-banner-content p {
+    font-size: 14px;
+    font-weight: 500;
+    opacity: 0.9;
+  }
+  .eca-days {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.22);
+    border-radius: 12px;
+    padding: 6px 14px;
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  /* Messages */
+  .message-bubble {
+    background: var(--warm-card);
+    border-radius: 22px;
+    border: 1.5px solid var(--border);
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    transition: transform 0.2s;
+  }
+  .message-bubble:active { transform: scale(0.98); }
+  .msg-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .msg-dot {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .msg-from-info { flex: 1; }
+  .msg-from-info h4 { font-size: 15px; font-weight: 700; }
+  .msg-from-info .msg-time { font-size: 12px; color: var(--text-tertiary); font-weight: 600; }
+  .msg-unread {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--warm-rose);
+  }
+  .msg-subject {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .msg-preview {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-weight: 500;
+  }
+  .msg-action-btn {
+    margin-top: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border-radius: 14px;
+    background: var(--warm-rose);
+    color: #fff;
+    font-family: 'Nunito', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .msg-action-btn:active { transform: scale(0.95); }
+
+  /* Principal Note */
+  .principal-note {
+    background: var(--warm-rose-lighter);
+    border: 1.5px solid rgba(196, 80, 110, 0.12);
+    border-radius: 22px;
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+  .principal-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .principal-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 23px;
+    background: var(--warm-rose);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .principal-meta h3 { font-size: 15px; font-weight: 700; }
+  .principal-meta p { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+  .principal-text {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-bottom: 14px;
+  }
+  .principal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .heart-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: 'Nunito', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+  }
+  .heart-btn .heart-emoji {
+    font-size: 22px;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .heart-btn.active {
+    color: #E05577;
+    background: rgba(224, 85, 119, 0.08);
+  }
+  .heart-btn.active .heart-emoji { transform: scale(1.15); }
+  .read-link {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--warm-rose);
+    text-decoration: none;
+  }
+
+  /* Bottom Nav */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    background: rgba(255, 248, 244, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 8px 0 28px;
+    z-index: 100;
+  }
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 16px;
+    border-radius: 16px;
+    transition: all 0.2s;
+  }
+  .nav-item.active {
+    background: var(--warm-rose-light);
+  }
+  .nav-item .nav-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--text-tertiary);
+  }
+  .nav-item.active .nav-icon { color: var(--warm-rose); }
+  .nav-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-tertiary);
+  }
+  .nav-item.active .nav-label { color: var(--warm-rose); }
+
+  /* Animations */
+  @keyframes warmFadeIn {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .anim { animation: warmFadeIn 0.6s cubic-bezier(0.25, 0.1, 0.25, 1) both; }
+  .a1 { animation-delay: 0.05s; }
+  .a2 { animation-delay: 0.1s; }
+  .a3 { animation-delay: 0.15s; }
+  .a4 { animation-delay: 0.2s; }
+  .a5 { animation-delay: 0.25s; }
+  .a6 { animation-delay: 0.3s; }
+  .a7 { animation-delay: 0.35s; }
+  .a8 { animation-delay: 0.4s; }
+
+  @media (min-width: 420px) {
+    body {
+      border-left: 1px solid #f0e4e6;
+      border-right: 1px solid #f0e4e6;
+      box-shadow: 0 0 60px rgba(0,0,0,0.04);
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-decoration">
+  <div class="bg-blob-1"></div>
+  <div class="bg-blob-2"></div>
+</div>
+
+<div class="content">
+
+  <!-- Greeting -->
+  <div class="greeting anim a1">
+    <span class="wave">&#128075;</span>
+    <h1>Good morning, Ben</h1>
+    <p class="date">Monday 21 April</p>
+  </div>
+
+  <!-- Action Needed -->
+  <div class="action-needed anim a2">
+    <div class="action-icon">&#9888;&#65039;</div>
+    <div class="action-text">
+      <h4>1 form needs your attention</h4>
+      <p>Field Trip Consent &middot; due in 3 days</p>
+    </div>
+    <svg width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="var(--text-tertiary)" stroke-width="2" stroke-linecap="round"><path d="M1 1l5.5 6L1 13"/></svg>
+  </div>
+
+  <!-- Your Family's Day -->
+  <div class="section-title anim a3">Your family's day</div>
+
+  <!-- Lara's Card -->
+  <div class="child-card anim a3">
+    <div class="child-header">
+      <div class="child-avatar" style="background: linear-gradient(135deg, #5B8EC4, #7BA8D9);">
+        <div class="initial-overlay"></div>
+        L
+      </div>
+      <div class="child-info">
+        <h3>Lara</h3>
+        <span class="class-badge">Year 3 &middot; Miss Parker</span>
+      </div>
+    </div>
+    <div class="child-activity">
+      <div class="activity-emoji" style="background: var(--warm-blue-light);">&#127946;</div>
+      <div class="activity-details">
+        <h4>Swimming</h4>
+        <div class="meta">
+          3:15 &ndash; 4:00 PM
+          <div class="loc">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Sports Hall
+          </div>
+        </div>
+        <span class="after-school-pill" style="background: var(--warm-blue-light); color: var(--warm-blue);">After School</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Oscar's Card -->
+  <div class="child-card anim a4">
+    <div class="child-header">
+      <div class="child-avatar" style="background: linear-gradient(135deg, #5BA97B, #7BC49A);">
+        <div class="initial-overlay"></div>
+        O
+      </div>
+      <div class="child-info">
+        <h3>Oscar</h3>
+        <span class="class-badge">Year 5 &middot; Mr. Thompson</span>
+      </div>
+    </div>
+    <div class="child-activity">
+      <div class="activity-emoji" style="background: var(--warm-green-light);">&#9917;</div>
+      <div class="activity-details">
+        <h4>Football</h4>
+        <div class="meta">
+          3:15 &ndash; 4:15 PM
+          <div class="loc">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Main Pitch
+          </div>
+        </div>
+        <span class="after-school-pill" style="background: var(--warm-green-light); color: var(--warm-green);">After School</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ECA Registration -->
+  <div class="eca-banner anim a5">
+    <div class="eca-decoration">&#127912;</div>
+    <div class="eca-decoration-2">&#11088;</div>
+    <div class="eca-banner-content">
+      <h3>Activity sign-ups are open!</h3>
+      <p>Choose clubs and activities for next term</p>
+      <div class="eca-days">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Closes in 3 days
+      </div>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="section-title anim a6">Recent messages</div>
+
+  <div class="message-bubble anim a6">
+    <div class="msg-top">
+      <div class="msg-dot" style="background: #5C6BC0;">Y3</div>
+      <div class="msg-from-info">
+        <h4>Year 3 Team</h4>
+        <span class="msg-time">Today, 8:30 AM</span>
+      </div>
+      <div class="msg-unread"></div>
+    </div>
+    <div class="msg-subject">Field Trip to Science Museum</div>
+    <div class="msg-preview">Dear parents, we are excited to announce a field trip on Thursday 1st May. Please provide your consent by 24th April.</div>
+    <button class="msg-action-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Give Consent
+    </button>
+  </div>
+
+  <div class="message-bubble anim a7">
+    <div class="msg-top">
+      <div class="msg-dot" style="background: var(--warm-rose);">WS</div>
+      <div class="msg-from-info">
+        <h4>Whole School</h4>
+        <span class="msg-time">Yesterday</span>
+      </div>
+    </div>
+    <div class="msg-subject">Annual Sports Day</div>
+    <div class="msg-preview">Sports Day on Friday 16th May. Students should come in house colours. Parents welcome from 9:00 AM.</div>
+  </div>
+
+  <!-- Principal's Note -->
+  <div class="section-title anim a8">From Mrs. Harrison</div>
+
+  <div class="principal-note anim a8">
+    <div class="principal-top">
+      <div class="principal-avatar">MH</div>
+      <div class="principal-meta">
+        <h3>Weekly Update</h3>
+        <p>Week of 21 April</p>
+      </div>
+    </div>
+    <div class="principal-text">
+      What a wonderful start to the summer term! It's been lovely seeing the children back and settled after the holiday. A special well done to Year 5...
+    </div>
+    <div class="principal-footer">
+      <button class="heart-btn" id="heartBtn" onclick="toggleHeart()">
+        <span class="heart-emoji">&#129293;</span>
+        <span id="heartCount">24</span>
+      </button>
+      <a href="#" class="read-link">Read more</a>
+    </div>
+  </div>
+
+  <div style="height: 20px;"></div>
+</div>
+
+<!-- Bottom Nav -->
+<div class="bottom-nav">
+  <button class="nav-item active">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l-10 9h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
+    <span class="nav-label">Home</span>
+  </button>
+  <button class="nav-item">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span class="nav-label">Events</span>
+  </button>
+  <button class="nav-item">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    <span class="nav-label">Activities</span>
+  </button>
+  <button class="nav-item">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span class="nav-label">Files</span>
+  </button>
+  <button class="nav-item">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+    <span class="nav-label">More</span>
+  </button>
+</div>
+
+<script>
+  let hearted = false;
+  let count = 24;
+  function toggleHeart() {
+    const btn = document.getElementById('heartBtn');
+    const countEl = document.getElementById('heartCount');
+    hearted = !hearted;
+    count += hearted ? 1 : -1;
+    btn.classList.toggle('active', hearted);
+    countEl.textContent = count;
+    const emoji = btn.querySelector('.heart-emoji');
+    emoji.style.transform = 'scale(1.4)';
+    setTimeout(() => { emoji.style.transform = hearted ? 'scale(1.15)' : 'scale(1)'; }, 180);
+  }
+</script>
+</body>
+</html>

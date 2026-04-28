@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Plus, Pencil, Trash2, Users, UserPlus, FolderPlus, X, Eye, EyeOff, UserMinus } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { Group, GroupCategory, GroupMember, GroupStaffAssignment, StudentSearchResult } from '@wasil/shared'
 import { StudentSearchSelect } from '../components/StudentSearchSelect'
 
@@ -12,6 +12,7 @@ interface SelectedStudent {
 
 export function GroupsPage() {
   const theme = useTheme()
+  const toast = useToast()
   const { data: groups, refetch: refetchGroups, isLoading: loadingGroups, error: errorGroups } = useApi<Group[]>(
     () => api.groups.list(),
     []
@@ -133,7 +134,7 @@ export function GroupsPage() {
       resetGroupForm()
       refetchGroups()
     } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -159,7 +160,7 @@ export function GroupsPage() {
       resetCategoryForm()
       refetchCategories()
     } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -177,7 +178,7 @@ export function GroupsPage() {
       }
       setDeleteConfirm(null)
     } catch (error) {
-      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -186,7 +187,7 @@ export function GroupsPage() {
       await api.groups.update(group.id, { isActive: !group.isActive })
       refetchGroups()
     } catch (error) {
-      alert(`Failed to update: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to update: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -220,7 +221,7 @@ export function GroupsPage() {
       setSelectedStudents([])
       refetchGroups()
     } catch (error) {
-      alert(`Failed to add members: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to add members: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -231,7 +232,7 @@ export function GroupsPage() {
       setMembers(members.filter(m => m.studentId !== studentId))
       refetchGroups()
     } catch (error) {
-      alert(`Failed to remove member: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to remove member: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -274,7 +275,7 @@ export function GroupsPage() {
       setStaffCanManage(false)
       refetchGroups()
     } catch (error) {
-      alert(`Failed to assign staff: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to assign staff: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -285,7 +286,7 @@ export function GroupsPage() {
       setStaffAssignments(staffAssignments.filter(a => a.userId !== userId))
       refetchGroups()
     } catch (error) {
-      alert(`Failed to remove staff: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to remove staff: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 

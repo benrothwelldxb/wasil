@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wasil - Design Variants</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'DM Sans', -apple-system, sans-serif;
+    background: #0C0C0E;
+    color: #F5F5F7;
+    min-height: 100vh;
+    padding: 48px 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .header {
+    max-width: 1200px;
+    margin: 0 auto 48px;
+    text-align: center;
+  }
+  .header .label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: #7f0029;
+    margin-bottom: 12px;
+  }
+  .header h1 {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 8px;
+  }
+  .header p {
+    font-size: 16px;
+    color: rgba(245,245,247,0.5);
+    max-width: 600px;
+    margin: 0 auto;
+    line-height: 1.5;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 32px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #161618;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    overflow: hidden;
+    transition: all 0.3s;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(127, 0, 41, 0.3);
+    box-shadow: 0 20px 60px rgba(127, 0, 41, 0.1);
+  }
+  .card-preview {
+    height: 280px;
+    overflow: hidden;
+    position: relative;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .card-preview iframe {
+    width: 390px;
+    height: 844px;
+    border: none;
+    transform: scale(0.5);
+    transform-origin: top left;
+    pointer-events: none;
+  }
+  .card-body {
+    padding: 20px 24px 24px;
+  }
+  .card-number {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #7f0029;
+    margin-bottom: 6px;
+  }
+  .card-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+  .card-desc {
+    font-size: 14px;
+    color: rgba(245,245,247,0.45);
+    line-height: 1.5;
+  }
+  .card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 14px;
+  }
+  .tag {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.06);
+    color: rgba(245,245,247,0.5);
+  }
+  .current-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    background: rgba(127, 0, 41, 0.15);
+    color: #E0436A;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 6px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="label">Wasil Design System</div>
+  <h1>Parent App Design Variants</h1>
+  <p>6 distinct design directions for the Capacitor-delivered parent dashboard. Each focuses on native mobile usability with personalisation. Click any card to view the full mockup.</p>
+</div>
+
+<div class="grid">
+
+  <a class="card" href="option-2-ios-native.html">
+    <div class="card-preview">
+      <iframe src="option-2-ios-native.html" loading="lazy"></iframe>
+    </div>
+    <div class="card-body">
+      <div class="card-number">Option 2</div>
+      <div class="card-title">iOS Native</div>
+      <div class="card-desc">Follows Apple HIG closely. Large title navigation, frosted glass headers, system-grouped lists, and native interaction patterns. Burgundy as tint colour.</div>
+      <div class="card-tags">
+        <span class="tag">SF Pro-inspired</span>
+        <span class="tag">Backdrop blur</span>
+        <span class="tag">Grouped lists</span>
+        <span class="tag">Large titles</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="option-3-material-you.html">
+    <div class="card-preview">
+      <iframe src="option-3-material-you.html" loading="lazy"></iframe>
+    </div>
+    <div class="card-body">
+      <div class="card-number">Option 3</div>
+      <div class="card-title">Material You</div>
+      <div class="card-desc">Google Material Design 3 with dynamic colour generated from burgundy. Tonal surfaces, rounded shapes, pill-shaped nav indicators, and M3 components.</div>
+      <div class="card-tags">
+        <span class="tag">M3 Components</span>
+        <span class="tag">Tonal palette</span>
+        <span class="tag">28px radius</span>
+        <span class="tag">Surface tint</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="option-4-warm-approachable.html">
+    <div class="card-preview">
+      <iframe src="option-4-warm-approachable.html" loading="lazy"></iframe>
+    </div>
+    <div class="card-body">
+      <div class="card-number">Option 4</div>
+      <div class="card-title">Warm & Approachable</div>
+      <div class="card-desc">Child-centric with per-child daily cards. Soft rose/coral palette, generous touch targets, friendly emoji, and a "Headspace meets school" feel.</div>
+      <div class="card-tags">
+        <span class="tag">Child-centric</span>
+        <span class="tag">Warm palette</span>
+        <span class="tag">Friendly UX</span>
+        <span class="tag">48px+ targets</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="option-5-clean-minimal.html">
+    <div class="card-preview">
+      <iframe src="option-5-clean-minimal.html" loading="lazy"></iframe>
+    </div>
+    <div class="card-body">
+      <div class="card-number">Option 5</div>
+      <div class="card-title">Clean & Minimal</div>
+      <div class="card-desc">Swiss-inspired, typography-driven design. Serif/sans-serif pairing, generous whitespace, colour-coded timeline, and information density through hierarchy.</div>
+      <div class="card-tags">
+        <span class="tag">Typography-first</span>
+        <span class="tag">Serif pairing</span>
+        <span class="tag">Timeline layout</span>
+        <span class="tag">Whitespace</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="option-6-bold-dark.html">
+    <div class="card-preview">
+      <iframe src="option-6-bold-dark.html" loading="lazy"></iframe>
+    </div>
+    <div class="card-body">
+      <div class="card-number">Option 6</div>
+      <div class="card-title">Bold & Modern Dark</div>
+      <div class="card-desc">Dark mode with vibrant accent colours and glow effects. High contrast, bold typography, and a premium tech-forward aesthetic.</div>
+      <div class="card-tags">
+        <span class="tag">Dark mode</span>
+        <span class="tag">Glow effects</span>
+        <span class="tag">High contrast</span>
+        <span class="tag">Tech-forward</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="option-7-editorial-premium.html">
+    <div class="card-preview">
+      <iframe src="option-7-editorial-premium.html" loading="lazy"></iframe>
+    </div>
+    <div class="card-body">
+      <div class="card-number">Option 7</div>
+      <div class="card-title">Editorial & Premium</div>
+      <div class="card-desc">Magazine-inspired with a "daily briefing" metaphor. Playfair Display serif, newspaper-style layout, two-column grids, and editorial typography.</div>
+      <div class="card-tags">
+        <span class="tag">Editorial layout</span>
+        <span class="tag">Serif typography</span>
+        <span class="tag">Newspaper grid</span>
+        <span class="tag">Premium feel</span>
+      </div>
+    </div>
+  </a>
+
+</div>
+
+</body>
+</html>

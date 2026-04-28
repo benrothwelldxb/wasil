@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Wasil - Option 2: iOS Native</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --tint: #7f0029;
+    --tint-light: #7f002918;
+    --tint-medium: #7f002930;
+    --bg: #F2F2F7;
+    --card: #FFFFFF;
+    --separator: rgba(60, 60, 67, 0.12);
+    --label: #000000;
+    --label-secondary: rgba(60, 60, 67, 0.6);
+    --label-tertiary: rgba(60, 60, 67, 0.3);
+    --system-red: #FF3B30;
+    --system-orange: #FF9500;
+    --system-blue: #007AFF;
+    --system-green: #34C759;
+    --safe-top: 54px;
+    --safe-bottom: 34px;
+    --tab-height: 83px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'DM Sans', -apple-system, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--label);
+    max-width: 390px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
+  }
+
+  /* Status Bar */
+  .status-bar {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    height: var(--safe-top);
+    z-index: 200;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 0 24px 8px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0;
+    transition: color 0.2s;
+  }
+  .status-bar .time { font-variant-numeric: tabular-nums; }
+  .status-bar .icons { display: flex; align-items: center; gap: 6px; }
+  .status-bar .icons svg { width: 16px; height: 12px; }
+
+  /* Dynamic Island */
+  .dynamic-island {
+    position: fixed;
+    top: 11px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 126px;
+    height: 36px;
+    background: #000;
+    border-radius: 20px;
+    z-index: 300;
+  }
+
+  /* Nav Header */
+  .nav-header {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    z-index: 100;
+    background: rgba(242, 242, 247, 0.72);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 0.5px solid var(--separator);
+    transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+  .nav-header.scrolled .large-title { opacity: 0; height: 0; padding: 0 20px; }
+  .nav-header.scrolled .inline-title { opacity: 1; }
+  .nav-header .top-row {
+    height: var(--safe-top);
+    display: flex;
+    align-items: flex-end;
+    padding: 0 20px 8px;
+  }
+  .nav-header .inline-title-row {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .inline-title {
+    font-size: 17px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .nav-actions {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .nav-actions .badge-wrap { position: relative; }
+  .nav-actions .badge {
+    position: absolute;
+    top: -5px;
+    right: -7px;
+    background: var(--system-red);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    border: 2px solid var(--bg);
+  }
+  .large-title {
+    padding: 4px 20px 10px;
+    transition: all 0.3s;
+    overflow: hidden;
+  }
+  .large-title h1 {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .large-title .subtitle {
+    font-size: 15px;
+    color: var(--label-secondary);
+    margin-top: 2px;
+  }
+
+  /* Scroll Content */
+  .scroll-content {
+    padding-top: 160px;
+    padding-bottom: calc(var(--tab-height) + 20px);
+    min-height: 100vh;
+  }
+
+  /* Pull to Refresh */
+  .pull-hint {
+    text-align: center;
+    padding: 0 0 12px;
+    color: var(--label-tertiary);
+    font-size: 13px;
+  }
+
+  /* iOS Grouped Section */
+  .section {
+    margin: 0 16px 24px;
+  }
+  .section-header {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--label-secondary);
+    padding: 0 16px 6px;
+    letter-spacing: 0.02em;
+  }
+  .section-card {
+    background: var(--card);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 0 0.5px rgba(0,0,0,0.04);
+  }
+  .section-row {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
+    min-height: 44px;
+    position: relative;
+  }
+  .section-row + .section-row::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 56px;
+    right: 0;
+    height: 0.5px;
+    background: var(--separator);
+  }
+  .section-row .icon-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 16px;
+  }
+  .section-row .row-content { flex: 1; min-width: 0; }
+  .section-row .row-title {
+    font-size: 17px;
+    font-weight: 400;
+    line-height: 1.3;
+  }
+  .section-row .row-subtitle {
+    font-size: 13px;
+    color: var(--label-secondary);
+    line-height: 1.3;
+    margin-top: 1px;
+  }
+  .section-row .chevron {
+    color: var(--label-tertiary);
+    flex-shrink: 0;
+  }
+
+  /* Urgent Banner */
+  .urgent-banner {
+    margin: 0 16px 16px;
+    background: linear-gradient(135deg, #FFF3E0, #FFF8E1);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 0 0 0.5px rgba(255, 149, 0, 0.2);
+  }
+  .urgent-banner .urgent-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--system-orange);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .urgent-banner .urgent-text {
+    font-size: 15px;
+    font-weight: 500;
+    color: #E65100;
+    line-height: 1.3;
+  }
+  .urgent-banner .urgent-text span {
+    font-size: 13px;
+    font-weight: 400;
+    color: #BF360C;
+    display: block;
+    margin-top: 1px;
+  }
+
+  /* ECA Registration Banner */
+  .eca-banner {
+    margin: 0 16px 24px;
+    background: linear-gradient(135deg, var(--tint), #a3003e);
+    border-radius: 16px;
+    padding: 18px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .eca-banner::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    width: 100px;
+    height: 100px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 50%;
+  }
+  .eca-banner::after {
+    content: '';
+    position: absolute;
+    bottom: -30px;
+    right: 40px;
+    width: 70px;
+    height: 70px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 50%;
+  }
+  .eca-banner .eca-icon {
+    width: 44px;
+    height: 44px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+  }
+  .eca-banner .eca-text {
+    flex: 1;
+    color: #fff;
+    position: relative;
+    z-index: 1;
+  }
+  .eca-banner .eca-text h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .eca-banner .eca-text p {
+    font-size: 13px;
+    opacity: 0.85;
+  }
+  .eca-banner .eca-text .days-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.25);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 6px;
+  }
+  .eca-banner .eca-chevron {
+    color: rgba(255,255,255,0.6);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Activity Card */
+  .activity-row .time-badge {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--tint-light);
+    color: var(--tint);
+    display: inline-block;
+    margin-top: 4px;
+  }
+  .activity-row .location {
+    font-size: 12px;
+    color: var(--label-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 2px;
+  }
+
+  /* Message Card */
+  .message-card {
+    padding: 14px 16px;
+    position: relative;
+  }
+  .message-card + .message-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: 0;
+    height: 0.5px;
+    background: var(--separator);
+  }
+  .message-card .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .message-card .msg-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .message-card .msg-meta { flex: 1; }
+  .message-card .msg-from {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .message-card .msg-time {
+    font-size: 13px;
+    color: var(--label-secondary);
+  }
+  .message-card .msg-subject {
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    line-height: 1.3;
+  }
+  .message-card .msg-preview {
+    font-size: 14px;
+    color: var(--label-secondary);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .message-card .msg-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 10px;
+    padding: 8px 14px;
+    background: var(--tint);
+    color: #fff;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .message-card .unread-dot {
+    width: 10px;
+    height: 10px;
+    background: var(--tint);
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Principal Card */
+  .principal-card {
+    margin: 0 16px 24px;
+    background: var(--card);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 0 0.5px rgba(0,0,0,0.04);
+  }
+  .principal-header {
+    background: linear-gradient(135deg, #F8F0F3, #FDF5F7);
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .principal-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 24px;
+    background: var(--tint);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .principal-info h3 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .principal-info p {
+    font-size: 13px;
+    color: var(--label-secondary);
+  }
+  .principal-body {
+    padding: 14px 16px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--label-secondary);
+    border-bottom: 0.5px solid var(--separator);
+  }
+  .principal-footer {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .heart-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    font-size: 15px;
+    color: var(--label-secondary);
+    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  .heart-btn.active { color: var(--system-red); }
+  .heart-btn .heart-icon {
+    font-size: 22px;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .heart-btn.active .heart-icon { transform: scale(1.15); }
+  .heart-btn .heart-count { font-weight: 500; font-variant-numeric: tabular-nums; }
+  .read-more-link {
+    font-size: 15px;
+    color: var(--tint);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  /* Tab Bar */
+  .tab-bar {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    height: var(--tab-height);
+    background: rgba(249, 249, 249, 0.94);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-top: 0.5px solid var(--separator);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-around;
+    padding-top: 6px;
+    z-index: 100;
+  }
+  .tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 64px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    background: none;
+    border: none;
+    padding: 4px 0;
+  }
+  .tab-item svg { width: 24px; height: 24px; }
+  .tab-item .tab-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  .tab-item.active svg { color: var(--tint); }
+  .tab-item.active .tab-label { color: var(--tint); }
+  .tab-item:not(.active) svg { color: var(--label-tertiary); }
+  .tab-item:not(.active) .tab-label { color: var(--label-tertiary); }
+
+  /* Animations */
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in {
+    animation: fadeSlideUp 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) both;
+  }
+  .delay-1 { animation-delay: 0.05s; }
+  .delay-2 { animation-delay: 0.1s; }
+  .delay-3 { animation-delay: 0.15s; }
+  .delay-4 { animation-delay: 0.2s; }
+  .delay-5 { animation-delay: 0.25s; }
+  .delay-6 { animation-delay: 0.3s; }
+
+  /* Frame for desktop viewing */
+  @media (min-width: 420px) {
+    body {
+      border-left: 1px solid #ddd;
+      border-right: 1px solid #ddd;
+      box-shadow: 0 0 60px rgba(0,0,0,0.08);
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Dynamic Island -->
+<div class="dynamic-island"></div>
+
+<!-- Status Bar -->
+<div class="status-bar">
+  <span class="time">9:41</span>
+  <div class="icons">
+    <svg viewBox="0 0 17 12" fill="currentColor"><path d="M1.5 4.5h1.2c.17 0 .3.13.3.3V11c0 .17-.13.3-.3.3H1.5c-.17 0-.3-.13-.3-.3V4.8c0-.17.13-.3.3-.3zm3.6-1.5h1.2c.17 0 .3.13.3.3V11c0 .17-.13.3-.3.3H5.1c-.17 0-.3-.13-.3-.3V3.3c0-.17.13-.3.3-.3zm3.6-1.5h1.2c.17 0 .3.13.3.3V11c0 .17-.13.3-.3.3H8.7c-.17 0-.3-.13-.3-.3V1.8c0-.17.13-.3.3-.3zm3.6-1.2h1.2c.17 0 .3.13.3.3V11c0 .17-.13.3-.3.3h-1.2c-.17 0-.3-.13-.3-.3V.6c0-.17.13-.3.3-.3z"/></svg>
+    <svg viewBox="0 0 16 12" fill="currentColor"><path d="M8 1.7A8.93 8.93 0 0 1 14.47 4a.5.5 0 0 0 .7-.02l.7-.72a.5.5 0 0 0-.01-.71A11.07 11.07 0 0 0 8 0C5.28 0 2.8.94 1.14 2.55a.5.5 0 0 0-.01.71l.7.72a.5.5 0 0 0 .7.02A8.93 8.93 0 0 1 8 1.7zm0 3.4c1.7 0 3.26.6 4.47 1.6a.5.5 0 0 0 .68-.03l.7-.72a.5.5 0 0 0-.02-.7A8.36 8.36 0 0 0 8 3.4c-2 0-3.83.67-5.29 1.79a.5.5 0 0 0-.03.7l.7.73a.5.5 0 0 0 .69.03A6.2 6.2 0 0 1 8 5.1zm3.18 3.18a.5.5 0 0 0-.02-.7A4.46 4.46 0 0 0 8 6.51c-1.2 0-2.3.39-3.16 1.06a.5.5 0 0 0-.02.7l.7.73c.18.19.47.2.67.03A2.87 2.87 0 0 1 8 8.31c.67 0 1.3.24 1.81.64.2.16.49.15.67-.04l.7-.63zM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>
+    <svg viewBox="0 0 27 12" fill="currentColor"><rect x="0" y="1" width="22" height="10" rx="2.5" ry="2.5" stroke="currentColor" stroke-width="1" fill="none" opacity="0.35"/><rect x="1.5" y="2.5" width="16" height="7" rx="1.5" ry="1.5"/><path d="M24 4.5c.8.4 1.5 1.2 1.5 2s-.7 1.6-1.5 2V4.5z" opacity="0.4"/></svg>
+  </div>
+</div>
+
+<!-- Navigation Header -->
+<nav class="nav-header" id="navHeader">
+  <div class="top-row"></div>
+  <div class="inline-title-row">
+    <span class="inline-title">Home</span>
+    <div class="nav-actions">
+      <div class="badge-wrap">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--tint)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="badge">2</span>
+      </div>
+    </div>
+  </div>
+  <div class="large-title">
+    <h1>Hello Ben</h1>
+    <p class="subtitle">Monday 21 April</p>
+  </div>
+</nav>
+
+<!-- Scrollable Content -->
+<div class="scroll-content" id="scrollContent">
+  <div class="pull-hint animate-in">Pull down to refresh</div>
+
+  <!-- Urgent Forms Banner -->
+  <div class="urgent-banner animate-in delay-1">
+    <div class="urgent-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </div>
+    <div class="urgent-text">
+      1 form due within 3 days
+      <span>Field Trip Consent - Year 3</span>
+    </div>
+    <svg class="chevron" width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="2" stroke-linecap="round"><path d="M1 1l5.5 6L1 13"/></svg>
+  </div>
+
+  <!-- ECA Registration Banner -->
+  <div class="eca-banner animate-in delay-2" style="cursor: pointer;">
+    <div class="eca-icon">&#9733;</div>
+    <div class="eca-text">
+      <h3>Activity Registration Open</h3>
+      <p>Sign up for clubs and activities</p>
+      <span class="days-badge">3 days left</span>
+    </div>
+    <svg class="eca-chevron" width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2.5" stroke-linecap="round"><path d="M1 1l5.5 6L1 13"/></svg>
+  </div>
+
+  <!-- Today's Activities -->
+  <div class="section animate-in delay-3">
+    <div class="section-header">Today's Activities</div>
+    <div class="section-card">
+      <div class="section-row activity-row">
+        <div class="icon-circle" style="background: #E3F2FD;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1565C0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s2-6 4-6 2 12 4 12 2-12 4-12 2 6 4 6 2-12 4-12 2 6 4 6"/></svg>
+        </div>
+        <div class="row-content">
+          <div class="row-title" style="font-weight:500;">Swimming</div>
+          <div class="row-subtitle">Lara &middot; 3:15 &ndash; 4:00</div>
+          <div class="location">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Sports Hall
+          </div>
+          <span class="time-badge">After School</span>
+        </div>
+        <svg class="chevron" width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="var(--label-tertiary)" stroke-width="2" stroke-linecap="round"><path d="M1 1l5.5 6L1 13"/></svg>
+      </div>
+      <div class="section-row activity-row">
+        <div class="icon-circle" style="background: #E8F5E9;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10"/><path d="M2 12h20"/></svg>
+        </div>
+        <div class="row-content">
+          <div class="row-title" style="font-weight:500;">Football</div>
+          <div class="row-subtitle">Oscar &middot; 3:15 &ndash; 4:15</div>
+          <div class="location">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Main Pitch
+          </div>
+          <span class="time-badge">After School</span>
+        </div>
+        <svg class="chevron" width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="var(--label-tertiary)" stroke-width="2" stroke-linecap="round"><path d="M1 1l5.5 6L1 13"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="section animate-in delay-4">
+    <div class="section-header">Messages</div>
+    <div class="section-card">
+      <div class="message-card">
+        <div class="msg-header">
+          <div class="msg-avatar" style="background: #5C6BC0;">Y3</div>
+          <div class="msg-meta">
+            <div class="msg-from">Year 3 Team</div>
+            <div class="msg-time">Today, 8:30 AM</div>
+          </div>
+          <div class="unread-dot"></div>
+        </div>
+        <div class="msg-subject">Field Trip to Science Museum</div>
+        <div class="msg-preview">Dear parents, we are excited to announce a field trip to the Science Museum on Thursday 1st May. Please provide your consent below by 24th April.</div>
+        <button class="msg-action">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Give Consent
+        </button>
+      </div>
+      <div class="message-card">
+        <div class="msg-header">
+          <div class="msg-avatar" style="background: var(--tint);">WS</div>
+          <div class="msg-meta">
+            <div class="msg-from">Whole School</div>
+            <div class="msg-time">Yesterday</div>
+          </div>
+        </div>
+        <div class="msg-subject">Annual Sports Day</div>
+        <div class="msg-preview">Sports Day will be held on Friday 16th May. All students should come in their house colours. Parents are welcome to attend from 9:00 AM.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Principal's Update -->
+  <div class="principal-card animate-in delay-5">
+    <div class="principal-header">
+      <div class="principal-avatar">MH</div>
+      <div class="principal-info">
+        <h3>Principal's Weekly Update</h3>
+        <p>Mrs. Harrison &middot; Week of 21 April</p>
+      </div>
+    </div>
+    <div class="principal-body">
+      What a wonderful start to the summer term! It's been lovely seeing the children back and settled after the holiday. A special well done to Year 5 for their assembly this morning...
+    </div>
+    <div class="principal-footer">
+      <button class="heart-btn" id="heartBtn" onclick="toggleHeart()">
+        <span class="heart-icon">&#9825;</span>
+        <span class="heart-count" id="heartCount">24</span>
+      </button>
+      <a href="#" class="read-more-link">Read More</a>
+    </div>
+  </div>
+
+  <div style="height: 20px;"></div>
+</div>
+
+<!-- Tab Bar -->
+<div class="tab-bar">
+  <button class="tab-item active">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l-10 9h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
+    <span class="tab-label">Home</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span class="tab-label">Events</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    <span class="tab-label">Activities</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span class="tab-label">Files</span>
+  </button>
+  <button class="tab-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+    <span class="tab-label">More</span>
+  </button>
+</div>
+
+<script>
+  // Large title scroll behavior
+  const navHeader = document.getElementById('navHeader');
+  const scrollContent = document.getElementById('scrollContent');
+
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 20) {
+      navHeader.classList.add('scrolled');
+    } else {
+      navHeader.classList.remove('scrolled');
+    }
+  }, { passive: true });
+
+  // Heart toggle
+  let hearted = false;
+  let heartCount = 24;
+  function toggleHeart() {
+    const btn = document.getElementById('heartBtn');
+    const count = document.getElementById('heartCount');
+    hearted = !hearted;
+    if (hearted) {
+      btn.classList.add('active');
+      heartCount++;
+      btn.querySelector('.heart-icon').innerHTML = '&#9829;';
+    } else {
+      btn.classList.remove('active');
+      heartCount--;
+      btn.querySelector('.heart-icon').innerHTML = '&#9825;';
+    }
+    count.textContent = heartCount;
+    // Haptic-style bounce
+    btn.querySelector('.heart-icon').style.transform = 'scale(1.4)';
+    setTimeout(() => {
+      btn.querySelector('.heart-icon').style.transform = hearted ? 'scale(1.15)' : 'scale(1)';
+    }, 150);
+  }
+</script>
+</body>
+</html>

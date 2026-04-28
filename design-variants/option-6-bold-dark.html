@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Wasil - Option 6: Bold & Modern Dark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0C0C0E;
+    --surface-1: #161618;
+    --surface-2: #1E1E22;
+    --surface-3: #26262B;
+    --border: rgba(255, 255, 255, 0.06);
+    --text-1: #F5F5F7;
+    --text-2: rgba(245, 245, 247, 0.65);
+    --text-3: rgba(245, 245, 247, 0.35);
+    --accent: #FF2D55;
+    --accent-glow: rgba(255, 45, 85, 0.15);
+    --accent-soft: rgba(255, 45, 85, 0.1);
+    --tint-burgundy: #E0436A;
+    --blue: #5AC8FA;
+    --green: #30D158;
+    --orange: #FF9F0A;
+    --purple: #BF5AF2;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text-1);
+    max-width: 390px;
+    margin: 0 auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .content {
+    padding: 56px 16px 110px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .header-left h1 {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+  }
+  .header-left h1 .name { color: var(--accent); }
+  .header-left .date {
+    font-size: 14px;
+    color: var(--text-2);
+    font-weight: 500;
+    margin-top: 3px;
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .header-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s;
+  }
+  .header-btn:active { transform: scale(0.93); background: var(--surface-3); }
+  .header-btn svg { width: 20px; height: 20px; color: var(--text-2); }
+  .header-btn .dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+
+  /* Urgent */
+  .urgent-strip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: rgba(255, 159, 10, 0.08);
+    border: 1px solid rgba(255, 159, 10, 0.15);
+    border-radius: 16px;
+    margin-bottom: 20px;
+    cursor: pointer;
+  }
+  .urgent-strip:active { transform: scale(0.98); }
+  .urgent-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(255, 159, 10, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .urgent-text {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--orange);
+  }
+  .urgent-text span {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.7;
+    margin-top: 1px;
+  }
+
+  /* Registration CTA */
+  .reg-cta {
+    background: linear-gradient(135deg, var(--accent), #CC1E45);
+    border-radius: 20px;
+    padding: 22px 20px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+  .reg-cta:active { transform: scale(0.97); }
+  .reg-cta::before {
+    content: '';
+    position: absolute;
+    top: -30px;
+    right: -30px;
+    width: 120px;
+    height: 120px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 60px;
+  }
+  .reg-cta::after {
+    content: '';
+    position: absolute;
+    bottom: -40px;
+    left: 20px;
+    width: 80px;
+    height: 80px;
+    background: rgba(0,0,0,0.1);
+    border-radius: 40px;
+  }
+  .reg-cta h3 {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 4px;
+    position: relative;
+    z-index: 1;
+    letter-spacing: -0.02em;
+  }
+  .reg-cta p {
+    font-size: 14px;
+    opacity: 0.85;
+    margin-bottom: 12px;
+    position: relative;
+    z-index: 1;
+    font-weight: 500;
+  }
+  .reg-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Section Label */
+  .section-label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-3);
+    margin-bottom: 14px;
+  }
+
+  /* Activity Cards */
+  .activity-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 16px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .activity-card:active { transform: scale(0.98); background: var(--surface-2); }
+  .act-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  .act-info { flex: 1; }
+  .act-info h4 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 2px;
+    letter-spacing: -0.01em;
+  }
+  .act-info .detail {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.4;
+  }
+  .act-info .loc {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .act-time {
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .act-time .t-start {
+    font-size: 16px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .act-time .t-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-3);
+    margin-top: 2px;
+  }
+
+  /* Messages */
+  .msg-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    overflow: hidden;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .msg-card:active { background: var(--surface-2); }
+  .msg-body {
+    padding: 16px;
+  }
+  .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .msg-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .msg-meta { flex: 1; }
+  .msg-meta h4 { font-size: 14px; font-weight: 700; }
+  .msg-meta .time { font-size: 12px; color: var(--text-3); }
+  .msg-unread {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+  .msg-subject {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    letter-spacing: -0.01em;
+  }
+  .msg-preview {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .msg-actions {
+    padding: 0 12px 12px;
+    display: flex;
+    gap: 8px;
+  }
+  .btn-accent {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-accent:active { transform: scale(0.95); }
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    background: var(--surface-3);
+    color: var(--text-2);
+    border: none;
+    border-radius: 12px;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-ghost:active { transform: scale(0.95); }
+
+  /* Principal */
+  .principal-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .principal-header {
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .p-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .p-info h3 { font-size: 15px; font-weight: 700; }
+  .p-info p { font-size: 12px; color: var(--text-3); }
+  .p-body {
+    padding: 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-2);
+  }
+  .p-footer {
+    padding: 8px 12px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .heart-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-3);
+    transition: all 0.2s;
+  }
+  .heart-btn:active { background: var(--surface-3); }
+  .heart-btn .h-icon {
+    font-size: 20px;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .heart-btn.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .heart-btn.active .h-icon { transform: scale(1.15); }
+
+  /* Nav Bar */
+  .nav-bar {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    height: 82px;
+    background: rgba(12, 12, 14, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-around;
+    padding-top: 8px;
+    z-index: 100;
+  }
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 12px;
+  }
+  .nav-item svg { width: 22px; height: 22px; }
+  .nav-label { font-size: 10px; font-weight: 600; }
+  .nav-item.active svg { color: var(--accent); }
+  .nav-item.active .nav-label { color: var(--accent); }
+  .nav-item:not(.active) svg { color: var(--text-3); }
+  .nav-item:not(.active) .nav-label { color: var(--text-3); }
+
+  /* Glow effects */
+  .glow-accent {
+    box-shadow: 0 0 30px var(--accent-glow), 0 4px 20px rgba(0,0,0,0.3);
+  }
+
+  /* Animations */
+  @keyframes darkSlideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .anim { animation: darkSlideUp 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) both; }
+  .d1 { animation-delay: 0.04s; }
+  .d2 { animation-delay: 0.08s; }
+  .d3 { animation-delay: 0.12s; }
+  .d4 { animation-delay: 0.16s; }
+  .d5 { animation-delay: 0.2s; }
+  .d6 { animation-delay: 0.24s; }
+  .d7 { animation-delay: 0.28s; }
+  .d8 { animation-delay: 0.32s; }
+
+  @media (min-width: 420px) {
+    body {
+      border-left: 1px solid var(--surface-2);
+      border-right: 1px solid var(--surface-2);
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="content">
+
+  <!-- Header -->
+  <div class="header anim d1">
+    <div class="header-left">
+      <h1>Hello, <span class="name">Ben</span></h1>
+      <p class="date">Monday 21 April</p>
+    </div>
+    <div class="header-right">
+      <div class="header-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <div class="dot"></div>
+      </div>
+      <div class="header-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Urgent -->
+  <div class="urgent-strip anim d2">
+    <div class="urgent-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <div class="urgent-text">
+      1 form due within 3 days
+      <span>Field Trip Consent &mdash; Year 3</span>
+    </div>
+    <svg width="6" height="12" viewBox="0 0 6 12" fill="none" stroke="var(--text-3)" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l4 5-4 5"/></svg>
+  </div>
+
+  <!-- Registration CTA -->
+  <div class="reg-cta glow-accent anim d3">
+    <h3>Activity Registration</h3>
+    <p>Sign up for clubs and activities</p>
+    <div class="reg-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      3 days left
+    </div>
+  </div>
+
+  <!-- Today's Activities -->
+  <div style="margin-bottom: 24px;">
+    <div class="section-label anim d4">Today's Activities</div>
+
+    <div class="activity-card anim d4">
+      <div class="act-icon" style="background: rgba(90, 200, 250, 0.12);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8"><path d="M2 12s2-6 4-6 2 12 4 12 2-12 4-12 2 6 4 6 2-12 4-12 2 6 4 6"/></svg>
+      </div>
+      <div class="act-info">
+        <h4>Swimming</h4>
+        <div class="detail">Lara</div>
+        <div class="loc">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          Sports Hall
+        </div>
+      </div>
+      <div class="act-time">
+        <div class="t-start">3:15</div>
+        <div class="t-label">After</div>
+      </div>
+    </div>
+
+    <div class="activity-card anim d5">
+      <div class="act-icon" style="background: rgba(48, 209, 88, 0.12);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10"/><path d="M2 12h20"/></svg>
+      </div>
+      <div class="act-info">
+        <h4>Football</h4>
+        <div class="detail">Oscar</div>
+        <div class="loc">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          Main Pitch
+        </div>
+      </div>
+      <div class="act-time">
+        <div class="t-start">3:15</div>
+        <div class="t-label">After</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div style="margin-bottom: 24px;">
+    <div class="section-label anim d6">Messages</div>
+
+    <div class="msg-card anim d6">
+      <div class="msg-body">
+        <div class="msg-header">
+          <div class="msg-avatar" style="background: #5C6BC0;">Y3</div>
+          <div class="msg-meta">
+            <h4>Year 3 Team</h4>
+            <span class="time">Today, 8:30 AM</span>
+          </div>
+          <div class="msg-unread"></div>
+        </div>
+        <div class="msg-subject">Field Trip to Science Museum</div>
+        <div class="msg-preview">Dear parents, we are excited to announce a field trip to the Science Museum on Thursday 1st May. Please provide consent by 24th April.</div>
+      </div>
+      <div class="msg-actions">
+        <button class="btn-accent">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Give Consent
+        </button>
+        <button class="btn-ghost">Read More</button>
+      </div>
+    </div>
+
+    <div class="msg-card anim d7">
+      <div class="msg-body">
+        <div class="msg-header">
+          <div class="msg-avatar" style="background: var(--accent);">WS</div>
+          <div class="msg-meta">
+            <h4>Whole School</h4>
+            <span class="time">Yesterday</span>
+          </div>
+        </div>
+        <div class="msg-subject">Annual Sports Day</div>
+        <div class="msg-preview">Sports Day will be held on Friday 16th May. Students should come in house colours. Parents welcome from 9:00 AM.</div>
+      </div>
+      <div class="msg-actions">
+        <button class="btn-ghost">Read More</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Principal -->
+  <div class="section-label anim d8">From the Principal</div>
+  <div class="principal-card anim d8">
+    <div class="principal-header">
+      <div class="p-avatar">MH</div>
+      <div class="p-info">
+        <h3>Weekly Update</h3>
+        <p>Mrs. Harrison &middot; Week of 21 April</p>
+      </div>
+    </div>
+    <div class="p-body">
+      What a wonderful start to the summer term! It's been lovely seeing the children back and settled. A special well done to Year 5 for their assembly this morning...
+    </div>
+    <div class="p-footer">
+      <button class="heart-btn" id="heartBtn" onclick="toggleHeart()">
+        <span class="h-icon">&#9825;</span>
+        <span id="heartCount">24</span>
+      </button>
+      <button class="btn-ghost" style="font-size: 12px;">Read Full Update</button>
+    </div>
+  </div>
+
+  <div style="height: 20px;"></div>
+</div>
+
+<!-- Nav Bar -->
+<div class="nav-bar">
+  <button class="nav-item active">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l-10 9h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
+    <span class="nav-label">Home</span>
+  </button>
+  <button class="nav-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span class="nav-label">Events</span>
+  </button>
+  <button class="nav-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    <span class="nav-label">Activities</span>
+  </button>
+  <button class="nav-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span class="nav-label">Files</span>
+  </button>
+  <button class="nav-item">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    <span class="nav-label">More</span>
+  </button>
+</div>
+
+<script>
+  let hearted = false;
+  let count = 24;
+  function toggleHeart() {
+    const btn = document.getElementById('heartBtn');
+    const countEl = document.getElementById('heartCount');
+    hearted = !hearted;
+    count += hearted ? 1 : -1;
+    btn.classList.toggle('active', hearted);
+    btn.querySelector('.h-icon').innerHTML = hearted ? '&#9829;' : '&#9825;';
+    countEl.textContent = count;
+    const icon = btn.querySelector('.h-icon');
+    icon.style.transform = 'scale(1.4)';
+    setTimeout(() => { icon.style.transform = hearted ? 'scale(1.15)' : 'scale(1)'; }, 180);
+  }
+</script>
+</body>
+</html>

@@ -1,14 +1,34 @@
 import React, { useState } from 'react'
 import { Plus, Pencil, Trash2, ExternalLink, Eye, EyeOff, X, FolderPlus, Image } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { ExternalLink as ExternalLinkType, LinkCategory, LinksAllResponse } from '@wasil/shared'
 
 export function LinksPage() {
   const theme = useTheme()
+  const toast = useToast()
   const { data, refetch, isLoading, error } = useApi<LinksAllResponse>(
     () => api.links.listAll(),
     []
   )
+
+  // All hooks must be called before any early returns
+  const [showLinkForm, setShowLinkForm] = useState(false)
+  const [showCategoryForm, setShowCategoryForm] = useState(false)
+  const [editingLink, setEditingLink] = useState<ExternalLinkType | null>(null)
+  const [editingCategory, setEditingCategory] = useState<LinkCategory | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'link' | 'category'; id: string; name: string } | null>(null)
+
+  // Link form state
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [url, setUrl] = useState('')
+  const [icon, setIcon] = useState('')
+  const [imageUrl, setImageUrl] = useState('')
+  const [categoryId, setCategoryId] = useState('')
+
+  // Category form state
+  const [categoryName, setCategoryName] = useState('')
 
   const categories = data?.categories || []
   const links = data?.links || []
@@ -32,24 +52,6 @@ export function LinksPage() {
       </div>
     )
   }
-
-  const [showLinkForm, setShowLinkForm] = useState(false)
-  const [showCategoryForm, setShowCategoryForm] = useState(false)
-  const [editingLink, setEditingLink] = useState<ExternalLinkType | null>(null)
-  const [editingCategory, setEditingCategory] = useState<LinkCategory | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'link' | 'category'; id: string; name: string } | null>(null)
-
-  // Link form state
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [url, setUrl] = useState('')
-  const [icon, setIcon] = useState('')
-  const [imageUrl, setImageUrl] = useState('')
-  const [categoryId, setCategoryId] = useState('')
-
-  // Category form state
-  const [categoryName, setCategoryName] = useState('')
 
   const resetLinkForm = () => {
     setShowLinkForm(false)
@@ -108,7 +110,7 @@ export function LinksPage() {
       resetLinkForm()
       refetch()
     } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -128,7 +130,7 @@ export function LinksPage() {
       resetCategoryForm()
       refetch()
     } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -145,7 +147,7 @@ export function LinksPage() {
       setDeleteConfirm(null)
       refetch()
     } catch (error) {
-      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -154,7 +156,7 @@ export function LinksPage() {
       await api.links.update(link.id, { active: !link.active })
       refetch()
     } catch (error) {
-      alert(`Failed to update: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to update: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 

@@ -1,9 +1,41 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { logAudit, computeChanges } from '../services/audit.js'
+import { generateICS } from '../services/ics.js'
+import type { ICSEvent } from '../services/ics.js'
 
 const router = Router()
+
+// Export term dates as ICS calendar file
+router.get('/calendar.ics', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+
+    const termDates = await prisma.termDate.findMany({
+      where: { schoolId: user.schoolId },
+      orderBy: { date: 'asc' },
+    })
+
+    const icsEvents: ICSEvent[] = termDates.map(td => ({
+      id: td.id,
+      title: td.sublabel ? `${td.label} - ${td.sublabel}` : td.label,
+      description: `${td.termName}${td.sublabel ? ` | ${td.sublabel}` : ''}`,
+      date: td.date.toISOString().split('T')[0],
+      endDate: td.endDate?.toISOString().split('T')[0] || null,
+      allDay: true,
+    }))
+
+    const ics = generateICS(icsEvents, 'School Term Dates')
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
+    res.setHeader('Content-Disposition', 'attachment; filename="term-dates.ics"')
+    res.send(ics)
+  } catch (error) {
+    console.error('Error generating term dates ICS:', error)
+    res.status(500).json({ error: 'Failed to generate calendar file' })
+  }
+})
 
 // Get term dates
 router.get('/', isAuthenticated, async (req, res) => {
@@ -79,6 +111,14 @@ router.put('/:id', isAdmin, async (req, res) => {
     const { id } = req.params
     const { term, termName, label, sublabel, date, endDate, type, color } = req.body
 
+    const existing = await prisma.termDate.findUnique({
+      where: { id },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Term date not found' })
+    }
+
     const termDate = await prisma.termDate.update({
       where: { id },
       data: {
@@ -106,7 +146,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       schoolId: termDate.schoolId,
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'TERM_DATE', resourceId: termDate.id, metadata: { label: termDate.label } })
+    const changes = computeChanges(existing as any, termDate as any, ['label', 'sublabel', 'date', 'endDate', 'type', 'term', 'termName'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'TERM_DATE', resourceId: termDate.id, metadata: { label: termDate.label }, changes })
   } catch (error) {
     console.error('Error updating term date:', error)
     res.status(500).json({ error: 'Failed to update term date' })

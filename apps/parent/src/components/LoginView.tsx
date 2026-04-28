@@ -13,6 +13,39 @@ export function LoginView() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
+  // Forgot password / magic link state
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotSuccess, setForgotSuccess] = useState(false)
+  const [forgotError, setForgotError] = useState<string | null>(null)
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setForgotError(null)
+    if (!forgotEmail) {
+      setForgotError('Please enter your email address')
+      return
+    }
+    setForgotLoading(true)
+    try {
+      const response = await fetch(`${API_URL}/auth/magic-link/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.toLowerCase() }),
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to send reset link')
+      }
+      setForgotSuccess(true)
+    } catch (err) {
+      setForgotError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setForgotLoading(false)
+    }
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -67,7 +100,18 @@ export function LoginView() {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+          <div
+            className="mb-4 p-4 text-sm font-medium"
+            style={{
+              borderRadius: '16px',
+              backgroundColor: error.includes('Too many') ? '#FFF7EC' : '#FEF2F2',
+              border: error.includes('Too many') ? '1.5px solid rgba(232,165,75,0.3)' : '1.5px solid rgba(209,77,77,0.2)',
+              color: error.includes('Too many') ? '#8B5E0F' : '#D14D4D',
+            }}
+          >
+            {error.includes('Too many') && (
+              <p style={{ fontWeight: 700, marginBottom: '4px' }}>Account temporarily locked</p>
+            )}
             {error}
           </div>
         )}
@@ -127,6 +171,85 @@ export function LoginView() {
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+
+        {/* Forgot Password */}
+        <div className="mt-4 text-center">
+          {!showForgotPassword && !forgotSuccess && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowForgotPassword(true)
+                setForgotEmail(email)
+              }}
+              style={{ color: theme.colors.brandColor, fontSize: '14px', fontWeight: 600 }}
+              className="hover:underline"
+            >
+              Forgot password?
+            </button>
+          )}
+
+          {showForgotPassword && !forgotSuccess && (
+            <form onSubmit={handleForgotPassword} className="mt-2 space-y-3">
+              <p className="text-sm text-gray-600">
+                Enter your email and we'll send you a sign-in link.
+              </p>
+              <input
+                type="email"
+                value={forgotEmail}
+                onChange={(e) => {
+                  setForgotEmail(e.target.value)
+                  setForgotError(null)
+                }}
+                placeholder="your.email@example.com"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                disabled={forgotLoading}
+              />
+              {forgotError && (
+                <p className="text-red-500 text-sm">{forgotError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotPassword(false)
+                    setForgotError(null)
+                  }}
+                  className="flex-1 py-2 rounded-lg text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={forgotLoading || !forgotEmail}
+                  className="flex-1 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                  style={{ backgroundColor: theme.colors.brandColor }}
+                >
+                  {forgotLoading ? 'Sending...' : 'Send Link'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {forgotSuccess && (
+            <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-green-700 text-sm font-medium">
+                Check your email for a sign-in link
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForgotPassword(false)
+                  setForgotSuccess(false)
+                  setForgotEmail('')
+                }}
+                className="mt-2 text-sm hover:underline"
+                style={{ color: theme.colors.brandColor, fontWeight: 600 }}
+              >
+                Back to sign in
+              </button>
+            </div>
+          )}
+        </div>
 
         <p className="text-center text-sm text-gray-600 mt-6">
           New parent?{' '}

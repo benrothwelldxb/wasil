@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { logAudit, computeChanges } from '../services/audit.js'
 import { policyUpload } from '../upload.js'
 import { uploadFile, deleteFile, generateKey } from '../services/storage.js'
 
@@ -86,11 +86,12 @@ router.post('/', isAdmin, policyUpload.single('file'), async (req, res) => {
 // Update policy (admin only)
 router.put('/:id', isAdmin, policyUpload.single('file'), async (req, res) => {
   try {
+    const user = req.user!
     const { id } = req.params
     const { name, description } = req.body
     const file = req.file
 
-    const existing = await prisma.policy.findUnique({ where: { id } })
+    const existing = await prisma.policy.findFirst({ where: { id, schoolId: user.schoolId } })
     if (!existing) {
       return res.status(404).json({ error: 'Policy not found' })
     }
@@ -116,7 +117,8 @@ router.put('/:id', isAdmin, policyUpload.single('file'), async (req, res) => {
       data: updateData,
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'POLICY', resourceId: policy.id, metadata: { name: policy.name } })
+    const changes = computeChanges(existing as any, policy as any, ['name', 'description'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'POLICY', resourceId: policy.id, metadata: { name: policy.name }, changes })
 
     res.json({
       id: policy.id,
@@ -135,14 +137,17 @@ router.put('/:id', isAdmin, policyUpload.single('file'), async (req, res) => {
 // Delete policy (admin only)
 router.delete('/:id', isAdmin, async (req, res) => {
   try {
+    const user = req.user!
     const { id } = req.params
 
-    const policy = await prisma.policy.findUnique({ where: { id } })
-    if (policy) {
-      const key = extractKeyFromUrl(policy.fileUrl)
-      if (key) {
-        await deleteFile(key).catch(() => {})
-      }
+    const policy = await prisma.policy.findFirst({ where: { id, schoolId: user.schoolId } })
+    if (!policy) {
+      return res.status(404).json({ error: 'Policy not found' })
+    }
+
+    const key = extractKeyFromUrl(policy.fileUrl)
+    if (key) {
+      await deleteFile(key).catch(() => {})
     }
 
     await prisma.policy.delete({

@@ -1,21 +1,39 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { validate } from '../middleware/validate.js'
+import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
 
 const router = Router()
+
+const createWeeklyMessageSchema = z.object({
+  title: z.string().min(1).max(500),
+  content: z.string().min(1),
+  weekOf: z.string().min(1),
+  isCurrent: z.boolean().optional(),
+  imageUrl: z.string().optional(),
+  scheduledAt: z.string().optional(),
+})
+
+const updateWeeklyMessageSchema = createWeeklyMessageSchema.partial()
 
 // Get current weekly message
 router.get('/current', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
 
+    const now = new Date()
     const message = await prisma.weeklyMessage.findFirst({
       where: {
         schoolId: user.schoolId,
         isCurrent: true,
+        OR: [
+          { scheduledAt: null },
+          { scheduledAt: { lte: now } },
+        ],
       },
       include: {
         _count: { select: { hearts: true } },
@@ -46,6 +64,7 @@ router.get('/current', isAuthenticated, async (req, res) => {
       content: translatedContent,
       weekOf: message.weekOf.toISOString().split('T')[0],
       isCurrent: message.isCurrent,
+      imageUrl: message.imageUrl,
       schoolId: message.schoolId,
       heartCount: message._count.hearts,
       hasHearted: message.hearts.length > 0,
@@ -100,6 +119,8 @@ router.get('/', isAuthenticated, async (req, res) => {
       content: getTranslated(msg.content),
       weekOf: msg.weekOf.toISOString().split('T')[0],
       isCurrent: msg.isCurrent,
+      imageUrl: msg.imageUrl,
+      scheduledAt: msg.scheduledAt?.toISOString() || null,
       schoolId: msg.schoolId,
       heartCount: msg._count.hearts,
       hasHearted: msg.hearts.length > 0,
@@ -112,10 +133,10 @@ router.get('/', isAuthenticated, async (req, res) => {
 })
 
 // Create/update weekly message (admin only)
-router.post('/', isAdmin, async (req, res) => {
+router.post('/', isAdmin, validate(createWeeklyMessageSchema), async (req, res) => {
   try {
     const user = req.user!
-    const { title, content, weekOf, isCurrent } = req.body
+    const { title, content, weekOf, isCurrent, imageUrl, scheduledAt } = req.body
 
     // If this is set as current, unset other current messages
     if (isCurrent) {
@@ -131,12 +152,18 @@ router.post('/', isAdmin, async (req, res) => {
         content,
         weekOf: new Date(weekOf),
         isCurrent: isCurrent || false,
+        imageUrl: imageUrl || null,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         schoolId: user.schoolId,
       },
     })
 
     logAudit({ req, action: 'CREATE', resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, metadata: { title: message.title } })
-    sendNotification({ req, type: 'WEEKLY_MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, target: { targetClass: 'Whole School', schoolId: user.schoolId } })
+
+    // Only send notification if not scheduled for later
+    if (!message.scheduledAt || message.scheduledAt <= new Date()) {
+      sendNotification({ req, type: 'WEEKLY_MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, target: { targetClass: 'Whole School', schoolId: user.schoolId } })
+    }
 
     res.status(201).json({
       id: message.id,
@@ -144,6 +171,8 @@ router.post('/', isAdmin, async (req, res) => {
       content: message.content,
       weekOf: message.weekOf.toISOString().split('T')[0],
       isCurrent: message.isCurrent,
+      imageUrl: message.imageUrl,
+      scheduledAt: message.scheduledAt?.toISOString() || null,
       schoolId: message.schoolId,
       heartCount: 0,
       hasHearted: false,
@@ -156,11 +185,19 @@ router.post('/', isAdmin, async (req, res) => {
 })
 
 // Update weekly message (admin only)
-router.put('/:id', isAdmin, async (req, res) => {
+router.put('/:id', isAdmin, validate(updateWeeklyMessageSchema), async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, content, weekOf, isCurrent } = req.body
+    const { title, content, weekOf, isCurrent, imageUrl, scheduledAt } = req.body
+
+    const existing = await prisma.weeklyMessage.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Weekly message not found' })
+    }
 
     // If this is set as current, unset other current messages
     if (isCurrent) {
@@ -177,6 +214,8 @@ router.put('/:id', isAdmin, async (req, res) => {
         content,
         weekOf: new Date(weekOf),
         isCurrent,
+        ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
+        ...(scheduledAt !== undefined && { scheduledAt: scheduledAt ? new Date(scheduledAt) : null }),
       },
       include: {
         _count: { select: { hearts: true } },
@@ -189,12 +228,15 @@ router.put('/:id', isAdmin, async (req, res) => {
       content: message.content,
       weekOf: message.weekOf.toISOString().split('T')[0],
       isCurrent: message.isCurrent,
+      imageUrl: message.imageUrl,
+      scheduledAt: message.scheduledAt?.toISOString() || null,
       schoolId: message.schoolId,
       heartCount: message._count.hearts,
       createdAt: message.createdAt.toISOString(),
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, metadata: { title: message.title } })
+    const changes = computeChanges(existing as any, message as any, ['title', 'content', 'weekOf', 'isCurrent', 'imageUrl', 'scheduledAt'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, metadata: { title: message.title }, changes })
   } catch (error) {
     console.error('Error updating weekly message:', error)
     res.status(500).json({ error: 'Failed to update weekly message' })

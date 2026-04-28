@@ -1,9 +1,97 @@
 import { Router } from 'express'
+import crypto from 'crypto'
+import { z } from 'zod'
 import prisma from '../services/prisma.js'
 import { isAdmin } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { validate } from '../middleware/validate.js'
+import { logAudit, computeChanges } from '../services/audit.js'
+import { sendEmail } from '../services/email.js'
 
 const router = Router()
+
+const createStaffSchema = z.object({
+  name: z.string().min(1).max(200),
+  email: z.string().email(),
+  role: z.enum(['STAFF', 'ADMIN']),
+  position: z.string().optional(),
+  assignedClassIds: z.array(z.string()).optional(),
+})
+
+const updateStaffSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  email: z.string().email().optional(),
+  role: z.enum(['STAFF', 'ADMIN', 'PARENT']).optional(),
+  position: z.string().optional(),
+  assignedClassIds: z.array(z.string()).optional(),
+})
+
+const ADMIN_APP_URL = process.env.ADMIN_APP_URL || process.env.VITE_ADMIN_URL || 'http://localhost:3001'
+const MAGIC_LINK_EXPIRY_HOURS = 72 // Staff get 72 hours to set up
+
+async function sendStaffWelcomeEmail(staffEmail: string, staffName: string, schoolName: string, schoolId: string): Promise<boolean> {
+  try {
+    // Generate a magic link token
+    const token = crypto.randomBytes(32).toString('hex')
+    const expiresAt = new Date(Date.now() + MAGIC_LINK_EXPIRY_HOURS * 60 * 60 * 1000)
+
+    // Delete any existing login tokens for this email
+    await prisma.magicLinkToken.deleteMany({
+      where: { email: staffEmail.toLowerCase(), type: 'LOGIN' },
+    })
+
+    await prisma.magicLinkToken.create({
+      data: {
+        token,
+        email: staffEmail.toLowerCase(),
+        schoolId,
+        type: 'LOGIN',
+        expiresAt,
+      },
+    })
+
+    const magicLink = `${ADMIN_APP_URL}/auth/magic?token=${token}`
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #FAF8F6; margin: 0; padding: 40px 20px;">
+  <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 16px; padding: 40px; border: 1px solid #F0E4E6;">
+    <h1 style="color: #2D2225; font-size: 22px; margin: 0 0 8px 0;">${schoolName}</h1>
+    <p style="color: #7A6469; font-size: 14px; margin: 0 0 24px 0;">Staff Portal Access</p>
+
+    <p style="color: #2D2225; font-size: 16px; line-height: 24px; margin: 0 0 8px 0;">
+      Hello ${staffName},
+    </p>
+    <p style="color: #4A3A40; font-size: 15px; line-height: 24px; margin: 0 0 24px 0;">
+      You've been added as a staff member. Click below to access the admin portal and set up your account.
+    </p>
+
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="${magicLink}"
+         style="display: inline-block; background-color: #C4506E; color: white; text-decoration: none; padding: 14px 32px; border-radius: 14px; font-weight: 700; font-size: 15px;">
+        Access Admin Portal
+      </a>
+    </div>
+
+    <p style="color: #A8929A; font-size: 13px; line-height: 20px; margin: 24px 0 0 0;">
+      This link expires in ${MAGIC_LINK_EXPIRY_HOURS} hours. After signing in, you can set a password via your Google/Microsoft account or use magic links to sign in.
+    </p>
+
+    <hr style="border: none; border-top: 1px solid #F0E4E6; margin: 32px 0;">
+    <p style="color: #A8929A; font-size: 11px; text-align: center; margin: 0;">Powered by Wasil</p>
+  </div>
+</body>
+</html>`
+
+    const text = `Hello ${staffName},\n\nYou've been added as a staff member at ${schoolName}.\n\nAccess the admin portal: ${magicLink}\n\nThis link expires in ${MAGIC_LINK_EXPIRY_HOURS} hours.`
+
+    return await sendEmail({ to: staffEmail, subject: `You've been added to ${schoolName} - Access your portal`, html, text })
+  } catch (error) {
+    console.error('Failed to send staff welcome email:', error)
+    return false
+  }
+}
 
 // Get all staff members for the school
 router.get('/', isAdmin, async (req, res) => {
@@ -33,7 +121,11 @@ router.get('/', isAdmin, async (req, res) => {
       email: s.email,
       name: s.name,
       role: s.role,
+      position: s.position,
       avatarUrl: s.avatarUrl,
+      hasPassword: !!s.passwordHash,
+      twoFactorEnabled: s.twoFactorEnabled,
+      lastLoginAt: s.lastLoginAt?.toISOString() || null,
       assignedClasses: s.assignedClasses.map(ac => ({
         id: ac.class.id,
         name: ac.class.name,
@@ -47,10 +139,10 @@ router.get('/', isAdmin, async (req, res) => {
 })
 
 // Create a new staff member
-router.post('/', isAdmin, async (req, res) => {
+router.post('/', isAdmin, validate(createStaffSchema), async (req, res) => {
   try {
     const adminUser = req.user!
-    const { email, name, role, assignedClassIds } = req.body
+    const { email, name, role, position, assignedClassIds } = req.body
 
     // Validate role
     if (!['STAFF', 'ADMIN'].includes(role)) {
@@ -69,6 +161,7 @@ router.post('/', isAdmin, async (req, res) => {
         email,
         name,
         role,
+        position: position || null,
         schoolId: adminUser.schoolId,
         assignedClasses: assignedClassIds?.length ? {
           create: assignedClassIds.map((classId: string) => ({
@@ -87,21 +180,55 @@ router.post('/', isAdmin, async (req, res) => {
 
     logAudit({ req, action: 'CREATE', resourceType: 'STAFF', resourceId: staff.id, metadata: { name: staff.name, email: staff.email } })
 
+    // Send welcome email with magic link
+    const school = await prisma.school.findUnique({ where: { id: adminUser.schoolId }, select: { name: true } })
+    const emailSent = await sendStaffWelcomeEmail(staff.email, staff.name, school?.name || 'School', adminUser.schoolId)
+
     res.status(201).json({
       id: staff.id,
       email: staff.email,
       name: staff.name,
       role: staff.role,
+      position: staff.position,
       avatarUrl: staff.avatarUrl,
       assignedClasses: staff.assignedClasses.map(ac => ({
         id: ac.class.id,
         name: ac.class.name,
       })),
+      emailSent,
       createdAt: staff.createdAt.toISOString(),
     })
   } catch (error) {
     console.error('Error creating staff:', error)
     res.status(500).json({ error: 'Failed to create staff member' })
+  }
+})
+
+// Resend login email to a staff member
+router.post('/:id/send-login', isAdmin, async (req, res) => {
+  try {
+    const adminUser = req.user!
+    const { id } = req.params
+
+    const staff = await prisma.user.findFirst({
+      where: { id, schoolId: adminUser.schoolId, role: { in: ['STAFF', 'ADMIN'] } },
+    })
+
+    if (!staff) {
+      return res.status(404).json({ error: 'Staff member not found' })
+    }
+
+    const school = await prisma.school.findUnique({ where: { id: adminUser.schoolId }, select: { name: true } })
+    const sent = await sendStaffWelcomeEmail(staff.email, staff.name, school?.name || 'School', adminUser.schoolId)
+
+    if (sent) {
+      res.json({ message: `Login email sent to ${staff.email}` })
+    } else {
+      res.status(500).json({ error: 'Failed to send email. Check email service configuration.' })
+    }
+  } catch (error) {
+    console.error('Error sending staff login email:', error)
+    res.status(500).json({ error: 'Failed to send login email' })
   }
 })
 
@@ -202,11 +329,11 @@ router.post('/bulk', isAdmin, async (req, res) => {
 })
 
 // Update a staff member
-router.put('/:id', isAdmin, async (req, res) => {
+router.put('/:id', isAdmin, validate(updateStaffSchema), async (req, res) => {
   try {
     const adminUser = req.user!
     const { id } = req.params
-    const { email, name, role, assignedClassIds } = req.body
+    const { email, name, role, position, assignedClassIds } = req.body
 
     // Verify staff belongs to admin's school
     const existing = await prisma.user.findFirst({
@@ -261,6 +388,7 @@ router.put('/:id', isAdmin, async (req, res) => {
           email: email || undefined,
           name: name || undefined,
           role: role || undefined,
+          ...(position !== undefined && { position: position || null }),
         },
         include: {
           assignedClasses: {
@@ -272,13 +400,15 @@ router.put('/:id', isAdmin, async (req, res) => {
       })
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'STAFF', resourceId: staff.id, metadata: { name: staff.name } })
+    const changes = computeChanges(existing as any, staff as any, ['name', 'email', 'role', 'position'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'STAFF', resourceId: staff.id, metadata: { name: staff.name }, changes })
 
     res.json({
       id: staff.id,
       email: staff.email,
       name: staff.name,
       role: staff.role,
+      position: staff.position,
       avatarUrl: staff.avatarUrl,
       assignedClasses: staff.assignedClasses.map(ac => ({
         id: ac.class.id,
@@ -322,6 +452,43 @@ router.delete('/:id', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error deleting staff:', error)
     res.status(500).json({ error: 'Failed to delete staff member' })
+  }
+})
+
+// Reset 2FA for a staff member (admin only)
+router.post('/:id/reset-2fa', isAdmin, async (req, res) => {
+  try {
+    const adminUser = req.user!
+    const { id } = req.params
+
+    const staff = await prisma.user.findFirst({
+      where: { id, schoolId: adminUser.schoolId, role: { in: ['STAFF', 'ADMIN'] } },
+    })
+
+    if (!staff) {
+      return res.status(404).json({ error: 'Staff member not found' })
+    }
+
+    if (!staff.twoFactorEnabled) {
+      return res.status(400).json({ error: '2FA is not enabled for this user' })
+    }
+
+    await prisma.user.update({
+      where: { id },
+      data: {
+        twoFactorSecret: null,
+        twoFactorEnabled: false,
+        twoFactorRecoveryCodes: null,
+        twoFactorSetupAt: null,
+      },
+    })
+
+    await logAudit({ req, action: 'UPDATE', resourceType: 'STAFF', resourceId: id, metadata: { action: 'reset-2fa', staffName: staff.name } })
+
+    res.json({ message: `2FA has been reset for ${staff.name}` })
+  } catch (error) {
+    console.error('Error resetting staff 2FA:', error)
+    res.status(500).json({ error: 'Failed to reset 2FA' })
   }
 })
 

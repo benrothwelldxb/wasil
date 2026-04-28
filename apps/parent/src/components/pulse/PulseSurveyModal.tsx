@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useTheme } from '@wasil/shared'
 import { useMutation } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { PulseSurvey } from '@wasil/shared'
+import { X, Check } from 'lucide-react'
 
 interface PulseSurveyModalProps {
   pulse: PulseSurvey
@@ -13,7 +13,6 @@ interface PulseSurveyModalProps {
 
 export function PulseSurveyModal({ pulse, onClose, onComplete }: PulseSurveyModalProps) {
   const { t } = useTranslation()
-  const theme = useTheme()
   const [answers, setAnswers] = useState<Record<string, number | string>>({})
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [showThankYou, setShowThankYou] = useState(false)
@@ -30,134 +29,194 @@ export function PulseSurveyModal({ pulse, onClose, onComplete }: PulseSurveyModa
     if (currentQuestion < questions.length - 1) {
       setCurrentQuestion((prev) => prev + 1)
     } else {
-      // Submit
       await submitResponse(pulse.id, answers)
       setShowThankYou(true)
     }
   }
 
-  const handleDone = () => {
-    onComplete()
-  }
-
   const isLikert = question?.type === 'LIKERT_5'
 
+  // Emoji faces for Likert scale — self-explanatory without labels
+  const likertEmojis = ['\u{1F641}', '\u{1F615}', '\u{1F610}', '\u{1F642}', '\u{1F929}']
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl max-w-lg w-full">
-        <div className="p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white w-full sm:max-w-md"
+        style={{ borderRadius: '22px 22px 0 0' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: '#E8DDE0' }} />
+        </div>
+
+        <div className="px-5 pb-8">
           {showThankYou ? (
-            // Thank You Screen
-            <div className="text-center py-8">
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
+            <div className="text-center py-10">
+              <div
+                className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5"
+                style={{ backgroundColor: '#EDFAF2' }}
+              >
+                <Check style={{ width: '32px', height: '32px', color: '#5BA97B' }} />
               </div>
-              <h3 className="text-2xl font-bold text-green-700 mb-2">
-                {t('pulse.thankYou')}
+              <h3 className="text-[22px] font-extrabold mb-2" style={{ color: '#5BA97B' }}>
+                {t('pulse.thankYou', 'Thank you!')}
               </h3>
-              <p className="text-gray-600 mb-6">
-                {t('pulse.feedbackSubmitted')}
+              <p className="text-sm font-medium mb-8" style={{ color: '#7A6469' }}>
+                {t('pulse.feedbackSubmitted', 'Your feedback helps us improve')}
               </p>
               <button
-                onClick={handleDone}
-                className="px-8 py-3 rounded-lg text-white font-medium"
-                style={{ backgroundColor: theme.colors.brandColor }}
+                onClick={onComplete}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '14px',
+                  backgroundColor: '#C4506E',
+                  color: '#FFFFFF',
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
               >
-                {t('common.done')}
+                {t('common.done', 'Done')}
               </button>
             </div>
           ) : (
-            // Survey Questions
             <>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold" style={{ color: theme.colors.brandColor }}>
-                  Parent Pulse - {pulse.halfTermName}
+              {/* Header */}
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-[18px] font-extrabold" style={{ color: '#2D2225' }}>
+                  Parent Pulse
                 </h3>
-                <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">
-                  &times;
+                <button
+                  onClick={onClose}
+                  className="w-9 h-9 flex items-center justify-center rounded-xl"
+                  style={{ color: '#A8929A' }}
+                >
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
               {/* Progress */}
               <div className="mb-6">
-                <div className="flex justify-between text-sm text-gray-500 mb-2">
-                  <span>{t('pulse.question', { current: currentQuestion + 1, total: questions.length })}</span>
+                <div className="flex justify-between mb-2">
+                  <span className="text-xs font-bold" style={{ color: '#A8929A' }}>
+                    {t('pulse.question', {
+                      current: currentQuestion + 1,
+                      total: questions.length,
+                      defaultValue: `Question ${currentQuestion + 1} of ${questions.length}`,
+                    })}
+                  </span>
                 </div>
-                <div className="h-2 bg-gray-200 rounded-full">
+                <div
+                  className="h-1.5 rounded-full overflow-hidden"
+                  style={{ backgroundColor: '#F0E4E6' }}
+                >
                   <div
-                    className="h-full rounded-full transition-all"
+                    className="h-full rounded-full transition-all duration-300"
                     style={{
                       width: `${((currentQuestion + 1) / questions.length) * 100}%`,
-                      backgroundColor: theme.colors.brandColor,
+                      backgroundColor: '#C4506E',
                     }}
                   />
                 </div>
               </div>
 
               {/* Question */}
-              <p className="text-gray-800 mb-6">{question?.text}</p>
+              <p className="text-[16px] font-bold leading-snug mb-6" style={{ color: '#2D2225' }}>
+                {question?.text}
+              </p>
 
-              {/* Answer Options */}
+              {/* Likert Scale */}
               {isLikert ? (
-                <div className="flex justify-between mb-2">
-                  {[1, 2, 3, 4, 5].map((value) => {
-                    // Red to green gradient colors
-                    const likertColors: Record<number, { bg: string; border: string }> = {
-                      1: { bg: '#ef4444', border: '#dc2626' }, // Red
-                      2: { bg: '#f97316', border: '#ea580c' }, // Orange
-                      3: { bg: '#eab308', border: '#ca8a04' }, // Yellow
-                      4: { bg: '#84cc16', border: '#65a30d' }, // Lime
-                      5: { bg: '#22c55e', border: '#16a34a' }, // Green
-                    }
-                    const color = likertColors[value]
-                    const isSelected = answers[question.id] === value
-
-                    return (
-                      <button
-                        key={value}
-                        onClick={() => handleAnswer(value)}
-                        className={`w-12 h-12 rounded-full border-2 font-medium transition-all ${
-                          isSelected
-                            ? 'text-white scale-110 shadow-lg'
-                            : 'border-gray-300 text-gray-600 hover:border-gray-400 hover:scale-105'
-                        }`}
-                        style={
-                          isSelected
-                            ? { backgroundColor: color.bg, borderColor: color.border }
-                            : undefined
-                        }
-                      >
-                        {value}
-                      </button>
-                    )
-                  })}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold" style={{ color: '#D8CDD0', width: '32px', textAlign: 'center' }}>
+                      Poor
+                    </span>
+                    <div className="flex gap-2 flex-1 justify-center">
+                      {[1, 2, 3, 4, 5].map((value, idx) => {
+                        const isSelected = answers[question.id] === value
+                        return (
+                          <button
+                            key={value}
+                            onClick={() => handleAnswer(value)}
+                            style={{
+                              width: '52px',
+                              height: '52px',
+                              borderRadius: '50%',
+                              fontSize: '24px',
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: isSelected ? 'rgba(196,80,110,0.12)' : '#FFF8F4',
+                              transform: isSelected ? 'scale(1.15)' : 'scale(1)',
+                              transition: 'all 0.2s',
+                              boxShadow: isSelected ? '0 2px 8px rgba(196,80,110,0.15)' : 'none',
+                            }}
+                          >
+                            {likertEmojis[idx]}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <span className="text-[10px] font-bold" style={{ color: '#D8CDD0', width: '32px', textAlign: 'center' }}>
+                      Great
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <textarea
                   value={(answers[question?.id] as string) || ''}
                   onChange={(e) => handleAnswer(e.target.value)}
-                  placeholder={t('pulse.yourFeedback')}
-                  className="w-full p-3 border border-gray-300 rounded-lg mb-2 h-32"
+                  placeholder={t('pulse.yourFeedback', 'Share your thoughts...')}
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    borderRadius: '14px',
+                    border: '1.5px solid #F0E4E6',
+                    fontSize: '15px',
+                    fontWeight: 500,
+                    color: '#2D2225',
+                    outline: 'none',
+                    resize: 'none',
+                    fontFamily: 'inherit',
+                  }}
                 />
               )}
 
-              {isLikert && (
-                <div className="flex justify-between text-xs text-gray-500 mb-6">
-                  <span>{t('pulse.stronglyDisagree')}</span>
-                  <span>{t('pulse.stronglyAgree')}</span>
-                </div>
-              )}
-
-              {/* Navigation */}
+              {/* Next / Submit */}
               <button
                 onClick={handleNext}
-                disabled={isLikert && !answers[question?.id]}
-                className="w-full py-3 rounded-lg text-white font-medium disabled:opacity-50 mt-4"
-                style={{ backgroundColor: theme.colors.brandColor }}
+                disabled={(isLikert && !answers[question?.id]) || isLoading}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '14px',
+                  backgroundColor: '#C4506E',
+                  color: '#FFFFFF',
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: 'pointer',
+                  marginTop: '20px',
+                  opacity: (isLikert && !answers[question?.id]) || isLoading ? 0.5 : 1,
+                }}
               >
-                {currentQuestion < questions.length - 1 ? t('common.next') : isLoading ? t('pulse.submitting') : t('common.submit')}
+                {currentQuestion < questions.length - 1
+                  ? t('common.next', 'Next')
+                  : isLoading
+                    ? t('pulse.submitting', 'Submitting...')
+                    : t('common.submit', 'Submit')}
               </button>
             </>
           )}

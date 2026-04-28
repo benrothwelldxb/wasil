@@ -24,6 +24,12 @@
     "files": "Files",
     "links": "Useful Links",
     "activities": "Activities",
+    "consultations": "Consultations",
+    "schoolServices": "School Services",
+    "resources": "Resources",
+    "lunchMenu": "Lunch Menu",
+    "inclusion": "Inclusion",
+    "notificationSettings": "Notification Settings",
     "superAdmin": "Super Admin",
     "logout": "Logout"
   },

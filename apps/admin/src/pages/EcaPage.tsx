@@ -18,7 +18,7 @@ import {
   FileText,
   Eye,
 } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type {
   EcaSettings,
   EcaTerm,
@@ -72,6 +72,7 @@ const TERM_STATUS_COLORS: Record<EcaTermStatus, string> = {
 
 export function EcaPage() {
   const theme = useTheme()
+  const toast = useToast()
   const [activeTab, setActiveTab] = useState<'settings' | 'terms'>('terms')
   const [selectedTermId, setSelectedTermId] = useState<string | null>(null)
 
@@ -149,6 +150,8 @@ export function EcaPage() {
     minCapacity: '',
     maxCapacity: '',
     staffId: '',
+    cost: '',
+    costDescription: '',
   })
 
   // Allocation
@@ -215,7 +218,7 @@ export function EcaPage() {
       await api.eca.updateSettings(settingsForm)
       refetchSettings()
     } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to save')
     } finally {
       setSavingSettings(false)
     }
@@ -257,6 +260,8 @@ export function EcaPage() {
       minCapacity: '',
       maxCapacity: '',
       staffId: '',
+      cost: '',
+      costDescription: '',
     })
   }
 
@@ -295,6 +300,8 @@ export function EcaPage() {
       minCapacity: activity.minCapacity?.toString() || '',
       maxCapacity: activity.maxCapacity?.toString() || '',
       staffId: activity.staffId || '',
+      cost: activity.cost?.toString() || '',
+      costDescription: activity.costDescription || '',
     })
     setShowActivityForm(true)
   }
@@ -337,7 +344,7 @@ export function EcaPage() {
       refetchTerms()
       if (selectedTermId) refetchTerm()
     } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to save')
     } finally {
       setIsSubmitting(false)
     }
@@ -364,6 +371,8 @@ export function EcaPage() {
         minCapacity: activityForm.minCapacity ? parseInt(activityForm.minCapacity) : undefined,
         maxCapacity: activityForm.maxCapacity ? parseInt(activityForm.maxCapacity) : undefined,
         staffId: activityForm.staffId || undefined,
+        cost: activityForm.cost ? parseFloat(activityForm.cost) : undefined,
+        costDescription: activityForm.costDescription || undefined,
       }
 
       if (editingActivity) {
@@ -374,7 +383,7 @@ export function EcaPage() {
       resetActivityForm()
       refetchTerm()
     } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to save')
     } finally {
       setIsSubmitting(false)
     }
@@ -395,7 +404,7 @@ export function EcaPage() {
       }
       setDeleteConfirm(null)
     } catch (error) {
-      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete')
     }
   }
 
@@ -405,7 +414,7 @@ export function EcaPage() {
       refetchTerms()
       if (selectedTermId === termId) refetchTerm()
     } catch (error) {
-      alert(`Failed to update status: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to update status')
     }
   }
 
@@ -419,7 +428,7 @@ export function EcaPage() {
       setShowCancelConfirmation(false)
       setShowAllocationModal(true)
     } catch (error) {
-      alert(`Failed to preview: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to preview')
     }
   }
 
@@ -430,7 +439,7 @@ export function EcaPage() {
       const preview = await api.eca.previewAllocation(selectedTermId, newMode)
       setAllocationPreview(preview)
     } catch (error) {
-      alert(`Failed to update preview: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to update preview')
     }
   }
 
@@ -458,7 +467,7 @@ export function EcaPage() {
       setShowAllocationResultModal(true)
       refetchTerm()
     } catch (error) {
-      alert(`Failed to run allocation: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to run allocation')
     } finally {
       setRunningAllocation(false)
     }
@@ -468,11 +477,11 @@ export function EcaPage() {
     if (!selectedTermId) return
     try {
       await api.eca.publishAllocation(selectedTermId)
-      alert('Allocation published successfully')
+      toast.success('Allocation published successfully')
       refetchTerm()
       refetchTerms()
     } catch (error) {
-      alert(`Failed to publish: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to publish')
     }
   }
 
@@ -482,11 +491,11 @@ export function EcaPage() {
 
     try {
       await api.eca.updateTermStatus(selectedTermId, 'REGISTRATION_CLOSED')
-      alert('Allocation reopened. You can now make changes and re-run allocation.')
+      toast.success('Allocation reopened. You can now make changes and re-run allocation.')
       refetchTerm()
       refetchTerms()
     } catch (error) {
-      alert(`Failed to reopen: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to reopen')
     }
   }
 
@@ -508,7 +517,7 @@ export function EcaPage() {
       await api.eca.updateSuggestion(id, status)
       loadSuggestions()
     } catch (error) {
-      alert(`Failed to update suggestion: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to update suggestion')
     }
   }
 
@@ -569,7 +578,7 @@ export function EcaPage() {
       setSelectedStudentsToAdd([])
       refetchTerm()
     } catch (error) {
-      alert(`Failed to add: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to add')
     }
   }
 
@@ -580,7 +589,7 @@ export function EcaPage() {
       setActivityStudents(activityStudents.filter(s => s.studentId !== studentId))
       refetchTerm()
     } catch (error) {
-      alert(`Failed to remove: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to remove')
     }
   }
 
@@ -596,7 +605,7 @@ export function EcaPage() {
       setActivityWaitlist(waitlist)
       refetchTerm()
     } catch (error) {
-      alert(`Failed to promote: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to promote')
     }
   }
 
@@ -609,7 +618,7 @@ export function EcaPage() {
         win.document.close()
       }
     } catch (error) {
-      alert(`Failed to export: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(error instanceof Error ? error.message : 'Failed to export')
     }
   }
 
@@ -1566,6 +1575,35 @@ export function EcaPage() {
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Cost (optional) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Cost (optional)</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <input
+                      type="number"
+                      value={activityForm.cost}
+                      onChange={(e) => setActivityForm({ ...activityForm, cost: e.target.value })}
+                      placeholder="e.g. 55"
+                      min={0}
+                      step="0.01"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Leave blank if free</p>
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={activityForm.costDescription}
+                      onChange={(e) => setActivityForm({ ...activityForm, costDescription: e.target.value })}
+                      placeholder="e.g. 55 AED per term"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Display text for parents</p>
+                  </div>
+                </div>
               </div>
 
               <div className="flex space-x-3 pt-4">

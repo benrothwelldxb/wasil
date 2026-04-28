@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
-import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
+import { logAudit, computeChanges } from '../services/audit.js'
 
 const router = Router()
 
@@ -224,7 +224,7 @@ router.get('/:id/staff', isAdmin, async (req, res) => {
 // Get groups where parent's children are members (parent)
 router.get('/for-parent', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
 
     // Get student IDs from both children (legacy) and studentLinks (new)
     const childClassIds = user.children?.map(c => c.classId) || []
@@ -520,7 +520,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       },
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'GROUP', resourceId: group.id, metadata: { name: group.name } })
+    const changes = computeChanges(existing as any, group as any, ['name', 'description', 'isActive'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'GROUP', resourceId: group.id, metadata: { name: group.name }, changes })
 
     res.json({
       id: group.id,
@@ -573,7 +574,8 @@ router.put('/categories/:id', isAdmin, async (req, res) => {
       },
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'GROUP_CATEGORY', resourceId: category.id, metadata: { name: category.name } })
+    const changes = computeChanges(existing as any, category as any, ['name', 'icon', 'color', 'order'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'GROUP_CATEGORY', resourceId: category.id, metadata: { name: category.name }, changes })
 
     res.json({
       id: category.id,

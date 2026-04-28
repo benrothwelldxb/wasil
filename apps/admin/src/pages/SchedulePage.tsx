@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Plus, X, Pencil, Trash2, RotateCcw, CalendarDays, Pause, Play, Grid3X3, Save, Check } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { ScheduleItem, Class, YearGroup } from '@wasil/shared'
 
 const DAYS_OF_WEEK = [
@@ -28,16 +28,17 @@ const RECURRING_TYPES = [
   { value: 'pe', label: 'PE Day', icon: '🏃', description: 'Please wear PE kit' },
   { value: 'swimming', label: 'Swimming', icon: '🏊', description: 'Remember swimwear, towel & goggles' },
   { value: 'library', label: 'Library Day', icon: '📚', description: 'Return library books' },
-  { value: 'forest-school', label: 'Forest School', icon: '🌲', description: 'Wear old clothes and wellies' },
   { value: 'music', label: 'Music Lesson', icon: '🎵', description: 'Bring instrument' },
+  { value: 'custom', label: 'Custom...', icon: '📌', description: '' },
 ]
 
 const ONEOFF_TYPES = [
-  { value: 'trip', label: 'Field Trip', icon: '🚌', description: 'Packed lunch needed' },
+  { value: 'trip', label: 'Trip', icon: '🚌', description: 'Packed lunch needed' },
   { value: 'early-finish', label: 'Early Finish', icon: '🕐', description: 'School ends early' },
   { value: 'non-uniform', label: 'Non-Uniform Day', icon: '👕', description: '' },
   { value: 'sports-day', label: 'Sports Day', icon: '🏆', description: 'Wear PE kit and bring water' },
   { value: 'performance', label: 'Performance', icon: '🎭', description: '' },
+  { value: 'custom', label: 'Custom...', icon: '📌', description: '' },
 ]
 
 // Grid cell state type - now supports multiple selections
@@ -54,6 +55,7 @@ const emptyCell: GridCell = { pe: false, swimming: false, library: false }
 
 export function SchedulePage() {
   const theme = useTheme()
+  const toast = useToast()
   const { data: scheduleItems, refetch } = useApi<ScheduleItem[]>(() => api.schedule.listAll(), [])
   const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
   const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
@@ -69,6 +71,9 @@ export function SchedulePage() {
   const [originalGridState, setOriginalGridState] = useState<GridState>({})
   const [isSavingGrid, setIsSavingGrid] = useState(false)
   const [gridSaved, setGridSaved] = useState(false)
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const gridStateRef = useRef<GridState>({})
+  const originalGridStateRef = useRef<GridState>({})
 
   // Form state
   const [targetClass, setTargetClass] = useState('Whole School')
@@ -126,6 +131,10 @@ export function SchedulePage() {
     setOriginalGridState(JSON.parse(JSON.stringify(newState)))
   }, [scheduleItems, classes])
 
+  // Keep refs in sync with state so saveGrid always reads latest
+  useEffect(() => { gridStateRef.current = gridState }, [gridState])
+  useEffect(() => { originalGridStateRef.current = originalGridState }, [originalGridState])
+
   const hasGridChanges = useMemo(() => {
     return JSON.stringify(gridState) !== JSON.stringify(originalGridState)
   }, [gridState, originalGridState])
@@ -145,20 +154,32 @@ export function SchedulePage() {
       }
     })
     setGridSaved(false)
+
+    // Auto-save after a short debounce (allows rapid toggling)
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+    }
+    autoSaveTimerRef.current = setTimeout(() => {
+      saveGrid()
+    }, 800)
   }
 
   const saveGrid = async () => {
+    // Read from refs to always get the latest state (not stale closure)
+    const currentGrid = gridStateRef.current
+    const originalGrid = originalGridStateRef.current
+
     setIsSavingGrid(true)
     try {
       const toCreate: { classId: string; day: number; type: string }[] = []
       const toDelete: string[] = []
 
       // Compare grid states for each class, day, and type
-      for (const classId of Object.keys(gridState)) {
+      for (const classId of Object.keys(currentGrid)) {
         for (const day of [1, 2, 3, 4, 5]) {
           for (const type of ['pe', 'swimming', 'library'] as const) {
-            const newVal = gridState[classId]?.[day]?.[type] || false
-            const oldVal = originalGridState[classId]?.[day]?.[type] || false
+            const newVal = currentGrid[classId]?.[day]?.[type] || false
+            const oldVal = originalGrid[classId]?.[day]?.[type] || false
 
             if (newVal !== oldVal) {
               // Find existing item
@@ -203,7 +224,7 @@ export function SchedulePage() {
       setGridSaved(true)
       setTimeout(() => setGridSaved(false), 2000)
     } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSavingGrid(false)
     }
@@ -303,7 +324,7 @@ export function SchedulePage() {
       resetForm()
       refetch()
     } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -316,7 +337,7 @@ export function SchedulePage() {
       setDeleteConfirm(null)
       refetch()
     } catch (error) {
-      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -325,7 +346,7 @@ export function SchedulePage() {
       await api.schedule.update(item.id, { active: !item.active })
       refetch()
     } catch (error) {
-      alert(`Failed to update: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toast.error(`Failed to update: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -423,26 +444,29 @@ export function SchedulePage() {
                   </span>
                 ))}
               </div>
-              <button
-                onClick={saveGrid}
-                disabled={!hasGridChanges || isSavingGrid}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-white disabled:opacity-50 transition-all ${
-                  gridSaved ? 'bg-green-500' : ''
-                }`}
-                style={!gridSaved ? { backgroundColor: theme.colors.brandColor } : undefined}
-              >
-                {gridSaved ? (
-                  <>
+              <div className="flex items-center space-x-2 text-sm font-medium">
+                {isSavingGrid ? (
+                  <span className="flex items-center gap-1.5 text-gray-400">
+                    <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+                    Saving...
+                  </span>
+                ) : gridSaved ? (
+                  <span className="flex items-center gap-1.5 text-green-600">
                     <Check className="w-4 h-4" />
-                    <span>Saved!</span>
-                  </>
+                    Saved
+                  </span>
+                ) : hasGridChanges ? (
+                  <span className="flex items-center gap-1.5 text-amber-500">
+                    <div className="w-2 h-2 rounded-full bg-amber-400" />
+                    Unsaved
+                  </span>
                 ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>{isSavingGrid ? 'Saving...' : 'Save Changes'}</span>
-                  </>
+                  <span className="flex items-center gap-1.5 text-gray-300">
+                    <Check className="w-4 h-4" />
+                    Up to date
+                  </span>
                 )}
-              </button>
+              </div>
             </div>
           </div>
 

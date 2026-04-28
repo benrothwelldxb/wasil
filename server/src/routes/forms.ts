@@ -1,11 +1,27 @@
 import { Router } from 'express'
 import crypto from 'crypto'
+import { z } from 'zod'
 import prisma from '../services/prisma.js'
-import { isAuthenticated, isAdmin, isStaff } from '../middleware/auth.js'
-import { logAudit } from '../services/audit.js'
+import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../middleware/auth.js'
+import { validate } from '../middleware/validate.js'
+import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 
 const router = Router()
+
+const createFormSchema = z.object({
+  title: z.string().min(1).max(500),
+  description: z.string().optional(),
+  type: z.string().min(1),
+  status: z.enum(['DRAFT', 'ACTIVE', 'CLOSED']).optional(),
+  fields: z.array(z.any()).optional(),
+  targetClass: z.string().min(1),
+  classIds: z.array(z.string()).optional(),
+  yearGroupIds: z.array(z.string()).optional(),
+  expiresAt: z.string().optional(),
+})
+
+const updateFormSchema = createFormSchema.partial()
 
 function serializeForm(form: any, extra?: Record<string, unknown>) {
   return {
@@ -73,7 +89,7 @@ function sendFormNotifications(req: any, form: any, schoolId: string) {
 // Get active forms (filtered by user's children's classes)
 router.get('/', isAuthenticated, async (req, res) => {
   try {
-    const user = req.user!
+    const user = (await loadUserWithRelations(req.user!.id))!
     const childClassIds = user.children?.map((c: any) => c.classId) || []
     const now = new Date()
 
@@ -188,7 +204,7 @@ router.get('/templates', isStaff, async (_req, res) => {
 })
 
 // Create form (admin only)
-router.post('/', isAdmin, async (req, res) => {
+router.post('/', isAdmin, validate(createFormSchema), async (req, res) => {
   try {
     const user = req.user!
     const { title, description, type, status, fields, targetClass, classIds, yearGroupIds, expiresAt } = req.body
@@ -222,7 +238,7 @@ router.post('/', isAdmin, async (req, res) => {
 })
 
 // Update form (admin only)
-router.put('/:id', isAdmin, async (req, res) => {
+router.put('/:id', isAdmin, validate(updateFormSchema), async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
@@ -251,7 +267,8 @@ router.put('/:id', isAdmin, async (req, res) => {
       },
     })
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'FORM', resourceId: form.id, metadata: { title: form.title } })
+    const changes = computeChanges(existing as any, form as any, ['title', 'description', 'type', 'status', 'targetClass', 'expiresAt'])
+    logAudit({ req, action: 'UPDATE', resourceType: 'FORM', resourceId: form.id, metadata: { title: form.title }, changes })
 
     if (existing.status !== 'ACTIVE' && form.status === 'ACTIVE') {
       sendFormNotifications(req, form, user.schoolId)
@@ -449,6 +466,167 @@ router.get('/:id/export', isAdmin, async (req, res) => {
   }
 })
 
+// Get form analytics (admin only)
+router.get('/:id/analytics', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const form = await prisma.form.findFirst({
+      where: { id, schoolId: user.schoolId },
+      include: {
+        responses: true,
+      },
+    })
+
+    if (!form) {
+      return res.status(404).json({ error: 'Form not found' })
+    }
+
+    const fields = form.fields as Array<{ id: string; label: string; type: string; options?: string[] }>
+    const responses = form.responses
+    const totalResponses = responses.length
+
+    // Count targeted parents
+    const classIds = form.classIds as string[]
+    const yearGroupIds = form.yearGroupIds as string[]
+
+    let totalTargeted = 0
+    try {
+      if (form.targetClass === 'Whole School' || (classIds.length === 0 && yearGroupIds.length === 0)) {
+        // Count all parents in the school
+        totalTargeted = await prisma.user.count({
+          where: { schoolId: user.schoolId, role: 'PARENT' },
+        })
+      } else {
+        // Gather all targeted class IDs (including those from year groups)
+        const allClassIds = [...classIds]
+        if (yearGroupIds.length > 0) {
+          const ygClasses = await prisma.class.findMany({
+            where: { yearGroupId: { in: yearGroupIds }, schoolId: user.schoolId },
+            select: { id: true },
+          })
+          for (const c of ygClasses) {
+            if (!allClassIds.includes(c.id)) allClassIds.push(c.id)
+          }
+        }
+
+        if (allClassIds.length > 0) {
+          // Count distinct parents linked via ParentStudentLink to students in these classes
+          const parentIds = await prisma.parentStudentLink.findMany({
+            where: {
+              student: { classId: { in: allClassIds } },
+            },
+            select: { userId: true },
+            distinct: ['userId'],
+          })
+          // Also count parents via the legacy Child model
+          const legacyParentIds = await prisma.child.findMany({
+            where: { classId: { in: allClassIds } },
+            select: { parentId: true },
+            distinct: ['parentId'],
+          })
+          const uniqueIds = new Set([
+            ...parentIds.map(p => p.userId),
+            ...legacyParentIds.map(p => p.parentId),
+          ])
+          totalTargeted = uniqueIds.size
+        }
+      }
+    } catch {
+      // If targeting calculation fails, fall back to 0
+      totalTargeted = 0
+    }
+
+    const completionRate = totalTargeted > 0 ? Math.round((totalResponses / totalTargeted) * 100) : 0
+
+    // Aggregate per-field stats
+    const fieldStats: Record<string, any> = {}
+
+    for (const field of fields) {
+      const stat: any = { label: field.label, type: field.type }
+
+      if (field.type === 'checkbox') {
+        let checked = 0
+        let unchecked = 0
+        for (const r of responses) {
+          const answers = r.answers as Record<string, unknown>
+          if (answers[field.id] === true) checked++
+          else unchecked++
+        }
+        stat.checkedCount = checked
+        stat.uncheckedCount = unchecked
+      } else if (field.type === 'select') {
+        const optionCounts: Record<string, number> = {}
+        // Initialize with known options
+        if (field.options) {
+          for (const opt of field.options) optionCounts[opt] = 0
+        }
+        for (const r of responses) {
+          const answers = r.answers as Record<string, unknown>
+          const val = answers[field.id]
+          if (val && typeof val === 'string') {
+            optionCounts[val] = (optionCounts[val] || 0) + 1
+          }
+        }
+        stat.optionCounts = optionCounts
+      } else if (field.type === 'number') {
+        const nums: number[] = []
+        for (const r of responses) {
+          const answers = r.answers as Record<string, unknown>
+          const val = answers[field.id]
+          if (val !== undefined && val !== null && val !== '') {
+            const n = Number(val)
+            if (!isNaN(n)) nums.push(n)
+          }
+        }
+        if (nums.length > 0) {
+          stat.average = Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100
+          stat.min = Math.min(...nums)
+          stat.max = Math.max(...nums)
+        }
+        stat.filledCount = nums.length
+        stat.emptyCount = totalResponses - nums.length
+      } else if (field.type === 'signature') {
+        let filled = 0
+        let empty = 0
+        for (const r of responses) {
+          const answers = r.answers as Record<string, unknown>
+          const val = answers[field.id]
+          if (val && typeof val === 'string' && val.length > 0) filled++
+          else empty++
+        }
+        stat.filledCount = filled
+        stat.emptyCount = empty
+      } else {
+        // text, textarea, date
+        let filled = 0
+        let empty = 0
+        for (const r of responses) {
+          const answers = r.answers as Record<string, unknown>
+          const val = answers[field.id]
+          if (val !== undefined && val !== null && val !== '') filled++
+          else empty++
+        }
+        stat.filledCount = filled
+        stat.emptyCount = empty
+      }
+
+      fieldStats[field.id] = stat
+    }
+
+    res.json({
+      totalResponses,
+      totalTargeted,
+      completionRate,
+      fieldStats,
+    })
+  } catch (error) {
+    console.error('Error fetching form analytics:', error)
+    res.status(500).json({ error: 'Failed to fetch analytics' })
+  }
+})
+
 // Close form (admin only)
 router.patch('/:id/close', isAdmin, async (req, res) => {
   try {
@@ -496,7 +674,7 @@ router.post('/:id/export-token', isAdmin, async (req, res) => {
 
     const form = await prisma.form.update({
       where: { id },
-      data: { exportToken },
+      data: { exportToken, exportTokenCreatedAt: new Date() },
     })
 
     logAudit({ req, action: 'UPDATE', resourceType: 'FORM', resourceId: form.id, metadata: { title: form.title, action: 'generated_export_token' } })
@@ -527,7 +705,7 @@ router.delete('/:id/export-token', isAdmin, async (req, res) => {
 
     await prisma.form.update({
       where: { id },
-      data: { exportToken: null },
+      data: { exportToken: null, exportTokenCreatedAt: null },
     })
 
     logAudit({ req, action: 'UPDATE', resourceType: 'FORM', resourceId: id, metadata: { title: existing.title, action: 'deleted_export_token' } })
@@ -585,6 +763,15 @@ router.get('/public-export/:token', async (req, res) => {
 
     if (!form) {
       return res.status(404).json({ error: 'Form not found or link expired' })
+    }
+
+    // Check if the export token has expired (24 hours)
+    if (form.exportTokenCreatedAt) {
+      const tokenAge = Date.now() - new Date(form.exportTokenCreatedAt).getTime()
+      const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000
+      if (tokenAge > TWENTY_FOUR_HOURS) {
+        return res.status(403).json({ error: 'Export link has expired' })
+      }
     }
 
     const fields = form.fields as Array<{ id: string; label: string; type: string }>

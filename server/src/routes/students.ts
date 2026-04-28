@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express'
+import multer from 'multer'
 import prisma from '../services/prisma.js'
 import { isAdmin } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
+import { uploadFile, generateKey } from '../services/storage.js'
 
 const router = Router()
 
@@ -511,6 +513,199 @@ router.delete('/:id', isAdmin, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error deleting student:', error)
     res.status(500).json({ error: 'Failed to delete student' })
+  }
+})
+
+// ==========================================
+// Student Photos
+// ==========================================
+
+const photoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per photo
+})
+
+// Upload single student photo
+router.post('/:id/photo', isAdmin, photoUpload.single('photo'), async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const file = req.file
+
+    if (!file) return res.status(400).json({ error: 'Photo file is required' })
+    if (!file.mimetype.startsWith('image/')) return res.status(400).json({ error: 'File must be an image' })
+
+    const student = await prisma.student.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+    if (!student) return res.status(404).json({ error: 'Student not found' })
+
+    const key = generateKey('student-photos', file.originalname)
+    const photoUrl = await uploadFile(file.buffer, key, file.mimetype)
+
+    await prisma.student.update({
+      where: { id },
+      data: { photoUrl },
+    })
+
+    res.json({ photoUrl })
+  } catch (error) {
+    console.error('Error uploading student photo:', error)
+    res.status(500).json({ error: 'Failed to upload photo' })
+  }
+})
+
+// Bulk upload photos (ZIP or multiple files matched by UPN/externalId filename)
+router.post('/photos/bulk', isAdmin, photoUpload.array('photos', 200), async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const files = req.files as Express.Multer.File[]
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No photo files provided' })
+    }
+
+    // Get all students in school with externalIds
+    const students = await prisma.student.findMany({
+      where: { schoolId: user.schoolId, externalId: { not: null } },
+      select: { id: true, externalId: true, firstName: true, lastName: true },
+    })
+
+    const externalIdMap = new Map(students.map(s => [s.externalId!, s]))
+    // Also match by "firstName_lastName" pattern
+    const nameMap = new Map(students.map(s => [`${s.firstName}_${s.lastName}`.toLowerCase(), s]))
+
+    let matched = 0
+    let unmatched = 0
+    const unmatchedFiles: string[] = []
+
+    for (const file of files) {
+      if (!file.mimetype.startsWith('image/')) continue
+
+      // Extract identifier from filename (without extension)
+      const nameWithoutExt = file.originalname.replace(/\.[^.]+$/, '').trim()
+
+      // Try matching by externalId (UPN) first, then by name
+      let student = externalIdMap.get(nameWithoutExt)
+      if (!student) {
+        student = nameMap.get(nameWithoutExt.toLowerCase())
+      }
+
+      if (student) {
+        const key = generateKey('student-photos', file.originalname)
+        const photoUrl = await uploadFile(file.buffer, key, file.mimetype)
+        await prisma.student.update({
+          where: { id: student.id },
+          data: { photoUrl },
+        })
+        matched++
+      } else {
+        unmatched++
+        unmatchedFiles.push(file.originalname)
+      }
+    }
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'STUDENT', resourceId: 'bulk-photos', metadata: { matched, unmatched } })
+
+    res.json({
+      matched,
+      unmatched,
+      total: files.length,
+      unmatchedFiles: unmatchedFiles.length > 0 ? unmatchedFiles : undefined,
+    })
+  } catch (error) {
+    console.error('Error bulk uploading student photos:', error)
+    res.status(500).json({ error: 'Failed to bulk upload photos' })
+  }
+})
+
+// ==========================================
+// Bulk Class Reassignment (New Academic Year)
+// ==========================================
+
+router.post('/bulk-reassign', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { reassignments } = req.body as {
+      reassignments: Array<{
+        studentId?: string
+        externalId?: string
+        firstName?: string
+        lastName?: string
+        newClassName: string
+      }>
+    }
+
+    if (!reassignments || !Array.isArray(reassignments) || reassignments.length === 0) {
+      return res.status(400).json({ error: 'Reassignments array is required' })
+    }
+
+    // Pre-fetch classes
+    const classNames = [...new Set(reassignments.map(r => r.newClassName).filter(Boolean))]
+    const classes = await prisma.class.findMany({
+      where: { schoolId: user.schoolId, name: { in: classNames } },
+    })
+    const classNameToId = new Map(classes.map(c => [c.name, c.id]))
+
+    // Pre-fetch students
+    const allStudents = await prisma.student.findMany({
+      where: { schoolId: user.schoolId },
+      select: { id: true, firstName: true, lastName: true, externalId: true, classId: true },
+    })
+    const studentByExternalId = new Map(allStudents.filter(s => s.externalId).map(s => [s.externalId!, s]))
+    const studentById = new Map(allStudents.map(s => [s.id, s]))
+
+    let updated = 0
+    let skipped = 0
+    const errors: string[] = []
+
+    for (const r of reassignments) {
+      const newClassId = classNameToId.get(r.newClassName)
+      if (!newClassId) {
+        errors.push(`Class "${r.newClassName}" not found`)
+        skipped++
+        continue
+      }
+
+      // Find student by ID, externalId, or name
+      let student = r.studentId ? studentById.get(r.studentId) : undefined
+      if (!student && r.externalId) student = studentByExternalId.get(r.externalId)
+      if (!student && r.firstName && r.lastName) {
+        student = allStudents.find(s =>
+          s.firstName.toLowerCase() === r.firstName!.toLowerCase() &&
+          s.lastName.toLowerCase() === r.lastName!.toLowerCase()
+        )
+      }
+
+      if (!student) {
+        errors.push(`Student not found: ${r.externalId || `${r.firstName} ${r.lastName}` || r.studentId}`)
+        skipped++
+        continue
+      }
+
+      if (student.classId === newClassId) {
+        skipped++ // Already in correct class
+        continue
+      }
+
+      await prisma.student.update({
+        where: { id: student.id },
+        data: { classId: newClassId },
+      })
+      updated++
+    }
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'STUDENT', resourceId: 'bulk-reassign', metadata: { updated, skipped } })
+
+    res.json({
+      updated,
+      skipped,
+      total: reassignments.length,
+      errors: errors.length > 0 ? errors : undefined,
+    })
+  } catch (error) {
+    console.error('Error bulk reassigning students:', error)
+    res.status(500).json({ error: 'Failed to reassign students' })
   }
 })
 

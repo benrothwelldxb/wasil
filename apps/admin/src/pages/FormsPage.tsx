@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, X, Pencil, Trash2, XCircle, Eye, FileText, Download, Link2, Copy, RefreshCw, AlertTriangle, Check } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, FORM_TEMPLATES, createFieldsFromTemplate } from '@wasil/shared'
-import type { Class, YearGroup, FormWithResponses, FormType, FormField, FormStatus } from '@wasil/shared'
+import { Plus, X, Pencil, Trash2, XCircle, Eye, FileText, Download, Link2, Copy, RefreshCw, AlertTriangle, Check, BarChart3 } from 'lucide-react'
+import { useTheme, useApi, api, ConfirmModal, FORM_TEMPLATES, createFieldsFromTemplate, useToast } from '@wasil/shared'
+import type { Class, YearGroup, FormWithResponses, FormType, FormField, FormStatus, FormAnalytics } from '@wasil/shared'
 import { FormForm } from '../components/forms'
 import type { FormFormData, AudienceOption } from '../components/forms'
 
@@ -13,8 +13,157 @@ const STATUS_COLORS: Record<string, string> = {
   CLOSED: 'bg-red-100 text-red-700',
 }
 
+type ResponseTab = 'responses' | 'analytics'
+
+function AnalyticsView({ form }: { form: FormWithResponses }) {
+  const theme = useTheme()
+  const [analytics, setAnalytics] = useState<FormAnalytics | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    api.forms.getAnalytics(form.id)
+      .then(data => { if (!cancelled) setAnalytics(data) })
+      .catch(() => { if (!cancelled) setError('Failed to load analytics') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [form.id])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  if (error || !analytics) {
+    return <p className="text-red-500 text-sm py-4">{error || 'No data available'}</p>
+  }
+
+  const fields = form.fields as FormField[]
+  const { totalResponses, totalTargeted, completionRate, fieldStats } = analytics
+
+  return (
+    <div className="space-y-6">
+      {/* Summary bar */}
+      <div className="bg-slate-50 rounded-lg p-4">
+        <p className="text-sm font-medium text-slate-700 mb-2">
+          {totalResponses} of ~{totalTargeted} parents responded ({completionRate}%)
+        </p>
+        <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all"
+            style={{ width: `${Math.min(completionRate, 100)}%`, backgroundColor: theme.colors.brandColor }}
+          />
+        </div>
+      </div>
+
+      {/* Field cards */}
+      {fields.map(field => {
+        const stat = fieldStats[field.id]
+        if (!stat) return null
+
+        return (
+          <div key={field.id} className="bg-white border border-slate-200 rounded-lg p-4">
+            <h4 className="text-sm font-semibold text-slate-800 mb-3">{stat.label}</h4>
+
+            {stat.type === 'checkbox' && (
+              <div className="space-y-2">
+                {[
+                  { label: 'Yes', count: stat.checkedCount ?? 0 },
+                  { label: 'No', count: stat.uncheckedCount ?? 0 },
+                ].map(item => {
+                  const total = (stat.checkedCount ?? 0) + (stat.uncheckedCount ?? 0)
+                  const pct = total > 0 ? Math.round((item.count / total) * 100) : 0
+                  return (
+                    <div key={item.label} className="flex items-center gap-3">
+                      <span className="text-sm text-slate-600 w-32 truncate">{item.label}</span>
+                      <div className="flex-1 h-6 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{ width: `${pct}%`, backgroundColor: theme.colors.brandColor }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-slate-700 w-20 text-right">{item.count} ({pct}%)</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {stat.type === 'select' && stat.optionCounts && (
+              <div className="space-y-2">
+                {Object.entries(stat.optionCounts).map(([option, count]) => {
+                  const pct = totalResponses > 0 ? Math.round(((count as number) / totalResponses) * 100) : 0
+                  return (
+                    <div key={option} className="flex items-center gap-3">
+                      <span className="text-sm text-slate-600 w-32 truncate" title={option}>{option}</span>
+                      <div className="flex-1 h-6 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{ width: `${pct}%`, backgroundColor: theme.colors.brandColor }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-slate-700 w-20 text-right">{count as number} ({pct}%)</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {stat.type === 'number' && (
+              <div className="grid grid-cols-3 gap-3">
+                {stat.average !== undefined ? (
+                  <>
+                    <div className="bg-slate-50 rounded-lg p-3 text-center">
+                      <p className="text-xs text-slate-500 mb-1">Average</p>
+                      <p className="text-lg font-semibold text-slate-800">{stat.average}</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-3 text-center">
+                      <p className="text-xs text-slate-500 mb-1">Min</p>
+                      <p className="text-lg font-semibold text-slate-800">{stat.min}</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-3 text-center">
+                      <p className="text-xs text-slate-500 mb-1">Max</p>
+                      <p className="text-lg font-semibold text-slate-800">{stat.max}</p>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-500 col-span-3">No numeric responses yet.</p>
+                )}
+              </div>
+            )}
+
+            {stat.type === 'signature' && (
+              <p className="text-sm text-slate-600">
+                {stat.filledCount ?? 0} of {totalResponses} signed
+              </p>
+            )}
+
+            {(stat.type === 'text' || stat.type === 'textarea' || stat.type === 'date') && (
+              <p className="text-sm text-slate-600">
+                {stat.filledCount ?? 0} of {totalResponses} responded
+                {totalResponses > 0 && (
+                  <span className="text-slate-400 ml-1">
+                    ({Math.round(((stat.filledCount ?? 0) / totalResponses) * 100)}% fill rate)
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function FormsPage() {
   const theme = useTheme()
+  const toast = useToast()
   const { data: forms, refetch } = useApi<FormWithResponses[]>(() => api.forms.listAll(), [])
   const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
   const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
@@ -23,6 +172,7 @@ export function FormsPage() {
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const [editing, setEditing] = useState<FormWithResponses | null>(null)
   const [viewing, setViewing] = useState<FormWithResponses | null>(null)
+  const [viewTab, setViewTab] = useState<ResponseTab>('responses')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null)
@@ -94,7 +244,7 @@ export function FormsPage() {
       resetForm()
       refetch()
     } catch {
-      alert('Failed to save form')
+      toast.error('Failed to save form')
     } finally {
       setIsSubmitting(false)
     }
@@ -141,7 +291,7 @@ export function FormsPage() {
       refetch()
       setDeleteConfirm(null)
     } catch {
-      alert('Failed to delete')
+      toast.error('Failed to delete')
     } finally {
       setIsDeleting(false)
     }
@@ -152,7 +302,7 @@ export function FormsPage() {
       await api.forms.close(id)
       refetch()
     } catch {
-      alert('Failed to close form')
+      toast.error('Failed to close form')
     }
   }
 
@@ -178,7 +328,7 @@ export function FormsPage() {
       const result = await api.forms.generateExportToken(exportLinkForm.id)
       setExportToken(result.exportToken)
     } catch {
-      alert('Failed to generate export link')
+      toast.error('Failed to generate export link')
     } finally {
       setIsLoadingToken(false)
     }
@@ -191,7 +341,7 @@ export function FormsPage() {
       await api.forms.deleteExportToken(exportLinkForm.id)
       setExportToken(null)
     } catch {
-      alert('Failed to disable export link')
+      toast.error('Failed to disable export link')
     } finally {
       setIsLoadingToken(false)
     }
@@ -206,6 +356,11 @@ export function FormsPage() {
     navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const openViewing = (form: FormWithResponses) => {
+    setViewing(form)
+    setViewTab('responses')
   }
 
   return (
@@ -281,42 +436,78 @@ export function FormsPage() {
                   </button>
                 </div>
               </div>
-              {viewing.responses.length === 0 ? (
-                <p className="text-gray-500 text-sm">No responses yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-2 pr-3 font-medium text-gray-700">Name</th>
-                        <th className="text-left py-2 pr-3 font-medium text-gray-700">Email</th>
-                        {(viewing.fields as FormField[]).map(f => (
-                          <th key={f.id} className="text-left py-2 pr-3 font-medium text-gray-700">{f.label}</th>
-                        ))}
-                        <th className="text-left py-2 font-medium text-gray-700">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {viewing.responses.map(r => (
-                        <tr key={r.id} className="border-b border-gray-100">
-                          <td className="py-2 pr-3">{r.userName}</td>
-                          <td className="py-2 pr-3 text-gray-500">{r.userEmail}</td>
-                          {(viewing.fields as FormField[]).map(f => {
-                            const val = (r.answers as Record<string, unknown>)[f.id]
-                            return (
-                              <td key={f.id} className="py-2 pr-3">
-                                {f.type === 'checkbox' ? (val ? 'Yes' : 'No') : String(val ?? '—')}
+
+              {/* Tab bar */}
+              <div className="flex border-b border-slate-200 mb-4">
+                <button
+                  onClick={() => setViewTab('responses')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    viewTab === 'responses'
+                      ? 'border-current text-slate-900'
+                      : 'border-transparent text-slate-500 hover:text-slate-700'
+                  }`}
+                  style={viewTab === 'responses' ? { color: theme.colors.brandColor, borderColor: theme.colors.brandColor } : undefined}
+                >
+                  Responses
+                </button>
+                <button
+                  onClick={() => setViewTab('analytics')}
+                  className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    viewTab === 'analytics'
+                      ? 'border-current text-slate-900'
+                      : 'border-transparent text-slate-500 hover:text-slate-700'
+                  }`}
+                  style={viewTab === 'analytics' ? { color: theme.colors.brandColor, borderColor: theme.colors.brandColor } : undefined}
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  Analytics
+                </button>
+              </div>
+
+              {viewTab === 'responses' && (
+                <>
+                  {viewing.responses.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No responses yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 pr-3 font-medium text-gray-700">Name</th>
+                            <th className="text-left py-2 pr-3 font-medium text-gray-700">Email</th>
+                            {(viewing.fields as FormField[]).map(f => (
+                              <th key={f.id} className="text-left py-2 pr-3 font-medium text-gray-700">{f.label}</th>
+                            ))}
+                            <th className="text-left py-2 font-medium text-gray-700">Date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {viewing.responses.map(r => (
+                            <tr key={r.id} className="border-b border-gray-100">
+                              <td className="py-2 pr-3">{r.userName}</td>
+                              <td className="py-2 pr-3 text-gray-500">{r.userEmail}</td>
+                              {(viewing.fields as FormField[]).map(f => {
+                                const val = (r.answers as Record<string, unknown>)[f.id]
+                                return (
+                                  <td key={f.id} className="py-2 pr-3">
+                                    {f.type === 'checkbox' ? (val ? 'Yes' : 'No') : String(val ?? '—')}
+                                  </td>
+                                )
+                              })}
+                              <td className="py-2 text-gray-500">
+                                {new Date(r.createdAt).toLocaleDateString()}
                               </td>
-                            )
-                          })}
-                          <td className="py-2 text-gray-500">
-                            {new Date(r.createdAt).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {viewTab === 'analytics' && (
+                <AnalyticsView form={viewing} />
               )}
             </div>
           </div>
@@ -451,7 +642,7 @@ export function FormsPage() {
                 <p className="text-xs text-gray-500 mt-2">{form.responseCount} responses</p>
               </div>
               <div className="flex items-center space-x-1 ml-4">
-                <button onClick={() => setViewing(form)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="View responses">
+                <button onClick={() => openViewing(form)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="View responses">
                   <Eye className="h-4 w-4" />
                 </button>
                 {form.responseCount > 0 && (

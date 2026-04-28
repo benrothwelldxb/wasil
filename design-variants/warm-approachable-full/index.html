@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Wasil - Warm & Approachable (Full Design System)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --warm-bg: #FFF8F4;
+    --warm-card: #FFFFFF;
+    --warm-rose: #C4506E;
+    --warm-rose-light: #FFF0F3;
+    --warm-rose-lighter: #FFF7F9;
+    --warm-rose-medium: rgba(196, 80, 110, 0.12);
+    --warm-coral: #E8785B;
+    --warm-sand: #F5EDE6;
+    --warm-amber: #E8A54B;
+    --warm-amber-light: #FFF7EC;
+    --warm-green: #5BA97B;
+    --warm-green-light: #EDFAF2;
+    --warm-blue: #5B8EC4;
+    --warm-blue-light: #EDF4FC;
+    --warm-purple: #8B6EAE;
+    --warm-purple-light: #F3EEFC;
+    --text-primary: #2D2225;
+    --text-secondary: #7A6469;
+    --text-tertiary: #A8929A;
+    --text-faint: #C9BCC0;
+    --border: #F0E4E6;
+    --border-strong: #E0D2D5;
+    --success: #5BA97B;
+    --success-light: #EDFAF2;
+    --error: #D14D4D;
+    --error-light: #FFF0F0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Nunito', -apple-system, sans-serif;
+    background: #F0ECEA;
+    color: var(--text-primary);
+    max-width: 390px;
+    margin: 0 auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+
+  /* ===== Screen Management ===== */
+  .screen {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    min-height: 100vh;
+    background: var(--warm-bg);
+  }
+  .screen.active {
+    display: block;
+    position: relative;
+    animation: screenFadeIn 0.3s ease;
+  }
+  @keyframes screenFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* ===== Screen Picker (top ribbon) ===== */
+  .screen-picker {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    z-index: 1000;
+    background: #2D2225;
+    padding: 6px 8px;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .screen-picker::-webkit-scrollbar { display: none; }
+  .screen-picker button {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-family: 'Nunito', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+    background: transparent;
+    color: rgba(255,255,255,0.5);
+    transition: all 0.2s;
+  }
+  .screen-picker button.active {
+    background: var(--warm-rose);
+    color: #fff;
+  }
+  .screen-picker button:hover:not(.active) {
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.8);
+  }
+
+  /* ===== Shared Components ===== */
+
+  /* Background blobs */
+  .bg-decoration {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 300px;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+  .bg-blob-1 {
+    position: absolute;
+    top: -80px;
+    right: -40px;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(196, 80, 110, 0.06) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .bg-blob-2 {
+    position: absolute;
+    top: 40px;
+    left: -60px;
+    width: 180px;
+    height: 180px;
+    background: radial-gradient(circle, rgba(232, 120, 91, 0.05) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .screen-content {
+    position: relative;
+    z-index: 1;
+    padding: 48px 20px 110px;
+  }
+
+  /* Page Header */
+  .page-header {
+    margin-bottom: 24px;
+  }
+  .page-header h1 {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1.15;
+  }
+  .page-header .subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-top: 4px;
+  }
+
+  /* Back button */
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--warm-rose);
+    background: none;
+    border: none;
+    cursor: pointer;
+    margin-bottom: 16px;
+    padding: 4px 0;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--warm-card);
+    border-radius: 22px;
+    border: 1.5px solid var(--border);
+    margin-bottom: 14px;
+    transition: transform 0.2s;
+    overflow: hidden;
+  }
+  .card:active { transform: scale(0.98); }
+  .card-body { padding: 18px; }
+
+  /* Search Input */
+  .search-input {
+    width: 100%;
+    padding: 14px 14px 14px 44px;
+    border-radius: 16px;
+    border: 1.5px solid var(--border);
+    background: var(--warm-card);
+    font-family: 'Nunito', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .search-input:focus { border-color: var(--warm-rose); }
+  .search-input::placeholder { color: var(--text-faint); }
+  .search-wrap {
+    position: relative;
+    margin-bottom: 20px;
+  }
+  .search-wrap svg {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-faint);
+  }
+
+  /* Pill / Chip */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    border: 1.5px solid var(--border);
+    background: var(--warm-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .pill.active {
+    background: var(--warm-rose);
+    color: #fff;
+    border-color: var(--warm-rose);
+  }
+
+  /* Button */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 28px;
+    border-radius: 16px;
+    background: var(--warm-rose);
+    color: #fff;
+    font-family: 'Nunito', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    transition: all 0.2s;
+  }
+  .btn-primary:active { transform: scale(0.97); }
+  .btn-primary:disabled { opacity: 0.5; }
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px;
+    border-radius: 14px;
+    background: var(--warm-rose-light);
+    color: var(--warm-rose);
+    font-family: 'Nunito', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-secondary:active { transform: scale(0.97); }
+  .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border-radius: 14px;
+    background: transparent;
+    color: var(--warm-rose);
+    font-family: 'Nunito', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    border: 1.5px solid var(--warm-rose);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  /* Section Title */
+  .section-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-bottom: 14px;
+  }
+
+  /* Avatar */
+  .avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 800;
+    color: #fff;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .avatar-sm {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+  .avatar-round {
+    border-radius: 50%;
+  }
+
+  /* Tag */
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  /* Divider */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 16px 0;
+  }
+
+  /* ===== Bottom Nav ===== */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 390px;
+    background: rgba(255, 248, 244, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 8px 0 28px;
+    z-index: 100;
+  }
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 14px;
+    border-radius: 16px;
+    transition: all 0.2s;
+  }
+  .nav-item.active { background: var(--warm-rose-light); }
+  .nav-item .nav-icon { width: 24px; height: 24px; color: var(--text-tertiary); }
+  .nav-item.active .nav-icon { color: var(--warm-rose); }
+  .nav-label { font-size: 11px; font-weight: 700; color: var(--text-tertiary); }
+  .nav-item.active .nav-label { color: var(--warm-rose); }
+
+  /* ===== Animations ===== */
+  @keyframes warmFadeIn {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .anim { animation: warmFadeIn 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) both; }
+  .a1 { animation-delay: 0.05s; }
+  .a2 { animation-delay: 0.1s; }
+  .a3 { animation-delay: 0.15s; }
+  .a4 { animation-delay: 0.2s; }
+  .a5 { animation-delay: 0.25s; }
+  .a6 { animation-delay: 0.3s; }
+  .a7 { animation-delay: 0.35s; }
+  .a8 { animation-delay: 0.4s; }
+  .a9 { animation-delay: 0.45s; }
+
+  @keyframes wave {
+    0%, 100% { transform: rotate(0deg); }
+    15% { transform: rotate(14deg); }
+    30% { transform: rotate(-8deg); }
+    45% { transform: rotate(14deg); }
+    60% { transform: rotate(-4deg); }
+    75% { transform: rotate(10deg); }
+  }
+
+  /* ===== RSVP Buttons ===== */
+  .rsvp-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .rsvp-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 12px;
+    font-family: 'Nunito', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    border: 1.5px solid var(--border);
+    background: var(--warm-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .rsvp-btn.yes { border-color: var(--warm-green); background: var(--warm-green-light); color: var(--warm-green); }
+  .rsvp-btn.no { border-color: var(--error); background: var(--error-light); color: var(--error); }
+  .rsvp-btn.maybe { border-color: var(--warm-amber); background: var(--warm-amber-light); color: #8B5E0F; }
+
+  /* ===== Form inputs ===== */
+  .form-group { margin-bottom: 16px; }
+  .form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .form-input {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1.5px solid var(--border);
+    background: var(--warm-card);
+    font-family: 'Nunito', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-input:focus { border-color: var(--warm-rose); }
+  .form-input::placeholder { color: var(--text-faint); }
+
+  /* ===== Specific Page Styles ===== */
+
+  /* Login */
+  .login-logo {
+    width: 100px;
+    height: 100px;
+    border-radius: 28px;
+    background: linear-gradient(135deg, var(--warm-rose), var(--warm-coral));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    font-size: 40px;
+    color: #fff;
+    font-weight: 800;
+    box-shadow: 0 8px 32px rgba(196, 80, 110, 0.2);
+  }
+  .oauth-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 14px;
+    border: 1.5px solid var(--border);
+    background: var(--warm-card);
+    font-family: 'Nunito', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 10px;
+  }
+  .oauth-btn:active { transform: scale(0.98); background: var(--warm-bg); }
+  .or-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .or-divider::before, .or-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Event Card */
+  .event-date-block {
+    width: 52px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .event-date-block .month {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--warm-rose);
+  }
+  .event-date-block .day {
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--text-primary);
+  }
+  .event-date-block .dow {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+  }
+
+  /* Term dates - timeline */
+  .term-section {
+    margin-bottom: 24px;
+  }
+  .term-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--warm-rose);
+    border-radius: 18px 18px 0 0;
+    color: #fff;
+  }
+  .term-header h3 { font-size: 16px; font-weight: 800; }
+  .term-body {
+    background: var(--warm-card);
+    border: 1.5px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 18px 18px;
+  }
+  .term-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+  }
+  .term-row + .term-row { border-top: 1px solid var(--border); }
+  .term-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .term-label { flex: 1; }
+  .term-label h4 { font-size: 14px; font-weight: 700; }
+  .term-label p { font-size: 12px; color: var(--text-tertiary); font-weight: 500; }
+  .term-date { font-size: 12px; color: var(--text-secondary); font-weight: 600; text-align: right; }
+
+  /* ECA / Activities */
+  .student-picker {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .student-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px 8px 8px;
+    border-radius: 20px;
+    border: 1.5px solid var(--border);
+    background: var(--warm-card);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+  .student-chip.active {
+    border-color: var(--warm-rose);
+    background: var(--warm-rose-light);
+    color: var(--warm-rose);
+  }
+  .student-chip .chip-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    color: #fff;
+  }
+
+  .day-slot-card {
+    background: var(--warm-card);
+    border: 1.5px solid var(--border);
+    border-radius: 18px;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .day-slot-header {
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--warm-bg);
+    cursor: pointer;
+  }
+  .day-slot-header h3 { font-size: 15px; font-weight: 700; }
+  .day-slot-header .slot-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 8px;
+    text-transform: uppercase;
+  }
+  .activity-option {
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-top: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .activity-option:active { background: var(--warm-bg); }
+  .activity-option .rank-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-faint);
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+  .activity-option .rank-circle.selected {
+    border-color: var(--warm-rose);
+    background: var(--warm-rose);
+    color: #fff;
+  }
+  .activity-option .rank-circle.selected-2 {
+    border-color: var(--warm-blue);
+    background: var(--warm-blue);
+    color: #fff;
+  }
+  .activity-option .rank-circle.selected-3 {
+    border-color: var(--warm-amber);
+    background: var(--warm-amber);
+    color: #fff;
+  }
+  .activity-option .act-info { flex: 1; }
+  .activity-option .act-info h4 { font-size: 15px; font-weight: 700; }
+  .activity-option .act-info p { font-size: 12px; color: var(--text-tertiary); font-weight: 500; }
+  .capacity-bar {
+    width: 60px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .capacity-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+
+  /* Allocation result card */
+  .alloc-card {
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .alloc-card + .alloc-card { border-top: 1px solid var(--border); }
+  .alloc-badge {
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  /* Folder grid */
+  .folder-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .folder-card {
+    background: var(--warm-card);
+    border: 1.5px solid var(--border);
+    border-radius: 18px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .folder-card:active { transform: scale(0.97); }
+  .folder-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    margin-bottom: 10px;
+  }
+  .folder-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+  .folder-card p { font-size: 12px; color: var(--text-tertiary); font-weight: 500; }
+
+  /* File row */
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+  }
+  .file-row + .file-row { border-top: 1px solid var(--border); }
+  .file-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* Link card */
+  .link-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+  }
+  .link-card + .link-card { border-top: 1px solid var(--border); }
+  .link-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+
+  /* Pulse Survey */
+  .pulse-card {
+    background: linear-gradient(135deg, var(--warm-purple), #6B4D8A);
+    border-radius: 22px;
+    padding: 22px 20px;
+    color: #fff;
+    margin-bottom: 14px;
+  }
+  .pulse-stars {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .pulse-star {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .pulse-star.filled { background: rgba(255,255,255,0.35); transform: scale(1.1); }
+
+  /* Side menu overlay */
+  .menu-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 500;
+  }
+  .menu-overlay.open { display: block; }
+  .side-menu {
+    position: fixed;
+    right: -300px;
+    top: 0;
+    width: 300px;
+    height: 100%;
+    background: var(--warm-card);
+    z-index: 501;
+    transition: right 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+    overflow-y: auto;
+  }
+  .side-menu.open { right: 0; }
+  .menu-header {
+    padding: 52px 20px 16px;
+    background: var(--warm-rose-lighter);
+    border-bottom: 1px solid var(--border);
+  }
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    transition: background 0.15s;
+  }
+  .menu-item:active { background: var(--warm-bg); }
+  .menu-item svg { width: 22px; height: 22px; color: var(--text-tertiary); }
+  .menu-item.danger { color: var(--error); }
+  .menu-item.danger svg { color: var(--error); }
+
+  /* Notification toast */
+  .notif-toast {
+    position: fixed;
+    top: 44px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100px);
+    width: 360px;
+    background: var(--warm-card);
+    border-radius: 18px;
+    padding: 14px 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    border: 1.5px solid var(--border);
+    z-index: 600;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .notif-toast.show { transform: translateX(-50%) translateY(0); }
+  .notif-toast .notif-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .notif-toast .notif-content { flex: 1; }
+  .notif-toast .notif-content h4 { font-size: 14px; font-weight: 700; }
+  .notif-toast .notif-content p { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+
+  /* Knowledge base */
+  .kb-category {
+    background: var(--warm-card);
+    border: 1.5px solid var(--border);
+    border-radius: 18px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .kb-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+  }
+  .kb-header .kb-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+  .kb-header h4 { font-size: 15px; font-weight: 700; flex: 1; }
+  .kb-header .kb-count { font-size: 12px; color: var(--text-tertiary); font-weight: 600; }
+  .kb-articles { border-top: 1px solid var(--border); }
+  .kb-article {
+    padding: 12px 18px 12px 58px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .kb-article:active { background: var(--warm-bg); }
+  .kb-article + .kb-article { border-top: 1px solid var(--border); }
+
+  @media (min-width: 420px) {
+    body {
+      border-left: 1px solid #ddd;
+      border-right: 1px solid #ddd;
+      box-shadow: 0 0 60px rgba(0,0,0,0.06);
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Screen Picker -->
+<div class="screen-picker" id="screenPicker">
+  <button class="active" onclick="showScreen('login')">Login</button>
+  <button onclick="showScreen('register')">Register</button>
+  <button onclick="showScreen('dashboard')">Dashboard</button>
+  <button onclick="showScreen('events')">Events</button>
+  <button onclick="showScreen('activities')">Activities</button>
+  <button onclick="showScreen('allocations')">Allocations</button>
+  <button onclick="showScreen('termdates')">Term Dates</button>
+  <button onclick="showScreen('principal')">Principal</button>
+  <button onclick="showScreen('knowledge')">School Info</button>
+  <button onclick="showScreen('policies')">Policies</button>
+  <button onclick="showScreen('files')">Files</button>
+  <button onclick="showScreen('links')">Links</button>
+  <button onclick="showScreen('menu')">Menu</button>
+  <button onclick="showScreen('notifications')">Notifications</button>
+  <button onclick="showScreen('pulse')">Pulse Survey</button>
+</div>
+
+<!-- ======================== LOGIN ======================== -->
+<div class="screen active" id="screen-login">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content" style="padding-top: 80px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh;">
+    <div class="login-logo anim a1">W</div>
+    <h2 class="anim a2" style="font-size: 24px; font-weight: 800; text-align: center; margin-bottom: 4px;">Welcome back</h2>
+    <p class="anim a2" style="font-size: 14px; color: var(--text-secondary); text-align: center; margin-bottom: 28px; font-weight: 500;">Sign in to your parent portal</p>
+    <div style="width: 100%;">
+      <button class="oauth-btn anim a3">
+        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        Continue with Google
+      </button>
+      <button class="oauth-btn anim a3">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="#00A4EF"><path d="M11.4 2H2v9.4h9.4V2zM22 2h-9.4v9.4H22V2zM11.4 12.6H2V22h9.4v-9.4zM22 12.6h-9.4V22H22v-9.4z"/></svg>
+        Continue with Microsoft
+      </button>
+      <div class="or-divider anim a4">or</div>
+      <div class="form-group anim a4">
+        <label class="form-label">Email address</label>
+        <input class="form-input" type="email" placeholder="your.email@example.com">
+      </div>
+      <div class="form-group anim a5">
+        <label class="form-label">Password</label>
+        <input class="form-input" type="password" placeholder="Enter your password">
+      </div>
+      <button class="btn-primary anim a6" style="margin-top: 4px;">Sign In</button>
+      <p class="anim a7" style="text-align: center; font-size: 14px; color: var(--text-secondary); margin-top: 20px; font-weight: 500;">
+        New parent? <a href="#" style="color: var(--warm-rose); font-weight: 700; text-decoration: none;">Register here</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== REGISTER ======================== -->
+<div class="screen" id="screen-register">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content" style="padding-top: 72px;">
+    <div style="text-align: center; margin-bottom: 28px;" class="anim a1">
+      <div class="login-logo" style="width: 80px; height: 80px; border-radius: 22px; font-size: 32px;">W</div>
+      <h2 style="font-size: 22px; font-weight: 800;">Parent Registration</h2>
+      <p style="font-size: 14px; color: var(--text-secondary); font-weight: 500;">Enter your school access code</p>
+    </div>
+    <div class="form-group anim a2">
+      <label class="form-label">Access Code</label>
+      <input class="form-input" type="text" value="ABC-123-XYZ" style="text-align: center; font-size: 20px; font-weight: 800; letter-spacing: 0.08em;">
+      <p style="font-size: 12px; color: var(--text-tertiary); text-align: center; margin-top: 6px; font-weight: 500;">You should have received this from your school</p>
+    </div>
+    <!-- Verified state -->
+    <div class="card anim a3" style="background: var(--success-light); border-color: rgba(91,169,123,0.2);">
+      <div class="card-body" style="text-align: center;">
+        <div style="font-size: 28px; margin-bottom: 8px;">&#9989;</div>
+        <h3 style="font-size: 16px; font-weight: 800; color: var(--success);">Invitation Verified!</h3>
+      </div>
+    </div>
+    <div class="card anim a4" style="background: var(--warm-bg); border-color: var(--border);">
+      <div class="card-body">
+        <p style="font-size: 13px; font-weight: 700; color: var(--text-secondary); margin-bottom: 10px;">Welcome, Sarah! Your children:</p>
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div class="avatar-sm" style="background: linear-gradient(135deg, var(--warm-blue), #7BA8D9); font-size: 12px;">L</div>
+          <div><span style="font-weight: 700; font-size: 14px;">Lara</span><span style="color: var(--text-tertiary); font-size: 13px;"> - Year 3</span></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="avatar-sm" style="background: linear-gradient(135deg, var(--warm-green), #7BC49A); font-size: 12px;">O</div>
+          <div><span style="font-weight: 700; font-size: 14px;">Oscar</span><span style="color: var(--text-tertiary); font-size: 13px;"> - Year 5</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="form-group anim a5"><label class="form-label">Email address</label><input class="form-input" type="email" value="sarah@example.com"></div>
+    <div class="form-group anim a6"><label class="form-label">Create password</label><input class="form-input" type="password" placeholder="At least 8 characters"></div>
+    <div class="form-group anim a6"><label class="form-label">Confirm password</label><input class="form-input" type="password" placeholder="Enter password again"></div>
+    <button class="btn-primary anim a7">Create Account</button>
+  </div>
+</div>
+
+<!-- ======================== DASHBOARD ======================== -->
+<div class="screen" id="screen-dashboard">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="anim a1" style="margin-bottom: 24px;">
+      <span style="font-size: 32px; display: inline-block; animation: wave 1.5s ease-in-out 0.5s 1; transform-origin: 70% 70%;">&#128075;</span>
+      <h1 style="font-size: 28px; font-weight: 800; line-height: 1.15; margin-top: 4px;">Good morning, Ben</h1>
+      <p style="font-size: 15px; color: var(--text-secondary); font-weight: 500; margin-top: 4px;">Monday 21 April</p>
+    </div>
+    <!-- Action needed -->
+    <div class="card anim a2" style="background: var(--warm-amber-light); border-color: rgba(232,165,75,0.25);">
+      <div style="padding: 14px 18px; display: flex; align-items: center; gap: 14px;">
+        <div style="width: 42px; height: 42px; border-radius: 14px; background: rgba(232,165,75,0.15); display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0;">&#9888;&#65039;</div>
+        <div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700; color: #8B5E0F;">1 form needs your attention</h4><p style="font-size: 13px; color: #B07A1B; font-weight: 500;">Field Trip Consent &middot; due in 3 days</p></div>
+      </div>
+    </div>
+    <!-- Children's day -->
+    <div class="section-title anim a3">Your family's day</div>
+    <div class="card anim a3">
+      <div class="card-body">
+        <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 14px;">
+          <div class="avatar" style="background: linear-gradient(135deg, var(--warm-blue), #7BA8D9);">L</div>
+          <div><h3 style="font-size: 18px; font-weight: 700;">Lara</h3><span style="font-size: 13px; color: var(--text-secondary); font-weight: 600;">Year 3 &middot; Miss Parker</span></div>
+        </div>
+        <div style="background: var(--warm-bg); border-radius: 16px; padding: 14px 16px; display: flex; align-items: center; gap: 12px;">
+          <div style="width: 40px; height: 40px; border-radius: 12px; background: var(--warm-blue-light); display: flex; align-items: center; justify-content: center; font-size: 20px;">&#127946;</div>
+          <div><h4 style="font-size: 15px; font-weight: 700;">Swimming</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">3:15 - 4:00 &middot; Sports Hall</p><span class="tag" style="background: var(--warm-blue-light); color: var(--warm-blue); margin-top: 4px;">After School</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card anim a4">
+      <div class="card-body">
+        <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 14px;">
+          <div class="avatar" style="background: linear-gradient(135deg, var(--warm-green), #7BC49A);">O</div>
+          <div><h3 style="font-size: 18px; font-weight: 700;">Oscar</h3><span style="font-size: 13px; color: var(--text-secondary); font-weight: 600;">Year 5 &middot; Mr. Thompson</span></div>
+        </div>
+        <div style="background: var(--warm-bg); border-radius: 16px; padding: 14px 16px; display: flex; align-items: center; gap: 12px;">
+          <div style="width: 40px; height: 40px; border-radius: 12px; background: var(--warm-green-light); display: flex; align-items: center; justify-content: center; font-size: 20px;">&#9917;</div>
+          <div><h4 style="font-size: 15px; font-weight: 700;">Football</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">3:15 - 4:15 &middot; Main Pitch</p><span class="tag" style="background: var(--warm-green-light); color: var(--warm-green); margin-top: 4px;">After School</span></div>
+        </div>
+      </div>
+    </div>
+    <!-- ECA Banner -->
+    <div class="anim a5" style="background: linear-gradient(135deg, var(--warm-rose), var(--warm-coral)); border-radius: 22px; padding: 22px 20px; margin-bottom: 14px; color: #fff; position: relative; overflow: hidden;">
+      <div style="position: absolute; top: -10px; right: -10px; font-size: 90px; opacity: 0.1;">&#127912;</div>
+      <h3 style="font-size: 19px; font-weight: 800; position: relative; z-index: 1;">Activity sign-ups are open!</h3>
+      <p style="font-size: 14px; font-weight: 500; opacity: 0.9; position: relative; z-index: 1;">Choose clubs and activities for next term</p>
+      <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.22); border-radius: 12px; padding: 6px 14px; margin-top: 10px; font-size: 13px; font-weight: 700; position: relative; z-index: 1;">&#9200; Closes in 3 days</div>
+    </div>
+    <!-- Messages -->
+    <div class="section-title anim a6">Recent messages</div>
+    <div class="card anim a6">
+      <div class="card-body">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+          <div style="width: 40px; height: 40px; border-radius: 50%; background: #5C6BC0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #fff; flex-shrink: 0;">Y3</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: baseline; gap: 8px;">
+              <span style="font-size: 15px; font-weight: 700;">Year 3 Team</span>
+              <span style="font-size: 12px; color: var(--text-tertiary); font-weight: 600;">Today, 8:30 AM</span>
+            </div>
+          </div>
+          <div style="width: 9px; height: 9px; border-radius: 50%; background: var(--warm-rose); flex-shrink: 0;"></div>
+        </div>
+        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 4px;">Field Trip to Science Museum</h4>
+        <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.5; font-weight: 500;">Dear parents, we are excited to announce a field trip on Thursday 1st May. Please provide consent by 24th April.</p>
+        <button class="btn-secondary" style="margin-top: 12px;">&#10003; Give Consent</button>
+      </div>
+    </div>
+    <div class="card anim a7">
+      <div class="card-body">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+          <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--warm-rose); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #fff; flex-shrink: 0;">WS</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: baseline; gap: 8px;">
+              <span style="font-size: 15px; font-weight: 700;">Whole School</span>
+              <span style="font-size: 12px; color: var(--text-tertiary); font-weight: 600;">Yesterday</span>
+            </div>
+          </div>
+        </div>
+        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 4px;">Annual Sports Day</h4>
+        <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.5; font-weight: 500;">Sports Day on Friday 16th May. Students in house colours. Parents welcome from 9:00 AM.</p>
+      </div>
+    </div>
+    <!-- Principal -->
+    <div class="section-title anim a8">From Mrs. Harrison</div>
+    <div class="card anim a8" style="background: var(--warm-rose-lighter); border-color: rgba(196,80,110,0.12);">
+      <div class="card-body">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+          <div class="avatar avatar-round" style="background: var(--warm-rose); font-size: 16px;">MH</div>
+          <div><h3 style="font-size: 15px; font-weight: 700;">Weekly Update</h3><p style="font-size: 12px; color: var(--text-secondary); font-weight: 600;">Week of 21 April</p></div>
+        </div>
+        <p style="font-size: 14px; line-height: 1.6; color: var(--text-secondary); font-weight: 500; margin-bottom: 14px;">What a wonderful start to the summer term! It's been lovely seeing the children back and settled after the holiday...</p>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <button id="dashHeartBtn" onclick="toggleHeart('dashHeartBtn','dashHeartCount')" style="display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 8px 14px; border-radius: 12px; cursor: pointer; font-family: 'Nunito'; font-size: 14px; font-weight: 700; color: var(--text-secondary);">
+            <span style="font-size: 22px;">&#129293;</span>
+            <span id="dashHeartCount">24</span>
+          </button>
+          <a href="#" style="font-size: 14px; font-weight: 700; color: var(--warm-rose); text-decoration: none;">Read more</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== EVENTS ======================== -->
+<div class="screen" id="screen-events">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>Events</h1><p class="subtitle">School calendar and upcoming events</p></div>
+    <div style="display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto;" class="anim a2">
+      <span class="pill active">All</span>
+      <span class="pill">Whole School</span>
+      <span class="pill">Year 3</span>
+      <span class="pill">Year 5</span>
+    </div>
+    <div class="section-title anim a3">May 2026</div>
+    <!-- Event 1 -->
+    <div class="card anim a3">
+      <div class="card-body" style="display: flex; gap: 16px;">
+        <div class="event-date-block">
+          <div class="month">May</div>
+          <div class="day">1</div>
+          <div class="dow">Thu</div>
+        </div>
+        <div style="flex: 1;">
+          <h4 style="font-size: 16px; font-weight: 700; margin-bottom: 4px;">Science Museum Field Trip</h4>
+          <p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Year 3 &middot; 9:00 AM - 3:00 PM</p>
+          <div style="display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; color: var(--text-tertiary); font-weight: 500;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Science Museum, London
+          </div>
+          <div class="rsvp-group">
+            <button class="rsvp-btn yes">&#10003; Going</button>
+            <button class="rsvp-btn no">&#10007; Can't go</button>
+            <button class="rsvp-btn maybe">? Maybe</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Event 2 -->
+    <div class="card anim a4">
+      <div class="card-body" style="display: flex; gap: 16px;">
+        <div class="event-date-block">
+          <div class="month">May</div>
+          <div class="day">16</div>
+          <div class="dow">Fri</div>
+        </div>
+        <div style="flex: 1;">
+          <h4 style="font-size: 16px; font-weight: 700; margin-bottom: 4px;">Annual Sports Day</h4>
+          <p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Whole School &middot; 9:00 AM - 1:00 PM</p>
+          <div style="display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; color: var(--text-tertiary); font-weight: 500;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            School Grounds
+          </div>
+          <div class="rsvp-group">
+            <button class="rsvp-btn yes">&#10003; Going</button>
+            <button class="rsvp-btn no">&#10007; Can't go</button>
+            <button class="rsvp-btn maybe">? Maybe</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Event 3 -->
+    <div class="card anim a5">
+      <div class="card-body" style="display: flex; gap: 16px;">
+        <div class="event-date-block">
+          <div class="month">May</div>
+          <div class="day">22</div>
+          <div class="dow">Thu</div>
+        </div>
+        <div style="flex: 1;">
+          <h4 style="font-size: 16px; font-weight: 700; margin-bottom: 4px;">Year 5 Concert</h4>
+          <p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Year 5 &middot; 2:00 PM - 3:30 PM</p>
+          <div style="display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; color: var(--text-tertiary); font-weight: 500;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            School Hall
+          </div>
+          <span class="tag" style="background: var(--warm-green-light); color: var(--warm-green); margin-top: 8px;">&#10003; Attending</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== ACTIVITIES (ECA Registration) ======================== -->
+<div class="screen" id="screen-activities">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>Activities</h1><p class="subtitle">Summer Term 2026 &middot; Registration Open</p></div>
+    <div class="student-picker anim a2">
+      <div class="student-chip active">
+        <div class="chip-avatar" style="background: linear-gradient(135deg, var(--warm-blue), #7BA8D9);">L</div>
+        Lara
+      </div>
+      <div class="student-chip">
+        <div class="chip-avatar" style="background: linear-gradient(135deg, var(--warm-green), #7BC49A);">O</div>
+        Oscar
+      </div>
+    </div>
+    <div class="card anim a2" style="background: var(--warm-amber-light); border-color: rgba(232,165,75,0.2); margin-bottom: 20px;">
+      <div style="padding: 14px 18px; font-size: 13px; font-weight: 600; color: #8B5E0F;">
+        <strong>Rank your choices 1-3</strong> for each day. Star your priority choice for the term.
+      </div>
+    </div>
+    <!-- Monday After School -->
+    <div class="day-slot-card anim a3">
+      <div class="day-slot-header">
+        <h3>Monday</h3>
+        <span class="slot-tag" style="background: var(--warm-blue-light); color: var(--warm-blue);">After School</span>
+      </div>
+      <div class="activity-option">
+        <div class="rank-circle selected">1</div>
+        <div class="act-info"><h4>Swimming</h4><p>Sports Hall &middot; 3:15-4:00</p></div>
+        <div class="capacity-bar"><div class="capacity-fill" style="width: 70%; background: var(--warm-green);"></div></div>
+      </div>
+      <div class="activity-option">
+        <div class="rank-circle selected-2">2</div>
+        <div class="act-info"><h4>Art Club</h4><p>Art Room &middot; 3:15-4:15</p></div>
+        <div class="capacity-bar"><div class="capacity-fill" style="width: 90%; background: var(--warm-amber);"></div></div>
+      </div>
+      <div class="activity-option">
+        <div class="rank-circle selected-3">3</div>
+        <div class="act-info"><h4>Coding Club</h4><p>Computer Lab &middot; 3:15-4:00</p></div>
+        <div class="capacity-bar"><div class="capacity-fill" style="width: 40%; background: var(--warm-green);"></div></div>
+      </div>
+    </div>
+    <!-- Wednesday After School -->
+    <div class="day-slot-card anim a4">
+      <div class="day-slot-header">
+        <h3>Wednesday</h3>
+        <span class="slot-tag" style="background: var(--warm-blue-light); color: var(--warm-blue);">After School</span>
+      </div>
+      <div class="activity-option">
+        <div class="rank-circle selected">1</div>
+        <div class="act-info"><h4>Drama</h4><p>School Hall &middot; 3:15-4:15</p></div>
+        <div class="capacity-bar"><div class="capacity-fill" style="width: 55%; background: var(--warm-green);"></div></div>
+      </div>
+      <div class="activity-option">
+        <div class="rank-circle">2</div>
+        <div class="act-info"><h4>Chess Club</h4><p>Library &middot; 3:15-4:00</p></div>
+        <div class="capacity-bar"><div class="capacity-fill" style="width: 30%; background: var(--warm-green);"></div></div>
+      </div>
+      <div class="activity-option">
+        <div class="rank-circle">3</div>
+        <div class="act-info"><h4>Gymnastics</h4><p>Sports Hall &middot; 3:15-4:15</p></div>
+        <div class="capacity-bar"><div class="capacity-fill" style="width: 85%; background: var(--warm-coral);"></div></div>
+      </div>
+    </div>
+    <button class="btn-primary anim a5" style="margin-top: 8px;">Save Selections</button>
+    <p class="anim a6" style="text-align: center; font-size: 12px; color: var(--text-tertiary); margin-top: 12px; font-weight: 500;">Registration closes in 3 days</p>
+  </div>
+</div>
+
+<!-- ======================== ALLOCATIONS (Results) ======================== -->
+<div class="screen" id="screen-allocations">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>Your Allocations</h1><p class="subtitle">Summer Term 2026 &middot; Confirmed</p></div>
+    <div class="student-picker anim a2">
+      <div class="student-chip active"><div class="chip-avatar" style="background: linear-gradient(135deg, var(--warm-blue), #7BA8D9);">L</div> Lara</div>
+      <div class="student-chip"><div class="chip-avatar" style="background: linear-gradient(135deg, var(--warm-green), #7BC49A);">O</div> Oscar</div>
+    </div>
+    <div class="card anim a3">
+      <div class="alloc-card">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: var(--warm-blue-light); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">&#127946;</div>
+        <div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Swimming</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">Monday &middot; 3:15-4:00 &middot; Sports Hall</p></div>
+        <span class="alloc-badge" style="background: var(--warm-green-light); color: var(--warm-green);">1st choice</span>
+      </div>
+      <div class="alloc-card">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: var(--warm-purple-light); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">&#127917;</div>
+        <div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Drama</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">Wednesday &middot; 3:15-4:15 &middot; School Hall</p></div>
+        <span class="alloc-badge" style="background: var(--warm-green-light); color: var(--warm-green);">1st choice</span>
+      </div>
+      <div class="alloc-card">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: var(--warm-amber-light); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">&#127912;</div>
+        <div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Art Club</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">Friday &middot; 3:15-4:15 &middot; Art Room</p></div>
+        <span class="alloc-badge" style="background: var(--warm-blue-light); color: var(--warm-blue);">2nd choice</span>
+      </div>
+    </div>
+    <!-- Invitation -->
+    <div class="section-title anim a4">Invitations</div>
+    <div class="card anim a4" style="border-color: rgba(139,110,174,0.25); background: var(--warm-purple-light);">
+      <div class="card-body">
+        <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--warm-purple); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;">&#127775; Tryout Invitation</div>
+        <h4 style="font-size: 16px; font-weight: 700;">School Choir</h4>
+        <p style="font-size: 13px; color: var(--text-secondary); font-weight: 500; margin-bottom: 12px;">Tuesday, 3:30-4:15 &middot; Music Room<br>Invited by Mrs. Williams</p>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-secondary" style="flex: 1;">Accept</button>
+          <button class="btn-outline" style="flex: 1;">Decline</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== TERM DATES ======================== -->
+<div class="screen" id="screen-termdates">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>Term Dates</h1><p class="subtitle">Academic Year 2025/26</p></div>
+    <div class="term-section anim a2">
+      <div class="term-header"><h3>&#127796; Summer Term</h3></div>
+      <div class="term-body">
+        <div class="term-row"><div class="term-dot" style="background: var(--warm-green);"></div><div class="term-label"><h4>Term Begins</h4></div><div class="term-date">Mon 21 April</div></div>
+        <div class="term-row"><div class="term-dot" style="background: var(--warm-amber);"></div><div class="term-label"><h4>Bank Holiday</h4><p>School closed</p></div><div class="term-date">Mon 5 May</div></div>
+        <div class="term-row"><div class="term-dot" style="background: var(--warm-blue);"></div><div class="term-label"><h4>Half Term</h4></div><div class="term-date">Mon 26 - Fri 30 May</div></div>
+        <div class="term-row"><div class="term-dot" style="background: var(--warm-rose);"></div><div class="term-label"><h4>Term Ends</h4></div><div class="term-date">Fri 18 July</div></div>
+      </div>
+    </div>
+    <div class="term-section anim a3">
+      <div class="term-header"><h3>&#127810; Autumn Term</h3></div>
+      <div class="term-body">
+        <div class="term-row"><div class="term-dot" style="background: var(--warm-green);"></div><div class="term-label"><h4>Term Begins</h4></div><div class="term-date">Wed 3 September</div></div>
+        <div class="term-row"><div class="term-dot" style="background: var(--warm-blue);"></div><div class="term-label"><h4>Half Term</h4></div><div class="term-date">Mon 27 - Fri 31 Oct</div></div>
+        <div class="term-row"><div class="term-dot" style="background: var(--warm-rose);"></div><div class="term-label"><h4>Term Ends</h4></div><div class="term-date">Fri 19 December</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== PRINCIPAL UPDATES ======================== -->
+<div class="screen" id="screen-principal">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>Principal's Updates</h1><p class="subtitle">Weekly messages from Mrs. Harrison</p></div>
+    <div class="card anim a2" style="border-color: rgba(196,80,110,0.2);">
+      <div class="card-body">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+          <div class="avatar avatar-round" style="background: var(--warm-rose); font-size: 16px;">MH</div>
+          <div style="flex: 1;"><h3 style="font-size: 16px; font-weight: 700;">Welcome Back!</h3><p style="font-size: 12px; color: var(--text-secondary); font-weight: 600;">Week of 21 April</p></div>
+          <span class="tag" style="background: var(--warm-rose-light); color: var(--warm-rose);">This week</span>
+        </div>
+        <p style="font-size: 14px; line-height: 1.6; color: var(--text-secondary); font-weight: 500;">What a wonderful start to the summer term! It's been lovely seeing the children back and settled after the holiday. A special well done to Year 5 for their assembly this morning...</p>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px;">
+          <button id="princHeartBtn" onclick="toggleHeart('princHeartBtn','princHeartCount')" style="display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 8px 14px; border-radius: 12px; cursor: pointer; font-family: 'Nunito'; font-size: 14px; font-weight: 700; color: var(--text-secondary);">
+            <span style="font-size: 22px;">&#129293;</span>
+            <span id="princHeartCount">24</span>
+          </button>
+          <a href="#" style="font-size: 14px; font-weight: 700; color: var(--warm-rose); text-decoration: none;">Read full update &#8250;</a>
+        </div>
+      </div>
+    </div>
+    <div class="card anim a3">
+      <div class="card-body" style="display: flex; align-items: center; gap: 12px;">
+        <div class="avatar avatar-round" style="background: var(--warm-rose); font-size: 14px; width: 44px; height: 44px;">MH</div>
+        <div style="flex: 1;"><h3 style="font-size: 15px; font-weight: 700;">End of Spring Term</h3><p style="font-size: 12px; color: var(--text-secondary); font-weight: 600;">Week of 31 March</p></div>
+        <span style="font-size: 13px; color: var(--text-tertiary);">&#10084; 31</span>
+      </div>
+    </div>
+    <div class="card anim a4">
+      <div class="card-body" style="display: flex; align-items: center; gap: 12px;">
+        <div class="avatar avatar-round" style="background: var(--warm-rose); font-size: 14px; width: 44px; height: 44px;">MH</div>
+        <div style="flex: 1;"><h3 style="font-size: 15px; font-weight: 700;">Spring Assembly Recap</h3><p style="font-size: 12px; color: var(--text-secondary); font-weight: 600;">Week of 24 March</p></div>
+        <span style="font-size: 13px; color: var(--text-tertiary);">&#10084; 28</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== KNOWLEDGE BASE ======================== -->
+<div class="screen" id="screen-knowledge">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>School Information</h1><p class="subtitle">Everything you need to know</p></div>
+    <div class="kb-category anim a2">
+      <div class="kb-header"><span class="kb-icon">&#128218;</span><h4>Curriculum</h4><span class="kb-count">4 articles</span></div>
+      <div class="kb-articles"><div class="kb-article">Curriculum Overview</div><div class="kb-article">Homework Policy</div><div class="kb-article">Assessment Schedule</div><div class="kb-article">Reading at Home Guide</div></div>
+    </div>
+    <div class="kb-category anim a3">
+      <div class="kb-header"><span class="kb-icon">&#127939;</span><h4>Sports & PE</h4><span class="kb-count">3 articles</span></div>
+    </div>
+    <div class="kb-category anim a4">
+      <div class="kb-header"><span class="kb-icon">&#128188;</span><h4>Uniform & Equipment</h4><span class="kb-count">2 articles</span></div>
+    </div>
+    <div class="kb-category anim a5">
+      <div class="kb-header"><span class="kb-icon">&#127859;</span><h4>School Meals</h4><span class="kb-count">3 articles</span></div>
+    </div>
+    <div class="kb-category anim a6">
+      <div class="kb-header"><span class="kb-icon">&#128661;</span><h4>Transport & Drop-off</h4><span class="kb-count">2 articles</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== POLICIES ======================== -->
+<div class="screen" id="screen-policies">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>School Policies</h1><p class="subtitle">View and download our policies</p></div>
+    <div class="search-wrap anim a2">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search-input" type="text" placeholder="Search policies...">
+    </div>
+    <div class="section-title anim a3">A</div>
+    <div class="card anim a3">
+      <div class="file-row"><div class="file-icon" style="background: var(--warm-rose-light);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warm-rose)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Admissions Policy</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">Updated: 1 Sep 2025 &middot; 245 KB</p></div></div>
+      <div class="file-row"><div class="file-icon" style="background: var(--warm-rose-light);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warm-rose)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Anti-Bullying Policy</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">Updated: 1 Sep 2025 &middot; 180 KB</p></div></div>
+      <div class="file-row"><div class="file-icon" style="background: var(--warm-rose-light);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warm-rose)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Attendance Policy</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">Updated: 15 Oct 2025 &middot; 310 KB</p></div></div>
+    </div>
+    <div class="section-title anim a4">B</div>
+    <div class="card anim a4">
+      <div class="file-row"><div class="file-icon" style="background: var(--warm-rose-light);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warm-rose)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Behaviour Policy</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">Updated: 1 Sep 2025 &middot; 420 KB</p></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== FILES ======================== -->
+<div class="screen" id="screen-files">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>Files</h1><p class="subtitle">School documents and resources</p></div>
+    <div class="search-wrap anim a2">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search-input" type="text" placeholder="Search files...">
+    </div>
+    <div class="folder-grid anim a3">
+      <div class="folder-card"><div class="folder-icon" style="background: var(--warm-blue-light);">&#128452;</div><h4>Forms</h4><p>8 files</p></div>
+      <div class="folder-card"><div class="folder-icon" style="background: var(--warm-green-light);">&#128247;</div><h4>Photos</h4><p>24 files</p></div>
+      <div class="folder-card"><div class="folder-icon" style="background: var(--warm-purple-light);">&#128221;</div><h4>Newsletters</h4><p>12 files</p></div>
+      <div class="folder-card"><div class="folder-icon" style="background: var(--warm-amber-light);">&#128218;</div><h4>Curriculum</h4><p>6 files</p></div>
+    </div>
+    <div class="section-title anim a4">Recent files</div>
+    <div class="card anim a4">
+      <div class="file-row"><div class="file-icon" style="background: var(--error-light);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div style="flex: 1;"><h4 style="font-size: 14px; font-weight: 700;">Permission Slip - Science Museum.pdf</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">120 KB &middot; 18 Apr</p></div></div>
+      <div class="file-row"><div class="file-icon" style="background: var(--warm-blue-light);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--warm-blue)" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><div style="flex: 1;"><h4 style="font-size: 14px; font-weight: 700;">Spring Concert Photos.zip</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">15.2 MB &middot; 28 Mar</p></div></div>
+      <div class="file-row"><div class="file-icon" style="background: var(--warm-green-light);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--warm-green)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div style="flex: 1;"><h4 style="font-size: 14px; font-weight: 700;">Summer Term Timetable.xlsx</h4><p style="font-size: 12px; color: var(--text-tertiary); font-weight: 500;">48 KB &middot; 15 Apr</p></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== LINKS ======================== -->
+<div class="screen" id="screen-links">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>Useful Links</h1><p class="subtitle">Quick access to external resources</p></div>
+    <div class="section-title anim a2">Learning Platforms</div>
+    <div class="card anim a2">
+      <div class="link-card"><div class="link-icon" style="background: var(--warm-blue-light);">&#128187;</div><div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Google Classroom</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Homework and learning resources</p></div></div>
+      <div class="link-card"><div class="link-icon" style="background: var(--warm-green-light);">&#128214;</div><div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Reading Planet</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Online reading library</p></div></div>
+      <div class="link-card"><div class="link-icon" style="background: var(--warm-amber-light);">&#128290;</div><div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">Times Tables Rock Stars</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Maths practice games</p></div></div>
+    </div>
+    <div class="section-title anim a3">Payments & Booking</div>
+    <div class="card anim a3">
+      <div class="link-card"><div class="link-icon" style="background: var(--warm-rose-light);">&#128179;</div><div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">School Pay</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Trips, meals, and uniform payments</p></div></div>
+      <div class="link-card"><div class="link-icon" style="background: var(--warm-purple-light);">&#127869;</div><div style="flex: 1;"><h4 style="font-size: 15px; font-weight: 700;">School Meals Menu</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Weekly lunch menus</p></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== MENU (Side Menu) ======================== -->
+<div class="screen" id="screen-menu">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content" style="background: var(--warm-card); min-height: 100vh; margin: 0 -20px; padding: 48px 0 110px;">
+    <div class="menu-header">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <div class="avatar avatar-round" style="background: linear-gradient(135deg, var(--warm-rose), var(--warm-coral)); font-size: 18px;">BR</div>
+        <div><h3 style="font-size: 18px; font-weight: 800;">Ben Rothwell</h3><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">ben@example.com</p></div>
+      </div>
+    </div>
+    <div style="padding: 8px 0;">
+      <button class="menu-item"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l-10 9h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg> Home</button>
+      <button class="menu-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Events</button>
+      <button class="menu-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/></svg> Term Dates</button>
+      <button class="menu-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Principal's Updates</button>
+      <button class="menu-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> School Information</button>
+      <button class="menu-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Policies</button>
+      <button class="menu-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Files</button>
+      <button class="menu-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Links</button>
+      <button class="menu-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Activities</button>
+      <div style="height: 1px; background: var(--border); margin: 8px 20px;"></div>
+      <button class="menu-item danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Sign Out</button>
+    </div>
+    <div style="padding: 20px; border-top: 1px solid var(--border); margin-top: 8px;">
+      <p style="font-size: 12px; font-weight: 700; color: var(--text-tertiary); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.06em;">My Children</p>
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+        <div class="avatar-sm" style="background: linear-gradient(135deg, var(--warm-blue), #7BA8D9); font-size: 12px;">L</div>
+        <div><span style="font-weight: 700; font-size: 14px;">Lara</span><span style="color: var(--text-tertiary); font-size: 13px;"> - Year 3 &middot; Miss Parker</span></div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="avatar-sm" style="background: linear-gradient(135deg, var(--warm-green), #7BC49A); font-size: 12px;">O</div>
+        <div><span style="font-weight: 700; font-size: 14px;">Oscar</span><span style="color: var(--text-tertiary); font-size: 13px;"> - Year 5 &middot; Mr. Thompson</span></div>
+      </div>
+    </div>
+    <div style="padding: 0 20px;">
+      <p style="font-size: 12px; font-weight: 700; color: var(--text-tertiary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em;">Language</p>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--warm-bg); border-radius: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        <span style="flex: 1; font-size: 14px; font-weight: 600;">English</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== NOTIFICATIONS ======================== -->
+<div class="screen" id="screen-notifications">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>Notifications</h1><p class="subtitle">Push notification examples</p></div>
+    <!-- Simulated notification toasts -->
+    <div class="anim a2" style="margin-bottom: 20px;">
+      <p style="font-size: 12px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;">Lock screen style</p>
+      <div style="background: var(--warm-card); border: 1.5px solid var(--border); border-radius: 18px; padding: 14px 16px; display: flex; gap: 12px; margin-bottom: 10px;">
+        <div style="width: 38px; height: 38px; border-radius: 10px; background: var(--warm-rose); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; color: #fff; font-weight: 800;">W</div>
+        <div style="flex: 1;"><h4 style="font-size: 14px; font-weight: 700;">New Message</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Year 3 Team sent a new message about the Science Museum trip</p><p style="font-size: 11px; color: var(--text-tertiary); font-weight: 600; margin-top: 4px;">2 min ago</p></div>
+      </div>
+      <div style="background: var(--warm-card); border: 1.5px solid var(--border); border-radius: 18px; padding: 14px 16px; display: flex; gap: 12px; margin-bottom: 10px;">
+        <div style="width: 38px; height: 38px; border-radius: 10px; background: var(--warm-amber); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px;">&#9888;&#65039;</div>
+        <div style="flex: 1;"><h4 style="font-size: 14px; font-weight: 700;">Form Reminder</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Field Trip consent form is due tomorrow</p><p style="font-size: 11px; color: var(--text-tertiary); font-weight: 600; margin-top: 4px;">1 hour ago</p></div>
+      </div>
+      <div style="background: var(--warm-card); border: 1.5px solid var(--border); border-radius: 18px; padding: 14px 16px; display: flex; gap: 12px; margin-bottom: 10px;">
+        <div style="width: 38px; height: 38px; border-radius: 10px; background: var(--warm-purple); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px;">&#127775;</div>
+        <div style="flex: 1;"><h4 style="font-size: 14px; font-weight: 700;">ECA Registration Closing</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Activity sign-ups close in 24 hours</p><p style="font-size: 11px; color: var(--text-tertiary); font-weight: 600; margin-top: 4px;">Today</p></div>
+      </div>
+      <div style="background: var(--warm-card); border: 1.5px solid var(--border); border-radius: 18px; padding: 14px 16px; display: flex; gap: 12px;">
+        <div style="width: 38px; height: 38px; border-radius: 10px; background: var(--warm-green); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; color: #fff;">&#10003;</div>
+        <div style="flex: 1;"><h4 style="font-size: 14px; font-weight: 700;">Allocations Published</h4><p style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Lara's activity allocations for Summer Term are ready</p><p style="font-size: 11px; color: var(--text-tertiary); font-weight: 600; margin-top: 4px;">Yesterday</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== PULSE SURVEY ======================== -->
+<div class="screen" id="screen-pulse">
+  <div class="bg-decoration"><div class="bg-blob-1"></div><div class="bg-blob-2"></div></div>
+  <div class="screen-content">
+    <div class="page-header anim a1"><h1>Parent Pulse</h1><p class="subtitle">Half-termly satisfaction survey</p></div>
+    <!-- Survey Banner on Dashboard -->
+    <div class="pulse-card anim a2">
+      <h3 style="font-size: 18px; font-weight: 800; margin-bottom: 4px;">&#128172; How are we doing?</h3>
+      <p style="font-size: 14px; opacity: 0.85; font-weight: 500; margin-bottom: 14px;">Take 30 seconds to share your feedback</p>
+      <div style="display: flex; align-items: center; gap: 4px;">
+        <span style="font-size: 11px; font-weight: 700; opacity: 0.7; width: 36px; text-align: center;">Poor</span>
+        <div style="display: flex; gap: 6px; flex: 1; justify-content: center;">
+          <div class="pulse-star" onclick="selectStar(0, 1)" data-group="0" style="width: 48px; height: 48px; font-size: 24px;">&#128542;</div>
+          <div class="pulse-star" onclick="selectStar(0, 2)" data-group="0" style="width: 48px; height: 48px; font-size: 24px;">&#128533;</div>
+          <div class="pulse-star filled" onclick="selectStar(0, 3)" data-group="0" style="width: 48px; height: 48px; font-size: 24px;">&#128528;</div>
+          <div class="pulse-star" onclick="selectStar(0, 4)" data-group="0" style="width: 48px; height: 48px; font-size: 24px;">&#128522;</div>
+          <div class="pulse-star" onclick="selectStar(0, 5)" data-group="0" style="width: 48px; height: 48px; font-size: 24px;">&#129321;</div>
+        </div>
+        <span style="font-size: 11px; font-weight: 700; opacity: 0.7; width: 36px; text-align: center;">Great</span>
+      </div>
+    </div>
+    <!-- Survey Questions -->
+    <div class="section-title anim a3">Survey Questions</div>
+    <div class="card anim a3">
+      <div class="card-body">
+        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 14px;">How well does the school communicate with you?</h4>
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <span style="font-size: 10px; font-weight: 700; color: var(--text-faint); width: 32px; text-align: center;">Poor</span>
+          <div style="display: flex; gap: 4px; flex: 1; justify-content: center;">
+            <div class="pulse-star" onclick="selectStar(1, 1)" data-group="1" style="background: var(--warm-bg); width: 44px; height: 44px; font-size: 20px;">&#128542;</div>
+            <div class="pulse-star" onclick="selectStar(1, 2)" data-group="1" style="background: var(--warm-bg); width: 44px; height: 44px; font-size: 20px;">&#128533;</div>
+            <div class="pulse-star" onclick="selectStar(1, 3)" data-group="1" style="background: var(--warm-bg); width: 44px; height: 44px; font-size: 20px;">&#128528;</div>
+            <div class="pulse-star filled" onclick="selectStar(1, 4)" data-group="1" style="background: var(--warm-rose-medium); width: 44px; height: 44px; font-size: 20px;">&#128522;</div>
+            <div class="pulse-star" onclick="selectStar(1, 5)" data-group="1" style="background: var(--warm-bg); width: 44px; height: 44px; font-size: 20px;">&#129321;</div>
+          </div>
+          <span style="font-size: 10px; font-weight: 700; color: var(--text-faint); width: 32px; text-align: center;">Great</span>
+        </div>
+      </div>
+    </div>
+    <div class="card anim a4">
+      <div class="card-body">
+        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 14px;">How happy is your child at school?</h4>
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <span style="font-size: 10px; font-weight: 700; color: var(--text-faint); width: 32px; text-align: center;">Poor</span>
+          <div style="display: flex; gap: 4px; flex: 1; justify-content: center;">
+            <div class="pulse-star" onclick="selectStar(2, 1)" data-group="2" style="background: var(--warm-bg); width: 44px; height: 44px; font-size: 20px;">&#128542;</div>
+            <div class="pulse-star" onclick="selectStar(2, 2)" data-group="2" style="background: var(--warm-bg); width: 44px; height: 44px; font-size: 20px;">&#128533;</div>
+            <div class="pulse-star" onclick="selectStar(2, 3)" data-group="2" style="background: var(--warm-bg); width: 44px; height: 44px; font-size: 20px;">&#128528;</div>
+            <div class="pulse-star" onclick="selectStar(2, 4)" data-group="2" style="background: var(--warm-bg); width: 44px; height: 44px; font-size: 20px;">&#128522;</div>
+            <div class="pulse-star filled" onclick="selectStar(2, 5)" data-group="2" style="background: var(--warm-rose-medium); width: 44px; height: 44px; font-size: 20px;">&#129321;</div>
+          </div>
+          <span style="font-size: 10px; font-weight: 700; color: var(--text-faint); width: 32px; text-align: center;">Great</span>
+        </div>
+      </div>
+    </div>
+    <div class="card anim a5">
+      <div class="card-body">
+        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 8px;">Any additional comments?</h4>
+        <textarea class="form-input" rows="3" placeholder="Share your thoughts..." style="resize: none; border-radius: 14px;"></textarea>
+      </div>
+    </div>
+    <button class="btn-primary anim a6" style="margin-top: 8px;">Submit Feedback</button>
+    <!-- Thank you state -->
+    <div class="card anim a7" style="background: var(--success-light); border-color: rgba(91,169,123,0.2); margin-top: 20px;">
+      <div class="card-body" style="text-align: center;">
+        <div style="font-size: 36px; margin-bottom: 8px;">&#128153;</div>
+        <h3 style="font-size: 18px; font-weight: 800; color: var(--success);">Thank you!</h3>
+        <p style="font-size: 14px; color: var(--text-secondary); font-weight: 500; margin-top: 4px;">Your feedback helps us improve</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Bottom Navigation ===== -->
+<div class="bottom-nav" id="bottomNav">
+  <button class="nav-item active" onclick="showScreen('dashboard')">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l-10 9h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
+    <span class="nav-label">Home</span>
+  </button>
+  <button class="nav-item" onclick="showScreen('events')">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span class="nav-label">Events</span>
+  </button>
+  <button class="nav-item" onclick="showScreen('activities')">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    <span class="nav-label">Activities</span>
+  </button>
+  <button class="nav-item" onclick="showScreen('files')">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span class="nav-label">Files</span>
+  </button>
+  <button class="nav-item" onclick="showScreen('menu')">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+    <span class="nav-label">More</span>
+  </button>
+</div>
+
+<script>
+  // Screen management
+  function showScreen(name) {
+    // Hide all screens
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    // Show target
+    const target = document.getElementById('screen-' + name);
+    if (target) {
+      target.classList.add('active');
+      window.scrollTo(0, 0);
+    }
+    // Update picker
+    document.querySelectorAll('.screen-picker button').forEach(b => b.classList.remove('active'));
+    const picker = document.querySelector(`.screen-picker button[onclick="showScreen('${name}')"]`);
+    if (picker) {
+      picker.classList.add('active');
+      picker.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+    // Show/hide bottom nav (hide for login/register)
+    const hideNav = ['login', 'register'].includes(name);
+    document.getElementById('bottomNav').style.display = hideNav ? 'none' : 'flex';
+    // Update active nav item
+    const navMap = { dashboard: 0, events: 1, activities: 2, files: 3, menu: 4 };
+    document.querySelectorAll('.bottom-nav .nav-item').forEach((n, i) => {
+      n.classList.toggle('active', i === (navMap[name] ?? -1));
+    });
+  }
+
+  // Heart toggle
+  function toggleHeart(btnId, countId) {
+    const btn = document.getElementById(btnId);
+    const countEl = document.getElementById(countId);
+    const isActive = btn.dataset.active === 'true';
+    let count = parseInt(countEl.textContent);
+    if (isActive) {
+      count--;
+      btn.dataset.active = 'false';
+      btn.style.color = 'var(--text-secondary)';
+      btn.style.background = 'none';
+    } else {
+      count++;
+      btn.dataset.active = 'true';
+      btn.style.color = '#E05577';
+      btn.style.background = 'rgba(224,85,119,0.08)';
+    }
+    countEl.textContent = count;
+  }
+
+  // Star/emoji selection by group
+  function selectStar(group, n) {
+    const stars = document.querySelectorAll(`.pulse-star[data-group="${group}"]`);
+    stars.forEach((s, i) => {
+      const isSelected = (i + 1) === n;
+      s.classList.toggle('filled', isSelected);
+      // Update background for question cards (not the banner)
+      if (group > 0) {
+        s.style.background = isSelected ? 'var(--warm-rose-medium)' : 'var(--warm-bg)';
+      }
+    });
+  }
+
+  // Initialize
+  showScreen('login');
+</script>
+</body>
+</html>

@@ -15,7 +15,7 @@ import {
   Mail,
   X,
 } from 'lucide-react'
-import { useApi, useMutation, useAuth, useTheme } from '@wasil/shared'
+import { useApi, useMutation, useAuth } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type {
   EcaTerm,
@@ -33,7 +33,6 @@ const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export function EcaPage() {
   const { t } = useTranslation()
-  const theme = useTheme()
   const { user } = useAuth()
 
   const [selectedTermId, setSelectedTermId] = useState<string | null>(null)
@@ -346,8 +345,8 @@ export function EcaPage() {
     return (
       <div className="flex items-center justify-center py-12">
         <div
-          className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin"
-          style={{ borderColor: theme.colors.brandColor, borderTopColor: 'transparent' }}
+          className="w-8 h-8 border-4 rounded-full animate-spin"
+          style={{ borderColor: '#F0E4E6', borderTopColor: '#C4506E' }}
         />
       </div>
     )
@@ -358,14 +357,14 @@ export function EcaPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold" style={{ color: theme.colors.brandColor }}>
+          <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
             {t('eca.title', 'Activities')}
           </h1>
-          <p className="text-gray-600 mt-1">{t('eca.subtitle', 'Extra-curricular activities for your children')}</p>
+          <p className="text-sm font-medium mt-1" style={{ color: '#7A6469' }}>{t('eca.subtitle', 'Extra-curricular activities for your children')}</p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-          <AlertCircle className="h-12 w-12 mx-auto text-red-300 mb-4" />
-          <p className="text-gray-500">{t('common.error', 'An error occurred. Please try again later.')}</p>
+        <div className="bg-white p-12 text-center" style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}>
+          <AlertCircle className="h-12 w-12 mx-auto mb-4" style={{ color: '#D8CDD0' }} />
+          <p style={{ color: '#A8929A' }}>{t('common.error', 'An error occurred. Please try again later.')}</p>
         </div>
       </div>
     )
@@ -376,14 +375,14 @@ export function EcaPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold" style={{ color: theme.colors.brandColor }}>
+          <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
             {t('eca.title', 'Activities')}
           </h1>
-          <p className="text-gray-600 mt-1">{t('eca.subtitle', 'Extra-curricular activities for your children')}</p>
+          <p className="text-sm font-medium mt-1" style={{ color: '#7A6469' }}>{t('eca.subtitle', 'Extra-curricular activities for your children')}</p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-          <Calendar className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-          <p className="text-gray-500">{t('eca.noTerms', 'No activity terms are available at this time.')}</p>
+        <div className="bg-white p-12 text-center" style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}>
+          <Calendar className="h-12 w-12 mx-auto mb-4" style={{ color: '#D8CDD0' }} />
+          <p style={{ color: '#A8929A' }}>{t('eca.noTerms', 'No activity terms are available at this time.')}</p>
         </div>
       </div>
     )
@@ -393,10 +392,10 @@ export function EcaPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold" style={{ color: theme.colors.brandColor }}>
+        <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
           {t('eca.title', 'Activities')}
         </h1>
-        <p className="text-gray-600 mt-1">{t('eca.subtitle', 'Extra-curricular activities for your children')}</p>
+        <p className="text-sm font-medium mt-1" style={{ color: '#7A6469' }}>{t('eca.subtitle', 'Extra-curricular activities for your children')}</p>
       </div>
 
       {/* Child Selector (if multiple children) */}
@@ -406,15 +405,15 @@ export function EcaPage() {
             <button
               key={child.id}
               onClick={() => setSelectedStudentId(child.id)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${
                 selectedStudentId === child.id
                   ? 'text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  : 'bg-white'
               }`}
               style={
                 selectedStudentId === child.id
-                  ? { backgroundColor: theme.colors.brandColor }
-                  : undefined
+                  ? { backgroundColor: '#C4506E' }
+                  : { border: '1.5px solid #F0E4E6', color: '#7A6469' }
               }
             >
               {child.name}
@@ -430,15 +429,15 @@ export function EcaPage() {
             <button
               key={term.id}
               onClick={() => setSelectedTermId(term.id)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${
                 selectedTermId === term.id
                   ? 'text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  : 'bg-white'
               }`}
               style={
                 selectedTermId === term.id
-                  ? { backgroundColor: theme.colors.brandColor }
-                  : undefined
+                  ? { backgroundColor: '#C4506E' }
+                  : { border: '1.5px solid #F0E4E6', color: '#7A6469' }
               }
             >
               {term.name}
@@ -449,10 +448,10 @@ export function EcaPage() {
 
       {/* Pending Invitations */}
       {studentInvitations.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <div className="p-4" style={{ backgroundColor: '#FFF7EC', border: '1.5px solid rgba(232,165,75,0.25)', borderRadius: '22px' }}>
           <div className="flex items-center gap-2 mb-3">
-            <Mail className="h-5 w-5 text-amber-600" />
-            <h3 className="font-semibold text-amber-800">
+            <Mail className="h-5 w-5" style={{ color: '#E8A54B' }} />
+            <h3 className="font-semibold" style={{ color: '#8B6820' }}>
               {t('eca.invitations', 'Activity Invitations')}
             </h3>
           </div>
@@ -460,25 +459,26 @@ export function EcaPage() {
             {studentInvitations.map(inv => (
               <div
                 key={inv.id}
-                className="bg-white rounded-lg p-3 border border-amber-100"
+                className="bg-white p-3"
+                style={{ borderRadius: '14px', border: '1.5px solid #F0E4E6' }}
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <h4 className="font-medium text-gray-900">{inv.activityName}</h4>
-                    <p className="text-sm text-gray-600">
+                    <h4 className="font-medium" style={{ color: '#2D2225' }}>{inv.activityName}</h4>
+                    <p className="text-sm" style={{ color: '#7A6469' }}>
                       {DAY_NAMES[inv.dayOfWeek]} - {inv.timeSlot === 'BEFORE_SCHOOL' ? 'Before School' : 'After School'}
                     </p>
                     {inv.location && (
-                      <p className="text-sm text-gray-500 flex items-center mt-1">
+                      <p className="text-sm flex items-center mt-1" style={{ color: '#A8929A' }}>
                         <MapPin className="h-3 w-3 mr-1" />
                         {inv.location}
                       </p>
                     )}
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs mt-1" style={{ color: '#D8CDD0' }}>
                       {t('eca.invitedBy', 'Invited by {{name}}', { name: inv.invitedByName })}
                     </p>
                     {inv.isTryout && (
-                      <span className="inline-block mt-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">
+                      <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded" style={{ backgroundColor: '#F3EEFC', color: '#8B6EAE' }}>
                         {t('eca.tryout', 'Try-out')}
                       </span>
                     )}
@@ -486,13 +486,15 @@ export function EcaPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleInvitationResponse(inv.id, true)}
-                      className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
+                      className="px-3 py-1.5 text-white text-sm font-bold transition-colors"
+                      style={{ backgroundColor: '#5BA97B', borderRadius: '14px' }}
                     >
                       {t('eca.accept', 'Accept')}
                     </button>
                     <button
                       onClick={() => handleInvitationResponse(inv.id, false)}
-                      className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300 transition-colors"
+                      className="px-3 py-1.5 text-sm font-bold transition-colors"
+                      style={{ backgroundColor: '#FFFFFF', border: '1.5px solid #F0E4E6', borderRadius: '14px', color: '#7A6469' }}
                     >
                       {t('eca.decline', 'Decline')}
                     </button>
@@ -508,8 +510,8 @@ export function EcaPage() {
       {termLoading && (
         <div className="flex items-center justify-center py-12">
           <div
-            className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin"
-            style={{ borderColor: theme.colors.brandColor, borderTopColor: 'transparent' }}
+            className="w-8 h-8 border-4 rounded-full animate-spin"
+            style={{ borderColor: '#F0E4E6', borderTopColor: '#C4506E' }}
           />
         </div>
       )}
@@ -519,14 +521,14 @@ export function EcaPage() {
         <>
           {/* Before Registration Banner */}
           {termStatus.isBeforeRegistration && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="p-4" style={{ backgroundColor: '#EDF4FC', border: '1.5px solid rgba(91,142,196,0.25)', borderRadius: '22px' }}>
               <div className="flex items-center gap-3">
-                <Clock className="h-6 w-6 text-blue-600 flex-shrink-0" />
+                <Clock className="h-6 w-6 flex-shrink-0" style={{ color: '#5B8EC4' }} />
                 <div>
-                  <h3 className="font-semibold text-blue-800">
+                  <h3 className="font-semibold" style={{ color: '#3A6A9E' }}>
                     {t('eca.registrationOpens', 'Registration Opens Soon')}
                   </h3>
-                  <p className="text-sm text-blue-700">
+                  <p className="text-sm" style={{ color: '#5B8EC4' }}>
                     {t('eca.registrationOpensOn', 'Registration opens on {{date}}', {
                       date: formatDate(termDetails.registrationOpens)
                     })}
@@ -538,14 +540,14 @@ export function EcaPage() {
 
           {/* Registration Open Banner */}
           {termStatus.isDuringRegistration && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+            <div className="p-4" style={{ backgroundColor: '#EDFAF2', border: '1.5px solid rgba(91,169,123,0.25)', borderRadius: '22px' }}>
               <div className="flex items-center gap-3">
-                <Sparkles className="h-6 w-6 text-green-600 flex-shrink-0" />
+                <Sparkles className="h-6 w-6 flex-shrink-0" style={{ color: '#5BA97B' }} />
                 <div>
-                  <h3 className="font-semibold text-green-800">
+                  <h3 className="font-semibold" style={{ color: '#3D7A56' }}>
                     {t('eca.registrationOpen', 'Registration is Open!')}
                   </h3>
-                  <p className="text-sm text-green-700">
+                  <p className="text-sm" style={{ color: '#5BA97B' }}>
                     {t('eca.registrationClosesOn', 'Register by {{date}}', {
                       date: formatDate(termDetails.registrationCloses)
                     })}
@@ -557,14 +559,14 @@ export function EcaPage() {
 
           {/* Registration Closed Banner */}
           {termStatus.isAfterRegistration && !termStatus.isAllocated && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div className="p-4" style={{ backgroundColor: '#FFF7EC', border: '1.5px solid rgba(232,165,75,0.25)', borderRadius: '22px' }}>
               <div className="flex items-center gap-3">
-                <Lock className="h-6 w-6 text-amber-600 flex-shrink-0" />
+                <Lock className="h-6 w-6 flex-shrink-0" style={{ color: '#E8A54B' }} />
                 <div>
-                  <h3 className="font-semibold text-amber-800">
+                  <h3 className="font-semibold" style={{ color: '#8B6820' }}>
                     {t('eca.registrationClosed', 'Registration Closed')}
                   </h3>
-                  <p className="text-sm text-amber-700">
+                  <p className="text-sm" style={{ color: '#E8A54B' }}>
                     {t('eca.allocationPending', 'Activity allocations will be announced soon.')}
                   </p>
                 </div>
@@ -574,32 +576,32 @@ export function EcaPage() {
 
           {/* Allocated Activities */}
           {termStatus.isAllocated && studentAllocations && studentAllocations.allocations.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-4 border-b border-gray-100">
-                <h2 className="text-lg font-bold" style={{ color: theme.colors.brandColor }}>
+            <div className="bg-white overflow-hidden" style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}>
+              <div className="p-4" style={{ borderBottom: '1px solid #F0E4E6' }}>
+                <h2 className="text-lg font-bold" style={{ color: '#2D2225' }}>
                   {t('eca.yourActivities', 'Your Activities')}
                 </h2>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm" style={{ color: '#7A6469' }}>
                   {t('eca.allocatedFor', 'Allocated activities for {{name}}', {
                     name: studentAllocations.studentName
                   })}
                 </p>
               </div>
-              <div className="divide-y divide-gray-100">
+              <div>
                 {studentAllocations.allocations
                   .filter(a => a.status === 'CONFIRMED')
                   .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
                   .map(allocation => (
-                    <div key={allocation.activityId} className="p-4 flex items-center gap-4">
+                    <div key={allocation.activityId} className="p-4 flex items-center gap-4" style={{ borderBottom: '1px solid #F0E4E6' }}>
                       <div
-                        className="w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold"
-                        style={{ backgroundColor: theme.colors.brandColor }}
+                        className="w-12 h-12 flex items-center justify-center font-bold"
+                        style={{ backgroundColor: '#FFF0F3', color: '#C4506E', borderRadius: '12px' }}
                       >
                         {DAY_NAMES_SHORT[allocation.dayOfWeek]}
                       </div>
                       <div className="flex-1">
-                        <h3 className="font-medium text-gray-900">{allocation.activityName}</h3>
-                        <div className="flex flex-wrap gap-3 text-sm text-gray-500 mt-1">
+                        <h3 className="font-medium" style={{ color: '#2D2225' }}>{allocation.activityName}</h3>
+                        <div className="flex flex-wrap gap-3 text-sm mt-1" style={{ color: '#A8929A' }}>
                           <span className="flex items-center gap-1">
                             <Clock className="h-3.5 w-3.5" />
                             {allocation.timeSlot === 'BEFORE_SCHOOL' ? 'Before School' : 'After School'}
@@ -621,7 +623,7 @@ export function EcaPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 text-green-600">
+                      <div className="flex items-center gap-1" style={{ color: '#5BA97B' }}>
                         <Check className="h-5 w-5" />
                         <span className="text-sm font-medium">{t('eca.confirmed', 'Confirmed')}</span>
                       </div>
@@ -645,25 +647,27 @@ export function EcaPage() {
                   return (
                     <div
                       key={key}
-                      className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+                      className="bg-white overflow-hidden"
+                      style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}
                     >
                       {/* Day Header */}
                       <button
                         onClick={() => toggleDay(key)}
-                        className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                        className="w-full p-4 flex items-center justify-between transition-colors"
+                        style={{ borderRadius: '22px' }}
                       >
                         <div className="flex items-center gap-3">
                           <div
-                            className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm"
-                            style={{ backgroundColor: theme.colors.brandColor }}
+                            className="w-10 h-10 flex items-center justify-center font-bold text-sm"
+                            style={{ backgroundColor: '#FFF0F3', color: '#C4506E', borderRadius: '12px' }}
                           >
                             {DAY_NAMES_SHORT[dayOfWeek]}
                           </div>
                           <div className="text-left">
-                            <h3 className="font-semibold text-gray-900">
+                            <h3 className="font-bold" style={{ color: '#2D2225' }}>
                               {DAY_NAMES[dayOfWeek]}
                             </h3>
-                            <p className="text-sm text-gray-500">
+                            <p className="text-sm" style={{ color: '#A8929A' }}>
                               {timeSlot === 'BEFORE_SCHOOL' ? 'Before School' : 'After School'}
                               {' '}&middot;{' '}
                               {eligibleActivities.length} {t('eca.activitiesAvailable', 'activities available')}
@@ -671,20 +675,20 @@ export function EcaPage() {
                           </div>
                         </div>
                         {isExpanded ? (
-                          <ChevronUp className="h-5 w-5 text-gray-400" />
+                          <ChevronUp className="h-5 w-5" style={{ color: '#D8CDD0' }} />
                         ) : (
-                          <ChevronDown className="h-5 w-5 text-gray-400" />
+                          <ChevronDown className="h-5 w-5" style={{ color: '#D8CDD0' }} />
                         )}
                       </button>
 
                       {/* Activities List */}
                       {isExpanded && (
-                        <div className="border-t border-gray-100 p-4 space-y-4">
+                        <div className="p-4 space-y-4" style={{ borderTop: '1px solid #F0E4E6' }}>
                           {/* Rank Selection (Smart Allocation) */}
                           <div className="grid gap-3 md:grid-cols-3">
                             {[1, 2, 3].map(rank => (
                               <div key={rank}>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <label className="block text-sm font-medium mb-1" style={{ color: '#7A6469' }}>
                                   {rank === 1 ? t('eca.firstChoice', '1st Choice') :
                                    rank === 2 ? t('eca.secondChoice', '2nd Choice') :
                                    t('eca.thirdChoice', '3rd Choice')}
@@ -692,8 +696,8 @@ export function EcaPage() {
                                 <select
                                   value={currentRanks[rank - 1] || ''}
                                   onChange={(e) => handleRankedChange(key, rank - 1, e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-offset-0 focus:outline-none"
-                                  style={{ '--tw-ring-color': theme.colors.brandColor } as React.CSSProperties}
+                                  className="w-full px-3 py-2 text-sm focus:ring-2 focus:ring-offset-0 focus:outline-none"
+                                  style={{ border: '1.5px solid #F0E4E6', borderRadius: '14px', color: '#2D2225', '--tw-ring-color': '#C4506E' } as React.CSSProperties}
                                 >
                                   <option value="">{t('eca.selectActivity', '-- Select --')}</option>
                                   {eligibleActivities.map(activity => {
@@ -728,50 +732,53 @@ export function EcaPage() {
                               return (
                                 <div
                                   key={activity.id}
-                                  className={`p-3 rounded-lg border transition-colors ${
+                                  className={`p-3 transition-colors ${
                                     isSelected
-                                      ? 'border-2 bg-opacity-5'
+                                      ? ''
                                       : activity.isEligible
-                                      ? 'border-gray-200 hover:border-gray-300'
-                                      : 'border-gray-100 bg-gray-50 opacity-60'
+                                      ? ''
+                                      : 'opacity-60'
                                   }`}
                                   style={
                                     isSelected
                                       ? {
-                                          borderColor: theme.colors.brandColor,
-                                          backgroundColor: `${theme.colors.brandColor}10`,
+                                          backgroundColor: '#FFF0F3',
+                                          border: '2px solid #C4506E',
+                                          borderRadius: '14px',
                                         }
-                                      : undefined
+                                      : activity.isEligible
+                                      ? { border: '1.5px solid #F0E4E6', borderRadius: '14px' }
+                                      : { border: '1.5px solid #F0E4E6', borderRadius: '14px', backgroundColor: '#FFF8F4' }
                                   }
                                 >
                                   <div className="flex items-start justify-between">
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2">
-                                        <h4 className="font-medium text-gray-900">{activity.name}</h4>
+                                        <h4 className="font-medium" style={{ color: '#2D2225' }}>{activity.name}</h4>
                                         {isSelected && selectedRank > 0 && (
                                           <span
                                             className="px-1.5 py-0.5 text-xs font-medium rounded text-white"
-                                            style={{ backgroundColor: theme.colors.brandColor }}
+                                            style={{ backgroundColor: '#C4506E' }}
                                           >
                                             #{selectedRank}
                                           </span>
                                         )}
                                         {isPriority && (
-                                          <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-700">
+                                          <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded" style={{ backgroundColor: '#FFF7EC', color: '#E8A54B' }}>
                                             <Star className="h-3 w-3" />
                                             Priority
                                           </span>
                                         )}
                                         {!activity.isEligible && (
-                                          <span className="px-1.5 py-0.5 text-xs rounded bg-gray-200 text-gray-600">
+                                          <span className="px-1.5 py-0.5 text-xs rounded" style={{ backgroundColor: '#F0E4E6', color: '#7A6469' }}>
                                             {activity.eligibilityReason || t('eca.notEligible', 'Not eligible')}
                                           </span>
                                         )}
                                       </div>
                                       {activity.description && (
-                                        <p className="text-sm text-gray-600 mt-1">{activity.description}</p>
+                                        <p className="text-sm mt-1" style={{ color: '#7A6469' }}>{activity.description}</p>
                                       )}
-                                      <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-2">
+                                      <div className="flex flex-wrap gap-3 text-xs mt-2" style={{ color: '#A8929A' }}>
                                         {activity.location && (
                                           <span className="flex items-center gap-1">
                                             <MapPin className="h-3 w-3" />
@@ -790,6 +797,14 @@ export function EcaPage() {
                                             {activity.currentEnrollment || 0}/{activity.maxCapacity} spots
                                           </span>
                                         )}
+                                        {(activity.cost || activity.costDescription) && (
+                                          <span
+                                            className="font-bold px-2 py-0.5 rounded-md text-[11px]"
+                                            style={{ backgroundColor: '#FFF7EC', color: '#8B5E0F' }}
+                                          >
+                                            {activity.costDescription || `${activity.cost} AED`}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
 
@@ -797,11 +812,12 @@ export function EcaPage() {
                                     {activity.isEligible && isSelected && (
                                       <button
                                         onClick={() => handlePriorityChange(activity.id)}
-                                        className={`p-2 rounded-lg transition-colors ${
+                                        className="p-2 transition-colors"
+                                        style={
                                           isPriority
-                                            ? 'bg-amber-100 text-amber-700'
-                                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                                        }`}
+                                            ? { backgroundColor: '#FFF7EC', color: '#E8A54B', borderRadius: '12px' }
+                                            : { backgroundColor: '#FFF8F4', color: '#D8CDD0', borderRadius: '12px' }
+                                        }
                                         title={t('eca.markPriority', 'Mark as priority')}
                                       >
                                         <Star className={`h-4 w-4 ${isPriority ? 'fill-current' : ''}`} />
@@ -820,41 +836,41 @@ export function EcaPage() {
               </div>
 
               {/* Submit Button */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div className="bg-white p-4" style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}>
                 {submitError && (
-                  <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                  <div className="flex items-center gap-2 p-3 mb-4" style={{ backgroundColor: '#FEF2F2', border: '1.5px solid rgba(209,77,77,0.25)', borderRadius: '14px', color: '#D14D4D' }}>
                     <AlertCircle className="h-5 w-5 flex-shrink-0" />
                     <span className="text-sm">{submitError}</span>
                   </div>
                 )}
 
                 {submitSuccess && (
-                  <div className="flex items-center gap-2 p-3 mb-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+                  <div className="flex items-center gap-2 p-3 mb-4" style={{ backgroundColor: '#EDFAF2', border: '1.5px solid rgba(91,169,123,0.25)', borderRadius: '14px', color: '#5BA97B' }}>
                     <Check className="h-5 w-5 flex-shrink-0" />
                     <span className="text-sm">{t('eca.selectionsSubmitted', 'Your selections have been submitted successfully!')}</span>
                   </div>
                 )}
 
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm" style={{ color: '#7A6469' }}>
                     {Object.values(rankedSelections).flat().filter(Boolean).length > 0 ? (
                       <span>
                         {Object.values(rankedSelections).flat().filter(Boolean).length} {t('eca.activitiesSelected', 'activities selected')}
                         {prioritySelection && (
-                          <span className="ml-2 text-amber-600">
+                          <span className="ml-2" style={{ color: '#E8A54B' }}>
                             <Star className="h-3 w-3 inline" /> 1 priority
                           </span>
                         )}
                       </span>
                     ) : (
-                      <span className="text-gray-400">{t('eca.noSelections', 'No activities selected yet')}</span>
+                      <span style={{ color: '#D8CDD0' }}>{t('eca.noSelections', 'No activities selected yet')}</span>
                     )}
                   </div>
                   <button
                     onClick={handleSubmit}
                     disabled={isSubmitting}
-                    className="px-6 py-2.5 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: theme.colors.brandColor }}
+                    className="px-6 py-2.5 text-white font-bold transition-colors disabled:opacity-50"
+                    style={{ backgroundColor: '#C4506E', borderRadius: '14px' }}
                   >
                     {isSubmitting ? t('eca.submitting', 'Submitting...') : t('eca.submitSelections', 'Submit Selections')}
                   </button>
@@ -869,46 +885,46 @@ export function EcaPage() {
               {currentSelections
                 .filter(s => s.studentId === selectedStudentId)
                 .map(studentSel => (
-                  <div key={studentSel.studentId} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="p-4 border-b border-gray-100">
-                      <h2 className="text-lg font-bold" style={{ color: theme.colors.brandColor }}>
+                  <div key={studentSel.studentId} className="bg-white overflow-hidden" style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}>
+                    <div className="p-4" style={{ borderBottom: '1px solid #F0E4E6' }}>
+                      <h2 className="text-lg font-bold" style={{ color: '#2D2225' }}>
                         {t('eca.yourSelections', 'Your Selections')}
                       </h2>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm" style={{ color: '#7A6469' }}>
                         {t('eca.submittedBy', 'Submitted selections for {{name}}', {
                           name: studentSel.studentName
                         })}
                       </p>
                     </div>
                     {studentSel.selections.length > 0 ? (
-                      <div className="divide-y divide-gray-100">
+                      <div>
                         {studentSel.selections
                           .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.rank - b.rank)
                           .map((sel, idx) => (
-                            <div key={idx} className="p-4 flex items-center gap-4">
+                            <div key={idx} className="p-4 flex items-center gap-4" style={{ borderBottom: '1px solid #F0E4E6' }}>
                               <div
-                                className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm"
-                                style={{ backgroundColor: theme.colors.brandColor }}
+                                className="w-10 h-10 flex items-center justify-center font-bold text-sm"
+                                style={{ backgroundColor: '#FFF0F3', color: '#C4506E', borderRadius: '12px' }}
                               >
                                 {DAY_NAMES_SHORT[sel.dayOfWeek]}
                               </div>
                               <div className="flex-1">
                                 <div className="flex items-center gap-2">
-                                  <h3 className="font-medium text-gray-900">{sel.activityName}</h3>
+                                  <h3 className="font-medium" style={{ color: '#2D2225' }}>{sel.activityName}</h3>
                                   <span
                                     className="px-1.5 py-0.5 text-xs font-medium rounded text-white"
-                                    style={{ backgroundColor: theme.colors.brandColor }}
+                                    style={{ backgroundColor: '#C4506E' }}
                                   >
                                     #{sel.rank}
                                   </span>
                                   {sel.isPriority && (
-                                    <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-700">
+                                    <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded" style={{ backgroundColor: '#FFF7EC', color: '#E8A54B' }}>
                                       <Star className="h-3 w-3" />
                                       Priority
                                     </span>
                                   )}
                                 </div>
-                                <p className="text-sm text-gray-500 mt-0.5">
+                                <p className="text-sm mt-0.5" style={{ color: '#A8929A' }}>
                                   {DAY_NAMES[sel.dayOfWeek]} - {sel.timeSlot === 'BEFORE_SCHOOL' ? 'Before School' : 'After School'}
                                 </p>
                               </div>
@@ -916,7 +932,7 @@ export function EcaPage() {
                           ))}
                       </div>
                     ) : (
-                      <div className="p-8 text-center text-gray-500">
+                      <div className="p-8 text-center" style={{ color: '#A8929A' }}>
                         {t('eca.noSelectionsSubmitted', 'No selections were submitted.')}
                       </div>
                     )}
@@ -927,34 +943,34 @@ export function EcaPage() {
 
           {/* Activity Preview (before registration) */}
           {termStatus.isBeforeRegistration && termDetails.activities.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-4 border-b border-gray-100">
-                <h2 className="text-lg font-bold" style={{ color: theme.colors.brandColor }}>
+            <div className="bg-white overflow-hidden" style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}>
+              <div className="p-4" style={{ borderBottom: '1px solid #F0E4E6' }}>
+                <h2 className="text-lg font-bold" style={{ color: '#2D2225' }}>
                   {t('eca.activityPreview', 'Available Activities')}
                 </h2>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm" style={{ color: '#7A6469' }}>
                   {t('eca.previewNote', 'Preview of activities that will be available for registration')}
                 </p>
               </div>
-              <div className="divide-y divide-gray-100">
+              <div>
                 {termDetails.activities
                   .filter(a => a.isEligible)
                   .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
                   .map(activity => (
-                    <div key={activity.id} className="p-4">
+                    <div key={activity.id} className="p-4" style={{ borderBottom: '1px solid #F0E4E6' }}>
                       <div className="flex items-start gap-3">
                         <div
-                          className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
-                          style={{ backgroundColor: theme.colors.brandColor }}
+                          className="w-10 h-10 flex items-center justify-center font-bold text-sm flex-shrink-0"
+                          style={{ backgroundColor: '#FFF0F3', color: '#C4506E', borderRadius: '12px' }}
                         >
                           {DAY_NAMES_SHORT[activity.dayOfWeek]}
                         </div>
                         <div>
-                          <h3 className="font-medium text-gray-900">{activity.name}</h3>
+                          <h3 className="font-medium" style={{ color: '#2D2225' }}>{activity.name}</h3>
                           {activity.description && (
-                            <p className="text-sm text-gray-600 mt-0.5">{activity.description}</p>
+                            <p className="text-sm mt-0.5" style={{ color: '#7A6469' }}>{activity.description}</p>
                           )}
-                          <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-2">
+                          <div className="flex flex-wrap gap-3 text-xs mt-2" style={{ color: '#A8929A' }}>
                             <span>
                               {DAY_NAMES[activity.dayOfWeek]} - {activity.timeSlot === 'BEFORE_SCHOOL' ? 'Before School' : 'After School'}
                             </span>
@@ -968,6 +984,14 @@ export function EcaPage() {
                               <span className="flex items-center gap-1">
                                 <Users className="h-3 w-3" />
                                 {activity.staff.name}
+                              </span>
+                            )}
+                            {(activity.cost || activity.costDescription) && (
+                              <span
+                                className="font-bold px-2 py-0.5 rounded-md text-[11px]"
+                                style={{ backgroundColor: '#FFF7EC', color: '#8B5E0F' }}
+                              >
+                                {activity.costDescription || `${activity.cost} AED`}
                               </span>
                             )}
                           </div>
