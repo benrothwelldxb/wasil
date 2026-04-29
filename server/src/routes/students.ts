@@ -495,10 +495,13 @@ router.delete('/:id', isAdmin, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Student not found' })
     }
 
-    // Remove parent links first, then delete student
-    if (student._count.parentLinks > 0) {
-      await prisma.parentStudentLink.deleteMany({ where: { studentId: id } })
-    }
+    // Remove related records first, then delete student
+    await prisma.parentStudentLink.deleteMany({ where: { studentId: id } })
+    await prisma.studentInvitationLink.deleteMany({ where: { studentId: id } })
+    await prisma.studentGroupLink.deleteMany({ where: { studentId: id } })
+    await prisma.consultationBooking.deleteMany({ where: { studentId: id } })
+    await prisma.serviceRegistration.deleteMany({ where: { studentId: id } })
+    await prisma.conversation.updateMany({ where: { studentId: id }, data: { studentId: null } })
 
     await prisma.student.delete({ where: { id } })
 
@@ -511,9 +514,10 @@ router.delete('/:id', isAdmin, async (req: Request, res: Response) => {
     })
 
     res.json({ message: 'Student deleted successfully' })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting student:', error)
-    res.status(500).json({ error: 'Failed to delete student' })
+    const msg = error?.code === 'P2003' ? 'Cannot delete: student has linked records. Try removing related data first.' : 'Failed to delete student'
+    res.status(500).json({ error: msg })
   }
 })
 
@@ -539,10 +543,13 @@ router.post('/bulk-delete', isAdmin, async (req: Request, res: Response) => {
 
     const validIds = students.map(s => s.id)
 
-    // Remove parent links first
-    await prisma.parentStudentLink.deleteMany({
-      where: { studentId: { in: validIds } },
-    })
+    // Remove related records first
+    await prisma.parentStudentLink.deleteMany({ where: { studentId: { in: validIds } } })
+    await prisma.studentInvitationLink.deleteMany({ where: { studentId: { in: validIds } } })
+    await prisma.studentGroupLink.deleteMany({ where: { studentId: { in: validIds } } })
+    await prisma.consultationBooking.deleteMany({ where: { studentId: { in: validIds } } })
+    await prisma.serviceRegistration.deleteMany({ where: { studentId: { in: validIds } } })
+    await prisma.conversation.updateMany({ where: { studentId: { in: validIds } }, data: { studentId: null } })
 
     // Delete students
     const result = await prisma.student.deleteMany({
@@ -558,9 +565,10 @@ router.post('/bulk-delete', isAdmin, async (req: Request, res: Response) => {
     })
 
     res.json({ deleted: result.count })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error bulk deleting students:', error)
-    res.status(500).json({ error: 'Failed to delete students' })
+    const msg = error?.code === 'P2003' ? 'Cannot delete: some students have linked records. Try removing related data first.' : 'Failed to delete students'
+    res.status(500).json({ error: msg })
   }
 })
 
