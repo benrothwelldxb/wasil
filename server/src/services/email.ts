@@ -231,3 +231,96 @@ This invitation will expire in 90 days.
 
   return sendEmail({ to, subject, html, text })
 }
+
+/**
+ * Send batch emails via Resend batch API.
+ * Sends up to 100 emails per batch call.
+ * Returns { sent: number, failed: number }
+ */
+export async function sendBatchEmails(
+  emails: Array<{ to: string; subject: string; html: string; text?: string }>
+): Promise<{ sent: number; failed: number }> {
+  const client = getResendClient()
+  if (!client || emails.length === 0) {
+    return { sent: 0, failed: emails.length }
+  }
+
+  const fromEmail = getFromEmail()
+  let totalSent = 0
+  let totalFailed = 0
+
+  // Resend batch API supports up to 100 emails per call
+  const BATCH_SIZE = 100
+  for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+    const batch = emails.slice(i, i + BATCH_SIZE)
+    try {
+      const { data, error } = await (client as any).batch.send(
+        batch.map(email => ({
+          from: fromEmail,
+          to: email.to,
+          subject: email.subject,
+          html: email.html,
+          text: email.text,
+        }))
+      )
+
+      if (error) {
+        console.error(`[Email] Batch send error (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, error)
+        totalFailed += batch.length
+      } else {
+        totalSent += data?.data?.length || batch.length
+        console.log(`[Email] Batch sent ${batch.length} emails successfully`)
+      }
+    } catch (error) {
+      console.error(`[Email] Batch send failed (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, error)
+      totalFailed += batch.length
+    }
+  }
+
+  return { sent: totalSent, failed: totalFailed }
+}
+
+/**
+ * Build invitation email HTML/text for a given invitation.
+ * Used by both single and batch sends.
+ */
+export function buildInvitationEmail({
+  accessCode,
+  schoolName,
+  childrenNames,
+  parentAppUrl,
+}: {
+  accessCode: string
+  schoolName: string
+  childrenNames: string[]
+  parentAppUrl: string
+}): { subject: string; html: string; text: string } {
+  const magicLink = `${parentAppUrl}/register?code=${accessCode}`
+  const subject = `You're invited to join ${schoolName} on Wasil`
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f3f4f6; margin: 0; padding: 40px 20px;">
+  <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 12px; padding: 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+    <h1 style="color: #111827; font-size: 24px; margin: 0 0 24px 0; text-align: center;">Welcome to ${schoolName}</h1>
+    <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">You've been invited to join the ${schoolName} parent portal to stay connected with your child's school.</p>
+    <p style="color: #4b5563; margin: 16px 0;"><strong>Your children:</strong> ${childrenNames.join(', ')}</p>
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="${magicLink}" style="display: inline-block; background-color: #7f0029; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Complete Registration</a>
+    </div>
+    <div style="background-color: #f9fafb; border-radius: 8px; padding: 16px; margin: 24px 0;">
+      <p style="color: #6b7280; font-size: 14px; margin: 0 0 8px 0; text-align: center;">Or enter this code manually:</p>
+      <p style="font-family: monospace; font-size: 24px; font-weight: bold; color: #111827; text-align: center; margin: 0; letter-spacing: 2px;">${accessCode}</p>
+    </div>
+    <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 24px 0 0 0;">This invitation will expire in 90 days.</p>
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 32px 0;">
+    <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">Powered by Wasil</p>
+  </div>
+</body>
+</html>`
+
+  const text = `Welcome to ${schoolName}\n\nYou've been invited to join the ${schoolName} parent portal.\n\nYour children: ${childrenNames.join(', ')}\n\nClick here to complete your registration:\n${magicLink}\n\nOr enter this code manually: ${accessCode}\n\nThis invitation will expire in 90 days.`
+
+  return { subject, html, text }
+}

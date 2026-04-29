@@ -303,6 +303,30 @@ router.post('/', isAdmin, async (req: Request, res: Response) => {
       },
     })
 
+    // Auto-send invitation email if parent email is provided
+    let emailSent = false
+    if (parentEmail) {
+      try {
+        const { buildInvitationEmail } = await import('../services/email.js')
+        const { sendEmail } = await import('../services/email.js')
+        const PARENT_APP_URL = process.env.PARENT_APP_URL || 'http://localhost:3000'
+        const school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true } })
+        const childrenNames = [
+          ...invitation.childLinks.map(cl => cl.childName),
+          ...invitation.studentLinks.map(sl => `${sl.student.firstName} ${sl.student.lastName}`),
+        ]
+        const email = buildInvitationEmail({
+          accessCode: invitation.accessCode,
+          schoolName: school?.name || 'School',
+          childrenNames,
+          parentAppUrl: PARENT_APP_URL,
+        })
+        emailSent = await sendEmail({ to: parentEmail, ...email })
+      } catch (err) {
+        console.error('Failed to auto-send invitation email:', err)
+      }
+    }
+
     logAudit({
       req,
       action: 'CREATE',
@@ -312,6 +336,7 @@ router.post('/', isAdmin, async (req: Request, res: Response) => {
         parentEmail,
         childCount: hasChildren ? children.length : 0,
         studentCount: hasStudents ? studentIds.length : 0,
+        emailSent,
       },
     })
 
@@ -331,6 +356,7 @@ router.post('/', isAdmin, async (req: Request, res: Response) => {
         studentName: `${sl.student.firstName} ${sl.student.lastName}`,
         className: sl.student.class.name,
       })),
+      emailSent,
       status: invitation.status,
       expiresAt: invitation.expiresAt?.toISOString(),
       createdAt: invitation.createdAt.toISOString(),
@@ -507,12 +533,39 @@ router.post('/bulk', isAdmin, async (req: Request, res: Response) => {
       }
     }
 
+    // Send batch invitation emails
+    let emailStats = { sent: 0, failed: 0 }
+    const emailsToSend = created.filter(inv => inv.parentEmail)
+    if (emailsToSend.length > 0) {
+      try {
+        const { buildInvitationEmail, sendBatchEmails } = await import('../services/email.js')
+        const school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true } })
+        const PARENT_APP_URL = process.env.PARENT_APP_URL || 'http://localhost:3000'
+
+        const emails = emailsToSend.map(inv => {
+          const email = buildInvitationEmail({
+            accessCode: inv.accessCode,
+            schoolName: school?.name || 'School',
+            childrenNames: inv.children,
+            parentAppUrl: PARENT_APP_URL,
+          })
+          return { to: inv.parentEmail, ...email }
+        })
+
+        emailStats = await sendBatchEmails(emails)
+        console.log(`[Bulk Invite] Batch email: ${emailStats.sent} sent, ${emailStats.failed} failed`)
+      } catch (err) {
+        console.error('[Bulk Invite] Batch email failed:', err)
+        emailStats.failed = emailsToSend.length
+      }
+    }
+
     logAudit({
       req,
       action: 'CREATE',
       resourceType: 'PARENT_INVITATION',
       resourceId: 'bulk',
-      metadata: { count: created.length, format },
+      metadata: { count: created.length, format, emailsSent: emailStats.sent, emailsFailed: emailStats.failed },
     })
 
     res.status(201).json({
@@ -520,6 +573,8 @@ router.post('/bulk', isAdmin, async (req: Request, res: Response) => {
       created: created.length,
       skipped: grouped.length - created.length,
       invitations: created,
+      emailsSent: emailStats.sent,
+      emailsFailed: emailStats.failed,
       errors: errors.length > 0 ? errors : undefined,
     })
   } catch (error) {
