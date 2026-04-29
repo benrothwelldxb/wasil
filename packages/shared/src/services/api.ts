@@ -1116,6 +1116,21 @@ export const parentInvitations = {
       method: 'PATCH',
     }),
 
+  // Registered parents endpoints
+  listParents: (params?: { search?: string; classId?: string; page?: number; limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.search) searchParams.append('search', params.search)
+    if (params?.classId) searchParams.append('classId', params.classId)
+    if (params?.page) searchParams.append('page', params.page.toString())
+    if (params?.limit) searchParams.append('limit', params.limit.toString())
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
+    return fetchApi<{ parents: Array<{ id: string; email: string; name: string; avatarUrl?: string; lastLoginAt?: string | null; hasPassword?: boolean; createdAt: string; children: Array<{ name: string; className: string }> }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/api/parent-invitations/parents${query}`)
+  },
+  deleteParent: (id: string) =>
+    fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}`, { method: 'DELETE' }),
+  resetParentPassword: (id: string) =>
+    fetchApi<{ message: string; emailSent: boolean }>(`/api/parent-invitations/parents/${id}/reset-password`, { method: 'POST' }),
+
   // Public/Parent endpoints
   validate: (data: { code?: string; token?: string }) =>
     fetchApi<InvitationValidationResponse>('/api/parent-invitations/validate', {

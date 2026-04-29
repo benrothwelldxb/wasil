@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { Router, Request, Response } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
@@ -125,6 +126,159 @@ router.get('/', isAdmin, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching invitations:', error)
     res.status(500).json({ error: 'Failed to fetch invitations' })
+  }
+})
+
+// List registered parents
+router.get('/parents', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { search, classId, page = '1', limit = '50' } = req.query
+
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1)
+    const limitNum = Math.min(100, parseInt(limit as string, 10) || 50)
+    const skip = (pageNum - 1) * limitNum
+
+    const where: any = { schoolId: user.schoolId, role: 'PARENT' }
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+
+    const [parents, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        include: {
+          studentLinks: {
+            include: { student: { include: { class: { select: { id: true, name: true } } } } },
+          },
+          children: { include: { class: { select: { id: true, name: true } } } },
+        },
+        orderBy: { name: 'asc' },
+        skip,
+        take: limitNum,
+      }),
+      prisma.user.count({ where }),
+    ])
+
+    // If classId filter, filter in memory (students are in that class)
+    let filtered = parents
+    if (classId) {
+      filtered = parents.filter(p =>
+        p.studentLinks.some(sl => sl.student.classId === classId) ||
+        p.children.some(c => c.classId === classId)
+      )
+    }
+
+    res.json({
+      parents: filtered.map(p => ({
+        id: p.id,
+        email: p.email,
+        name: p.name,
+        avatarUrl: p.avatarUrl,
+        lastLoginAt: p.lastLoginAt?.toISOString() || null,
+        hasPassword: !!p.passwordHash,
+        createdAt: p.createdAt.toISOString(),
+        children: [
+          ...p.children.map(c => ({ name: c.name, className: c.class.name })),
+          ...p.studentLinks.map(sl => ({ name: `${sl.student.firstName} ${sl.student.lastName}`, className: sl.student.class.name })),
+        ],
+      })),
+      pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) },
+    })
+  } catch (error) {
+    console.error('Error fetching parents:', error)
+    res.status(500).json({ error: 'Failed to fetch parents' })
+  }
+})
+
+// Delete parent account
+router.delete('/parents/:id', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const parent = await prisma.user.findFirst({
+      where: { id, schoolId: user.schoolId, role: 'PARENT' },
+    })
+    if (!parent) return res.status(404).json({ error: 'Parent not found' })
+
+    // Clean up related records
+    await prisma.parentStudentLink.deleteMany({ where: { userId: id } })
+    await prisma.child.deleteMany({ where: { parentId: id } })
+    await prisma.messageAcknowledgment.deleteMany({ where: { userId: id } })
+    await prisma.formResponse.deleteMany({ where: { userId: id } })
+    await prisma.eventRsvp.deleteMany({ where: { userId: id } })
+    await prisma.pulseResponse.deleteMany({ where: { userId: id } })
+    await prisma.weeklyMessageHeart.deleteMany({ where: { userId: id } })
+    await prisma.notification.deleteMany({ where: { userId: id } })
+    await prisma.deviceToken.deleteMany({ where: { userId: id } })
+    await prisma.refreshToken.deleteMany({ where: { userId: id } })
+    await prisma.conversation.deleteMany({ where: { parentId: id } })
+    await prisma.serviceRegistration.deleteMany({ where: { parentId: id } })
+    await prisma.consultationBooking.deleteMany({ where: { parentId: id } })
+    await prisma.ecaSelection.deleteMany({ where: { parentUserId: id } })
+    // Try to delete notification preferences if they exist
+    await prisma.notificationPreference.deleteMany({ where: { userId: id } }).catch(() => {})
+    await prisma.alertAcknowledgment.deleteMany({ where: { parentId: id } })
+
+    await prisma.user.delete({ where: { id } })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'PARENT_INVITATION' as any, resourceId: id, metadata: { parentName: parent.name, parentEmail: parent.email } })
+
+    res.json({ message: 'Parent account deleted' })
+  } catch (error) {
+    console.error('Error deleting parent:', error)
+    res.status(500).json({ error: 'Failed to delete parent account' })
+  }
+})
+
+// Send magic link to reset parent password
+router.post('/parents/:id/reset-password', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const parent = await prisma.user.findFirst({
+      where: { id, schoolId: user.schoolId, role: 'PARENT' },
+    })
+    if (!parent) return res.status(404).json({ error: 'Parent not found' })
+
+    // Generate magic link token
+    const token = crypto.randomBytes(32).toString('hex')
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+    await prisma.magicLinkToken.deleteMany({ where: { email: parent.email, type: 'LOGIN' } })
+    await prisma.magicLinkToken.create({
+      data: { token, email: parent.email, schoolId: user.schoolId, type: 'LOGIN', expiresAt },
+    })
+
+    const PARENT_APP_URL = process.env.PARENT_APP_URL || 'http://localhost:3000'
+    const magicLink = `${PARENT_APP_URL}/auth/magic?token=${token}`
+
+    const { sendEmail } = await import('../services/email.js')
+    const school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true } })
+
+    const emailSent = await sendEmail({
+      to: parent.email,
+      subject: `${school?.name || 'School'} — Access Your Account`,
+      html: `<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background: white; border-radius: 12px; padding: 40px;">
+        <h2>Access Your Account</h2>
+        <p>Your school administrator has sent you a new login link.</p>
+        <div style="text-align: center; margin: 32px 0;">
+          <a href="${magicLink}" style="display: inline-block; background-color: #C4506E; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600;">Sign In</a>
+        </div>
+        <p style="color: #6b7280; font-size: 14px;">This link expires in 24 hours.</p>
+      </div>`,
+      text: `Access your account: ${magicLink}\nThis link expires in 24 hours.`,
+    })
+
+    res.json({ message: emailSent ? `Login link sent to ${parent.email}` : 'Failed to send email', emailSent })
+  } catch (error) {
+    console.error('Error resetting parent password:', error)
+    res.status(500).json({ error: 'Failed to send login link' })
   }
 })
 

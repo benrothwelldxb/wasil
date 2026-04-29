@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Plus, X, Trash2, Upload, Users, RefreshCw, Mail, Copy, QrCode, CheckCircle, XCircle, Clock, Eye } from 'lucide-react'
+import { Plus, X, Trash2, Upload, Users, RefreshCw, Mail, Copy, QrCode, CheckCircle, XCircle, Clock, Eye, Search, Send, UserX } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { Class, ParentInvitation, InvitationStatus } from '@wasil/shared'
 import { StudentSearchSelect } from '../components/StudentSearchSelect'
@@ -21,9 +21,14 @@ interface BulkImportResult {
   errors?: string[]
 }
 
+type Tab = 'invitations' | 'parents'
+
 export function ParentsPage() {
   const theme = useTheme()
   const toast = useToast()
+  const [activeTab, setActiveTab] = useState<Tab>('invitations')
+
+  // === Invitations state ===
   const [statusFilter, setStatusFilter] = useState<InvitationStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -54,6 +59,18 @@ export function ParentsPage() {
   const [bulkText, setBulkText] = useState('')
   const [bulkResult, setBulkResult] = useState<BulkImportResult | null>(null)
   const [isBulkImporting, setIsBulkImporting] = useState(false)
+
+  // === Registered Parents state ===
+  const [parentsSearch, setParentsSearch] = useState('')
+  const [parentsPage, setParentsPage] = useState(1)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string; email: string } | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [sendingLoginLink, setSendingLoginLink] = useState<string | null>(null)
+
+  const { data: parentsData, refetch: refetchParents } = useApi(
+    () => api.parentInvitations.listParents({ search: parentsSearch, page: parentsPage, limit: 50 }),
+    [parentsSearch, parentsPage]
+  )
 
   const resetForm = () => {
     setShowForm(false)
@@ -184,6 +201,37 @@ export function ParentsPage() {
     }
   }
 
+  const handleDeleteParent = async () => {
+    if (!deleteConfirm) return
+    setIsDeleting(true)
+    try {
+      await api.parentInvitations.deleteParent(deleteConfirm.id)
+      toast.success('Parent account deleted')
+      refetchParents()
+      setDeleteConfirm(null)
+    } catch (error) {
+      toast.error(`Failed to delete parent: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleSendLoginLink = async (id: string) => {
+    setSendingLoginLink(id)
+    try {
+      const result = await api.parentInvitations.resetParentPassword(id)
+      if (result.emailSent) {
+        toast.success(result.message)
+      } else {
+        toast.error(result.message)
+      }
+    } catch (error) {
+      toast.error(`Failed to send login link: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setSendingLoginLink(null)
+    }
+  }
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
   }
@@ -203,372 +251,536 @@ export function ParentsPage() {
 
   const invitations = invitationsData?.invitations || []
   const pagination = invitationsData?.pagination
+  const registeredParents = parentsData?.parents || []
+  const parentsPagination = parentsData?.pagination
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-slate-900">Parent Invitations</h2>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => { setShowBulkImport(!showBulkImport); setShowForm(false) }}
-            className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-          >
-            <Upload className="h-4 w-4" />
-            <span>Bulk Import</span>
-          </button>
-          <button
-            onClick={() => showForm ? resetForm() : (setShowForm(true), setShowBulkImport(false))}
-            className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
-            style={{ backgroundColor: theme.colors.brandColor }}
-          >
-            {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-            <span>{showForm ? 'Cancel' : 'Create Invitation'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center space-x-4 mb-6">
-        <select
-          value={statusFilter}
-          onChange={e => { setStatusFilter(e.target.value as InvitationStatus | 'all'); setPage(1) }}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+      {/* Tabs */}
+      <div className="flex items-center border-b border-slate-200 mb-6">
+        <button
+          onClick={() => setActiveTab('invitations')}
+          className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'invitations'
+              ? 'border-current text-slate-900'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+          style={activeTab === 'invitations' ? { borderColor: theme.colors.brandColor, color: theme.colors.brandColor } : undefined}
         >
-          <option value="all">All Status</option>
-          <option value="PENDING">Pending</option>
-          <option value="REDEEMED">Redeemed</option>
-          <option value="EXPIRED">Expired</option>
-          <option value="REVOKED">Revoked</option>
-        </select>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={e => { setSearchQuery(e.target.value); setPage(1) }}
-          placeholder="Search by email, name, or code..."
-          className="flex-1 max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-        />
+          Invitations
+          {pagination && <span className="ml-2 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{pagination.total}</span>}
+        </button>
+        <button
+          onClick={() => setActiveTab('parents')}
+          className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'parents'
+              ? 'border-current text-slate-900'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+          style={activeTab === 'parents' ? { borderColor: theme.colors.brandColor, color: theme.colors.brandColor } : undefined}
+        >
+          Registered Parents
+          {parentsPagination && <span className="ml-2 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{parentsPagination.total}</span>}
+        </button>
       </div>
 
-      {showBulkImport && (
-        <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 space-y-4">
-          <h3 className="font-medium text-gray-900">Bulk Import Invitations</h3>
-          <p className="text-sm text-gray-500">
-            Paste CSV data. Use <strong>Child UPN</strong> (recommended) or Child Name + Class Name.
-          </p>
-          <textarea
-            value={bulkText}
-            onChange={e => setBulkText(e.target.value)}
-            rows={8}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-            placeholder={"Parent Email,Parent Name,Child UPN\njohn@example.com,John Smith,A123456789\njohn@example.com,John Smith,A987654321\n\n--- OR legacy format ---\nParent Email,Parent Name,Child Name,Class Name\njohn@example.com,John Smith,Emma Smith,Y1 Blue"}
-          />
-          <div className="flex items-center space-x-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Expires In (days)</label>
-              <input
-                type="number"
-                value={expiresInDays}
-                onChange={e => setExpiresInDays(parseInt(e.target.value) || 90)}
-                min={1}
-                max={365}
-                className="w-24 px-3 py-2 border border-gray-300 rounded-lg"
-              />
+      {activeTab === 'invitations' && (
+        <>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-slate-900">Parent Invitations</h2>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => { setShowBulkImport(!showBulkImport); setShowForm(false) }}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                <Upload className="h-4 w-4" />
+                <span>Bulk Import</span>
+              </button>
+              <button
+                onClick={() => showForm ? resetForm() : (setShowForm(true), setShowBulkImport(false))}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
+                style={{ backgroundColor: theme.colors.brandColor }}
+              >
+                {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                <span>{showForm ? 'Cancel' : 'Create Invitation'}</span>
+              </button>
             </div>
-            <div className="flex-1" />
-            <button
-              onClick={handleBulkImport}
-              disabled={isBulkImporting || !bulkText.trim()}
-              className="px-4 py-2 rounded-lg text-white disabled:opacity-50"
-              style={{ backgroundColor: theme.colors.brandColor }}
-            >
-              {isBulkImporting ? 'Importing...' : 'Import Invitations'}
-            </button>
           </div>
 
-          {bulkResult && (
-            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-              <p className="font-medium text-gray-900">Import Complete</p>
-              <div className="flex items-center space-x-4 mt-2 text-sm">
-                <span className="text-green-600">{bulkResult.created} created</span>
-                {bulkResult.skipped > 0 && <span className="text-amber-600">{bulkResult.skipped} skipped</span>}
+          {/* Filters */}
+          <div className="flex items-center space-x-4 mb-6">
+            <select
+              value={statusFilter}
+              onChange={e => { setStatusFilter(e.target.value as InvitationStatus | 'all'); setPage(1) }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Status</option>
+              <option value="PENDING">Pending</option>
+              <option value="REDEEMED">Redeemed</option>
+              <option value="EXPIRED">Expired</option>
+              <option value="REVOKED">Revoked</option>
+            </select>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); setPage(1) }}
+              placeholder="Search by email, name, or code..."
+              className="flex-1 max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {showBulkImport && (
+            <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 space-y-4">
+              <h3 className="font-medium text-gray-900">Bulk Import Invitations</h3>
+              <p className="text-sm text-gray-500">
+                Paste CSV data. Use <strong>Child UPN</strong> (recommended) or Child Name + Class Name.
+              </p>
+              <textarea
+                value={bulkText}
+                onChange={e => setBulkText(e.target.value)}
+                rows={8}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                placeholder={"Parent Email,Parent Name,Child UPN\njohn@example.com,John Smith,A123456789\njohn@example.com,John Smith,A987654321\n\n--- OR legacy format ---\nParent Email,Parent Name,Child Name,Class Name\njohn@example.com,John Smith,Emma Smith,Y1 Blue"}
+              />
+              <div className="flex items-center space-x-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Expires In (days)</label>
+                  <input
+                    type="number"
+                    value={expiresInDays}
+                    onChange={e => setExpiresInDays(parseInt(e.target.value) || 90)}
+                    min={1}
+                    max={365}
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div className="flex-1" />
+                <button
+                  onClick={handleBulkImport}
+                  disabled={isBulkImporting || !bulkText.trim()}
+                  className="px-4 py-2 rounded-lg text-white disabled:opacity-50"
+                  style={{ backgroundColor: theme.colors.brandColor }}
+                >
+                  {isBulkImporting ? 'Importing...' : 'Import Invitations'}
+                </button>
               </div>
-              {bulkResult.errors && bulkResult.errors.length > 0 && (
-                <ul className="mt-2 text-sm text-red-600 space-y-1">
-                  {bulkResult.errors.map((err, i) => <li key={i}>{err}</li>)}
-                </ul>
+
+              {bulkResult && (
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
+                  <p className="font-medium text-gray-900">Import Complete</p>
+                  <div className="flex items-center space-x-4 mt-2 text-sm">
+                    <span className="text-green-600">{bulkResult.created} created</span>
+                    {bulkResult.skipped > 0 && <span className="text-amber-600">{bulkResult.skipped} skipped</span>}
+                  </div>
+                  {bulkResult.errors && bulkResult.errors.length > 0 && (
+                    <ul className="mt-2 text-sm text-red-600 space-y-1">
+                      {bulkResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                    </ul>
+                  )}
+                </div>
               )}
             </div>
           )}
-        </div>
+
+          {showForm && (
+            <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-slate-200 p-6 mb-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Parent Name (optional)</label>
+                  <input
+                    type="text"
+                    value={parentName}
+                    onChange={e => setParentName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="John Smith"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Parent Email (optional)</label>
+                  <input
+                    type="email"
+                    value={parentEmail}
+                    onChange={e => setParentEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="john@example.com"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Children</label>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setUseStudentSearch(true)}
+                      className={`text-xs px-2 py-1 rounded ${useStudentSearch ? 'bg-blue-100 text-blue-800' : 'text-gray-500 hover:bg-gray-100'}`}
+                    >
+                      Search Students
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseStudentSearch(false)}
+                      className={`text-xs px-2 py-1 rounded ${!useStudentSearch ? 'bg-blue-100 text-blue-800' : 'text-gray-500 hover:bg-gray-100'}`}
+                    >
+                      Manual Entry
+                    </button>
+                  </div>
+                </div>
+
+                {useStudentSearch ? (
+                  <StudentSearchSelect
+                    selectedStudents={selectedStudents}
+                    onChange={setSelectedStudents}
+                    placeholder="Search for students by name..."
+                  />
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      {children.map((child, index) => (
+                        <div key={index} className="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            value={child.childName}
+                            onChange={e => updateChild(index, 'childName', e.target.value)}
+                            placeholder="Child's name"
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          />
+                          <select
+                            value={child.classId}
+                            onChange={e => updateChild(index, 'classId', e.target.value)}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Select class...</option>
+                            {classes?.map(cls => (
+                              <option key={cls.id} value={cls.id}>{cls.name}</option>
+                            ))}
+                          </select>
+                          {children.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeChild(index)}
+                              className="p-2 text-gray-400 hover:text-red-600"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addChild}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      + Add another child
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-6">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeMagicLink}
+                    onChange={e => setIncludeMagicLink(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-sm">Include magic link for email</span>
+                </label>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600">Expires in</span>
+                  <input
+                    type="number"
+                    value={expiresInDays}
+                    onChange={e => setExpiresInDays(parseInt(e.target.value) || 90)}
+                    min={1}
+                    max={365}
+                    className="w-20 px-2 py-1 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <span className="text-sm text-gray-600">days</span>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-4 py-2 rounded-lg text-white disabled:opacity-50"
+                style={{ backgroundColor: theme.colors.brandColor }}
+              >
+                {isSubmitting ? 'Creating...' : 'Create Invitation'}
+              </button>
+            </form>
+          )}
+
+          {/* Invitations Table */}
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Access Code</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Parent</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Children</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Status</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Created</th>
+                  <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invitations.map(inv => (
+                  <tr key={inv.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center space-x-2">
+                        <code className="text-sm font-mono bg-slate-100 px-2 py-0.5 rounded">{inv.accessCode}</code>
+                        <button
+                          onClick={() => copyToClipboard(inv.accessCode)}
+                          className="p-1 text-gray-400 hover:text-gray-600"
+                          title="Copy code"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>
+                        {inv.parentName && <div className="text-sm font-medium text-gray-900">{inv.parentName}</div>}
+                        {inv.parentEmail && <div className="text-sm text-gray-500">{inv.parentEmail}</div>}
+                        {!inv.parentName && !inv.parentEmail && <span className="text-sm text-gray-400">-</span>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {inv.children.map((child, i) => (
+                          <span key={`child-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                            {child.childName} ({child.className})
+                          </span>
+                        ))}
+                        {inv.students?.map((student, i) => (
+                          <span key={`student-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">
+                            {student.studentName} ({student.className})
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {getStatusBadge(inv.status)}
+                      {inv.status === 'REDEEMED' && inv.redeemedByUser && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          by {inv.redeemedByUser.email}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {new Date(inv.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end space-x-1">
+                        <button
+                          onClick={() => setShowDetails(inv)}
+                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                          title="View details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        {inv.status === 'PENDING' && (
+                          <>
+                            <button
+                              onClick={() => handleRegenerate(inv.id)}
+                              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                              title="Regenerate codes"
+                            >
+                              <RefreshCw className="h-4 w-4" />
+                            </button>
+                            {inv.parentEmail && (
+                              <button
+                                onClick={() => handleResend(inv.id)}
+                                className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg"
+                                title="Resend email"
+                              >
+                                <Mail className="h-4 w-4" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setRevokeConfirm({ id: inv.id, code: inv.accessCode })}
+                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                              title="Revoke invitation"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {invitations.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
+                      <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No invitations found. Create your first invitation above.</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+
+            {pagination && pagination.totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                <p className="text-sm text-gray-600">
+                  Showing {(page - 1) * pagination.limit + 1} to {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
+                </p>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
+                    disabled={page === pagination.totalPages}
+                    className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-slate-200 p-6 mb-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Parent Name (optional)</label>
+      {activeTab === 'parents' && (
+        <>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-slate-900">Registered Parents</h2>
+          </div>
+
+          {/* Search */}
+          <div className="flex items-center space-x-4 mb-6">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                value={parentName}
-                onChange={e => setParentName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="John Smith"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Parent Email (optional)</label>
-              <input
-                type="email"
-                value={parentEmail}
-                onChange={e => setParentEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="john@example.com"
+                value={parentsSearch}
+                onChange={e => { setParentsSearch(e.target.value); setParentsPage(1) }}
+                placeholder="Search by name or email..."
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">Children</label>
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setUseStudentSearch(true)}
-                  className={`text-xs px-2 py-1 rounded ${useStudentSearch ? 'bg-blue-100 text-blue-800' : 'text-gray-500 hover:bg-gray-100'}`}
-                >
-                  Search Students
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUseStudentSearch(false)}
-                  className={`text-xs px-2 py-1 rounded ${!useStudentSearch ? 'bg-blue-100 text-blue-800' : 'text-gray-500 hover:bg-gray-100'}`}
-                >
-                  Manual Entry
-                </button>
-              </div>
-            </div>
-
-            {useStudentSearch ? (
-              <StudentSearchSelect
-                selectedStudents={selectedStudents}
-                onChange={setSelectedStudents}
-                placeholder="Search for students by name..."
-              />
-            ) : (
-              <>
-                <div className="space-y-2">
-                  {children.map((child, index) => (
-                    <div key={index} className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={child.childName}
-                        onChange={e => updateChild(index, 'childName', e.target.value)}
-                        placeholder="Child's name"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                      <select
-                        value={child.classId}
-                        onChange={e => updateChild(index, 'classId', e.target.value)}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select class...</option>
-                        {classes?.map(cls => (
-                          <option key={cls.id} value={cls.id}>{cls.name}</option>
-                        ))}
-                      </select>
-                      {children.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeChild(index)}
-                          className="p-2 text-gray-400 hover:text-red-600"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={addChild}
-                  className="mt-2 text-sm text-blue-600 hover:text-blue-800"
-                >
-                  + Add another child
-                </button>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center space-x-6">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeMagicLink}
-                onChange={e => setIncludeMagicLink(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <span className="text-sm">Include magic link for email</span>
-            </label>
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-600">Expires in</span>
-              <input
-                type="number"
-                value={expiresInDays}
-                onChange={e => setExpiresInDays(parseInt(e.target.value) || 90)}
-                min={1}
-                max={365}
-                className="w-20 px-2 py-1 border border-gray-300 rounded-lg text-sm"
-              />
-              <span className="text-sm text-gray-600">days</span>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="px-4 py-2 rounded-lg text-white disabled:opacity-50"
-            style={{ backgroundColor: theme.colors.brandColor }}
-          >
-            {isSubmitting ? 'Creating...' : 'Create Invitation'}
-          </button>
-        </form>
-      )}
-
-      {/* Invitations Table */}
-      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Access Code</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Parent</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Children</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Status</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Created</th>
-              <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {invitations.map(inv => (
-              <tr key={inv.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <div className="flex items-center space-x-2">
-                    <code className="text-sm font-mono bg-slate-100 px-2 py-0.5 rounded">{inv.accessCode}</code>
-                    <button
-                      onClick={() => copyToClipboard(inv.accessCode)}
-                      className="p-1 text-gray-400 hover:text-gray-600"
-                      title="Copy code"
-                    >
-                      <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div>
-                    {inv.parentName && <div className="text-sm font-medium text-gray-900">{inv.parentName}</div>}
-                    {inv.parentEmail && <div className="text-sm text-gray-500">{inv.parentEmail}</div>}
-                    {!inv.parentName && !inv.parentEmail && <span className="text-sm text-gray-400">-</span>}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    {inv.children.map((child, i) => (
-                      <span key={`child-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                        {child.childName} ({child.className})
-                      </span>
-                    ))}
-                    {inv.students?.map((student, i) => (
-                      <span key={`student-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">
-                        {student.studentName} ({student.className})
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  {getStatusBadge(inv.status)}
-                  {inv.status === 'REDEEMED' && inv.redeemedByUser && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      by {inv.redeemedByUser.email}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-500">
-                  {new Date(inv.createdAt).toLocaleDateString()}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end space-x-1">
-                    <button
-                      onClick={() => setShowDetails(inv)}
-                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-                      title="View details"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    {inv.status === 'PENDING' && (
-                      <>
-                        <button
-                          onClick={() => handleRegenerate(inv.id)}
-                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                          title="Regenerate codes"
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                        </button>
-                        {inv.parentEmail && (
-                          <button
-                            onClick={() => handleResend(inv.id)}
-                            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg"
-                            title="Resend email"
-                          >
-                            <Mail className="h-4 w-4" />
-                          </button>
+          {/* Parents Table */}
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Name</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Email</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Children</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Last Login</th>
+                  <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registeredParents.map(parent => (
+                  <tr key={parent.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center space-x-3">
+                        {parent.avatarUrl ? (
+                          <img src={parent.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+                        ) : (
+                          <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center">
+                            <span className="text-sm font-medium text-slate-600">
+                              {parent.name?.charAt(0)?.toUpperCase() || '?'}
+                            </span>
+                          </div>
                         )}
+                        <span className="text-sm font-medium text-gray-900">{parent.name || '-'}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{parent.email}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {parent.children.length > 0 ? (
+                          parent.children.map((child, i) => (
+                            <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                              {child.name} ({child.className})
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-gray-400">No children linked</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {parent.lastLoginAt
+                        ? new Date(parent.lastLoginAt).toLocaleDateString()
+                        : <span className="text-gray-400">Never</span>
+                      }
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end space-x-1">
                         <button
-                          onClick={() => setRevokeConfirm({ id: inv.id, code: inv.accessCode })}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                          title="Revoke invitation"
+                          onClick={() => handleSendLoginLink(parent.id)}
+                          disabled={sendingLoginLink === parent.id}
+                          className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                          title="Send login link"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Send className="h-3 w-3" />
+                          <span>{sendingLoginLink === parent.id ? 'Sending...' : 'Send Login Link'}</span>
                         </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {invitations.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
-                  <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No invitations found. Create your first invitation above.</p>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                        <button
+                          onClick={() => setDeleteConfirm({ id: parent.id, name: parent.name || 'Unknown', email: parent.email })}
+                          className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                          title="Delete parent account"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {registeredParents.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
+                      <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No registered parents found.</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
 
-        {pagination && pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
-            <p className="text-sm text-gray-600">
-              Showing {(page - 1) * pagination.limit + 1} to {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
-            </p>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                disabled={page === pagination.totalPages}
-                className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
+            {parentsPagination && parentsPagination.totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                <p className="text-sm text-gray-600">
+                  Showing {(parentsPage - 1) * parentsPagination.limit + 1} to {Math.min(parentsPage * parentsPagination.limit, parentsPagination.total)} of {parentsPagination.total}
+                </p>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setParentsPage(p => Math.max(1, p - 1))}
+                    disabled={parentsPage === 1}
+                    className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setParentsPage(p => Math.min(parentsPagination.totalPages, p + 1))}
+                    disabled={parentsPage === parentsPagination.totalPages}
+                    className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       {/* Details Modal */}
       {showDetails && (
@@ -692,6 +904,18 @@ export function ParentsPage() {
           isLoading={isRevoking}
           onConfirm={handleRevoke}
           onCancel={() => setRevokeConfirm(null)}
+        />
+      )}
+
+      {deleteConfirm && (
+        <ConfirmModal
+          title="Delete Parent Account?"
+          message={`Are you sure you want to delete the account for ${deleteConfirm.name} (${deleteConfirm.email})? This will permanently remove their account and all associated data. This action cannot be undone.`}
+          confirmLabel="Delete Account"
+          variant="danger"
+          isLoading={isDeleting}
+          onConfirm={handleDeleteParent}
+          onCancel={() => setDeleteConfirm(null)}
         />
       )}
     </div>
