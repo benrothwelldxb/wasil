@@ -68,6 +68,7 @@ export function ParentsPage() {
   const [sendingLoginLink, setSendingLoginLink] = useState<string | null>(null)
   const [selectedParentIds, setSelectedParentIds] = useState<Set<string>>(new Set())
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState<{ current: number; total: number } | null>(null)
 
   const { data: parentsData, refetch: refetchParents } = useApi(
     () => api.parentInvitations.listParents({ search: parentsSearch, page: parentsPage, limit: 50 }),
@@ -221,9 +222,14 @@ export function ParentsPage() {
   const handleBulkDeleteParents = async () => {
     if (selectedParentIds.size === 0) return
     setIsDeleting(true)
+    const total = selectedParentIds.size
+    setBulkDeleteProgress({ current: 0, total })
     try {
       let deleted = 0
+      let current = 0
       for (const id of selectedParentIds) {
+        current++
+        setBulkDeleteProgress({ current, total })
         try {
           await api.parentInvitations.deleteParent(id)
           deleted++
@@ -237,6 +243,7 @@ export function ParentsPage() {
       toast.error('Failed to delete parents')
     } finally {
       setIsDeleting(false)
+      setBulkDeleteProgress(null)
     }
   }
 
@@ -1003,12 +1010,20 @@ export function ParentsPage() {
       {bulkDeleteConfirm && (
         <ConfirmModal
           title={`Delete ${selectedParentIds.size} Parent Account${selectedParentIds.size !== 1 ? 's' : ''}?`}
-          message={`Are you sure you want to delete ${selectedParentIds.size} parent account${selectedParentIds.size !== 1 ? 's' : ''}? All associated data will be permanently removed. This action cannot be undone.`}
-          confirmLabel={`Delete ${selectedParentIds.size} Account${selectedParentIds.size !== 1 ? 's' : ''}`}
+          message={
+            bulkDeleteProgress
+              ? `Deleting... ${bulkDeleteProgress.current} of ${bulkDeleteProgress.total}`
+              : `Are you sure you want to delete ${selectedParentIds.size} parent account${selectedParentIds.size !== 1 ? 's' : ''}? All associated data will be permanently removed. This action cannot be undone.`
+          }
+          confirmLabel={
+            bulkDeleteProgress
+              ? `Deleting ${bulkDeleteProgress.current}/${bulkDeleteProgress.total}...`
+              : `Delete ${selectedParentIds.size} Account${selectedParentIds.size !== 1 ? 's' : ''}`
+          }
           variant="danger"
           isLoading={isDeleting}
           onConfirm={handleBulkDeleteParents}
-          onCancel={() => setBulkDeleteConfirm(false)}
+          onCancel={() => !isDeleting && setBulkDeleteConfirm(false)}
         />
       )}
     </div>
