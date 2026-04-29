@@ -74,7 +74,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
               style={{ height: '28px', width: '28px', borderRadius: '8px' }}
               onError={(e) => {
                 e.currentTarget.onerror = null
-                e.currentTarget.src = '/logo.png'
+                e.currentTarget.src = '/wasil-icon.png'
               }}
             />
           </button>
@@ -87,10 +87,14 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
               minWidth: '44px',
               minHeight: '44px',
               borderRadius: '14px',
-              backgroundColor: theme.colors.brandColor + '12',
+              padding: '2px',
             }}
           >
-            <BookOpen style={{ height: '18px', width: '18px', color: theme.colors.brandColor }} />
+            <img
+              src="/wasil-icon.png"
+              alt="Wasil"
+              style={{ height: '28px', width: '28px', borderRadius: '8px' }}
+            />
           </button>
         )}
 
