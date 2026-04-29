@@ -58,6 +58,7 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   const [parentGroups, setParentGroups] = useState<ParentGroupInfo[]>([])
   const [hasActiveEca, setHasActiveEca] = useState(false)
   const [hasActiveConsultations, setHasActiveConsultations] = useState(false)
+  const [hasIeps, setHasIeps] = useState(false)
 
   useEffect(() => {
     if (open && languages.length === 0) {
@@ -85,6 +86,10 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
           setHasActiveConsultations(!!active)
         })
         .catch(() => setHasActiveConsultations(false))
+
+      api.inclusion.myChildrenIeps()
+        .then(ieps => setHasIeps(ieps && ieps.length > 0))
+        .catch(() => setHasIeps(false))
     }
   }, [open, user])
 
@@ -144,7 +149,9 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
 
   menuItems.push({ icon: UtensilsCrossed, labelKey: 'nav.lunchMenu', path: '/lunch-menu' })
   menuItems.push({ icon: BookOpen, labelKey: 'nav.resources', path: '/resources' })
-  menuItems.push({ icon: Target, labelKey: 'nav.inclusion', path: '/inclusion' })
+  if (hasIeps) {
+    menuItems.push({ icon: Target, labelKey: 'nav.inclusion', path: '/inclusion' })
+  }
   menuItems.push({ icon: Settings, labelKey: 'nav.notificationSettings', path: '/notifications/settings' })
 
   // Add Super Admin link for SUPER_ADMIN users

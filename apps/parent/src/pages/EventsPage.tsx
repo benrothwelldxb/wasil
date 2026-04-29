@@ -9,6 +9,27 @@ import type { Event, EventRsvpStatus, Class } from '@wasil/shared'
 
 type ViewMode = 'list' | 'calendar'
 
+const DESCRIPTION_LIMIT = 120
+
+function EventDescription({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  if (text.length <= DESCRIPTION_LIMIT) {
+    return <p className="text-sm font-medium mt-2 leading-relaxed" style={{ color: '#7A6469' }}>{text}</p>
+  }
+  return (
+    <p className="text-sm font-medium mt-2 leading-relaxed" style={{ color: '#7A6469' }}>
+      {expanded ? text : `${text.slice(0, DESCRIPTION_LIMIT)}...`}
+      <button
+        onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+        className="ml-1 font-bold"
+        style={{ color: '#C4506E' }}
+      >
+        {expanded ? 'Show less' : 'Read more'}
+      </button>
+    </p>
+  )
+}
+
 export function EventsPage() {
   const { t } = useTranslation()
   const theme = useTheme()
@@ -280,9 +301,7 @@ export function EventsPage() {
                             </p>
 
                             {event.description && (
-                              <p className="text-sm font-medium mt-2 leading-relaxed" style={{ color: '#7A6469' }}>
-                                {event.description}
-                              </p>
+                              <EventDescription text={event.description} />
                             )}
 
                             {/* Time & Location */}
@@ -579,7 +598,7 @@ function CalendarView({ calendarMonth, setCalendarMonth, eventsByDate, selectedD
                     {isWholeSchool(event.targetClass) ? 'Whole School' : event.targetClass}
                   </p>
                   {event.description && (
-                    <p className="text-sm mt-1" style={{ color: '#7A6469' }}>{event.description}</p>
+                    <EventDescription text={event.description} />
                   )}
                   <div className="flex flex-wrap items-center gap-3 mt-2">
                     {event.time && (
