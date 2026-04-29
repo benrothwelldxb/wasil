@@ -28,6 +28,8 @@ export function StudentsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
 
   // Individual form
   const [firstName, setFirstName] = useState('')
@@ -198,6 +200,39 @@ export function StudentsPage() {
       toast.error(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    setIsDeleting(true)
+    try {
+      const result = await api.students.bulkDelete(Array.from(selectedIds))
+      toast.success(`Deleted ${result.deleted} student${result.deleted !== 1 ? 's' : ''}`)
+      setSelectedIds(new Set())
+      setBulkDeleteConfirm(false)
+      refetchStudents()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete students')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === students.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(students.map(s => s.id)))
     }
   }
 
@@ -504,11 +539,43 @@ export function StudentsPage() {
         </form>
       )}
 
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+          <span className="text-sm font-medium text-blue-800">
+            {selectedIds.size} student{selectedIds.size !== 1 ? 's' : ''} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-100 rounded-lg"
+            >
+              Clear selection
+            </button>
+            <button
+              onClick={() => setBulkDeleteConfirm(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete selected
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Students Table */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <table className="w-full">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
+              <th className="px-4 py-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={students.length > 0 && selectedIds.size === students.length}
+                  onChange={toggleSelectAll}
+                  className="rounded border-gray-300"
+                />
+              </th>
               <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Name</th>
               <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Class</th>
               <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Student ID</th>
@@ -518,7 +585,15 @@ export function StudentsPage() {
           </thead>
           <tbody>
             {students.map(student => (
-              <tr key={student.id} className="border-b border-slate-100 hover:bg-slate-50">
+              <tr key={student.id} className={`border-b border-slate-100 hover:bg-slate-50 ${selectedIds.has(student.id) ? 'bg-blue-50/50' : ''}`}>
+                <td className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(student.id)}
+                    onChange={() => toggleSelect(student.id)}
+                    className="rounded border-gray-300"
+                  />
+                </td>
                 <td className="px-4 py-3">
                   <span className="font-medium text-gray-900">{student.fullName}</span>
                 </td>
@@ -573,7 +648,6 @@ export function StudentsPage() {
                       onClick={() => setDeleteConfirm({ id: student.id, name: student.fullName })}
                       className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
                       title="Delete"
-                      disabled={student.parentCount > 0}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -583,7 +657,7 @@ export function StudentsPage() {
             ))}
             {students.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
                   <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No students found. Add students above or import from CSV.</p>
                 </td>
@@ -620,12 +694,24 @@ export function StudentsPage() {
       {deleteConfirm && (
         <ConfirmModal
           title="Delete Student?"
-          message={`Are you sure you want to delete ${deleteConfirm.name}? This action cannot be undone.`}
+          message={`Are you sure you want to delete ${deleteConfirm.name}? Parent links will be removed. This action cannot be undone.`}
           confirmLabel="Delete"
           variant="danger"
           isLoading={isDeleting}
           onConfirm={handleDelete}
           onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
+
+      {bulkDeleteConfirm && (
+        <ConfirmModal
+          title={`Delete ${selectedIds.size} Student${selectedIds.size !== 1 ? 's' : ''}?`}
+          message={`Are you sure you want to delete ${selectedIds.size} student${selectedIds.size !== 1 ? 's' : ''}? All parent links will be removed. This action cannot be undone.`}
+          confirmLabel={`Delete ${selectedIds.size} Student${selectedIds.size !== 1 ? 's' : ''}`}
+          variant="danger"
+          isLoading={isDeleting}
+          onConfirm={handleBulkDelete}
+          onCancel={() => setBulkDeleteConfirm(false)}
         />
       )}
     </div>

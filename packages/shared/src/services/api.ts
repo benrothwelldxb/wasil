@@ -1165,6 +1165,11 @@ export const students = {
     fetchApi<{ message: string }>(`/api/students/${id}`, {
       method: 'DELETE',
     }),
+  bulkDelete: (ids: string[]) =>
+    fetchApi<{ deleted: number }>('/api/students/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
   // Test data seeding
   seedStats: () =>
     fetchApi<{ testStudents: number; testParents: number; totalStudents: number; totalParents: number }>('/api/students/seed/stats'),

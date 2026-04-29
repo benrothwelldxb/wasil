@@ -495,8 +495,9 @@ router.delete('/:id', isAdmin, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Student not found' })
     }
 
+    // Remove parent links first, then delete student
     if (student._count.parentLinks > 0) {
-      return res.status(400).json({ error: 'Cannot delete student with linked parents. Remove parent links first.' })
+      await prisma.parentStudentLink.deleteMany({ where: { studentId: id } })
     }
 
     await prisma.student.delete({ where: { id } })
@@ -513,6 +514,53 @@ router.delete('/:id', isAdmin, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error deleting student:', error)
     res.status(500).json({ error: 'Failed to delete student' })
+  }
+})
+
+// Bulk delete students
+router.post('/bulk-delete', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { ids } = req.body as { ids: string[] }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'No student IDs provided' })
+    }
+
+    // Verify all students belong to this school
+    const students = await prisma.student.findMany({
+      where: { id: { in: ids }, schoolId: user.schoolId },
+      select: { id: true, firstName: true, lastName: true },
+    })
+
+    if (students.length === 0) {
+      return res.status(404).json({ error: 'No matching students found' })
+    }
+
+    const validIds = students.map(s => s.id)
+
+    // Remove parent links first
+    await prisma.parentStudentLink.deleteMany({
+      where: { studentId: { in: validIds } },
+    })
+
+    // Delete students
+    const result = await prisma.student.deleteMany({
+      where: { id: { in: validIds } },
+    })
+
+    logAudit({
+      req,
+      action: 'DELETE',
+      resourceType: 'STUDENT',
+      resourceId: 'bulk-delete',
+      metadata: { count: result.count, names: students.map(s => `${s.firstName} ${s.lastName}`) },
+    })
+
+    res.json({ deleted: result.count })
+  } catch (error) {
+    console.error('Error bulk deleting students:', error)
+    res.status(500).json({ error: 'Failed to delete students' })
   }
 })
 
