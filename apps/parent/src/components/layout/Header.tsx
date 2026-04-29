@@ -55,48 +55,24 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
           boxShadow: '0 2px 12px rgba(45, 34, 37, 0.06)',
         }}
       >
-        {/* School logo */}
-        {theme.logoIconUrl ? (
-          <button
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="flex items-center justify-center"
-            aria-label="Scroll to top"
-            style={{
-              minWidth: '44px',
-              minHeight: '44px',
-              borderRadius: '14px',
-              padding: '2px',
-            }}
-          >
-            <img
-              src={theme.logoIconUrl}
-              alt={theme.schoolName}
-              style={{ height: '28px', width: '28px', borderRadius: '8px' }}
-              onError={(e) => {
-                e.currentTarget.onerror = null
-                e.currentTarget.src = '/wasil-icon.png'
-              }}
-            />
-          </button>
-        ) : (
-          <button
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="flex items-center justify-center"
-            aria-label="Scroll to top"
-            style={{
-              minWidth: '44px',
-              minHeight: '44px',
-              borderRadius: '14px',
-              padding: '2px',
-            }}
-          >
-            <img
-              src="/wasil-icon.png"
-              alt="Wasil"
-              style={{ height: '28px', width: '28px', borderRadius: '8px' }}
-            />
-          </button>
-        )}
+        {/* Wasil icon */}
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="flex items-center justify-center"
+          aria-label="Scroll to top"
+          style={{
+            minWidth: '44px',
+            minHeight: '44px',
+            borderRadius: '14px',
+            padding: '2px',
+          }}
+        >
+          <img
+            src="/wasil-icon.png"
+            alt="Wasil"
+            style={{ height: '28px', width: '28px', borderRadius: '8px' }}
+          />
+        </button>
 
         {/* Search */}
         <button
