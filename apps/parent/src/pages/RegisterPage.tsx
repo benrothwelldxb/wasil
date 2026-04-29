@@ -63,8 +63,8 @@ export function RegisterPage() {
       return
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password)) {
+      setError('Password must be at least 8 characters with uppercase, lowercase, and a number')
       return
     }
 
@@ -277,7 +277,7 @@ export function RegisterPage() {
                       setPassword(e.target.value)
                       setError('')
                     }}
-                    placeholder="At least 8 characters"
+                    placeholder="Min 8 chars, uppercase, lowercase, number"
                     className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     disabled={isRegistering}
                   />
@@ -290,6 +290,7 @@ export function RegisterPage() {
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
+                <p className="text-xs text-gray-400 mt-1.5">Must include uppercase, lowercase, and a number</p>
               </div>
 
               <div>
