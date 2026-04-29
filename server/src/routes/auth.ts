@@ -616,40 +616,58 @@ router.post('/register', registerLimiter, validate(registerSchema), async (req, 
     })
 
     if (user) {
-      return res.status(400).json({ error: 'An account with this email already exists. Please login instead.' })
+      // User exists — link new children/students to existing account
+      // Set password if they don't have one
+      if (!user.passwordHash) {
+        const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { passwordHash },
+        })
+      }
+    } else {
+      // Create new user with password
+      const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
+      user = await prisma.user.create({
+        data: {
+          email: email.toLowerCase(),
+          name: name || invitation.parentName || email.split('@')[0],
+          role: 'PARENT',
+          schoolId: invitation.schoolId,
+          passwordHash,
+        },
+      })
     }
 
-    // Create user with password
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
-    user = await prisma.user.create({
-      data: {
-        email: email.toLowerCase(),
-        name: name || invitation.parentName || email.split('@')[0],
-        role: 'PARENT',
-        schoolId: invitation.schoolId,
-        passwordHash,
-      },
-    })
-
-    // Link children (legacy approach)
+    // Link children (legacy approach) — skip if already linked
     for (const link of invitation.childLinks) {
-      await prisma.child.create({
-        data: {
-          name: link.childName,
-          parentId: user.id,
-          classId: link.classId,
-        },
+      const existing = await prisma.child.findFirst({
+        where: { parentId: user.id, classId: link.classId, name: link.childName },
       })
+      if (!existing) {
+        await prisma.child.create({
+          data: {
+            name: link.childName,
+            parentId: user.id,
+            classId: link.classId,
+          },
+        })
+      }
     }
 
-    // Link students (new approach)
+    // Link students (new approach) — skip if already linked
     for (const link of invitation.studentLinks) {
-      await prisma.parentStudentLink.create({
-        data: {
-          userId: user.id,
-          studentId: link.studentId,
-        },
+      const existing = await prisma.parentStudentLink.findUnique({
+        where: { userId_studentId: { userId: user.id, studentId: link.studentId } },
       })
+      if (!existing) {
+        await prisma.parentStudentLink.create({
+          data: {
+            userId: user.id,
+            studentId: link.studentId,
+          },
+        })
+      }
     }
 
     // Mark invitation as redeemed
