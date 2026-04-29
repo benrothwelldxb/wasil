@@ -31,7 +31,7 @@ const loginSchema = z.object({
 })
 
 const registerSchema = z.object({
-  invitationId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  invitationId: z.string().min(1).optional(),
   accessCode: z.string().optional(),
   email: z.string().email(),
   password: z.string().min(8).regex(PASSWORD_REGEX, PASSWORD_ERROR),
