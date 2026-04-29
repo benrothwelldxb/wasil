@@ -66,6 +66,8 @@ export function ParentsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string; email: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [sendingLoginLink, setSendingLoginLink] = useState<string | null>(null)
+  const [selectedParentIds, setSelectedParentIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
 
   const { data: parentsData, refetch: refetchParents } = useApi(
     () => api.parentInvitations.listParents({ search: parentsSearch, page: parentsPage, limit: 50 }),
@@ -213,6 +215,45 @@ export function ParentsPage() {
       toast.error(`Failed to delete parent: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  const handleBulkDeleteParents = async () => {
+    if (selectedParentIds.size === 0) return
+    setIsDeleting(true)
+    try {
+      let deleted = 0
+      for (const id of selectedParentIds) {
+        try {
+          await api.parentInvitations.deleteParent(id)
+          deleted++
+        } catch { /* continue with others */ }
+      }
+      toast.success(`Deleted ${deleted} parent account${deleted !== 1 ? 's' : ''}`)
+      setSelectedParentIds(new Set())
+      setBulkDeleteConfirm(false)
+      refetchParents()
+    } catch (error) {
+      toast.error('Failed to delete parents')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const toggleParentSelect = (id: string) => {
+    setSelectedParentIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllParents = () => {
+    if (selectedParentIds.size === registeredParents.length) {
+      setSelectedParentIds(new Set())
+    } else {
+      setSelectedParentIds(new Set(registeredParents.map(p => p.id)))
     }
   }
 
@@ -672,11 +713,43 @@ export function ParentsPage() {
             </div>
           </div>
 
+          {/* Bulk action bar */}
+          {selectedParentIds.size > 0 && (
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4">
+              <span className="text-sm font-medium text-blue-800">
+                {selectedParentIds.size} parent{selectedParentIds.size !== 1 ? 's' : ''} selected
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedParentIds(new Set())}
+                  className="px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-100 rounded-lg"
+                >
+                  Clear selection
+                </button>
+                <button
+                  onClick={() => setBulkDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete selected
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Parents Table */}
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
+                  <th className="px-4 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={registeredParents.length > 0 && selectedParentIds.size === registeredParents.length}
+                      onChange={toggleSelectAllParents}
+                      className="rounded border-gray-300"
+                    />
+                  </th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Name</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Email</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Children</th>
@@ -686,7 +759,15 @@ export function ParentsPage() {
               </thead>
               <tbody>
                 {registeredParents.map(parent => (
-                  <tr key={parent.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <tr key={parent.id} className={`border-b border-slate-100 hover:bg-slate-50 ${selectedParentIds.has(parent.id) ? 'bg-blue-50/50' : ''}`}>
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedParentIds.has(parent.id)}
+                        onChange={() => toggleParentSelect(parent.id)}
+                        className="rounded border-gray-300"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center space-x-3">
                         {parent.avatarUrl ? (
@@ -746,7 +827,7 @@ export function ParentsPage() {
                 ))}
                 {registeredParents.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
                       <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p>No registered parents found.</p>
                     </td>
@@ -916,6 +997,18 @@ export function ParentsPage() {
           isLoading={isDeleting}
           onConfirm={handleDeleteParent}
           onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
+
+      {bulkDeleteConfirm && (
+        <ConfirmModal
+          title={`Delete ${selectedParentIds.size} Parent Account${selectedParentIds.size !== 1 ? 's' : ''}?`}
+          message={`Are you sure you want to delete ${selectedParentIds.size} parent account${selectedParentIds.size !== 1 ? 's' : ''}? All associated data will be permanently removed. This action cannot be undone.`}
+          confirmLabel={`Delete ${selectedParentIds.size} Account${selectedParentIds.size !== 1 ? 's' : ''}`}
+          variant="danger"
+          isLoading={isDeleting}
+          onConfirm={handleBulkDeleteParents}
+          onCancel={() => setBulkDeleteConfirm(false)}
         />
       )}
     </div>
