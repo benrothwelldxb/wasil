@@ -49,8 +49,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />
   }
 
-  // Redirect admin/staff to admin app (only once)
-  if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'STAFF') {
+  // Redirect admin/staff to admin app — unless they have children (staff-parent)
+  const isStaffParent = user?.role === 'STAFF' && (
+    (user.studentLinks && user.studentLinks.length > 0) ||
+    (user.children && user.children.length > 0)
+  )
+  if ((user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'STAFF') && !isStaffParent) {
     if (!redirectingRef.current) {
       redirectingRef.current = true
       window.location.href = ADMIN_APP_URL
@@ -209,7 +213,7 @@ export default function App() {
         path="/login"
         element={
           isAuthenticated ? (
-            (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'STAFF')
+            (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || (user?.role === 'STAFF' && !(user.studentLinks?.length || user.children?.length)))
               ? <AdminRedirect />
               : <Navigate to="/" replace />
           ) : (

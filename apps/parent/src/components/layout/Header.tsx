@@ -18,7 +18,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
 
   // Poll unread count every 30 seconds
   useEffect(() => {
-    if (!user || user.role !== 'PARENT') return
+    if (!user) return
 
     const fetchUnread = async () => {
       try {
