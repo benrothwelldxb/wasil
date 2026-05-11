@@ -75,7 +75,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
       <main
         className="max-w-7xl mx-auto px-5 flex-1 w-full"
-        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)', paddingBottom: '100px' }}
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 76px)', paddingBottom: '100px' }}
       >
         {children}
       </main>
