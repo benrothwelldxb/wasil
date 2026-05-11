@@ -55,19 +55,31 @@ export async function sendBookingConfirmationToParent(
   to: string,
   details: BookingDetails,
 ): Promise<void> {
+  const startDateTime = `${details.date.replace(/-/g, '')}T${details.time.split(' - ')[0].replace(':', '')}00`
+  const endDateTime = `${details.date.replace(/-/g, '')}T${(details.time.split(' - ')[1] || details.time.split(' - ')[0]).replace(':', '')}00`
+  const calendarTitle = encodeURIComponent(`Consultation: ${details.teacherName} - ${details.childName}`)
+  const calendarDetails = encodeURIComponent(`Parent-Teacher Consultation\nTeacher: ${details.teacherName}\nStudent: ${details.childName}`)
+  const calendarLocation = encodeURIComponent(details.location)
+  const googleCalUrl = `https://calendar.google.com/calendar/event?action=TEMPLATE&text=${calendarTitle}&dates=${startDateTime}/${endDateTime}&details=${calendarDetails}&location=${calendarLocation}`
+
   const html = buildEmailHtml(
     details.schoolName,
     'Booking Confirmed',
     `<p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">
       Your parent consultation appointment has been confirmed.
-    </p>` + detailsBlock(details),
+    </p>` + detailsBlock(details) + `
+    <div style="text-align: center; margin: 24px 0;">
+      <a href="${googleCalUrl}" target="_blank" style="display: inline-block; background-color: #4285F4; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+        &#x1F4C5; Add to Google Calendar
+      </a>
+    </div>`,
   )
 
   await sendEmail({
     to,
     subject: `Booking Confirmed — ${details.teacherName}`,
     html,
-    text: `Booking Confirmed\n\nTeacher: ${details.teacherName}\nChild: ${details.childName}\nDate: ${formatDateForEmail(details.date)}\nTime: ${details.time}\nLocation: ${details.location}`,
+    text: `Booking Confirmed\n\nTeacher: ${details.teacherName}\nChild: ${details.childName}\nDate: ${formatDateForEmail(details.date)}\nTime: ${details.time}\nLocation: ${details.location}\n\nAdd to Google Calendar: ${googleCalUrl}`,
   })
 }
 
@@ -148,5 +160,38 @@ export async function sendReminderToParent(
     subject: `Reminder: Consultation Tomorrow — ${details.teacherName}`,
     html,
     text: `Reminder: Consultation Tomorrow\n\nTeacher: ${details.teacherName}\nChild: ${details.childName}\nDate: ${formatDateForEmail(details.date)}\nTime: ${details.time}\nLocation: ${details.location}`,
+  })
+}
+
+export async function sendReminderToTeacher(
+  to: string,
+  details: {
+    parentName: string
+    childName: string
+    date: string
+    time: string
+    location: string
+    schoolName: string
+  },
+): Promise<boolean> {
+  const formattedDate = formatDateForEmail(details.date)
+
+  return sendEmail({
+    to,
+    subject: `Reminder: Consultation Tomorrow with ${details.childName}'s parent`,
+    html: buildEmailHtml(
+      details.schoolName,
+      'Consultation Reminder',
+      `<p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">
+        You have a consultation appointment tomorrow.
+      </p>
+      <div style="background-color: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <p style="color: #374151; font-size: 14px; margin: 0 0 8px 0;"><strong>Student:</strong> ${details.childName}</p>
+        <p style="color: #374151; font-size: 14px; margin: 0 0 8px 0;"><strong>Date:</strong> ${formattedDate}</p>
+        <p style="color: #374151; font-size: 14px; margin: 0 0 8px 0;"><strong>Time:</strong> ${details.time}</p>
+        <p style="color: #374151; font-size: 14px; margin: 0;"><strong>Location:</strong> ${details.location}</p>
+      </div>`,
+    ),
+    text: `Consultation Reminder\n\nYou have a consultation tomorrow.\nStudent: ${details.childName}\nDate: ${formattedDate}\nTime: ${details.time}\nLocation: ${details.location}`,
   })
 }

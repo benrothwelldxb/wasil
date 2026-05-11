@@ -66,7 +66,7 @@ export async function sendConsultationReminders(): Promise<void> {
           include: {
             consultationTeacher: {
               include: {
-                teacher: { select: { name: true } },
+                teacher: { select: { id: true, name: true, email: true } },
                 consultation: { include: { school: { select: { name: true } } } },
               },
             },
@@ -90,7 +90,7 @@ export async function sendConsultationReminders(): Promise<void> {
       const location = slot.consultationTeacher.location || (slot.consultationTeacher.locationType === 'IN_PERSON' ? 'In Person' : slot.consultationTeacher.locationType)
       const schoolName = (consultation as any).school?.name || ''
 
-      // Send email
+      // Send email to parent
       if (booking.parent.email) {
         sendReminderToParent(booking.parent.email, {
           teacherName: teacher.name,
@@ -99,10 +99,23 @@ export async function sendConsultationReminders(): Promise<void> {
           time: `${slot.startTime} - ${slot.endTime}`,
           location: booking.meetingLink || location,
           schoolName,
-        }).catch(e => console.error('[Reminder] Email failed:', e))
+        }).catch(e => console.error('[Reminder] Parent email failed:', e))
       }
 
-      // Send push
+      // Send reminder to teacher
+      if (teacher.email) {
+        const { sendReminderToTeacher } = await import('./consultationEmails.js')
+        sendReminderToTeacher(teacher.email, {
+          parentName: booking.studentName,
+          childName: booking.studentName,
+          date: slotDate,
+          time: `${slot.startTime} - ${slot.endTime}`,
+          location: booking.meetingLink || location,
+          schoolName,
+        }).catch(e => console.error('[Reminder] Teacher email failed:', e))
+      }
+
+      // Send push to parent
       sendConsultationReminderNotification({
         parentId: booking.parentId,
         schoolId: booking.parent.schoolId,
@@ -110,7 +123,17 @@ export async function sendConsultationReminders(): Promise<void> {
         childName: booking.studentName,
         date: slotDate,
         time: `${slot.startTime} - ${slot.endTime}`,
-      }).catch(e => console.error('[Reminder] Push failed:', e))
+      }).catch(e => console.error('[Reminder] Parent push failed:', e))
+
+      // Send push to teacher
+      sendConsultationReminderNotification({
+        parentId: teacher.id,
+        schoolId: booking.parent.schoolId,
+        teacherName: teacher.name,
+        childName: booking.studentName,
+        date: slotDate,
+        time: `${slot.startTime} - ${slot.endTime}`,
+      }).catch(e => console.error('[Reminder] Teacher push failed:', e))
 
       // Mark reminder as sent
       await prisma.consultationBooking.update({

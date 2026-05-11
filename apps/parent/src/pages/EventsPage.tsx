@@ -283,17 +283,32 @@ export function EventsPage() {
                               <h3 className="text-[16px] font-bold leading-snug" style={{ color: '#2D2225' }}>
                                 {event.title}
                               </h3>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  api.events.exportEventCalendar(event.id, event.title)
-                                }}
-                                className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg"
-                                style={{ color: '#A8929A' }}
-                                title="Add to calendar"
-                              >
-                                <CalendarPlus className="h-4 w-4" />
-                              </button>
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                {event.googleCalendarUrl && (
+                                  <a
+                                    href={event.googleCalendarUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg"
+                                    style={{ color: '#4285F4' }}
+                                    title="Add to Google Calendar"
+                                  >
+                                    <Calendar className="h-4 w-4" />
+                                  </a>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    api.events.exportEventCalendar(event.id, event.title)
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg"
+                                  style={{ color: '#A8929A' }}
+                                  title="Download ICS file"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </button>
+                              </div>
                             </div>
 
                             <p className="text-[13px] font-semibold mt-0.5" style={{ color: '#7A6469' }}>

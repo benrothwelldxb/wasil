@@ -11,6 +11,22 @@ import type { ICSEvent } from '../services/ics.js'
 
 const router = Router()
 
+function buildGoogleCalendarUrl(event: { title: string; description?: string | null; date: Date; time?: string | null; location?: string | null }): string {
+  const title = encodeURIComponent(event.title)
+  const details = encodeURIComponent(event.description || '')
+  const location = encodeURIComponent(event.location || '')
+  const dateStr = event.date.toISOString().split('T')[0].replace(/-/g, '')
+  if (event.time) {
+    const startTime = event.time.replace(':', '') + '00'
+    return `https://calendar.google.com/calendar/event?action=TEMPLATE&text=${title}&dates=${dateStr}T${startTime}/${dateStr}T${startTime}&details=${details}&location=${location}`
+  }
+  // All-day event
+  const nextDay = new Date(event.date)
+  nextDay.setDate(nextDay.getDate() + 1)
+  const endStr = nextDay.toISOString().split('T')[0].replace(/-/g, '')
+  return `https://calendar.google.com/calendar/event?action=TEMPLATE&text=${title}&dates=${dateStr}/${endStr}&details=${details}&location=${location}`
+}
+
 const createEventSchema = z.object({
   title: z.string().min(1).max(500),
   description: z.string().optional(),
@@ -208,6 +224,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       userRsvp: event.rsvps[0]?.status || null,
+      googleCalendarUrl: buildGoogleCalendarUrl(event),
       createdAt: event.createdAt.toISOString(),
     })))
   } catch (error) {
@@ -253,6 +270,7 @@ router.get('/all', isAdmin, async (req, res) => {
         userEmail: r.user.email,
         createdAt: r.createdAt.toISOString(),
       })),
+      googleCalendarUrl: buildGoogleCalendarUrl(event),
       createdAt: event.createdAt.toISOString(),
       updatedAt: event.updatedAt.toISOString(),
     })))
@@ -300,6 +318,7 @@ router.post('/', isAdmin, validate(createEventSchema), async (req, res) => {
       groupId: event.groupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
+      googleCalendarUrl: buildGoogleCalendarUrl(event),
       createdAt: event.createdAt.toISOString(),
     })
   } catch (error) {
@@ -388,6 +407,7 @@ router.put('/:id', isAdmin, validate(updateEventSchema), async (req, res) => {
       groupId: event.groupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
+      googleCalendarUrl: buildGoogleCalendarUrl(event),
       createdAt: event.createdAt.toISOString(),
       updatedAt: event.updatedAt.toISOString(),
     })
