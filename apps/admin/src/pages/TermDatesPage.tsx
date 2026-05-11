@@ -179,8 +179,8 @@ export function TermDatesPage() {
       if (!filterYear) return true
       const ay = (td as any).academicYear
       if (ay) return ay === filterYear
-      // For old dates without academicYear, show all
-      return true
+      // Old dates without academicYear only show when "All Years" selected
+      return false
     })
   }, [termDates, filterYear])
 
