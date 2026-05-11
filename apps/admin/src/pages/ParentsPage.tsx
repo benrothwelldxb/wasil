@@ -66,6 +66,9 @@ export function ParentsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string; email: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [sendingLoginLink, setSendingLoginLink] = useState<string | null>(null)
+  const [setPasswordFor, setSetPasswordFor] = useState<{ id: string; name: string; email: string } | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [isSettingPassword, setIsSettingPassword] = useState(false)
   const [selectedParentIds, setSelectedParentIds] = useState<Set<string>>(new Set())
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
   const [bulkDeleteProgress, setBulkDeleteProgress] = useState<{ current: number; total: number } | null>(null)
@@ -277,6 +280,25 @@ export function ParentsPage() {
       toast.error(`Failed to send login link: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSendingLoginLink(null)
+    }
+  }
+
+  const handleSetPassword = async () => {
+    if (!setPasswordFor || !newPassword) return
+    if (newPassword.length < 8) {
+      toast.warning('Password must be at least 8 characters')
+      return
+    }
+    setIsSettingPassword(true)
+    try {
+      const result = await api.parentInvitations.setParentPassword(setPasswordFor.id, newPassword)
+      toast.success(result.message)
+      setSetPasswordFor(null)
+      setNewPassword('')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to set password')
+    } finally {
+      setIsSettingPassword(false)
     }
   }
 
@@ -821,6 +843,13 @@ export function ParentsPage() {
                           <span>{sendingLoginLink === parent.id ? 'Sending...' : 'Send Login Link'}</span>
                         </button>
                         <button
+                          onClick={() => { setSetPasswordFor({ id: parent.id, name: parent.name || 'Unknown', email: parent.email }); setNewPassword('') }}
+                          className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+                          title="Set password"
+                        >
+                          <span>Set Password</span>
+                        </button>
+                        <button
                           onClick={() => setDeleteConfirm({ id: parent.id, name: parent.name || 'Unknown', email: parent.email })}
                           className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
                           title="Delete parent account"
@@ -1025,6 +1054,40 @@ export function ParentsPage() {
           onConfirm={handleBulkDeleteParents}
           onCancel={() => !isDeleting && setBulkDeleteConfirm(false)}
         />
+      )}
+
+      {setPasswordFor && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Set Password</h3>
+            <p className="text-sm text-gray-500 mb-4">{setPasswordFor.name} ({setPasswordFor.email})</p>
+            <input
+              type="text"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              placeholder="Enter new password (min 8 chars)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-1"
+              autoFocus
+            />
+            <p className="text-xs text-gray-400 mb-4">Must be at least 8 characters</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setSetPasswordFor(null); setNewPassword('') }}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSetPassword}
+                disabled={isSettingPassword || newPassword.length < 8}
+                className="px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50"
+                style={{ backgroundColor: '#C4506E' }}
+              >
+                {isSettingPassword ? 'Setting...' : 'Set Password'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

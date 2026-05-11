@@ -1133,6 +1133,11 @@ export const parentInvitations = {
     fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}`, { method: 'DELETE' }),
   resetParentPassword: (id: string) =>
     fetchApi<{ message: string; emailSent: boolean }>(`/api/parent-invitations/parents/${id}/reset-password`, { method: 'POST' }),
+  setParentPassword: (id: string, password: string) =>
+    fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}/set-password`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
 
   // Public/Parent endpoints
   validate: (data: { code?: string; token?: string }) =>

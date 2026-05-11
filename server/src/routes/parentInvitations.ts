@@ -235,6 +235,39 @@ router.delete('/parents/:id', isAdmin, async (req: Request, res: Response) => {
   }
 })
 
+// Set a new password for a parent (admin)
+router.post('/parents/:id/set-password', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const { password } = req.body
+
+    if (!password || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' })
+    }
+
+    const parent = await prisma.user.findFirst({
+      where: { id, schoolId: user.schoolId, role: 'PARENT' },
+    })
+    if (!parent) return res.status(404).json({ error: 'Parent not found' })
+
+    const bcrypt = await import('bcrypt')
+    const passwordHash = await bcrypt.default.hash(password, 12)
+
+    await prisma.user.update({
+      where: { id },
+      data: { passwordHash },
+    })
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'PARENT_INVITATION' as any, resourceId: id, metadata: { action: 'set-password', parentEmail: parent.email } })
+
+    res.json({ message: `Password set for ${parent.email}` })
+  } catch (error) {
+    console.error('Error setting parent password:', error)
+    res.status(500).json({ error: 'Failed to set password' })
+  }
+})
+
 // Send magic link to reset parent password
 router.post('/parents/:id/reset-password', isAdmin, async (req: Request, res: Response) => {
   try {
