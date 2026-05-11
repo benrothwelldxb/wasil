@@ -105,6 +105,9 @@ router.get('/parent', isAuthenticated, async (req, res) => {
               },
               orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
             },
+            availabilityWindows: {
+              orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+            },
           },
         },
       },
@@ -139,6 +142,7 @@ router.get('/parent', isAuthenticated, async (req, res) => {
             createdAt: s.booking.createdAt.toISOString(),
           } : null,
         })),
+        availabilityWindows: t.availabilityWindows,
         createdAt: t.createdAt.toISOString(),
       })),
       createdAt: c.createdAt.toISOString(),
@@ -180,6 +184,9 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
                   },
                 },
               },
+              orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+            },
+            availabilityWindows: {
               orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
             },
           },
@@ -237,6 +244,7 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
             createdAt: s.booking.createdAt.toISOString(),
           } : null,
         })),
+        availabilityWindows: t.availabilityWindows,
         createdAt: t.createdAt.toISOString(),
       })),
       createdAt: consultation.createdAt.toISOString(),
@@ -539,6 +547,9 @@ router.get('/', isAdmin, async (req, res) => {
                 booking: true,
               },
             },
+            availabilityWindows: {
+              orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+            },
           },
         },
       },
@@ -557,6 +568,7 @@ router.get('/', isAdmin, async (req, res) => {
         startTime: t.startTime,
         endTime: t.endTime,
         slots: t.slots,
+        availabilityWindows: t.availabilityWindows,
         createdAt: t.createdAt.toISOString(),
       })),
       createdAt: c.createdAt.toISOString(),
@@ -590,6 +602,9 @@ router.get('/:id', isAdmin, async (req, res) => {
               },
               orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
             },
+            availabilityWindows: {
+              orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+            },
           },
         },
       },
@@ -618,6 +633,7 @@ router.get('/:id', isAdmin, async (req, res) => {
             createdAt: s.booking.createdAt.toISOString(),
           } : null,
         })),
+        availabilityWindows: t.availabilityWindows,
         createdAt: t.createdAt.toISOString(),
       })),
       createdAt: consultation.createdAt.toISOString(),
@@ -700,7 +716,7 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { teacherId, location, locationType, startTime, endTime } = req.body
+    const { teacherId, location, locationType, startTime, endTime, availabilityWindows } = req.body
 
     const consultation = await prisma.consultationEvent.findFirst({
       where: { id, schoolId: user.schoolId },
@@ -723,12 +739,24 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Teacher not found' })
     }
 
-    // Create teacher record with auto-generated slots (per day for multi-day events)
-    const dates = getDateRange(consultation.date, consultation.endDate)
-    const baseSlots = generateSlots(startTime, endTime, consultation.slotDuration, consultation.breakDuration)
+    // Generate slots: use availabilityWindows if provided, otherwise fall back to flat startTime/endTime
     const allSlots: Array<{ startTime: string; endTime: string; isBreak: boolean; date: string }> = []
-    for (const date of dates) {
-      baseSlots.forEach(s => allSlots.push({ ...s, date }))
+    const windowRecords: Array<{ date: string; startTime: string; endTime: string }> = []
+
+    if (availabilityWindows && Array.isArray(availabilityWindows) && availabilityWindows.length > 0) {
+      // Use per-window slot generation
+      for (const window of availabilityWindows as Array<{ date: string; startTime: string; endTime: string }>) {
+        windowRecords.push({ date: window.date, startTime: window.startTime, endTime: window.endTime })
+        const windowSlots = generateSlots(window.startTime, window.endTime, consultation.slotDuration, consultation.breakDuration)
+        windowSlots.forEach(s => allSlots.push({ ...s, date: window.date }))
+      }
+    } else {
+      // Backwards compatible: use flat startTime/endTime across all dates
+      const dates = getDateRange(consultation.date, consultation.endDate)
+      const baseSlots = generateSlots(startTime, endTime, consultation.slotDuration, consultation.breakDuration)
+      for (const date of dates) {
+        baseSlots.forEach(s => allSlots.push({ ...s, date }))
+      }
     }
 
     const consultationTeacher = await prisma.consultationTeacher.create({
@@ -747,10 +775,22 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
             date: s.date,
           })),
         },
+        ...(windowRecords.length > 0 && {
+          availabilityWindows: {
+            create: windowRecords.map(w => ({
+              date: w.date,
+              startTime: w.startTime,
+              endTime: w.endTime,
+            })),
+          },
+        }),
       },
       include: {
         teacher: { select: { id: true, name: true } },
         slots: {
+          orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+        },
+        availabilityWindows: {
           orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
         },
       },
@@ -766,11 +806,124 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
       startTime: consultationTeacher.startTime,
       endTime: consultationTeacher.endTime,
       slots: consultationTeacher.slots,
+      availabilityWindows: consultationTeacher.availabilityWindows,
       createdAt: consultationTeacher.createdAt.toISOString(),
     })
   } catch (error) {
     console.error('Error adding teacher:', error)
     res.status(500).json({ error: 'Failed to add teacher' })
+  }
+})
+
+// Get teacher availability windows
+router.get('/:id/teachers/:ctId/availability', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id, ctId } = req.params
+
+    const consultation = await prisma.consultationEvent.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!consultation) {
+      return res.status(404).json({ error: 'Consultation not found' })
+    }
+
+    const ct = await prisma.consultationTeacher.findFirst({
+      where: { id: ctId, consultationId: id },
+      include: {
+        availabilityWindows: {
+          orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+        },
+      },
+    })
+
+    if (!ct) {
+      return res.status(404).json({ error: 'Teacher not found in this consultation' })
+    }
+
+    res.json(ct.availabilityWindows)
+  } catch (error) {
+    console.error('Error fetching teacher availability:', error)
+    res.status(500).json({ error: 'Failed to fetch teacher availability' })
+  }
+})
+
+// Bulk replace teacher availability windows and regenerate slots
+router.put('/:id/teachers/:ctId/availability', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id, ctId } = req.params
+    const { windows } = req.body as { windows: Array<{ date: string; startTime: string; endTime: string }> }
+
+    if (!windows || !Array.isArray(windows) || windows.length === 0) {
+      return res.status(400).json({ error: 'windows array is required and must not be empty' })
+    }
+
+    const consultation = await prisma.consultationEvent.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!consultation) {
+      return res.status(404).json({ error: 'Consultation not found' })
+    }
+
+    const ct = await prisma.consultationTeacher.findFirst({
+      where: { id: ctId, consultationId: id },
+    })
+
+    if (!ct) {
+      return res.status(404).json({ error: 'Teacher not found in this consultation' })
+    }
+
+    // Delete old availability windows
+    await prisma.consultationAvailabilityWindow.deleteMany({
+      where: { consultationTeacherId: ctId },
+    })
+
+    // Create new availability windows
+    await prisma.consultationAvailabilityWindow.createMany({
+      data: windows.map(w => ({
+        consultationTeacherId: ctId,
+        date: w.date,
+        startTime: w.startTime,
+        endTime: w.endTime,
+      })),
+    })
+
+    // Delete non-booked auto-generated slots (keep custom slots and booked slots)
+    await prisma.consultationSlot.deleteMany({
+      where: {
+        consultationTeacherId: ctId,
+        isCustom: false,
+        booking: null,
+      },
+    })
+
+    // Regenerate slots from each window
+    const newSlots: Array<{ startTime: string; endTime: string; isBreak: boolean; date: string }> = []
+    for (const window of windows) {
+      const windowSlots = generateSlots(window.startTime, window.endTime, consultation.slotDuration, consultation.breakDuration)
+      windowSlots.forEach(s => newSlots.push({ ...s, date: window.date }))
+    }
+
+    if (newSlots.length > 0) {
+      await prisma.consultationSlot.createMany({
+        data: newSlots.map(s => ({
+          consultationTeacherId: ctId,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          isBreak: s.isBreak,
+          date: s.date,
+          isCustom: false,
+        })),
+      })
+    }
+
+    res.json({ success: true, slotsGenerated: newSlots.length })
+  } catch (error) {
+    console.error('Error updating teacher availability:', error)
+    res.status(500).json({ error: 'Failed to update teacher availability' })
   }
 })
 

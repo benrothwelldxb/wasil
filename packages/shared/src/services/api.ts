@@ -68,6 +68,7 @@ import type {
   EcaSuggestionStatus,
   ConsultationEvent,
   ConsultationTeacher,
+  ConsultationAvailabilityWindow,
   ConsultationBooking,
   ConsultationStatus,
   AnalyticsOverview,
@@ -1613,6 +1614,7 @@ export const consultations = {
     locationType?: string
     startTime: string
     endTime: string
+    availabilityWindows?: { date: string; startTime: string; endTime: string }[]
   }) =>
     fetchApi<ConsultationTeacher>(`/api/consultations/${id}/teachers`, {
       method: 'POST',
@@ -1630,6 +1632,13 @@ export const consultations = {
   deleteSlot: (id: string, ctId: string, slotId: string) =>
     fetchApi<{ message: string }>(`/api/consultations/${id}/teachers/${ctId}/slots/${slotId}`, {
       method: 'DELETE',
+    }),
+  getTeacherAvailability: (id: string, ctId: string) =>
+    fetchApi<ConsultationAvailabilityWindow[]>(`/api/consultations/${id}/teachers/${ctId}/availability`),
+  updateTeacherAvailability: (id: string, ctId: string, windows: Array<{ date: string; startTime: string; endTime: string }>) =>
+    fetchApi<{ success: boolean; slotsGenerated: number }>(`/api/consultations/${id}/teachers/${ctId}/availability`, {
+      method: 'PUT',
+      body: JSON.stringify({ windows }),
     }),
   getBookings: (id: string) =>
     fetchApi<{

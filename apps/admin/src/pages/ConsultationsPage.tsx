@@ -12,8 +12,9 @@ import {
   Video,
   MapPin,
   Clock,
+  Copy,
 } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { ConsultationEvent, ConsultationTeacher, ConsultationStatus, ConsultationLocationType } from '@wasil/shared'
 
 interface StaffMember {
@@ -59,6 +60,29 @@ const emptyTeacherForm: TeacherForm = {
   endTime: '19:00',
 }
 
+interface AvailabilityWindow {
+  date: string
+  startTime: string
+  endTime: string
+}
+
+function getWeekdayDates(startDate: string, endDate?: string): string[] {
+  const dates: string[] = []
+  const start = new Date(startDate + 'T00:00:00')
+  const end = endDate ? new Date(endDate + 'T00:00:00') : start
+  const d = new Date(start)
+  while (d <= end) {
+    if (d.getDay() >= 1 && d.getDay() <= 5) dates.push(d.toISOString().split('T')[0])
+    d.setDate(d.getDate() + 1)
+  }
+  return dates
+}
+
+function formatDayHeader(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
 const LOCATION_TYPE_OPTIONS: { value: ConsultationLocationType; label: string }[] = [
   { value: 'IN_PERSON', label: 'In Person' },
   { value: 'GOOGLE_MEET', label: 'Google Meet' },
@@ -100,6 +124,7 @@ type ViewMode = 'list' | 'create' | 'detail'
 
 export function ConsultationsPage() {
   const theme = useTheme()
+  const toast = useToast()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [form, setForm] = useState<ConsultationForm>(emptyForm)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -107,6 +132,10 @@ export function ConsultationsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ConsultationEvent | null>(null)
   const [showTeacherForm, setShowTeacherForm] = useState(false)
   const [teacherForm, setTeacherForm] = useState<TeacherForm>(emptyTeacherForm)
+  const [availabilityWindows, setAvailabilityWindows] = useState<AvailabilityWindow[]>([])
+  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null)
+  const [sameTimeStart, setSameTimeStart] = useState('15:30')
+  const [sameTimeEnd, setSameTimeEnd] = useState('19:00')
   const [removeTeacherTarget, setRemoveTeacherTarget] = useState<{ consultationId: string; ctId: string; name: string } | null>(null)
   const [customSlotForm, setCustomSlotForm] = useState<{ ctId: string; startTime: string; endTime: string; date?: string } | null>(null)
   const [slotError, setSlotError] = useState<string | null>(null)
@@ -125,6 +154,98 @@ export function ConsultationsPage() {
     if (!selectedId || !consultations) return null
     return consultations.find(c => c.id === selectedId) || null
   }, [selectedId, consultations])
+
+  // Compute weekday dates for the selected consultation
+  const consultationDates = useMemo(() => {
+    if (!selectedConsultation) return []
+    return getWeekdayDates(selectedConsultation.date, selectedConsultation.endDate || undefined)
+  }, [selectedConsultation])
+
+  // Initialize availability windows when opening teacher form
+  const openTeacherForm = (existingTeacher?: ConsultationTeacher) => {
+    if (existingTeacher) {
+      setEditingTeacherId(existingTeacher.id)
+      setTeacherForm({
+        teacherId: existingTeacher.teacherId,
+        location: existingTeacher.location || '',
+        locationType: existingTeacher.locationType || 'IN_PERSON',
+        startTime: existingTeacher.startTime,
+        endTime: existingTeacher.endTime,
+      })
+      // Load existing availability windows or fall back to flat startTime/endTime
+      if (existingTeacher.availabilityWindows && existingTeacher.availabilityWindows.length > 0) {
+        setAvailabilityWindows(existingTeacher.availabilityWindows.map(w => ({
+          date: w.date,
+          startTime: w.startTime,
+          endTime: w.endTime,
+        })))
+      } else {
+        // Backwards compat: populate from flat startTime/endTime across all dates
+        const dates = getWeekdayDates(
+          selectedConsultation!.date,
+          selectedConsultation!.endDate || undefined
+        )
+        setAvailabilityWindows(dates.map(date => ({
+          date,
+          startTime: existingTeacher.startTime,
+          endTime: existingTeacher.endTime,
+        })))
+      }
+    } else {
+      setEditingTeacherId(null)
+      setTeacherForm(emptyTeacherForm)
+      // Start with empty windows for each date
+      setAvailabilityWindows([])
+    }
+    setShowTeacherForm(true)
+  }
+
+  const addWindowForDate = (date: string) => {
+    setAvailabilityWindows(prev => [...prev, { date, startTime: '', endTime: '' }])
+  }
+
+  const removeWindow = (date: string, index: number) => {
+    setAvailabilityWindows(prev => {
+      const windowsForDate = prev.filter(w => w.date === date)
+      const otherWindows = prev.filter(w => w.date !== date)
+      windowsForDate.splice(index, 1)
+      return [...otherWindows, ...windowsForDate]
+    })
+  }
+
+  const updateWindow = (date: string, index: number, field: 'startTime' | 'endTime', value: string) => {
+    setAvailabilityWindows(prev => {
+      const updated = [...prev]
+      let count = 0
+      for (let i = 0; i < updated.length; i++) {
+        if (updated[i].date === date) {
+          if (count === index) {
+            updated[i] = { ...updated[i], [field]: value }
+            break
+          }
+          count++
+        }
+      }
+      return updated
+    })
+  }
+
+  const applySameTimeEveryDay = () => {
+    if (!sameTimeStart || !sameTimeEnd) {
+      toast.error('Please enter both start and end times')
+      return
+    }
+    if (sameTimeStart >= sameTimeEnd) {
+      toast.error('Start time must be before end time')
+      return
+    }
+    const dates = consultationDates
+    setAvailabilityWindows(dates.map(date => ({
+      date,
+      startTime: sameTimeStart,
+      endTime: sameTimeEnd,
+    })))
+  }
 
   // Compute booking stats from consultation teachers
   const getStats = (c: ConsultationEvent) => {
@@ -189,20 +310,48 @@ export function ConsultationsPage() {
 
   const handleAddTeacher = async () => {
     if (!selectedId || !teacherForm.teacherId) return
+    // Validate that there's at least one complete window
+    const validWindows = availabilityWindows.filter(w => w.startTime && w.endTime)
+    if (validWindows.length === 0) {
+      toast.error('Please add at least one availability window')
+      return
+    }
+    // Validate all windows have start < end
+    for (const w of validWindows) {
+      if (w.startTime >= w.endTime) {
+        toast.error(`Invalid time window on ${formatDayHeader(w.date)}: start must be before end`)
+        return
+      }
+    }
+    // Compute backwards-compat startTime/endTime from earliest/latest across all windows
+    const allStarts = validWindows.map(w => w.startTime).sort()
+    const allEnds = validWindows.map(w => w.endTime).sort()
+    const earliestStart = allStarts[0]
+    const latestEnd = allEnds[allEnds.length - 1]
+
     setIsSubmitting(true)
     try {
-      await api.consultations.addTeacher(selectedId, {
-        teacherId: teacherForm.teacherId,
-        location: teacherForm.location || undefined,
-        locationType: teacherForm.locationType,
-        startTime: teacherForm.startTime,
-        endTime: teacherForm.endTime,
-      })
+      if (editingTeacherId) {
+        // Update existing teacher's availability windows
+        await api.consultations.updateTeacherAvailability(selectedId, editingTeacherId, validWindows)
+      } else {
+        await api.consultations.addTeacher(selectedId, {
+          teacherId: teacherForm.teacherId,
+          location: teacherForm.location || undefined,
+          locationType: teacherForm.locationType,
+          startTime: earliestStart,
+          endTime: latestEnd,
+          availabilityWindows: validWindows,
+        })
+      }
       setTeacherForm(emptyTeacherForm)
+      setAvailabilityWindows([])
       setShowTeacherForm(false)
+      setEditingTeacherId(null)
       await refetch()
     } catch (err) {
-      console.error('Failed to add teacher:', err)
+      console.error('Failed to save teacher:', err)
+      toast.error(editingTeacherId ? 'Failed to update availability' : 'Failed to add teacher')
     } finally {
       setIsSubmitting(false)
     }
@@ -354,7 +503,7 @@ export function ConsultationsPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold">Teachers</h2>
             <button
-              onClick={() => setShowTeacherForm(true)}
+              onClick={() => openTeacherForm()}
               className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-white text-sm font-semibold"
               style={{ backgroundColor: theme.colors.brandColor }}
             >
@@ -724,13 +873,13 @@ export function ConsultationsPage() {
           </div>
         )}
 
-        {/* Add Teacher Modal */}
+        {/* Add/Edit Teacher Modal */}
         {showTeacherForm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl max-w-md w-full p-6 space-y-4">
+            <div className="bg-white rounded-xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold">Add Teacher</h3>
-                <button onClick={() => setShowTeacherForm(false)}>
+                <h3 className="text-lg font-bold">{editingTeacherId ? 'Edit Teacher' : 'Add Teacher'}</h3>
+                <button onClick={() => { setShowTeacherForm(false); setEditingTeacherId(null); setAvailabilityWindows([]) }}>
                   <X className="h-5 w-5 text-gray-400" />
                 </button>
               </div>
@@ -743,6 +892,7 @@ export function ConsultationsPage() {
                     onChange={(e) => setTeacherForm({ ...teacherForm, teacherId: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-200 text-sm"
                     style={{ borderRadius: '14px' }}
+                    disabled={!!editingTeacherId}
                   >
                     <option value="">Select a teacher...</option>
                     {staffList?.map(s => (
@@ -777,33 +927,118 @@ export function ConsultationsPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-                    <input
-                      type="time"
-                      value={teacherForm.startTime}
-                      onChange={(e) => setTeacherForm({ ...teacherForm, startTime: e.target.value })}
-                      className="w-full px-3 py-2 text-sm"
-                      style={{ borderRadius: '14px', border: '1.5px solid #E5E0E2' }}
-                    />
+                {/* Availability Windows Editor */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-bold text-gray-700">Availability Windows</label>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
-                    <input
-                      type="time"
-                      value={teacherForm.endTime}
-                      onChange={(e) => setTeacherForm({ ...teacherForm, endTime: e.target.value })}
-                      className="w-full px-3 py-2 text-sm"
-                      style={{ borderRadius: '14px', border: '1.5px solid #E5E0E2' }}
-                    />
+
+                  {/* Same time every day quick-fill */}
+                  <div className="flex items-end gap-2 mb-4 p-3 border border-gray-200 bg-white" style={{ borderRadius: '12px' }}>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Start</label>
+                      <input
+                        type="time"
+                        value={sameTimeStart}
+                        onChange={(e) => setSameTimeStart(e.target.value)}
+                        className="px-2 py-1.5 text-sm border border-gray-200"
+                        style={{ borderRadius: '10px' }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">End</label>
+                      <input
+                        type="time"
+                        value={sameTimeEnd}
+                        onChange={(e) => setSameTimeEnd(e.target.value)}
+                        className="px-2 py-1.5 text-sm border border-gray-200"
+                        style={{ borderRadius: '10px' }}
+                      />
+                    </div>
+                    <button
+                      onClick={applySameTimeEveryDay}
+                      className="flex items-center gap-1 px-3 py-1.5 text-sm font-semibold border-2 hover:bg-gray-50"
+                      style={{ borderRadius: '10px', borderColor: theme.colors.brandColor, color: theme.colors.brandColor }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      Same time every day
+                    </button>
                   </div>
+
+                  {/* Day-by-day grid */}
+                  <div className="space-y-2">
+                    {consultationDates.map(date => {
+                      const windowsForDate = availabilityWindows
+                        .map((w, idx) => ({ ...w, originalIndex: idx }))
+                        .filter(w => w.date === date)
+                      // We need the index within this date's windows for removal
+                      let dateWindowIndex = -1
+
+                      return (
+                        <div key={date} className="p-3 bg-slate-50" style={{ borderRadius: '12px' }}>
+                          <p className="text-sm font-bold text-gray-700 mb-2">{formatDayHeader(date)}</p>
+
+                          {windowsForDate.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {windowsForDate.map((w) => {
+                                dateWindowIndex++
+                                const currentDateIdx = dateWindowIndex
+                                return (
+                                  <div key={`${date}-${currentDateIdx}`} className="flex items-center gap-2">
+                                    <input
+                                      type="time"
+                                      value={w.startTime}
+                                      onChange={(e) => updateWindow(date, currentDateIdx, 'startTime', e.target.value)}
+                                      className="px-2 py-1 text-sm border border-gray-200 bg-white"
+                                      style={{ borderRadius: '8px' }}
+                                    />
+                                    <span className="text-gray-400 text-sm">-</span>
+                                    <input
+                                      type="time"
+                                      value={w.endTime}
+                                      onChange={(e) => updateWindow(date, currentDateIdx, 'endTime', e.target.value)}
+                                      className="px-2 py-1 text-sm border border-gray-200 bg-white"
+                                      style={{ borderRadius: '8px' }}
+                                    />
+                                    <button
+                                      onClick={() => removeWindow(date, currentDateIdx)}
+                                      className="p-1 text-gray-400 hover:text-red-500"
+                                      title="Remove window"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-400 italic mb-1">(No availability)</p>
+                          )}
+
+                          <button
+                            onClick={() => addWindowForDate(date)}
+                            className="flex items-center text-xs font-semibold mt-1.5 px-1 py-0.5 hover:underline"
+                            style={{ color: theme.colors.brandColor }}
+                          >
+                            <Plus className="h-3 w-3 mr-0.5" />
+                            Add window
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {consultationDates.length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-4">
+                      No weekday dates found for this consultation's date range.
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="flex space-x-3 pt-2">
                 <button
-                  onClick={() => setShowTeacherForm(false)}
+                  onClick={() => { setShowTeacherForm(false); setEditingTeacherId(null); setAvailabilityWindows([]) }}
                   className="flex-1 py-2 px-4 border border-gray-200 text-sm font-medium hover:bg-gray-50"
                   style={{ borderRadius: '14px' }}
                 >
@@ -815,7 +1050,7 @@ export function ConsultationsPage() {
                   className="flex-1 py-2 px-4 text-sm font-semibold text-white"
                   style={{ borderRadius: '14px', backgroundColor: theme.colors.brandColor, opacity: isSubmitting || !teacherForm.teacherId ? 0.6 : 1 }}
                 >
-                  {isSubmitting ? 'Adding...' : 'Add Teacher'}
+                  {isSubmitting ? 'Saving...' : editingTeacherId ? 'Update Teacher' : 'Add Teacher'}
                 </button>
               </div>
             </div>

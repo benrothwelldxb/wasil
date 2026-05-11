@@ -1191,6 +1191,15 @@ export interface ConsultationEvent {
 
 export type ConsultationLocationType = 'IN_PERSON' | 'GOOGLE_MEET' | 'ZOOM' | 'TEAMS' | 'CUSTOM'
 
+export interface ConsultationAvailabilityWindow {
+  id: string
+  consultationTeacherId: string
+  date: string
+  startTime: string
+  endTime: string
+  createdAt?: string
+}
+
 export interface ConsultationTeacher {
   id: string
   consultationId: string
@@ -1203,6 +1212,7 @@ export interface ConsultationTeacher {
   locationType?: ConsultationLocationType
   startTime: string
   endTime: string
+  availabilityWindows?: ConsultationAvailabilityWindow[]
   slots?: ConsultationSlot[]
 }
 

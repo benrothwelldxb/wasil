@@ -1202,8 +1202,21 @@ model ConsultationTeacher {
   locationType      String   @default("IN_PERSON") // IN_PERSON, GOOGLE_MEET, ZOOM, TEAMS, CUSTOM
   startTime         String   // HH:MM - when this teacher's slots begin
   endTime           String   // HH:MM - when this teacher's slots end
-  slots             ConsultationSlot[]
-  createdAt         DateTime @default(now())
+  slots               ConsultationSlot[]
+  availabilityWindows ConsultationAvailabilityWindow[]
+  createdAt           DateTime @default(now())
+}
+
+model ConsultationAvailabilityWindow {
+  id                    String   @id @default(cuid())
+  consultationTeacherId String
+  consultationTeacher   ConsultationTeacher @relation(fields: [consultationTeacherId], references: [id], onDelete: Cascade)
+  date                  String   // YYYY-MM-DD
+  startTime             String   // HH:MM
+  endTime               String   // HH:MM
+  createdAt             DateTime @default(now())
+
+  @@index([consultationTeacherId, date])
 }
 
 model ConsultationSlot {
