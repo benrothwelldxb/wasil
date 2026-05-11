@@ -38,17 +38,29 @@ export function TermDatesPage() {
     []
   )
 
+  // Normalize academic year format for comparison (handles "2025/26", "2025-26", "2025/2026")
+  const normalizeYear = (y: string | null | undefined): string => {
+    if (!y) return ''
+    return y.replace(/\//g, '-').toLowerCase()
+  }
+  const currentYearNorm = normalizeYear(academicYear)
+
   // Split dates by academic year
   const currentYearDates = useMemo(() => {
     if (!termDates) return []
-    return termDates.filter(td => !td.academicYear || td.academicYear === academicYear.replace('/', '-'))
-  }, [termDates, academicYear])
+    return termDates.filter(td => {
+      if (!td.academicYear) return true // No year set = assume current
+      return normalizeYear(td.academicYear) === currentYearNorm
+    })
+  }, [termDates, currentYearNorm])
 
   const nextYearDates = useMemo(() => {
     if (!termDates) return []
-    // Find dates that don't belong to current year and have a future academic year
-    return termDates.filter(td => td.academicYear && td.academicYear !== academicYear.replace('/', '-'))
-  }, [termDates, academicYear])
+    return termDates.filter(td => {
+      if (!td.academicYear) return false // No year = current, not next
+      return normalizeYear(td.academicYear) !== currentYearNorm
+    })
+  }, [termDates, currentYearNorm])
 
   const groupedByTerm = useMemo(() => {
     const groups: Record<string, { termName: string; dates: TermDate[] }> = {}
