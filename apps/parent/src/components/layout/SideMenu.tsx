@@ -59,6 +59,7 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   const [hasActiveEca, setHasActiveEca] = useState(false)
   const [hasActiveConsultations, setHasActiveConsultations] = useState(false)
   const [hasIeps, setHasIeps] = useState(false)
+  const [hasReports, setHasReports] = useState(false)
 
   useEffect(() => {
     if (open && languages.length === 0) {
@@ -90,6 +91,10 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
       api.inclusion.myChildrenIeps()
         .then(ieps => setHasIeps(ieps && ieps.length > 0))
         .catch(() => setHasIeps(false))
+
+      api.students.myChildrenReports()
+        .then(reports => setHasReports(reports && reports.length > 0))
+        .catch(() => setHasReports(false))
     }
   }, [open, user])
 
@@ -149,7 +154,9 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
 
   menuItems.push({ icon: UtensilsCrossed, labelKey: 'nav.lunchMenu', path: '/lunch-menu' })
   menuItems.push({ icon: BookOpen, labelKey: 'nav.resources', path: '/resources' })
-  menuItems.push({ icon: FileText, labelKey: 'nav.reportCards', path: '/report-cards' })
+  if (hasReports) {
+    menuItems.push({ icon: FileText, labelKey: 'nav.reportCards', path: '/report-cards' })
+  }
   if (hasIeps) {
     menuItems.push({ icon: Target, labelKey: 'nav.inclusion', path: '/inclusion' })
   }
