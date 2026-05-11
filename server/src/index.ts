@@ -38,7 +38,7 @@ import searchRoutes from './routes/search.js'
 import inclusionRoutes from './routes/inclusion.js'
 import cafeteriaRoutes from './routes/cafeteria.js'
 import { initFirebase } from './services/firebase.js'
-import { cleanupExpiredTokens, sendConsultationReminders } from './services/cleanup.js'
+import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders } from './services/cleanup.js'
 import { cleanupOldAuditLogs } from './services/audit.js'
 
 dotenv.config()
@@ -137,4 +137,8 @@ app.listen(PORT, () => {
   const ONE_DAY = 24 * 60 * 60 * 1000
   cleanupOldAuditLogs()
   setInterval(cleanupOldAuditLogs, ONE_DAY)
+
+  // Run schedule reminders check every hour (sends at ~6pm Gulf time)
+  sendScheduleReminders()
+  setInterval(sendScheduleReminders, ONE_HOUR)
 })

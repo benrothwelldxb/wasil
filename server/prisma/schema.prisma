@@ -1572,6 +1572,9 @@ model NotificationPreference {
   consultations  Boolean @default(true) // Consultation booking updates
   schoolServices Boolean @default(true) // School service announcements
 
+  // Daily
+  scheduleReminders Boolean @default(true) // Evening reminder of tomorrow's activities
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
