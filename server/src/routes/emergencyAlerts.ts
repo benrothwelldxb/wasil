@@ -46,7 +46,25 @@ router.get('/active', isAuthenticated, async (req, res) => {
         ))
       : []
 
-    res.json(alerts.map((a, i) => ({
+    // Filter out resolved alerts the user never could have seen
+    // (only show resolved alerts if user account existed before the alert was sent)
+    const userRecord = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { createdAt: true, lastLoginAt: true },
+    })
+
+    const filteredAlerts = alerts.filter(a => {
+      if (a.status === 'ACTIVE') return true
+      // For resolved alerts: only show if user existed when alert was sent
+      if (userRecord && userRecord.createdAt > a.sentAt) return false
+      // Also skip if user has never logged in before this alert
+      if (userRecord && !userRecord.lastLoginAt) return false
+      return true
+    })
+
+    res.json(filteredAlerts.map((a) => {
+      const ack = ackRecords[alerts.indexOf(a)]
+      return {
       id: a.id,
       title: a.title,
       message: a.message,
@@ -60,10 +78,10 @@ router.get('/active', isAuthenticated, async (req, res) => {
       sentAt: a.sentAt.toISOString(),
       resolvedAt: a.resolvedAt?.toISOString() || null,
       createdBy: a.createdBy.name,
-      acknowledged: !!ackRecords[i],
-      acknowledgedAt: ackRecords[i]?.acknowledgedAt?.toISOString() || null,
+      acknowledged: !!ack,
+      acknowledgedAt: ack?.acknowledgedAt?.toISOString() || null,
       createdAt: a.createdAt.toISOString(),
-    })))
+    }}))
   } catch (error) {
     console.error('Error fetching active alerts:', error)
     res.status(500).json({ error: 'Failed to fetch active alerts' })
