@@ -222,9 +222,23 @@ router.post('/reports/bulk', isAdmin, reportUpload.array('files', 200), async (r
     const unmatchedFiles: string[] = []
 
     for (const file of files) {
-      // Extract UPN from filename (e.g., "A123456789.pdf" -> "a123456789")
-      const upn = file.originalname.replace(/\.pdf$/i, '').trim().toLowerCase()
-      const student = studentByUPN.get(upn)
+      // Smart UPN matching: search for any known UPN anywhere in the filename
+      // Supports: "A123456789.pdf", "A123456789 Ben Report T1.pdf", "Report_A123456789_Term1.pdf"
+      const filenameLower = file.originalname.replace(/\.pdf$/i, '').toLowerCase()
+      let student: typeof students[number] | undefined
+
+      // Try exact match first (whole filename minus .pdf)
+      student = studentByUPN.get(filenameLower.trim())
+
+      // If no exact match, search for any UPN within the filename
+      if (!student) {
+        for (const [upn, s] of studentByUPN) {
+          if (filenameLower.includes(upn)) {
+            student = s
+            break
+          }
+        }
+      }
 
       if (!student) {
         unmatchedFiles.push(file.originalname)
