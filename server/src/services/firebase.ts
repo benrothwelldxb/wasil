@@ -2,7 +2,7 @@ import * as admin from 'firebase-admin'
 
 let firebaseApp: admin.app.App | null = null
 
-export function initFirebase(): boolean {
+export async function initFirebase(): Promise<boolean> {
   if (firebaseApp) return true
 
   const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
@@ -14,19 +14,30 @@ export function initFirebase(): boolean {
   }
 
   try {
-    let credential: admin.credential.Credential
+    let serviceAccount: any
 
     if (serviceAccountJson) {
-      const serviceAccount = JSON.parse(serviceAccountJson)
-      credential = admin.credential.cert(serviceAccount)
+      try {
+        serviceAccount = JSON.parse(serviceAccountJson)
+      } catch (parseError) {
+        console.error('Firebase: Failed to parse FIREBASE_SERVICE_ACCOUNT JSON. Ensure it is valid JSON on a single line.')
+        console.error('First 100 chars:', serviceAccountJson.substring(0, 100))
+        return false
+      }
     } else if (serviceAccountPath) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const serviceAccount = require(serviceAccountPath)
-      credential = admin.credential.cert(serviceAccount)
+      const fs = await import('fs')
+      const content = fs.readFileSync(serviceAccountPath, 'utf8')
+      serviceAccount = JSON.parse(content)
     } else {
       return false
     }
 
+    if (!serviceAccount?.project_id || !serviceAccount?.private_key) {
+      console.error('Firebase: Service account JSON missing project_id or private_key fields')
+      return false
+    }
+
+    const credential = admin.credential.cert(serviceAccount)
     firebaseApp = admin.initializeApp({ credential })
     console.log('Firebase initialized for push notifications')
     return true
