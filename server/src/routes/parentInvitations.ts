@@ -182,8 +182,8 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
         hasPassword: !!p.passwordHash,
         createdAt: p.createdAt.toISOString(),
         children: [
-          ...p.children.map(c => ({ name: c.name, className: c.class.name })),
-          ...p.studentLinks.map(sl => ({ name: `${sl.student.firstName} ${sl.student.lastName}`, className: sl.student.class.name })),
+          ...p.children.map(c => ({ name: c.name, className: c.class.name, studentId: null as string | null })),
+          ...p.studentLinks.map(sl => ({ name: `${sl.student.firstName} ${sl.student.lastName}`, className: sl.student.class.name, studentId: sl.student.id })),
         ],
       })),
       pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) },

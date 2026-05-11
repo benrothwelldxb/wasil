@@ -1127,7 +1127,7 @@ export const parentInvitations = {
     if (params?.page) searchParams.append('page', params.page.toString())
     if (params?.limit) searchParams.append('limit', params.limit.toString())
     const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
-    return fetchApi<{ parents: Array<{ id: string; email: string; name: string; avatarUrl?: string; lastLoginAt?: string | null; hasPassword?: boolean; createdAt: string; children: Array<{ name: string; className: string }> }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/api/parent-invitations/parents${query}`)
+    return fetchApi<{ parents: Array<{ id: string; email: string; name: string; avatarUrl?: string; lastLoginAt?: string | null; hasPassword?: boolean; createdAt: string; children: Array<{ name: string; className: string; studentId?: string | null }> }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/api/parent-invitations/parents${query}`)
   },
   deleteParent: (id: string) =>
     fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}`, { method: 'DELETE' }),

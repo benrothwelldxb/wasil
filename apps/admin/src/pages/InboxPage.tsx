@@ -61,6 +61,12 @@ export function StaffInboxPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [classFilter, setClassFilter] = useState<string>('')
   const [showContacts, setShowContacts] = useState(false)
+  const [showNewConversation, setShowNewConversation] = useState(false)
+  const [parentSearch, setParentSearch] = useState('')
+  const [parentResults, setParentResults] = useState<Array<{ id: string; name: string; email: string; avatarUrl?: string; children: Array<{ studentId?: string | null; name: string; className: string }> }>>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [childSelectParent, setChildSelectParent] = useState<{ id: string; name: string; children: Array<{ studentId?: string | null; name: string; className: string }> } | null>(null)
+  const toast = useToast()
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
 
@@ -90,6 +96,53 @@ export function StaffInboxPage() {
     return () => clearInterval(interval)
   }, [classFilter, setConversations])
 
+  // Debounced parent search for new conversation modal
+  useEffect(() => {
+    if (!parentSearch || parentSearch.length < 2) {
+      setParentResults([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      setIsSearching(true)
+      try {
+        const result = await api.parentInvitations.listParents({ search: parentSearch, limit: 10 })
+        setParentResults(result.parents)
+      } catch {
+        setParentResults([])
+      } finally {
+        setIsSearching(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [parentSearch])
+
+  const handleStartConversation = async (parentId: string, studentId?: string) => {
+    try {
+      const result = await api.inbox.staffCreateConversation({ parentId, studentId })
+      setShowNewConversation(false)
+      setParentSearch('')
+      setParentResults([])
+      setChildSelectParent(null)
+      setSelectedConversationId(result.id)
+      // Refresh conversation list
+      const fresh = await api.inbox.staffConversations(classFilter || undefined)
+      setConversations(fresh)
+    } catch {
+      toast.error('Failed to start conversation')
+    }
+  }
+
+  const handleSelectParentForConversation = (parent: typeof parentResults[0]) => {
+    if (parent.children.length <= 1) {
+      // Auto-select the only child (or no child)
+      const studentId = parent.children[0]?.studentId ?? undefined
+      handleStartConversation(parent.id, studentId)
+    } else {
+      // Show child selector
+      setChildSelectParent({ id: parent.id, name: parent.name, children: parent.children })
+    }
+  }
+
   const handleMuteConversation = async (convId: string, currentMuted: boolean) => {
     try {
       await api.inbox.muteConversation(convId, !currentMuted)
@@ -111,6 +164,14 @@ export function StaffInboxPage() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
         <h1 className="text-xl font-bold text-slate-900">Inbox</h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowNewConversation(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white font-medium transition-colors hover:opacity-90"
+            style={{ backgroundColor: '#C4506E' }}
+          >
+            <Plus className="w-4 h-4" />
+            New Conversation
+          </button>
           {isAdmin && (
             <button
               onClick={() => setShowContacts(true)}
@@ -210,6 +271,133 @@ export function StaffInboxPage() {
       {/* School Contacts Modal */}
       {showContacts && (
         <SchoolContactsModal onClose={() => setShowContacts(false)} />
+      )}
+
+      {/* New Conversation Modal */}
+      {showNewConversation && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => { setShowNewConversation(false); setParentSearch(''); setParentResults([]); setChildSelectParent(null) }}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {childSelectParent ? 'Select a Student' : 'New Conversation'}
+              </h2>
+              <button
+                onClick={() => { setShowNewConversation(false); setParentSearch(''); setParentResults([]); setChildSelectParent(null) }}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {childSelectParent ? (
+              /* Child selector view */
+              <div className="p-4 space-y-2 overflow-y-auto">
+                <p className="text-sm text-slate-500 mb-3">
+                  Which child is this conversation regarding?
+                </p>
+                {childSelectParent.children.map((child, idx) => (
+                  <button
+                    key={child.studentId || idx}
+                    onClick={() => handleStartConversation(childSelectParent.id, child.studentId ?? undefined)}
+                    className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors"
+                  >
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+                      style={{ backgroundColor: '#F5EEF0', color: '#C4506E' }}
+                    >
+                      {getInitials(child.name)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{child.name}</p>
+                      <p className="text-xs text-slate-400">{child.className}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 ml-auto" />
+                  </button>
+                ))}
+                <button
+                  onClick={() => setChildSelectParent(null)}
+                  className="w-full text-center text-sm text-slate-500 hover:text-slate-700 py-2 transition-colors"
+                >
+                  Back to search
+                </button>
+              </div>
+            ) : (
+              /* Search view */
+              <>
+                {/* Search input */}
+                <div className="px-4 pt-4 pb-2">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={parentSearch}
+                      onChange={e => setParentSearch(e.target.value)}
+                      placeholder="Search by parent name or email..."
+                      className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                      style={{ '--tw-ring-color': '#C4506E' } as React.CSSProperties}
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* Results */}
+                <div className="flex-1 overflow-y-auto px-4 pb-4">
+                  {isSearching ? (
+                    <div className="py-8 text-center">
+                      <div className="inline-block w-5 h-5 border-2 border-slate-200 border-t-slate-500 rounded-full animate-spin" />
+                      <p className="text-xs text-slate-400 mt-2">Searching...</p>
+                    </div>
+                  ) : parentSearch.length >= 2 && parentResults.length === 0 ? (
+                    <div className="py-8 text-center">
+                      <p className="text-sm text-slate-400">No parents found</p>
+                    </div>
+                  ) : parentResults.length > 0 ? (
+                    <div className="space-y-1">
+                      {parentResults.map(parent => (
+                        <button
+                          key={parent.id}
+                          onClick={() => handleSelectParentForConversation(parent)}
+                          className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors"
+                        >
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+                            style={{ backgroundColor: '#F5EEF0', color: '#C4506E' }}
+                          >
+                            {getInitials(parent.name)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-900 truncate">{parent.name}</p>
+                            <p className="text-xs text-slate-400 truncate">{parent.email}</p>
+                            {parent.children.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {parent.children.map((child, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium"
+                                    style={{ backgroundColor: '#F5EEF0', color: '#C4506E' }}
+                                  >
+                                    {child.name} — {child.className}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center">
+                      <Search className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                      <p className="text-sm text-slate-400">Type to search for a parent</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )
