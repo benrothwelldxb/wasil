@@ -38,7 +38,30 @@ const createEventSchema = z.object({
   yearGroupId: z.string().optional(),
   groupId: z.string().optional(),
   requiresRsvp: z.boolean().optional(),
+  recurrence: z.string().optional(),
+  recurrenceEnd: z.string().optional(),
+  customIntervalDays: z.number().optional(),
 })
+
+function generateRecurringDates(startDate: string, recurrence: string, endDate: string, customDays?: number): string[] {
+  const dates: string[] = [startDate]
+  const start = new Date(startDate + 'T00:00:00')
+  const end = new Date(endDate + 'T00:00:00')
+  let current = new Date(start)
+
+  while (true) {
+    if (recurrence === 'weekly') current.setDate(current.getDate() + 7)
+    else if (recurrence === 'fortnightly') current.setDate(current.getDate() + 14)
+    else if (recurrence === 'monthly') current.setMonth(current.getMonth() + 1)
+    else if (recurrence === 'custom' && customDays) current.setDate(current.getDate() + customDays)
+    else break
+
+    if (current > end) break
+    dates.push(current.toISOString().split('T')[0])
+  }
+
+  return dates
+}
 
 const updateEventSchema = createEventSchema.partial()
 
@@ -223,6 +246,8 @@ router.get('/', isAuthenticated, async (req, res) => {
       groupId: event.groupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
+      parentEventId: event.parentEventId,
+      recurrenceType: event.recurrenceType,
       userRsvp: event.rsvps[0]?.status || null,
       googleCalendarUrl: buildGoogleCalendarUrl(event),
       createdAt: event.createdAt.toISOString(),
@@ -263,6 +288,8 @@ router.get('/all', isAdmin, async (req, res) => {
       groupId: event.groupId,
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
+      parentEventId: event.parentEventId,
+      recurrenceType: event.recurrenceType,
       rsvps: event.rsvps.map(r => ({
         id: r.id,
         status: r.status,
@@ -284,43 +311,96 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isAdmin, validate(createEventSchema), async (req, res) => {
   try {
     const user = req.user!
-    const { title, description, date, time, location, targetClass, classId, yearGroupId, groupId, requiresRsvp } = req.body
+    const { title, description, date, time, location, targetClass, classId, yearGroupId, groupId, requiresRsvp, recurrence, recurrenceEnd, customIntervalDays } = req.body
 
-    const event = await prisma.event.create({
-      data: {
-        title,
-        description: description || null,
-        date: new Date(date),
-        time: time || null,
-        location: location || null,
-        targetClass,
-        classId: classId || null,
-        yearGroupId: yearGroupId || null,
-        groupId: groupId || null,
-        schoolId: user.schoolId,
-        requiresRsvp: requiresRsvp || false,
-      },
-    })
+    const sharedData = {
+      title,
+      description: description || null,
+      time: time || null,
+      location: location || null,
+      targetClass,
+      classId: classId || null,
+      yearGroupId: yearGroupId || null,
+      groupId: groupId || null,
+      schoolId: user.schoolId,
+      requiresRsvp: requiresRsvp || false,
+    }
 
-    logAudit({ req, action: 'CREATE', resourceType: 'EVENT', resourceId: event.id, metadata: { title: event.title } })
-    sendNotification({ req, type: 'EVENT', title: event.title, body: event.description || 'New event', resourceType: 'EVENT', resourceId: event.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
+    if (recurrence && recurrence !== 'none' && recurrenceEnd) {
+      // Recurring event: generate dates and create parent + children
+      const dates = generateRecurringDates(date, recurrence, recurrenceEnd, customIntervalDays)
 
-    res.status(201).json({
-      id: event.id,
-      title: event.title,
-      description: event.description,
-      date: event.date.toISOString().split('T')[0],
-      time: event.time,
-      location: event.location,
-      targetClass: event.targetClass,
-      classId: event.classId,
-      yearGroupId: event.yearGroupId,
-      groupId: event.groupId,
-      schoolId: event.schoolId,
-      requiresRsvp: event.requiresRsvp,
-      googleCalendarUrl: buildGoogleCalendarUrl(event),
-      createdAt: event.createdAt.toISOString(),
-    })
+      // Create parent event (first date)
+      const parentEvent = await prisma.event.create({
+        data: {
+          ...sharedData,
+          date: new Date(dates[0]),
+          recurrenceType: recurrence,
+        },
+      })
+
+      // Create child events for remaining dates
+      if (dates.length > 1) {
+        await prisma.event.createMany({
+          data: dates.slice(1).map(d => ({
+            ...sharedData,
+            date: new Date(d),
+            parentEventId: parentEvent.id,
+            recurrenceType: recurrence,
+          })),
+        })
+      }
+
+      logAudit({ req, action: 'CREATE', resourceType: 'EVENT', resourceId: parentEvent.id, metadata: { title: parentEvent.title, recurrence, recurringCount: dates.length } })
+      sendNotification({ req, type: 'EVENT', title: parentEvent.title, body: parentEvent.description || 'New recurring event', resourceType: 'EVENT', resourceId: parentEvent.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
+
+      res.status(201).json({
+        id: parentEvent.id,
+        title: parentEvent.title,
+        description: parentEvent.description,
+        date: parentEvent.date.toISOString().split('T')[0],
+        time: parentEvent.time,
+        location: parentEvent.location,
+        targetClass: parentEvent.targetClass,
+        classId: parentEvent.classId,
+        yearGroupId: parentEvent.yearGroupId,
+        groupId: parentEvent.groupId,
+        schoolId: parentEvent.schoolId,
+        requiresRsvp: parentEvent.requiresRsvp,
+        recurrenceType: parentEvent.recurrenceType,
+        recurringCount: dates.length,
+        googleCalendarUrl: buildGoogleCalendarUrl(parentEvent),
+        createdAt: parentEvent.createdAt.toISOString(),
+      })
+    } else {
+      // Single event
+      const event = await prisma.event.create({
+        data: {
+          ...sharedData,
+          date: new Date(date),
+        },
+      })
+
+      logAudit({ req, action: 'CREATE', resourceType: 'EVENT', resourceId: event.id, metadata: { title: event.title } })
+      sendNotification({ req, type: 'EVENT', title: event.title, body: event.description || 'New event', resourceType: 'EVENT', resourceId: event.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
+
+      res.status(201).json({
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        date: event.date.toISOString().split('T')[0],
+        time: event.time,
+        location: event.location,
+        targetClass: event.targetClass,
+        classId: event.classId,
+        yearGroupId: event.yearGroupId,
+        groupId: event.groupId,
+        schoolId: event.schoolId,
+        requiresRsvp: event.requiresRsvp,
+        googleCalendarUrl: buildGoogleCalendarUrl(event),
+        createdAt: event.createdAt.toISOString(),
+      })
+    }
   } catch (error) {
     console.error('Error creating event:', error)
     res.status(500).json({ error: 'Failed to create event' })
@@ -435,11 +515,29 @@ router.delete('/:id', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Event not found' })
     }
 
-    await prisma.event.delete({
-      where: { id },
-    })
+    if (req.query.series === 'true' && existing.recurrenceType) {
+      // Delete all instances in the series
+      await prisma.event.deleteMany({
+        where: {
+          OR: [
+            { id: existing.id },
+            { parentEventId: existing.id },
+            // If this is a child event, also delete siblings and parent
+            ...(existing.parentEventId ? [
+              { id: existing.parentEventId },
+              { parentEventId: existing.parentEventId },
+            ] : []),
+          ],
+          schoolId: user.schoolId,
+        },
+      })
+    } else {
+      await prisma.event.delete({
+        where: { id },
+      })
+    }
 
-    logAudit({ req, action: 'DELETE', resourceType: 'EVENT', resourceId: id, metadata: { title: existing.title } })
+    logAudit({ req, action: 'DELETE', resourceType: 'EVENT', resourceId: id, metadata: { title: existing.title, series: req.query.series === 'true' } })
 
     res.json({ message: 'Event deleted successfully' })
   } catch (error) {

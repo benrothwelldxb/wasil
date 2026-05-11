@@ -304,6 +304,9 @@ export interface Event {
   groupId?: string
   schoolId: string
   requiresRsvp: boolean
+  parentEventId?: string | null
+  recurrenceType?: string | null
+  recurringCount?: number
   googleCalendarUrl?: string
   createdAt: string
   userRsvp?: EventRsvpStatus

@@ -480,6 +480,9 @@ export const events = {
     yearGroupId?: string
     groupId?: string
     requiresRsvp?: boolean
+    recurrence?: string
+    recurrenceEnd?: string
+    customIntervalDays?: number
   }) =>
     fetchApi<Event>('/api/events', {
       method: 'POST',
@@ -506,8 +509,8 @@ export const events = {
       method: 'POST',
       body: JSON.stringify({ status }),
     }),
-  delete: (id: string) =>
-    fetchApi<{ message: string }>(`/api/events/${id}`, {
+  delete: (id: string, series?: boolean) =>
+    fetchApi<{ message: string }>(`/api/events/${id}${series ? '?series=true' : ''}`, {
       method: 'DELETE',
     }),
   exportCalendar: () =>

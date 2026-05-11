@@ -113,6 +113,7 @@ export function EventsPage() {
   const [form, setForm] = useState<EventForm>(emptyForm)
   const [editingEvent, setEditingEvent] = useState<Event | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Event | null>(null)
+  const [showSeriesDeleteChoice, setShowSeriesDeleteChoice] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // CSV state
@@ -177,18 +178,13 @@ export function EventsPage() {
       if (editingEvent) {
         await api.events.update(editingEvent.id, { ...basePayload, date: form.date })
       } else {
-        // Generate dates for recurring events
-        const dates = generateRecurringDates(
-          form.date,
-          form.recurrence,
-          form.recurrenceEnd || form.date,
-          parseInt(form.customIntervalDays) || 14
-        )
-
-        // Create all events
-        for (const date of dates) {
-          await api.events.create({ ...basePayload, date })
-        }
+        await api.events.create({
+          ...basePayload,
+          date: form.date,
+          recurrence: form.recurrence !== 'none' ? form.recurrence : undefined,
+          recurrenceEnd: form.recurrence !== 'none' ? form.recurrenceEnd || undefined : undefined,
+          customIntervalDays: form.recurrence === 'custom' ? parseInt(form.customIntervalDays) || 14 : undefined,
+        })
       }
       setShowForm(false)
       setEditingEvent(null)
@@ -245,11 +241,19 @@ export function EventsPage() {
     setForm(emptyForm)
   }
 
-  const handleDelete = async () => {
+  const handleDeleteClick = (event: Event) => {
+    setDeleteTarget(event)
+    if (event.recurrenceType) {
+      setShowSeriesDeleteChoice(true)
+    }
+  }
+
+  const handleDelete = async (series?: boolean) => {
     if (!deleteTarget) return
     try {
-      await api.events.delete(deleteTarget.id)
+      await api.events.delete(deleteTarget.id, series)
       setDeleteTarget(null)
+      setShowSeriesDeleteChoice(false)
       refetchEvents()
     } catch (err) {
       console.error('Failed to delete event:', err)
@@ -571,6 +575,12 @@ export function EventsPage() {
                       RSVP
                     </span>
                   )}
+                  {event.recurrenceType && (
+                    <span className="flex items-center gap-1 px-2 py-0.5 bg-indigo-50 rounded-full text-xs font-medium text-indigo-600">
+                      <Repeat className="w-3 h-3" />
+                      {event.recurrenceType.charAt(0).toUpperCase() + event.recurrenceType.slice(1)}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-1 ml-4">
@@ -589,7 +599,7 @@ export function EventsPage() {
                   <Pencil className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => setDeleteTarget(event)}
+                  onClick={() => handleDeleteClick(event)}
                   className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
                   title="Delete event"
                 >
@@ -793,14 +803,46 @@ End of Term Concert,2026-07-10,Summer concert performance,14:00 - 15:30,MPH,Whol
         </div>
       )}
 
-      {/* Delete Confirmation */}
-      {deleteTarget && (
+      {/* Delete Confirmation — series choice */}
+      {deleteTarget && showSeriesDeleteChoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-sm w-full shadow-xl p-6 space-y-4">
+            <h3 className="text-lg font-semibold text-slate-900">Delete Recurring Event</h3>
+            <p className="text-sm text-slate-600">
+              "{deleteTarget.title}" is part of a recurring series. What would you like to delete?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => handleDelete(false)}
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Delete this event only
+              </button>
+              <button
+                onClick={() => handleDelete(true)}
+                className="w-full px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700"
+              >
+                Delete entire series
+              </button>
+              <button
+                onClick={() => { setDeleteTarget(null); setShowSeriesDeleteChoice(false) }}
+                className="w-full px-4 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation — single event */}
+      {deleteTarget && !showSeriesDeleteChoice && (
         <ConfirmModal
           title="Delete Event"
           message={`Are you sure you want to delete "${deleteTarget.title}"? This action cannot be undone.`}
           confirmLabel="Delete"
           variant="danger"
-          onConfirm={handleDelete}
+          onConfirm={() => handleDelete(false)}
           onCancel={() => setDeleteTarget(null)}
         />
       )}
