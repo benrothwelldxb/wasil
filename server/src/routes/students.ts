@@ -285,6 +285,35 @@ router.post('/reports/bulk', isAdmin, reportUpload.array('files', 200), async (r
   }
 })
 
+// List all reports for the school (admin)
+router.get('/reports/all', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const reports = await prisma.studentReport.findMany({
+      where: { schoolId: user.schoolId },
+      include: { student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } } },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    res.json(reports.map(r => ({
+      id: r.id,
+      studentId: r.studentId,
+      studentName: `${r.student.firstName} ${r.student.lastName}`,
+      className: r.student.class.name,
+      fileName: r.fileName,
+      fileUrl: r.fileUrl,
+      fileSize: r.fileSize,
+      reportType: r.reportType,
+      reportPeriod: r.reportPeriod,
+      academicYear: r.academicYear,
+      createdAt: r.createdAt.toISOString(),
+    })))
+  } catch (error) {
+    console.error('Error fetching all reports:', error)
+    res.status(500).json({ error: 'Failed to fetch reports' })
+  }
+})
+
 // Get my children's reports (parent)
 router.get('/reports/my-children', isAuthenticated, async (req: Request, res: Response) => {
   try {

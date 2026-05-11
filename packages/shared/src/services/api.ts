@@ -1236,6 +1236,8 @@ export const students = {
     fetchApi<{ message: string }>(`/api/students/reports/${reportId}`, { method: 'DELETE' }),
   myChildrenReports: () =>
     fetchApi<StudentReport[]>('/api/students/reports/my-children'),
+  allReports: () =>
+    fetchApi<StudentReport[]>('/api/students/reports/all'),
 }
 
 export const links = {

@@ -51,6 +51,9 @@ export function StudentsPage() {
   const [reportResult, setReportResult] = useState<ReportUploadResult | null>(null)
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const reportFileInputRef = useRef<HTMLInputElement>(null)
+  const [existingReports, setExistingReports] = useState<any[]>([])
+  const [loadingReports, setLoadingReports] = useState(false)
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null)
 
   // Seed test data
   const [showSeedPanel, setShowSeedPanel] = useState(false)
@@ -61,6 +64,17 @@ export function StudentsPage() {
   const [isSeeding, setIsSeeding] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+
+  // Load existing reports when panel opens
+  useEffect(() => {
+    if (showReportUpload) {
+      setLoadingReports(true)
+      api.students.allReports()
+        .then(setExistingReports)
+        .catch(() => setExistingReports([]))
+        .finally(() => setLoadingReports(false))
+    }
+  }, [showReportUpload])
 
   // Load seed stats when panel opens
   useEffect(() => {
@@ -114,6 +128,7 @@ export function StudentsPage() {
         toast.warning(`${result.unmatched} file${result.unmatched !== 1 ? 's' : ''} could not be matched`)
       }
       setReportFiles([])
+      api.students.allReports().then(setExistingReports).catch(() => {})
     } catch (error) {
       toast.error(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
@@ -136,6 +151,19 @@ export function StudentsPage() {
     if (e.target.files) {
       const selected = Array.from(e.target.files).filter(f => f.type === 'application/pdf')
       setReportFiles(prev => [...prev, ...selected])
+    }
+  }
+
+  const handleDeleteReport = async (reportId: string) => {
+    setDeletingReportId(reportId)
+    try {
+      await api.students.deleteReport(reportId)
+      setExistingReports(prev => prev.filter(r => r.id !== reportId))
+      toast.success('Report deleted')
+    } catch {
+      toast.error('Failed to delete report')
+    } finally {
+      setDeletingReportId(null)
     }
   }
 
@@ -626,6 +654,58 @@ export function StudentsPage() {
               )}
             </div>
           )}
+
+          {/* Existing Reports */}
+          <div className="border-t border-slate-200 pt-4 mt-4">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3">
+              Uploaded Reports ({existingReports.length})
+            </h4>
+            {loadingReports ? (
+              <p className="text-sm text-slate-400">Loading...</p>
+            ) : existingReports.length === 0 ? (
+              <p className="text-sm text-slate-400">No reports uploaded yet.</p>
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden max-h-80 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-gray-700">Student</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-700">Class</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-700">File</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-700">Period</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-700">Uploaded</th>
+                      <th className="px-3 py-2 w-20"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {existingReports.map(report => (
+                      <tr key={report.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="px-3 py-2 font-medium text-gray-900">{report.studentName}</td>
+                        <td className="px-3 py-2 text-gray-500">{report.className}</td>
+                        <td className="px-3 py-2">
+                          <a href={report.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate block max-w-[200px]">
+                            {report.fileName}
+                          </a>
+                        </td>
+                        <td className="px-3 py-2 text-gray-500">{report.reportPeriod || report.academicYear || '-'}</td>
+                        <td className="px-3 py-2 text-gray-400 text-xs">{new Date(report.createdAt).toLocaleDateString()}</td>
+                        <td className="px-3 py-2">
+                          <button
+                            onClick={() => handleDeleteReport(report.id)}
+                            disabled={deletingReportId === report.id}
+                            className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
+                            title="Delete report"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
