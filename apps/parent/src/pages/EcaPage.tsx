@@ -15,6 +15,7 @@ import {
   Mail,
   X,
 } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 import { useApi, useMutation, useAuth } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type {
@@ -357,7 +358,8 @@ export function EcaPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
+          <PageLogo />
+        <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
             {t('eca.title', 'Activities')}
           </h1>
           <p className="text-sm font-medium mt-1" style={{ color: '#7A6469' }}>{t('eca.subtitle', 'Extra-curricular activities for your children')}</p>

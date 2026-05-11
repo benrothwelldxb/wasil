@@ -17,6 +17,7 @@ import {
   Music,
   Archive,
 } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 import { useApi } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { KnowledgeCategory, KnowledgeArticle, LinksResponse, ExternalLink } from '@wasil/shared'
@@ -156,6 +157,7 @@ export function ResourcesPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
+        <PageLogo />
         <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
           Resources
         </h1>

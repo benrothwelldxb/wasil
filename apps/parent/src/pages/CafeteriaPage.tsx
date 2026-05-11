@@ -3,6 +3,7 @@ import { useApi } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { CafeteriaMenu, CafeteriaMenuItem } from '@wasil/shared'
 import { ChevronLeft, ChevronRight, ExternalLink, UtensilsCrossed, Leaf, Wheat, AlertTriangle } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 
 const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -83,6 +84,7 @@ export function CafeteriaPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
+        <PageLogo />
         <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
           Lunch Menu
         </h1>

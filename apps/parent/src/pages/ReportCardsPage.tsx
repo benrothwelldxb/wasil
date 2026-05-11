@@ -2,6 +2,7 @@ import React from 'react'
 import { useApi, api } from '@wasil/shared'
 import type { StudentReport } from '@wasil/shared'
 import { FileText, Download } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 
 export function ReportCardsPage() {
   const { data: reports, isLoading } = useApi<StudentReport[]>(
@@ -19,6 +20,7 @@ export function ReportCardsPage() {
   return (
     <div className="space-y-5">
       <div>
+        <PageLogo />
         <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>Report Cards</h1>
         <p className="text-sm font-medium mt-1" style={{ color: '#7A6469' }}>
           Download your child's school reports

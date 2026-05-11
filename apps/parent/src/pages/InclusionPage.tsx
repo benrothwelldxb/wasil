@@ -3,6 +3,7 @@ import { useApi, useAuth } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { StudentIep } from '@wasil/shared'
 import { ChevronDown, ChevronUp, Target, User, Calendar, CheckCircle, Clock, AlertCircle } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   ACTIVE: { bg: '#EDF4FC', text: '#5B8EC4', label: 'Active' },
@@ -36,7 +37,8 @@ export function InclusionPage() {
     return (
       <div className="space-y-5">
         <div>
-          <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>Inclusion</h1>
+          <PageLogo />
+        <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>Inclusion</h1>
           <p className="text-sm font-medium mt-1" style={{ color: '#7A6469' }}>Individual Education Plans</p>
         </div>
         <div className="flex justify-center py-12">

@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { X } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 import { useAuth, useApi, useMutation } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { WeeklyMessage } from '@wasil/shared'
@@ -81,6 +82,7 @@ export function PrincipalUpdatesPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
+        <PageLogo />
         <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
           Principal's Updates
         </h1>

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { CalendarPlus, ChevronDown, ChevronUp, Info } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 import { useApi } from '@wasil/shared'
 import { useAuth } from '@wasil/shared'
 import * as api from '@wasil/shared'
@@ -132,6 +133,7 @@ export function TermDatesPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
+        <PageLogo />
         <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
           Term Dates
         </h1>

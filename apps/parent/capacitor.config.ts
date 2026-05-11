@@ -2,17 +2,17 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.wasil.parent',
-  appName: 'Wasil Parent',
+  appName: 'Wasil Connect',
   webDir: 'dist',
   plugins: {
     PushNotifications: {
       presentationOptions: ['badge', 'sound', 'alert'],
     },
   },
-  // For development - uncomment url for testing on physical device
-  // server: {
-  //   url: 'http://192.168.1.x:3004',
-  // },
+  server: {
+    androidScheme: 'https',
+    allowNavigation: ['api.wasilconnect.com'],
+  },
 };
 
 export default config;

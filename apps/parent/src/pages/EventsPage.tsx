@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, Users, Check, X, HelpCircle, Download, CalendarPlus, List, Grid3X3, ChevronLeft, ChevronRight } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 import { useApi, useMutation } from '@wasil/shared'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
@@ -164,6 +165,7 @@ export function EventsPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
+        <PageLogo />
         <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
           {t('events.title', 'Events')}
         </h1>
