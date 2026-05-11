@@ -420,19 +420,19 @@ model EventRsvp {
 
 // Term Dates
 model TermDate {
-  id       String    @id @default(cuid())
-  term     Int
-  termName String
-  label    String
-  sublabel String?
-  date     DateTime
-  endDate  DateTime?
-  type     String    // "term-start", "term-end", "half-term", "public-holiday"
-  color    String
-  schoolId String
-  school   School    @relation(fields: [schoolId], references: [id])
+  id           String    @id @default(cuid())
+  term         Int
+  termName     String
+  label        String
+  sublabel     String?
+  date         DateTime
+  endDate      DateTime?
+  type         String    // "term-start", "term-end", "half-term", "public-holiday", "induction"
+  color        String
+  academicYear String?   // "2025-26", "2026-27" etc.
+  schoolId     String
+  school       School    @relation(fields: [schoolId], references: [id])
 }
-
 // Daily/Recurring Schedule
 model ScheduleItem {
   id          String   @id @default(cuid())

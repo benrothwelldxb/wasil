@@ -322,7 +322,7 @@ export function ParentDashboard() {
         ) || null
       )
     } catch {
-      alert('Failed to submit response')
+      console.error('Failed to submit response')
     }
   }
 

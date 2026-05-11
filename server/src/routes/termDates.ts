@@ -57,6 +57,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       endDate: td.endDate?.toISOString().split('T')[0] || null,
       type: td.type,
       color: td.color,
+      academicYear: (td as any).academicYear || null,
       schoolId: td.schoolId,
     })))
   } catch (error) {
@@ -69,7 +70,7 @@ router.get('/', isAuthenticated, async (req, res) => {
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { term, termName, label, sublabel, date, endDate, type, color } = req.body
+    const { term, termName, label, sublabel, date, endDate, type, color, academicYear } = req.body
 
     const termDate = await prisma.termDate.create({
       data: {
@@ -81,6 +82,7 @@ router.post('/', isAdmin, async (req, res) => {
         endDate: endDate ? new Date(endDate) : null,
         type,
         color,
+        academicYear: academicYear || null,
         schoolId: user.schoolId,
       },
     })
@@ -97,6 +99,7 @@ router.post('/', isAdmin, async (req, res) => {
       endDate: termDate.endDate?.toISOString().split('T')[0] || null,
       type: termDate.type,
       color: termDate.color,
+      academicYear: (termDate as any).academicYear || null,
       schoolId: termDate.schoolId,
     })
   } catch (error) {
@@ -109,7 +112,7 @@ router.post('/', isAdmin, async (req, res) => {
 router.put('/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
-    const { term, termName, label, sublabel, date, endDate, type, color } = req.body
+    const { term, termName, label, sublabel, date, endDate, type, color, academicYear } = req.body
 
     const existing = await prisma.termDate.findUnique({
       where: { id },
@@ -130,6 +133,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         endDate: endDate ? new Date(endDate) : null,
         type,
         color,
+        academicYear: academicYear || null,
       },
     })
 
@@ -143,6 +147,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       endDate: termDate.endDate?.toISOString().split('T')[0] || null,
       type: termDate.type,
       color: termDate.color,
+      academicYear: (termDate as any).academicYear || null,
       schoolId: termDate.schoolId,
     })
 
