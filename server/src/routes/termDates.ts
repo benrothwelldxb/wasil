@@ -57,7 +57,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       endDate: td.endDate?.toISOString().split('T')[0] || null,
       type: td.type,
       color: td.color,
-      academicYear: (td as any).academicYear || null,
+      academicYear: td.academicYear || null,
       schoolId: td.schoolId,
     })))
   } catch (error) {
@@ -99,7 +99,7 @@ router.post('/', isAdmin, async (req, res) => {
       endDate: termDate.endDate?.toISOString().split('T')[0] || null,
       type: termDate.type,
       color: termDate.color,
-      academicYear: (termDate as any).academicYear || null,
+      academicYear: termDate.academicYear || null,
       schoolId: termDate.schoolId,
     })
   } catch (error) {
@@ -147,7 +147,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       endDate: termDate.endDate?.toISOString().split('T')[0] || null,
       type: termDate.type,
       color: termDate.color,
-      academicYear: (termDate as any).academicYear || null,
+      academicYear: termDate.academicYear || null,
       schoolId: termDate.schoolId,
     })
 

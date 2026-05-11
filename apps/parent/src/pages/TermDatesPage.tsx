@@ -38,11 +38,21 @@ export function TermDatesPage() {
     []
   )
 
-  const groupedByTerm = useMemo(() => {
+  // Split dates by academic year
+  const currentYearDates = useMemo(() => {
     if (!termDates) return []
+    return termDates.filter(td => !td.academicYear || td.academicYear === academicYear.replace('/', '-'))
+  }, [termDates, academicYear])
 
+  const nextYearDates = useMemo(() => {
+    if (!termDates) return []
+    // Find dates that don't belong to current year and have a future academic year
+    return termDates.filter(td => td.academicYear && td.academicYear !== academicYear.replace('/', '-'))
+  }, [termDates, academicYear])
+
+  const groupedByTerm = useMemo(() => {
     const groups: Record<string, { termName: string; dates: TermDate[] }> = {}
-    termDates.forEach((td) => {
+    currentYearDates.forEach((td) => {
       const key = `term-${td.term}`
       if (!groups[key]) {
         groups[key] = { termName: td.termName, dates: [] }
@@ -297,7 +307,7 @@ export function TermDatesPage() {
       )}
 
       {/* Next Academic Year (expandable) */}
-      <NextYearSection />
+      <NextYearSection dates={nextYearDates} />
 
       {/* Disclaimer */}
       {groupedByTerm.length > 0 && (
@@ -312,12 +322,12 @@ export function TermDatesPage() {
   )
 }
 
-function NextYearSection() {
+function NextYearSection({ dates }: { dates: TermDate[] }) {
   const [expanded, setExpanded] = useState(false)
 
-  // TODO: fetch next year's term dates from API when available
-  // For now, show a placeholder that can be expanded
-  const hasNextYearDates = false
+  if (dates.length === 0) return null
+
+  const yearLabel = dates[0]?.academicYear || 'Next Year'
 
   return (
     <div
@@ -330,10 +340,10 @@ function NextYearSection() {
       >
         <div>
           <p className="text-[15px] font-bold" style={{ color: '#2D2225' }}>
-            Next Academic Year
+            {yearLabel} Academic Year
           </p>
           <p className="text-[13px] font-medium mt-0.5" style={{ color: '#A8929A' }}>
-            {hasNextYearDates ? '2026/27 term dates available' : '2026/27 dates not yet published'}
+            {dates.length} date{dates.length !== 1 ? 's' : ''} published
           </p>
         </div>
         {expanded
@@ -343,17 +353,25 @@ function NextYearSection() {
       </button>
 
       {expanded && (
-        <div className="px-5 pb-5 pt-0" style={{ borderTop: '1px solid #F0E4E6' }}>
-          {hasNextYearDates ? (
-            // When dates are available, they will render here
-            <p className="text-sm py-4" style={{ color: '#7A6469' }}>Term dates will appear here.</p>
-          ) : (
-            <div className="text-center py-6">
-              <p className="text-sm font-medium" style={{ color: '#A8929A' }}>
-                Term dates for the next academic year will be published here once confirmed by the school.
-              </p>
+        <div className="px-5 pb-4 pt-0 space-y-2" style={{ borderTop: '1px solid #F0E4E6' }}>
+          {dates.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(td => (
+            <div key={td.id} className="flex items-center gap-3 py-2">
+              <div className={`w-2.5 h-2.5 rounded-full ${
+                td.color === 'green' ? 'bg-green-500' :
+                td.color === 'red' ? 'bg-red-500' :
+                td.color === 'blue' ? 'bg-blue-500' :
+                td.color === 'amber' ? 'bg-amber-500' :
+                td.color === 'purple' ? 'bg-purple-500' : 'bg-gray-500'
+              }`} />
+              <div className="flex-1">
+                <p className="text-[14px] font-semibold" style={{ color: '#2D2225' }}>{td.label}</p>
+                <p className="text-[12px]" style={{ color: '#A8929A' }}>
+                  {new Date(td.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {td.endDate && ` — ${new Date(td.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                </p>
+              </div>
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>

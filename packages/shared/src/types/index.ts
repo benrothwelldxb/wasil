@@ -335,6 +335,7 @@ export interface TermDate {
   endDate?: string
   type: TermDateType
   color: string
+  academicYear?: string | null
   schoolId: string
 }
 
