@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
 import prisma from '../services/prisma.js'
-import { isAdmin } from '../middleware/auth.js'
+import { isAdmin, isAuthenticated } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 
@@ -186,6 +186,158 @@ router.delete('/seed', isAdmin, async (req: Request, res: Response) => {
   }
 })
 
+// ==========================================
+// Student Report Cards
+// ==========================================
+
+const reportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf') cb(null, true)
+    else cb(new Error('Only PDF files are allowed'))
+  },
+})
+
+// Bulk upload report cards (admin) - matched by UPN filename
+router.post('/reports/bulk', isAdmin, reportUpload.array('files', 200), async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const files = req.files as Express.Multer.File[]
+    const { reportPeriod, academicYear, reportType } = req.body
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' })
+    }
+
+    // Get all students with externalId for this school
+    const students = await prisma.student.findMany({
+      where: { schoolId: user.schoolId, externalId: { not: null } },
+      select: { id: true, firstName: true, lastName: true, externalId: true },
+    })
+
+    const studentByUPN = new Map(students.map(s => [s.externalId!.toLowerCase(), s]))
+
+    const matched: Array<{ studentId: string; studentName: string; fileName: string }> = []
+    const unmatchedFiles: string[] = []
+
+    for (const file of files) {
+      // Extract UPN from filename (e.g., "A123456789.pdf" -> "a123456789")
+      const upn = file.originalname.replace(/\.pdf$/i, '').trim().toLowerCase()
+      const student = studentByUPN.get(upn)
+
+      if (!student) {
+        unmatchedFiles.push(file.originalname)
+        continue
+      }
+
+      // Upload to R2
+      const key = generateKey('report-cards', file.originalname)
+      const fileUrl = await uploadFile(file.buffer, key, file.mimetype)
+
+      // Create report record
+      await prisma.studentReport.create({
+        data: {
+          studentId: student.id,
+          schoolId: user.schoolId,
+          fileName: file.originalname,
+          fileUrl,
+          fileSize: file.size,
+          reportType: reportType || 'REPORT_CARD',
+          reportPeriod: reportPeriod || null,
+          academicYear: academicYear || null,
+          uploadedById: user.id,
+        },
+      })
+
+      matched.push({
+        studentId: student.id,
+        studentName: `${student.firstName} ${student.lastName}`,
+        fileName: file.originalname,
+      })
+    }
+
+    logAudit({ req, action: 'CREATE', resourceType: 'STUDENT' as any, resourceId: 'reports-bulk', metadata: { matched: matched.length, unmatched: unmatchedFiles.length } })
+
+    res.json({
+      matched: matched.length,
+      unmatched: unmatchedFiles.length,
+      unmatchedFiles,
+      reports: matched,
+    })
+  } catch (error) {
+    console.error('Error bulk uploading report cards:', error)
+    res.status(500).json({ error: 'Failed to upload report cards' })
+  }
+})
+
+// Get my children's reports (parent)
+router.get('/reports/my-children', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+
+    // Get parent's student links
+    const links = await prisma.parentStudentLink.findMany({
+      where: { userId: user.id },
+      select: { studentId: true },
+    })
+
+    const studentIds = links.map(l => l.studentId)
+
+    if (studentIds.length === 0) {
+      return res.json([])
+    }
+
+    const reports = await prisma.studentReport.findMany({
+      where: { studentId: { in: studentIds } },
+      include: { student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } } },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    res.json(reports.map(r => ({
+      id: r.id,
+      studentId: r.studentId,
+      studentName: `${r.student.firstName} ${r.student.lastName}`,
+      className: r.student.class.name,
+      fileName: r.fileName,
+      fileUrl: r.fileUrl,
+      fileSize: r.fileSize,
+      reportType: r.reportType,
+      reportPeriod: r.reportPeriod,
+      academicYear: r.academicYear,
+      createdAt: r.createdAt.toISOString(),
+    })))
+  } catch (error) {
+    console.error('Error fetching children reports:', error)
+    res.status(500).json({ error: 'Failed to fetch reports' })
+  }
+})
+
+// Delete a report (admin)
+router.delete('/reports/:reportId', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { reportId } = req.params
+
+    const report = await prisma.studentReport.findFirst({
+      where: { id: reportId, schoolId: user.schoolId },
+    })
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' })
+    }
+
+    await prisma.studentReport.delete({ where: { id: reportId } })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'STUDENT' as any, resourceId: reportId, metadata: { fileName: report.fileName } })
+
+    res.json({ message: 'Report deleted' })
+  } catch (error) {
+    console.error('Error deleting report:', error)
+    res.status(500).json({ error: 'Failed to delete report' })
+  }
+})
+
 // Get single student
 router.get('/:id', isAdmin, async (req: Request, res: Response) => {
   try {
@@ -227,6 +379,45 @@ router.get('/:id', isAdmin, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching student:', error)
     res.status(500).json({ error: 'Failed to fetch student' })
+  }
+})
+
+// Get reports for a student (admin)
+router.get('/:id/reports', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const student = await prisma.student.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' })
+    }
+
+    const reports = await prisma.studentReport.findMany({
+      where: { studentId: id },
+      include: { student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } } },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    res.json(reports.map(r => ({
+      id: r.id,
+      studentId: r.studentId,
+      studentName: `${r.student.firstName} ${r.student.lastName}`,
+      className: r.student.class.name,
+      fileName: r.fileName,
+      fileUrl: r.fileUrl,
+      fileSize: r.fileSize,
+      reportType: r.reportType,
+      reportPeriod: r.reportPeriod,
+      academicYear: r.academicYear,
+      createdAt: r.createdAt.toISOString(),
+    })))
+  } catch (error) {
+    console.error('Error fetching student reports:', error)
+    res.status(500).json({ error: 'Failed to fetch reports' })
   }
 })
 

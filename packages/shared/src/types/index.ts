@@ -672,6 +672,20 @@ export interface IepTarget {
   status?: string    // "Not Started", "In Progress", "Achieved"
 }
 
+export interface StudentReport {
+  id: string
+  studentId: string
+  studentName: string
+  className: string
+  fileName: string
+  fileUrl: string
+  fileSize: number
+  reportType: string
+  reportPeriod?: string | null
+  academicYear?: string | null
+  createdAt: string
+}
+
 export interface StudentSearchResult {
   id: string
   fullName: string
@@ -1115,6 +1129,14 @@ export interface AvailableContactsResponse {
     classId: string
     className: string
   }>
+}
+
+// Report Upload Result types
+export interface ReportUploadResult {
+  matched: number
+  unmatched: number
+  unmatchedFiles: string[]
+  reports: Array<{ studentName: string; fileName: string }>
 }
 
 // ECA Types

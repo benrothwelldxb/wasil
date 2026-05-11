@@ -67,6 +67,8 @@ model School {
   // Inclusion relations
   inclusionApiKeys    InclusionApiKey[]
   studentIeps         StudentIep[]
+  // Report card relations
+  studentReports      StudentReport[]
 
   // Google Calendar integration
   googleCalendarRefreshToken String?
@@ -166,6 +168,9 @@ model User {
   schoolContactAssignments SchoolContact[] @relation("SchoolContactAssignments")
   messageReactions         MessageReaction[] @relation("MessageReactions")
 
+  // Report card uploads
+  uploadedReports          StudentReport[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -222,6 +227,8 @@ model Student {
   conversations   Conversation[]
   // Inclusion relations
   ieps            StudentIep[]
+  // Report card relations
+  reports         StudentReport[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1647,6 +1654,27 @@ model StudentIep {
   syncedAt    DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([schoolId])
+}
+
+// Student Report Cards (uploaded PDFs matched by UPN)
+model StudentReport {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  schoolId     String
+  school       School   @relation(fields: [schoolId], references: [id])
+  fileName     String   // Original filename
+  fileUrl      String   // R2 public URL
+  fileSize     Int      // bytes
+  reportType   String   @default("REPORT_CARD") // REPORT_CARD, PROGRESS_REPORT, OTHER
+  reportPeriod String?  // "Term 1 2025-26", "Semester 1", etc.
+  academicYear String?  // "2025-26"
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
 
   @@index([studentId])
   @@index([schoolId])

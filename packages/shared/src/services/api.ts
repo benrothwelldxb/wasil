@@ -84,6 +84,8 @@ import type {
   ServiceStatus,
   RegistrationStatus,
   PaymentStatus,
+  StudentReport,
+  ReportUploadResult,
 } from '../types'
 
 const API_URL = config.apiUrl
@@ -1209,6 +1211,23 @@ export const students = {
       method: 'POST',
       body: JSON.stringify({ reassignments }),
     }),
+  uploadReports: (files: File[], reportPeriod?: string, academicYear?: string, reportType?: string) => {
+    const formData = new FormData()
+    files.forEach(f => formData.append('files', f))
+    if (reportPeriod) formData.append('reportPeriod', reportPeriod)
+    if (academicYear) formData.append('academicYear', academicYear)
+    if (reportType) formData.append('reportType', reportType)
+    return fetchApi<ReportUploadResult>('/api/students/reports/bulk', {
+      method: 'POST',
+      body: formData,
+    })
+  },
+  getStudentReports: (studentId: string) =>
+    fetchApi<StudentReport[]>(`/api/students/${studentId}/reports`),
+  deleteReport: (reportId: string) =>
+    fetchApi<{ message: string }>(`/api/students/reports/${reportId}`, { method: 'DELETE' }),
+  myChildrenReports: () =>
+    fetchApi<StudentReport[]>('/api/students/reports/my-children'),
 }
 
 export const links = {

@@ -149,6 +149,7 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
 
   menuItems.push({ icon: UtensilsCrossed, labelKey: 'nav.lunchMenu', path: '/lunch-menu' })
   menuItems.push({ icon: BookOpen, labelKey: 'nav.resources', path: '/resources' })
+  menuItems.push({ icon: FileText, labelKey: 'nav.reportCards', path: '/report-cards' })
   if (hasIeps) {
     menuItems.push({ icon: Target, labelKey: 'nav.inclusion', path: '/inclusion' })
   }
