@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MessageCard } from '../components/messages'
 import { PulseBanner, PulseSurveyModal } from '../components/pulse'
@@ -117,10 +117,23 @@ export function ParentDashboard() {
     () => api.eca.parent.listTerms(),
     []
   )
-  const { data: activeAlerts } = useApi<EmergencyAlert[]>(
-    () => api.emergencyAlerts.active(),
-    []
-  )
+  // Poll emergency alerts every 30s without flickering
+  const [activeAlerts, setActiveAlerts] = useState<EmergencyAlert[] | null>(null)
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const alerts = await api.emergencyAlerts.active()
+      setActiveAlerts(prev => {
+        const prevJson = JSON.stringify(prev)
+        const newJson = JSON.stringify(alerts)
+        return prevJson === newJson ? prev : alerts
+      })
+    } catch { /* silent */ }
+  }, [])
+  useEffect(() => {
+    fetchAlerts()
+    const interval = setInterval(fetchAlerts, 30000)
+    return () => clearInterval(interval)
+  }, [fetchAlerts])
   const { data: events } = useApi<Event[]>(
     () => api.events.list(),
     []
