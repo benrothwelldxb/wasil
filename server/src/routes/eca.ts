@@ -407,15 +407,21 @@ router.post('/terms/:id/activities', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Term not found' })
     }
 
-    // Auto-create group for this activity
-    const group = await prisma.group.create({
-      data: {
-        name: `${name} (${term.name})`,
-        schoolId: user.schoolId,
-        categoryId: categoryId || null,
-        isActive: true,
-      },
+    // Auto-create or reuse group for this activity
+    const groupName = `${name} (${term.name})`
+    let group = await prisma.group.findFirst({
+      where: { schoolId: user.schoolId, name: groupName },
     })
+    if (!group) {
+      group = await prisma.group.create({
+        data: {
+          name: groupName,
+          schoolId: user.schoolId,
+          categoryId: categoryId || null,
+          isActive: true,
+        },
+      })
+    }
 
     // Assign staff to group if provided
     if (staffId) {
