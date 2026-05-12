@@ -460,8 +460,7 @@ export function SchoolServicesPage() {
       {registeringService && (
         <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4">
           <div
-            className="bg-white w-full max-w-md max-h-[80vh] overflow-y-auto"
-            style={{ borderRadius: '22px' }}
+            className="bg-white w-full max-w-md max-h-[80vh] overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)", borderRadius: "22px" }}
           >
             <div className="p-6">
               {/* Modal header */}
