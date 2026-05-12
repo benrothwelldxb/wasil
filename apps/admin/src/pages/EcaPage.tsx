@@ -1441,27 +1441,32 @@ export function EcaPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Custom Start Time</label>
-                  <input
-                    type="time"
-                    value={activityForm.customStartTime}
-                    onChange={(e) => setActivityForm({ ...activityForm, customStartTime: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="Leave empty for default"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Custom End Time</label>
-                  <input
-                    type="time"
-                    value={activityForm.customEndTime}
-                    onChange={(e) => setActivityForm({ ...activityForm, customEndTime: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-              </div>
+              {/* Advanced options hidden by default */}
+              <details className="border border-slate-200 rounded-lg">
+                <summary className="px-4 py-2.5 text-sm font-medium text-slate-500 cursor-pointer hover:bg-slate-50 select-none">
+                  Advanced Options
+                </summary>
+                <div className="px-4 pb-4 pt-2 space-y-4 border-t border-slate-100">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Custom Start Time</label>
+                      <input
+                        type="time"
+                        value={activityForm.customStartTime}
+                        onChange={(e) => setActivityForm({ ...activityForm, customStartTime: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Custom End Time</label>
+                      <input
+                        type="time"
+                        value={activityForm.customEndTime}
+                        onChange={(e) => setActivityForm({ ...activityForm, customEndTime: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                  </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
@@ -1577,34 +1582,36 @@ export function EcaPage() {
                 </select>
               </div>
 
-              {/* Cost (optional) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Cost (optional)</label>
-                <div className="grid grid-cols-2 gap-4">
+              {/* Cost inside advanced options */}
                   <div>
-                    <input
-                      type="number"
-                      value={activityForm.cost}
-                      onChange={(e) => setActivityForm({ ...activityForm, cost: e.target.value })}
-                      placeholder="e.g. 55"
-                      min={0}
-                      step="0.01"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Leave blank if free</p>
-                  </div>
-                  <div>
-                    <input
-                      type="text"
-                      value={activityForm.costDescription}
-                      onChange={(e) => setActivityForm({ ...activityForm, costDescription: e.target.value })}
-                      placeholder="e.g. 55 AED per term"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Display text for parents</p>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Cost (optional)</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <input
+                          type="number"
+                          value={activityForm.cost}
+                          onChange={(e) => setActivityForm({ ...activityForm, cost: e.target.value })}
+                          placeholder="e.g. 55"
+                          min={0}
+                          step="0.01"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Leave blank if free</p>
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          value={activityForm.costDescription}
+                          onChange={(e) => setActivityForm({ ...activityForm, costDescription: e.target.value })}
+                          placeholder="e.g. 55 AED per term"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Display text for parents</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </details>
 
               <div className="flex space-x-3 pt-4">
                 <button
