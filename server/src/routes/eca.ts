@@ -467,7 +467,8 @@ router.post('/terms/:id/activities', isAdmin, async (req, res) => {
     })
   } catch (error) {
     console.error('Error creating ECA activity:', error)
-    res.status(500).json({ error: 'Failed to create ECA activity' })
+    const msg = error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({ error: `Failed to create ECA activity: ${msg}` })
   }
 })
 
