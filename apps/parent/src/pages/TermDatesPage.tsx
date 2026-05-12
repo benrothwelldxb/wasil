@@ -38,29 +38,30 @@ export function TermDatesPage() {
     []
   )
 
-  // Normalize academic year format for comparison (handles "2025/26", "2025-26", "2025/2026")
-  const normalizeYear = (y: string | null | undefined): string => {
+  // Extract start year for comparison (handles "2025/26", "2025-26", "2025/2026", "2025-2026")
+  const getStartYear = (y: string | null | undefined): string => {
     if (!y) return ''
-    return y.replace(/\//g, '-').toLowerCase()
+    const match = y.match(/^(\d{4})/)
+    return match ? match[1] : ''
   }
-  const currentYearNorm = normalizeYear(academicYear)
+  const currentStartYear = getStartYear(academicYear)
 
   // Split dates by academic year
   const currentYearDates = useMemo(() => {
     if (!termDates) return []
     return termDates.filter(td => {
       if (!td.academicYear) return true // No year set = assume current
-      return normalizeYear(td.academicYear) === currentYearNorm
+      return getStartYear(td.academicYear) === currentStartYear
     })
-  }, [termDates, currentYearNorm])
+  }, [termDates, currentStartYear])
 
   const nextYearDates = useMemo(() => {
     if (!termDates) return []
     return termDates.filter(td => {
-      if (!td.academicYear) return false // No year = current, not next
-      return normalizeYear(td.academicYear) !== currentYearNorm
+      if (!td.academicYear) return false
+      return getStartYear(td.academicYear) !== currentStartYear
     })
-  }, [termDates, currentYearNorm])
+  }, [termDates, currentStartYear])
 
   const groupedByTerm = useMemo(() => {
     const groups: Record<string, { termName: string; dates: TermDate[] }> = {}
