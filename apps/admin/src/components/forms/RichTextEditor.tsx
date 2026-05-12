@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback } from 'react'
-import { Bold, Italic, Underline, List, ListOrdered, Minus } from 'lucide-react'
+import { Bold, Italic, Underline, List, ListOrdered, Minus, Heading2, Link } from 'lucide-react'
 
 interface RichTextEditorProps {
   value: string
@@ -19,9 +19,11 @@ const TOOLBAR_BUTTONS: ToolbarButton[] = [
   { icon: Bold, command: 'bold', label: 'Bold' },
   { icon: Italic, command: 'italic', label: 'Italic' },
   { icon: Underline, command: 'underline', label: 'Underline' },
+  { icon: Heading2, command: 'formatBlock', arg: 'h3', label: 'Heading' },
   { icon: List, command: 'insertUnorderedList', label: 'Bullet list' },
   { icon: ListOrdered, command: 'insertOrderedList', label: 'Numbered list' },
   { icon: Minus, command: 'insertHorizontalRule', label: 'Divider' },
+  { icon: Link, command: 'createLink', label: 'Insert link' },
 ]
 
 export function RichTextEditor({ value, onChange, placeholder = 'Write your content...', minHeight = '160px' }: RichTextEditorProps) {
@@ -48,7 +50,13 @@ export function RichTextEditor({ value, onChange, placeholder = 'Write your cont
   }, [onChange])
 
   const execCommand = (command: string, arg?: string) => {
-    document.execCommand(command, false, arg)
+    if (command === 'createLink') {
+      const url = prompt('Enter URL:')
+      if (!url) return
+      document.execCommand(command, false, url)
+    } else {
+      document.execCommand(command, false, arg)
+    }
     editorRef.current?.focus()
     handleInput()
   }
@@ -108,6 +116,8 @@ export function RichTextEditor({ value, onChange, placeholder = 'Write your cont
         [contentEditable] ul { list-style: disc; padding-left: 1.5em; margin: 0.5em 0; }
         [contentEditable] ol { list-style: decimal; padding-left: 1.5em; margin: 0.5em 0; }
         [contentEditable] hr { border: none; border-top: 1px solid #E2E8F0; margin: 0.75em 0; }
+        [contentEditable] h3 { font-size: 1.15em; font-weight: 700; margin: 0.75em 0 0.25em; color: #1E293B; }
+        [contentEditable] a { color: #2563EB; text-decoration: underline; }
       `}</style>
     </div>
   )

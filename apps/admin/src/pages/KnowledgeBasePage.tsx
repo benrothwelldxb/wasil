@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Plus, X, Pencil, Trash2, BookOpen, FileText, ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
+import { RichTextEditor } from '../components/forms/RichTextEditor'
 import type { KnowledgeCategory, KnowledgeArticle } from '@wasil/shared'
 
 // Common emoji options for categories
@@ -327,16 +328,14 @@ export function KnowledgeBasePage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Content</label>
-              <textarea
+              <RichTextEditor
                 value={articleForm.content}
-                onChange={(e) => setArticleForm(f => ({ ...f, content: e.target.value }))}
+                onChange={(html) => setArticleForm(f => ({ ...f, content: html }))}
                 placeholder="Write the article content here..."
-                rows={6}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                required
+                minHeight="200px"
               />
               <p className="mt-1 text-xs text-slate-400">
-                Use line breaks for paragraphs. Markdown is not supported.
+                Use the toolbar for formatting. Supports bold, italic, headings, lists, and links.
               </p>
             </div>
 
