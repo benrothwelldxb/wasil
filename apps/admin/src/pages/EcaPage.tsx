@@ -813,13 +813,25 @@ export function EcaPage() {
             </div>
             <div className="flex items-center space-x-2">
               {selectedTerm.status === 'DRAFT' && (
-                <button
-                  onClick={() => handleTermStatusChange(selectedTerm.id, 'REGISTRATION_OPEN')}
-                  className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white bg-green-600 hover:bg-green-700"
-                >
-                  <Play className="w-4 h-4" />
-                  <span>Open Registration</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleTermStatusChange(selectedTerm.id, 'REGISTRATION_OPEN')}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white bg-green-600 hover:bg-green-700"
+                  >
+                    <Play className="w-4 h-4" />
+                    <span>Open Registration</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('Go live without parent registration? You can manually assign students to activities.')) {
+                        handleTermStatusChange(selectedTerm.id, 'ACTIVE')
+                      }
+                    }}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100"
+                  >
+                    <span>Go Live (Manual Only)</span>
+                  </button>
+                </div>
               )}
               {selectedTerm.status === 'REGISTRATION_OPEN' && (
                 <button

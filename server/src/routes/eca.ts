@@ -323,7 +323,7 @@ router.patch('/terms/:id/status', isAdmin, async (req, res) => {
 
     // Validate status transitions
     const validTransitions: Record<string, string[]> = {
-      DRAFT: ['REGISTRATION_OPEN'],
+      DRAFT: ['REGISTRATION_OPEN', 'ACTIVE'], // ACTIVE allows skip for manual-only allocation
       REGISTRATION_OPEN: ['REGISTRATION_CLOSED'],
       REGISTRATION_CLOSED: ['ALLOCATION_COMPLETE'],
       ALLOCATION_COMPLETE: ['ACTIVE', 'REGISTRATION_CLOSED'], // Allow reopening for adjustments
