@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.wasil.parent',
-  appName: 'Wasil Connect',
+  appName: 'VHPS CoA Connect',
   webDir: 'dist',
   plugins: {
     PushNotifications: {
