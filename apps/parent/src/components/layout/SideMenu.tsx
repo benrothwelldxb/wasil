@@ -136,38 +136,61 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
     onClose()
   }
 
-  const menuItems: Array<{ icon: any; labelKey: string; path: string }> = [
-    { icon: Home, labelKey: 'nav.home', path: user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? '/admin' : '/' },
+  type MenuItem = { icon: any; labelKey: string; path: string }
+  type MenuSection = { label?: string; items: MenuItem[] }
+
+  const sections: MenuSection[] = []
+
+  // Main
+  sections.push({
+    items: [
+      { icon: Home, labelKey: 'nav.home', path: '/' },
+    ],
+  })
+
+  // School Life
+  const schoolLife: MenuItem[] = [
     { icon: Bell, labelKey: 'nav.eventsCalendar', path: '/events' },
-    { icon: ClipboardCheck, labelKey: 'nav.attendance', path: '/attendance' },
     { icon: Calendar, labelKey: 'nav.termDates', path: '/term-dates' },
     { icon: User, labelKey: 'nav.principalUpdates', path: '/principal-updates' },
+    { icon: ClipboardCheck, labelKey: 'nav.attendance', path: '/attendance' },
   ]
-
   if (hasActiveEca) {
-    menuItems.push({ icon: Sparkles, labelKey: 'nav.activities', path: '/activities' })
+    schoolLife.push({ icon: Sparkles, labelKey: 'nav.activities', path: '/activities' })
   }
-
-  menuItems.push({ icon: Clock, labelKey: 'nav.schoolServices', path: '/school-services' })
-
   if (hasActiveConsultations) {
-    menuItems.push({ icon: CalendarCheck, labelKey: 'nav.consultations', path: '/consultations' })
+    schoolLife.push({ icon: CalendarCheck, labelKey: 'nav.consultations', path: '/consultations' })
   }
+  sections.push({ label: 'School Life', items: schoolLife })
 
-  menuItems.push({ icon: UtensilsCrossed, labelKey: 'nav.lunchMenu', path: '/lunch-menu' })
-  menuItems.push({ icon: BookOpen, labelKey: 'nav.resources', path: '/resources' })
+  // Services
+  const services: MenuItem[] = [
+    { icon: Clock, labelKey: 'nav.schoolServices', path: '/school-services' },
+    { icon: UtensilsCrossed, labelKey: 'nav.lunchMenu', path: '/lunch-menu' },
+  ]
+  sections.push({ label: 'Services', items: services })
+
+  // My Child
+  const myChild: MenuItem[] = []
   if (hasReports) {
-    menuItems.push({ icon: FileText, labelKey: 'nav.reportCards', path: '/report-cards' })
+    myChild.push({ icon: FileText, labelKey: 'nav.reportCards', path: '/report-cards' })
   }
   if (hasIeps) {
-    menuItems.push({ icon: Target, labelKey: 'nav.inclusion', path: '/inclusion' })
+    myChild.push({ icon: Target, labelKey: 'nav.inclusion', path: '/inclusion' })
   }
-  menuItems.push({ icon: Settings, labelKey: 'nav.notificationSettings', path: '/notifications/settings' })
+  if (myChild.length > 0) {
+    sections.push({ label: 'My Child', items: myChild })
+  }
 
-  // Add Super Admin link for SUPER_ADMIN users
+  // Resources & Settings
+  const other: MenuItem[] = [
+    { icon: BookOpen, labelKey: 'nav.resources', path: '/resources' },
+    { icon: Settings, labelKey: 'nav.notificationSettings', path: '/notifications/settings' },
+  ]
   if (user.role === 'SUPER_ADMIN') {
-    menuItems.push({ icon: Shield, labelKey: 'nav.superAdmin', path: '/super-admin' })
+    other.push({ icon: Shield, labelKey: 'nav.superAdmin', path: '/super-admin' })
   }
+  sections.push({ label: 'More', items: other })
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -220,27 +243,38 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
         </div>
 
         <div className="p-6 pt-4">
-          <div className="space-y-1">
-            {menuItems.map((item) => (
-              <button
-                key={item.path}
-                onClick={() => handleNavigation(item.path)}
-                className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl"
-                style={{
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  minHeight: '48px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#FFF8F4'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent'
-                }}
-              >
-                <item.icon className="h-5 w-5" style={{ color: '#7A6469' }} />
-                <span style={{ color: '#2D2225' }}>{t(item.labelKey)}</span>
-              </button>
+          <div className="space-y-4">
+            {sections.map((section, sIdx) => (
+              <div key={sIdx}>
+                {section.label && (
+                  <p className="px-4 pb-1 text-[11px] font-bold uppercase tracking-wider" style={{ color: '#A8929A' }}>
+                    {section.label}
+                  </p>
+                )}
+                <div className="space-y-0.5">
+                  {section.items.map((item) => (
+                    <button
+                      key={item.path}
+                      onClick={() => handleNavigation(item.path)}
+                      className="w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl"
+                      style={{
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        minHeight: '44px',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#FFF8F4'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent'
+                      }}
+                    >
+                      <item.icon className="h-5 w-5" style={{ color: '#7A6469' }} />
+                      <span style={{ color: '#2D2225' }}>{t(item.labelKey)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
 
             <button
