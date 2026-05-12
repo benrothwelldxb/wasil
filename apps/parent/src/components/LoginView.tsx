@@ -70,7 +70,6 @@ export function LoginView() {
         throw new Error(data.error || 'Login failed')
       }
 
-      // Set tokens and reload
       setTokens(data.accessToken, data.refreshToken)
       window.location.href = '/'
     } catch (err) {
@@ -80,84 +79,75 @@ export function LoginView() {
     }
   }
 
+  const handleGoogleLogin = () => {
+    window.location.href = `${API_URL}/auth/google?source=parent`
+  }
+
   return (
-    <div className="min-h-[70vh] flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
-        <div className="text-center mb-8">
+    <div className="min-h-screen flex items-center justify-center px-5 py-8">
+      <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+        <div className="text-center mb-5">
           <img
             src={theme.logoUrl}
             alt={theme.schoolName}
-            className="h-32 w-auto mx-auto mb-4"
+            className="h-20 w-auto mx-auto mb-3"
             onError={(e) => {
               e.currentTarget.onerror = null
               e.currentTarget.src = '/school-logo.png'
             }}
           />
-          <h2 className="text-2xl font-bold" style={{ color: theme.colors.brandColor }}>
+          <h2 className="text-xl font-bold" style={{ color: theme.colors.brandColor }}>
             Welcome
           </h2>
-          <p className="text-gray-600 mt-2">Sign in to access the parent portal</p>
+          <p className="text-gray-500 text-sm mt-1">Sign in to access the parent portal</p>
         </div>
 
         {error && (
           <div
-            className="mb-4 p-4 text-sm font-medium"
+            className="mb-3 p-3 text-sm font-medium"
             style={{
-              borderRadius: '16px',
-              backgroundColor: error.includes('Too many') ? '#FFF7EC' : '#FEF2F2',
-              border: error.includes('Too many') ? '1.5px solid rgba(232,165,75,0.3)' : '1.5px solid rgba(209,77,77,0.2)',
-              color: error.includes('Too many') ? '#8B5E0F' : '#D14D4D',
+              borderRadius: '12px',
+              backgroundColor: error.includes('Too many') || error.includes('locked') ? '#FFF7EC' : '#FEF2F2',
+              border: error.includes('Too many') || error.includes('locked') ? '1.5px solid rgba(232,165,75,0.3)' : '1.5px solid rgba(209,77,77,0.2)',
+              color: error.includes('Too many') || error.includes('locked') ? '#8B5E0F' : '#D14D4D',
             }}
           >
-            {error.includes('Too many') && (
-              <p style={{ fontWeight: 700, marginBottom: '4px' }}>Account temporarily locked</p>
-            )}
             {error}
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={handleLogin} className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email address
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
               type="email"
               value={email}
-              onChange={(e) => {
-                setEmail(e.target.value)
-                setError(null)
-              }}
+              onChange={(e) => { setEmail(e.target.value); setError(null) }}
               placeholder="your.email@example.com"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               autoFocus
               disabled={isLoading}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value)
-                  setError(null)
-                }}
+                onChange={(e) => { setPassword(e.target.value); setError(null) }}
                 placeholder="Enter your password"
-                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 disabled={isLoading}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                tabIndex={-1}
+                aria-label="Toggle password visibility"
               >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
@@ -165,23 +155,45 @@ export function LoginView() {
           <button
             type="submit"
             disabled={isLoading || !email || !password}
-            className="w-full py-3 rounded-lg font-semibold text-white transition-colors disabled:opacity-50"
+            className="w-full py-2.5 rounded-lg font-semibold text-white transition-colors disabled:opacity-50"
             style={{ backgroundColor: theme.colors.brandColor }}
           >
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 
+        {/* Divider + Google OAuth */}
+        <div className="mt-4">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-white px-3 text-gray-400">or</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            className="mt-3 w-full flex items-center justify-center gap-2.5 px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium text-sm hover:bg-gray-50 transition-colors"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+            </svg>
+            Sign in with Google
+          </button>
+        </div>
+
         {/* Forgot Password */}
-        <div className="mt-4 text-center">
+        <div className="mt-3 text-center">
           {!showForgotPassword && !forgotSuccess && (
             <button
               type="button"
-              onClick={() => {
-                setShowForgotPassword(true)
-                setForgotEmail(email)
-              }}
-              style={{ color: theme.colors.brandColor, fontSize: '14px', fontWeight: 600 }}
+              onClick={() => { setShowForgotPassword(true); setForgotEmail(email) }}
+              style={{ color: theme.colors.brandColor, fontSize: '13px', fontWeight: 600 }}
               className="hover:underline"
             >
               Forgot password?
@@ -189,39 +201,29 @@ export function LoginView() {
           )}
 
           {showForgotPassword && !forgotSuccess && (
-            <form onSubmit={handleForgotPassword} className="mt-2 space-y-3">
-              <p className="text-sm text-gray-600">
-                Enter your email and we'll send you a sign-in link.
-              </p>
+            <form onSubmit={handleForgotPassword} className="mt-2 space-y-2 text-left">
+              <p className="text-xs text-gray-500">Enter your email and we'll send a sign-in link.</p>
               <input
                 type="email"
                 value={forgotEmail}
-                onChange={(e) => {
-                  setForgotEmail(e.target.value)
-                  setForgotError(null)
-                }}
+                onChange={(e) => { setForgotEmail(e.target.value); setForgotError(null) }}
                 placeholder="your.email@example.com"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 disabled={forgotLoading}
               />
-              {forgotError && (
-                <p className="text-red-500 text-sm">{forgotError}</p>
-              )}
+              {forgotError && <p className="text-red-500 text-xs">{forgotError}</p>}
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowForgotPassword(false)
-                    setForgotError(null)
-                  }}
-                  className="flex-1 py-2 rounded-lg text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50"
+                  onClick={() => { setShowForgotPassword(false); setForgotError(null) }}
+                  className="flex-1 py-2 rounded-lg text-xs font-medium text-gray-600 border border-gray-300 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={forgotLoading || !forgotEmail}
-                  className="flex-1 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                  className="flex-1 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
                   style={{ backgroundColor: theme.colors.brandColor }}
                 >
                   {forgotLoading ? 'Sending...' : 'Send Link'}
@@ -232,17 +234,11 @@ export function LoginView() {
 
           {forgotSuccess && (
             <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-green-700 text-sm font-medium">
-                Check your email for a sign-in link
-              </p>
+              <p className="text-green-700 text-xs font-medium">Check your email for a sign-in link</p>
               <button
                 type="button"
-                onClick={() => {
-                  setShowForgotPassword(false)
-                  setForgotSuccess(false)
-                  setForgotEmail('')
-                }}
-                className="mt-2 text-sm hover:underline"
+                onClick={() => { setShowForgotPassword(false); setForgotSuccess(false); setForgotEmail('') }}
+                className="mt-1 text-xs hover:underline"
                 style={{ color: theme.colors.brandColor, fontWeight: 600 }}
               >
                 Back to sign in
@@ -251,28 +247,21 @@ export function LoginView() {
           )}
         </div>
 
-        <p className="text-center text-sm text-gray-600 mt-6">
+        <p className="text-center text-xs text-gray-500 mt-4">
           New parent?{' '}
-          <a href="/register" className="font-medium" style={{ color: theme.colors.brandColor }}>
-            Register here
-          </a>
+          <a href="/register" className="font-medium" style={{ color: theme.colors.brandColor }}>Register here</a>
         </p>
 
-        <p className="text-center text-xs text-gray-500 mt-4">
+        <p className="text-center text-[10px] text-gray-400 mt-2">
           By signing in, you agree to our Terms of Service and Privacy Policy
         </p>
 
-        <div
-          className="mt-8 -mx-8 -mb-8 px-8 py-4 rounded-b-2xl flex items-center justify-center space-x-2"
-          style={{ backgroundColor: theme.colors.brandColor }}
-        >
-          <span className="text-white text-sm opacity-80">Powered by</span>
-          <img
-            src={defaultSchool.wasilLogoWhite}
-            alt="Wasil"
-            className="h-5 w-auto"
-          />
-        </div>
+        {defaultSchool.showWasilBranding && (
+          <div className="mt-4 flex items-center justify-center gap-1.5">
+            <span className="text-[10px] text-gray-400">Powered by</span>
+            <img src={defaultSchool.wasilLogoGrey} alt="Wasil" className="h-3 w-auto opacity-40" />
+          </div>
+        )}
       </div>
     </div>
   )
