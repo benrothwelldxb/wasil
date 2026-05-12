@@ -1,4 +1,4 @@
-package com.wasil.parent;
+package com.wasilconnect.vhpscoa;
 
 import com.getcapacitor.BridgeActivity;
 
