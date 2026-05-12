@@ -203,7 +203,7 @@ export function PrincipalUpdatesPage() {
           <div
             className="bg-white w-full sm:max-w-lg max-h-[90vh] overflow-auto"
             style={{
-              borderRadius: '22px 22px 0 0',
+              borderRadius: '22px 22px 0 0', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)',
               borderTop: '1.5px solid #F0E4E6',
             }}
             onClick={e => e.stopPropagation()}

@@ -51,7 +51,7 @@ export function PulseSurveyModal({ pulse, onClose, onComplete }: PulseSurveyModa
           borderRadius: '22px 22px 0 0',
           maxHeight: '85vh',
           overflowY: 'auto',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)',
         }}
         onClick={e => e.stopPropagation()}
       >

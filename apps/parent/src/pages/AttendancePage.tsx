@@ -311,7 +311,7 @@ export function AttendancePage() {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-end sm:items-center justify-center" onClick={() => setShowModal(false)}>
           <div
-            className="bg-white w-full sm:max-w-md sm:rounded-[22px] rounded-t-[22px] max-h-[85vh] overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)" }}
+            className="bg-white w-full sm:max-w-md sm:rounded-[22px] rounded-t-[22px] max-h-[85vh] overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 space-y-4">
