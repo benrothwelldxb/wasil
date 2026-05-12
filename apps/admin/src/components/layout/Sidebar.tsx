@@ -30,6 +30,7 @@ import {
   Inbox,
   UtensilsCrossed,
   ChevronDown,
+  ClipboardCheck,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth, useTheme, config } from '@wasil/shared'
@@ -67,6 +68,7 @@ const NAV_SECTIONS: NavSection[] = [
       { icon: Calendar, label: 'Events', path: '/events' },
       { icon: Newspaper, label: 'Weekly Updates', path: '/weekly' },
       { icon: Activity, label: 'Parent Pulse', path: '/pulse' },
+      { icon: ClipboardCheck, label: 'Attendance', path: '/attendance' },
     ],
   },
   {

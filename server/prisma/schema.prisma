@@ -69,6 +69,9 @@ model School {
   studentIeps         StudentIep[]
   // Report card relations
   studentReports      StudentReport[]
+  // Attendance relations
+  attendanceRecords   AttendanceRecord[]
+  attendanceRequests  AttendanceRequest[]
 
   // Google Calendar integration
   googleCalendarRefreshToken String?
@@ -171,6 +174,11 @@ model User {
   // Report card uploads
   uploadedReports          StudentReport[]
 
+  // Attendance relations
+  attendanceMarked         AttendanceRecord[] @relation("AttendanceMarkedBy")
+  attendanceRequests       AttendanceRequest[] @relation("AttendanceRequests")
+  attendanceReviewed       AttendanceRequest[] @relation("AttendanceReviewed")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -229,6 +237,9 @@ model Student {
   ieps            StudentIep[]
   // Report card relations
   reports         StudentReport[]
+  // Attendance relations
+  attendanceRecords  AttendanceRecord[]
+  attendanceRequests AttendanceRequest[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -702,6 +713,8 @@ enum AuditResourceType {
   ECA_ACTIVITY
   ECA_ALLOCATION
   EMERGENCY_ALERT
+  ATTENDANCE
+  ATTENDANCE_REQUEST
 }
 
 model AuditLog {
@@ -1685,4 +1698,75 @@ model StudentReport {
 
   @@index([studentId])
   @@index([schoolId])
+}
+
+// ============================================
+// Attendance System
+// ============================================
+
+// Daily attendance record per student
+model AttendanceRecord {
+  id        String   @id @default(cuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  date      String   // YYYY-MM-DD
+  status    AttendanceStatus @default(PRESENT)
+  notes     String?
+  markedById String?  // staff who marked it
+  markedBy  User?    @relation("AttendanceMarkedBy", fields: [markedById], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, date])
+  @@index([schoolId, date])
+  @@index([studentId])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+// Parent-submitted absence/request
+model AttendanceRequest {
+  id          String   @id @default(cuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parentId    String
+  parent      User     @relation("AttendanceRequests", fields: [parentId], references: [id])
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id])
+  type        AttendanceRequestType
+  startDate   String   // YYYY-MM-DD
+  endDate     String?  // YYYY-MM-DD (for multi-day absences)
+  reason      String   // "illness", "appointment", "family", "other"
+  notes       String?
+  time        String?  // HH:MM for early pickup / late arrival
+  status      RequestApprovalStatus @default(PENDING)
+  reviewedById String?
+  reviewedBy  User?    @relation("AttendanceReviewed", fields: [reviewedById], references: [id])
+  reviewedAt  DateTime?
+  reviewNotes String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([schoolId, status])
+  @@index([studentId])
+  @@index([parentId])
+}
+
+enum AttendanceRequestType {
+  ABSENCE
+  EARLY_PICKUP
+  LATE_ARRIVAL
+}
+
+enum RequestApprovalStatus {
+  PENDING
+  APPROVED
+  DECLINED
 }

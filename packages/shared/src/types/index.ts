@@ -1143,6 +1143,81 @@ export interface ReportUploadResult {
   reports: Array<{ studentName: string; fileName: string }>
 }
 
+// Attendance Types
+export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'
+export type AttendanceRequestType = 'ABSENCE' | 'EARLY_PICKUP' | 'LATE_ARRIVAL'
+export type RequestApprovalStatus = 'PENDING' | 'APPROVED' | 'DECLINED'
+
+export interface AttendanceRecord {
+  id: string
+  studentId: string
+  studentName: string
+  className: string
+  date: string
+  status: AttendanceStatus
+  notes?: string | null
+  markedBy?: string | null
+  createdAt: string
+}
+
+export interface AttendanceRequest {
+  id: string
+  studentId: string
+  studentName: string
+  className: string
+  parentId: string
+  parentName: string
+  type: AttendanceRequestType
+  startDate: string
+  endDate?: string | null
+  reason: string
+  notes?: string | null
+  time?: string | null
+  status: RequestApprovalStatus
+  reviewedBy?: string | null
+  reviewNotes?: string | null
+  reviewedAt?: string | null
+  createdAt: string
+}
+
+export interface AttendanceOverview {
+  totalStudents: number
+  presentToday: number
+  absentToday: number
+  lateToday: number
+  excusedToday: number
+  attendanceRate: number
+  classes: Array<{
+    classId: string
+    className: string
+    total: number
+    present: number
+    absent: number
+    late: number
+    unmarked: number
+  }>
+}
+
+export interface AttendanceAnalytics {
+  todayRate: number
+  weekRate: number
+  monthRate: number
+  totalRecords: number
+  byReason: Record<string, number>
+  mostAbsent: Array<{ studentName: string; className: string; absences: number }>
+}
+
+export interface ChildAttendanceSummary {
+  studentId: string
+  studentName: string
+  className: string
+  present: number
+  absent: number
+  late: number
+  excused: number
+  recentRecords: AttendanceRecord[]
+}
+
 // ECA Types
 export * from './eca'
 

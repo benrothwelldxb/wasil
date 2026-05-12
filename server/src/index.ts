@@ -37,6 +37,7 @@ import inboxRoutes from './routes/inbox.js'
 import searchRoutes from './routes/search.js'
 import inclusionRoutes from './routes/inclusion.js'
 import cafeteriaRoutes from './routes/cafeteria.js'
+import attendanceRoutes from './routes/attendance.js'
 import { initFirebase } from './services/firebase.js'
 import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders } from './services/cleanup.js'
 import { cleanupOldAuditLogs } from './services/audit.js'
@@ -108,6 +109,7 @@ app.use('/api/inbox', inboxRoutes)
 app.use('/api/search', searchRoutes)
 app.use('/api/inclusion', inclusionRoutes)
 app.use('/api/cafeteria', cafeteriaRoutes)
+app.use('/api/attendance', attendanceRoutes)
 
 // Health check
 app.get('/health', (_req, res) => {

@@ -1955,6 +1955,55 @@ export const inclusion = {
     }),
 }
 
+// Attendance
+import type {
+  AttendanceOverview,
+  AttendanceAnalytics,
+  AttendanceRequest as AttendanceRequestInterface,
+  AttendanceStatus as AttendanceStatusEnum,
+  ChildAttendanceSummary,
+} from '../types'
+
+export const attendance = {
+  // Admin
+  todayOverview: () => fetchApi<AttendanceOverview>('/api/attendance/today'),
+  classAttendance: (classId: string, date?: string) => {
+    const params = date ? `?date=${date}` : ''
+    return fetchApi<{ students: Array<{ studentId: string; studentName: string; status: AttendanceStatusEnum | null; notes?: string }> }>(`/api/attendance/class/${classId}${params}`)
+  },
+  mark: (records: Array<{ studentId: string; status: string; notes?: string }>, date: string) =>
+    fetchApi<{ marked: number }>('/api/attendance/mark', {
+      method: 'POST',
+      body: JSON.stringify({ records, date }),
+    }),
+  listRequests: (params?: { status?: string; type?: string; page?: number }) => {
+    const sp = new URLSearchParams()
+    if (params?.status) sp.append('status', params.status)
+    if (params?.type) sp.append('type', params.type)
+    if (params?.page) sp.append('page', params.page.toString())
+    return fetchApi<{ requests: AttendanceRequestInterface[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/api/attendance/requests?${sp}`)
+  },
+  reviewRequest: (id: string, status: 'APPROVED' | 'DECLINED', reviewNotes?: string) =>
+    fetchApi<AttendanceRequestInterface>(`/api/attendance/requests/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, reviewNotes }),
+    }),
+  analytics: () => fetchApi<AttendanceAnalytics>('/api/attendance/analytics'),
+  exportCSV: (startDate: string, endDate: string) => {
+    const token = getAccessToken()
+    window.open(`${API_URL}/api/attendance/export?startDate=${startDate}&endDate=${endDate}&token=${token}`, '_blank')
+  },
+
+  // Parent
+  submitRequest: (data: { studentId: string; type: string; startDate: string; endDate?: string; reason: string; notes?: string; time?: string }) =>
+    fetchApi<AttendanceRequestInterface>('/api/attendance/request', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  myRequests: () => fetchApi<AttendanceRequestInterface[]>('/api/attendance/my-requests'),
+  myChildren: () => fetchApi<ChildAttendanceSummary[]>('/api/attendance/my-children'),
+}
+
 export default {
   auth,
   messages,
@@ -1988,4 +2037,5 @@ export default {
   search,
   cafeteria,
   inclusion,
+  attendance,
 }

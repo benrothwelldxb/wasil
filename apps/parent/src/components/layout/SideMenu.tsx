@@ -23,6 +23,7 @@ import {
   Settings,
   Target,
   UtensilsCrossed,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
@@ -138,6 +139,7 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   const menuItems: Array<{ icon: any; labelKey: string; path: string }> = [
     { icon: Home, labelKey: 'nav.home', path: user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? '/admin' : '/' },
     { icon: Bell, labelKey: 'nav.eventsCalendar', path: '/events' },
+    { icon: ClipboardCheck, labelKey: 'nav.attendance', path: '/attendance' },
     { icon: Calendar, labelKey: 'nav.termDates', path: '/term-dates' },
     { icon: User, labelKey: 'nav.principalUpdates', path: '/principal-updates' },
   ]

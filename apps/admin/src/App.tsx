@@ -30,6 +30,7 @@ import { EmergencyAlertsPage } from './pages/EmergencyAlertsPage'
 import { SchoolServicesPage } from './pages/SchoolServicesPage'
 import { StaffInboxPage } from './pages/InboxPage'
 import { AdminCafeteriaPage } from './pages/CafeteriaPage'
+import { AttendancePage } from './pages/AttendancePage'
 
 const PARENT_APP_URL = import.meta.env.VITE_PARENT_URL || 'http://localhost:3000'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
@@ -247,6 +248,7 @@ export default function App() {
         <Route path="/school-services" element={<SchoolServicesPage />} />
         <Route path="/inbox" element={<StaffInboxPage />} />
         <Route path="/cafeteria" element={<AdminCafeteriaPage />} />
+        <Route path="/attendance" element={<AttendancePage />} />
         <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
         <Route path="/audit-log" element={<AuditLogPage />} />
         <Route

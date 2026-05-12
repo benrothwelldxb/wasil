@@ -27,6 +27,7 @@ import { InboxPage } from './pages/InboxPage'
 import { NewConversationPage } from './pages/NewConversationPage'
 import { ConversationPage } from './pages/ConversationPage'
 import { ReportCardsPage } from './pages/ReportCardsPage'
+import { AttendancePage } from './pages/AttendancePage'
 
 const ADMIN_APP_URL = import.meta.env.VITE_ADMIN_URL || 'http://localhost:3001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
@@ -286,6 +287,10 @@ export default function App() {
       <Route
         path="/report-cards"
         element={<ProtectedRoute><AppLayout><ReportCardsPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/attendance"
+        element={<ProtectedRoute><AppLayout><AttendancePage /></AppLayout></ProtectedRoute>}
       />
       <Route
         path="/search"
