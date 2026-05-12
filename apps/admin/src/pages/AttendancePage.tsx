@@ -56,11 +56,22 @@ function todayString() {
 
 // ── Take Attendance Tab ──────────────────────────────────────
 
+interface ParentRequest {
+  id: string
+  type: string
+  reason: string
+  notes?: string | null
+  time?: string | null
+  status: string
+  parentName: string
+}
+
 interface StudentRow {
   studentId: string
   studentName: string
   status: AttendanceStatus | null
   notes: string
+  requests: ParentRequest[]
 }
 
 function TakeAttendanceTab() {
@@ -82,6 +93,7 @@ function TakeAttendanceTab() {
         studentName: s.studentName,
         status: s.status || null,
         notes: s.notes || '',
+        requests: s.requests || [],
       }))
       newRows.sort((a, b) => a.studentName.localeCompare(b.studentName))
       setRows(newRows)
@@ -205,6 +217,25 @@ function TakeAttendanceTab() {
             >
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm text-slate-800">{row.studentName}</p>
+                {row.requests.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {row.requests.map(r => (
+                      <span
+                        key={r.id}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{
+                          backgroundColor: r.type === 'ABSENCE' ? '#FEE2E2' : r.type === 'EARLY_PICKUP' ? '#FFF3E6' : '#EFF6FF',
+                          color: r.type === 'ABSENCE' ? '#DC2626' : r.type === 'EARLY_PICKUP' ? '#C47A20' : '#2563EB',
+                        }}
+                      >
+                        {r.status === 'PENDING' ? '⏳' : '✓'}
+                        {r.type === 'ABSENCE' ? 'Absence' : r.type === 'EARLY_PICKUP' ? 'Early pickup' : 'Late arrival'}
+                        {r.time && ` at ${r.time}`}
+                        {' — '}{r.reason} (by {r.parentName})
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-1.5 flex-shrink-0">

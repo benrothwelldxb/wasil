@@ -125,13 +125,46 @@ router.get('/class/:classId', isStaff, async (req: Request, res: Response) => {
     })
     const recordMap = new Map(records.map(r => [r.studentId, r]))
 
+    // Get parent requests covering this date (pending or approved)
+    const requests = await prisma.attendanceRequest.findMany({
+      where: {
+        schoolId: user.schoolId,
+        studentId: { in: students.map(s => s.id) },
+        status: { in: ['PENDING', 'APPROVED'] },
+        startDate: { lte: date },
+        OR: [
+          { endDate: null, startDate: date },
+          { endDate: { gte: date } },
+        ],
+      },
+      include: {
+        parent: { select: { name: true } },
+      },
+    })
+    const requestMap = new Map<string, typeof requests[number][]>()
+    for (const r of requests) {
+      const list = requestMap.get(r.studentId) || []
+      list.push(r)
+      requestMap.set(r.studentId, list)
+    }
+
     const result = students.map(s => {
       const record = recordMap.get(s.id)
+      const studentRequests = requestMap.get(s.id) || []
       return {
         studentId: s.id,
         studentName: `${s.firstName} ${s.lastName}`,
         status: record?.status ?? null,
         notes: record?.notes ?? undefined,
+        requests: studentRequests.map(r => ({
+          id: r.id,
+          type: r.type,
+          reason: r.reason,
+          notes: r.notes,
+          time: r.time,
+          status: r.status,
+          parentName: r.parent.name,
+        })),
       }
     })
 
