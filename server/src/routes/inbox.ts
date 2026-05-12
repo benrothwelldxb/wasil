@@ -393,8 +393,49 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
       },
     })
 
-    // Check mute status before sending push notification
+    // If this is the first message from a parent in the conversation, email the teacher
     const senderIsParent = user.id === conversation.parentId
+    if (senderIsParent) {
+      const messageCount = await prisma.conversationMessage.count({
+        where: { conversationId: id },
+      })
+      // First message in conversation (the one we just created is the only one)
+      if (messageCount === 1) {
+        const ADMIN_APP_URL = process.env.ADMIN_APP_URL || process.env.ADMIN_URL || 'http://localhost:3001'
+        const inboxLink = `${ADMIN_APP_URL}/inbox`
+        const staffEmail = await prisma.user.findUnique({
+          where: { id: conversation.staffId },
+          select: { email: true },
+        })
+        if (staffEmail?.email) {
+          const { sendEmail } = await import('../services/email.js')
+          const school = await prisma.school.findUnique({ where: { id: conversation.schoolId }, select: { name: true } })
+          sendEmail({
+            to: staffEmail.email,
+            subject: `New message from ${conversation.parent.name} — ${school?.name || 'School'}`,
+            html: `<div style="font-family: sans-serif; max-width: 520px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px;">
+              <h2 style="color: #2D2225; margin: 0 0 4px;">New Parent Message</h2>
+              <p style="color: #7A6469; font-size: 14px; margin: 0 0 20px;">${school?.name || 'School'}</p>
+              <div style="background: #FAF8F6; border-radius: 10px; padding: 16px; margin-bottom: 20px;">
+                <p style="color: #7A6469; font-size: 13px; margin: 0 0 6px; font-weight: 600;">From: ${conversation.parent.name}</p>
+                <p style="color: #2D2225; font-size: 15px; line-height: 1.5; margin: 0;">${content.trim()}</p>
+              </div>
+              <p style="color: #A8929A; font-size: 13px; margin: 0 0 16px; font-style: italic;">
+                Please do not reply to this email. To respond, use the admin portal.
+              </p>
+              <div style="text-align: center;">
+                <a href="${inboxLink}" style="display: inline-block; background-color: #C4506E; color: white; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-weight: 600; font-size: 14px;">
+                  Reply in Admin Portal
+                </a>
+              </div>
+            </div>`,
+            text: `New message from ${conversation.parent.name}\n\n"${content.trim()}"\n\nPlease do not reply to this email. Reply in the admin portal: ${inboxLink}`,
+          }).catch(err => console.error('Failed to send new conversation email to teacher:', err))
+        }
+      }
+    }
+
+    // Check mute status before sending push notification
     const recipientHasMuted = senderIsParent ? conversation.mutedByStaff : conversation.mutedByParent
 
     if (!recipientHasMuted) {
