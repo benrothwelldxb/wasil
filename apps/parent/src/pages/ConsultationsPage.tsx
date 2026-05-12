@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Calendar, Clock, MapPin, User, X, ChevronLeft, Video, ExternalLink } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 import { useApi, useAuth } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { ConsultationEvent, ConsultationSlot, ConsultationTeacher } from '@wasil/shared'
@@ -203,7 +204,8 @@ export function ConsultationsPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: '#2D2225', fontFamily: 'Nunito, sans-serif' }}>
+          <PageLogo />
+          <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
             Parent Consultations
           </h1>
           <p className="text-sm mt-1" style={{ color: '#A8929A' }}>Book appointments with your child's teachers</p>
@@ -605,7 +607,8 @@ export function ConsultationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold" style={{ color: '#2D2225', fontFamily: 'Nunito, sans-serif' }}>
+        <PageLogo />
+        <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
           Parent Consultations
         </h1>
         <p className="text-sm mt-1" style={{ color: '#A8929A' }}>Book appointments with your child's teachers</p>

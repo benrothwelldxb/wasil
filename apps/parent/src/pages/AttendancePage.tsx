@@ -142,7 +142,7 @@ export function AttendancePage() {
   return (
     <div className="space-y-6">
       <PageLogo />
-      <h1 className="text-xl font-extrabold" style={{ color: '#2D2225' }}>
+      <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
         Attendance
       </h1>
 

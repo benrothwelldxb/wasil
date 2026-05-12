@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { Clock, MapPin, User, X, Check, AlertCircle, ExternalLink, Banknote } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 import { useApi, useAuth } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { SchoolService, ServiceRegistration } from '@wasil/shared'
@@ -160,7 +161,8 @@ export function SchoolServicesPage() {
     <div className="space-y-6 pb-8">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: '#2D2225', fontFamily: 'Nunito, sans-serif' }}>
+        <PageLogo />
+        <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
           School Services
         </h1>
         <p className="text-sm mt-1" style={{ color: '#A8929A' }}>

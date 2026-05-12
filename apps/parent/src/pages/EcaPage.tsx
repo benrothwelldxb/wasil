@@ -377,6 +377,7 @@ export function EcaPage() {
     return (
       <div className="space-y-6">
         <div>
+          <PageLogo />
           <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
             {t('eca.title', 'Activities')}
           </h1>
@@ -394,6 +395,7 @@ export function EcaPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
+        <PageLogo />
         <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>
           {t('eca.title', 'Activities')}
         </h1>

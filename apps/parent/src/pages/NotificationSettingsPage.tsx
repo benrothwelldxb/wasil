@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { ArrowLeft, Bell, MessageSquare, Mail, AlertTriangle, ClipboardList, Calendar, Newspaper, Activity, Sparkles, CalendarCheck, Clock } from 'lucide-react'
+import { PageLogo } from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import * as api from '@wasil/shared'
 import type { NotificationPreferences } from '@wasil/shared'
@@ -81,7 +82,8 @@ export function NotificationSettingsPage() {
           <ArrowLeft className="w-5 h-5" style={{ color: '#7A6469' }} />
         </button>
         <div>
-          <h1 className="text-xl font-bold" style={{ color: '#2D2225' }}>Notifications</h1>
+          <PageLogo />
+          <h1 className="text-[26px] font-extrabold" style={{ color: '#2D2225' }}>Notifications</h1>
           <p className="text-sm" style={{ color: '#7A6469' }}>Choose which notifications you receive</p>
         </div>
       </div>
