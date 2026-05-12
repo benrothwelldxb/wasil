@@ -21,3 +21,7 @@ apps/parent/android/local.properties
 
 # OS
 .DS_Store
+
+# Android signing
+apps/parent/android/app/wasil-release.keystore
+apps/parent/android/app/signing.properties
