@@ -47,7 +47,12 @@ export function PulseSurveyModal({ pulse, onClose, onComplete }: PulseSurveyModa
     >
       <div
         className="bg-white w-full sm:max-w-md"
-        style={{ borderRadius: '22px 22px 0 0' }}
+        style={{
+          borderRadius: '22px 22px 0 0',
+          maxHeight: '85vh',
+          overflowY: 'auto',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+        }}
         onClick={e => e.stopPropagation()}
       >
         {/* Drag handle */}
