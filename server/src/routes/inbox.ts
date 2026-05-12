@@ -393,14 +393,19 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
       },
     })
 
-    // If this is the first message from a parent in the conversation, email the teacher
+    // Email teacher when parent starts a new exchange (first message ever, or no messages in 24h)
     const senderIsParent = user.id === conversation.parentId
     if (senderIsParent) {
-      const messageCount = await prisma.conversationMessage.count({
-        where: { conversationId: id },
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      const recentMessages = await prisma.conversationMessage.count({
+        where: {
+          conversationId: id,
+          id: { not: message.id }, // Exclude the message we just created
+          createdAt: { gte: twentyFourHoursAgo },
+        },
       })
-      // First message in conversation (the one we just created is the only one)
-      if (messageCount === 1) {
+      // Send email if no other messages in the last 24 hours
+      if (recentMessages === 0) {
         const ADMIN_APP_URL = process.env.ADMIN_APP_URL || process.env.ADMIN_URL || 'http://localhost:3001'
         const inboxLink = `${ADMIN_APP_URL}/inbox`
         const staffEmail = await prisma.user.findUnique({
