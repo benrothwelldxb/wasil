@@ -336,7 +336,7 @@ export function RegisterPage() {
         )}
 
         <p className="text-center text-xs text-gray-500 mt-8">
-          By registering, you agree to our Terms of Service and Privacy Policy
+          By registering, you agree to our <a href="/terms.html" target="_blank" className="underline">Terms of Service</a> and <a href="/privacy.html" target="_blank" className="underline">Privacy Policy</a>
         </p>
 
         <div

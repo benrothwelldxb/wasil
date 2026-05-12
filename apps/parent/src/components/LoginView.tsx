@@ -253,7 +253,7 @@ export function LoginView() {
         </p>
 
         <p className="text-center text-[10px] text-gray-400 mt-2">
-          By signing in, you agree to our Terms of Service and Privacy Policy
+          By signing in, you agree to our <a href="/terms.html" target="_blank" className="underline">Terms of Service</a> and <a href="/privacy.html" target="_blank" className="underline">Privacy Policy</a>
         </p>
 
         {defaultSchool.showWasilBranding && (
