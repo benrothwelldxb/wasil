@@ -41,6 +41,7 @@ interface NavItem {
   label: string
   path: string
   superAdminOnly?: boolean
+  adminOnly?: boolean  // hidden from STAFF role
   badgeKey?: string
 }
 
@@ -48,6 +49,7 @@ interface NavSection {
   label: string
   items: NavItem[]
   defaultOpen?: boolean
+  adminOnly?: boolean  // entire section hidden from STAFF
 }
 
 const NAV_SECTIONS: NavSection[] = [
@@ -57,17 +59,17 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { icon: Inbox, label: 'Inbox', path: '/inbox', badgeKey: 'inbox' },
       { icon: MessageSquare, label: 'Posts', path: '/messages' },
-      { icon: AlertTriangle, label: 'Emergency Alerts', path: '/emergency-alerts' },
+      { icon: AlertTriangle, label: 'Emergency Alerts', path: '/emergency-alerts', adminOnly: true },
     ],
   },
   {
     label: 'Engagement',
     defaultOpen: true,
     items: [
-      { icon: ClipboardList, label: 'Forms', path: '/forms' },
+      { icon: ClipboardList, label: 'Forms', path: '/forms', adminOnly: true },
       { icon: Calendar, label: 'Events', path: '/events' },
-      { icon: Newspaper, label: 'Weekly Updates', path: '/weekly' },
-      { icon: Activity, label: 'Parent Pulse', path: '/pulse' },
+      { icon: Newspaper, label: 'Weekly Updates', path: '/weekly', adminOnly: true },
+      { icon: Activity, label: 'Parent Pulse', path: '/pulse', adminOnly: true },
       { icon: ClipboardCheck, label: 'Attendance', path: '/attendance' },
     ],
   },
@@ -77,8 +79,8 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { icon: Sparkles, label: 'Activities (ECA)', path: '/eca' },
       { icon: CalendarCheck, label: 'Consultations', path: '/consultations' },
-      { icon: Clock, label: 'School Services', path: '/school-services' },
-      { icon: UtensilsCrossed, label: 'Lunch Menu', path: '/cafeteria' },
+      { icon: Clock, label: 'School Services', path: '/school-services', adminOnly: true },
+      { icon: UtensilsCrossed, label: 'Lunch Menu', path: '/cafeteria', adminOnly: true },
     ],
   },
   {
@@ -92,6 +94,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: 'People',
     defaultOpen: false,
+    adminOnly: true,
     items: [
       { icon: GraduationCap, label: 'Students', path: '/students' },
       { icon: UserCog, label: 'Staff', path: '/staff' },
@@ -101,6 +104,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: 'School Setup',
     defaultOpen: false,
+    adminOnly: true,
     items: [
       { icon: Layers, label: 'Year Groups', path: '/year-groups' },
       { icon: Users, label: 'Classes', path: '/classes' },
@@ -110,6 +114,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Resources',
     defaultOpen: false,
+    adminOnly: true,
     items: [
       { icon: FileText, label: 'Policies', path: '/policies' },
       { icon: FolderOpen, label: 'Files', path: '/files' },
@@ -120,6 +125,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: 'System',
     defaultOpen: false,
+    adminOnly: true,
     items: [
       { icon: BarChart3, label: 'Analytics', path: '/analytics' },
       { icon: Shield, label: 'Audit Log', path: '/audit-log' },
@@ -232,9 +238,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2 px-2.5" role="navigation" aria-label="Main navigation">
         {NAV_SECTIONS.map((section) => {
-          const visibleItems = section.items.filter(
-            item => !item.superAdminOnly || user?.role === 'SUPER_ADMIN'
-          )
+          const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
+          const isSuperAdmin = user?.role === 'SUPER_ADMIN'
+
+          // Hide entire section if adminOnly and user is STAFF
+          if (section.adminOnly && !isAdmin) return null
+
+          const visibleItems = section.items.filter(item => {
+            if (item.superAdminOnly && !isSuperAdmin) return false
+            if (item.adminOnly && !isAdmin) return false
+            return true
+          })
           if (visibleItems.length === 0) return null
 
           const isSectionCollapsed = collapsedSections[section.label] && !collapsed
