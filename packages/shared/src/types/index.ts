@@ -1014,6 +1014,28 @@ export interface CafeteriaMenuItem {
   order?: number
 }
 
+// Cafe Menu Types (permanent / always-available items)
+export interface CafeteriaCategory {
+  id: string
+  name: string
+  order: number
+  isActive: boolean
+  items: CafeMenuItem[]
+}
+
+export interface CafeMenuItem {
+  id: string
+  categoryId: string
+  name: string
+  description?: string | null
+  price?: number | null
+  dietaryTags: string[]
+  allergens: string[]
+  calories?: number | null
+  isAvailable: boolean
+  order: number
+}
+
 // Inbox / Two-Way Messaging Types
 export interface SchoolContactInfo {
   id: string

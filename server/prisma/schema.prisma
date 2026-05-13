@@ -64,6 +64,7 @@ model School {
   conversations       Conversation[]
   // Cafeteria
   cafeteriaMenus      CafeteriaMenu[]
+  cafeteriaCategories CafeteriaCategory[]
   // Inclusion relations
   inclusionApiKeys    InclusionApiKey[]
   studentIeps         StudentIep[]
@@ -1637,6 +1638,39 @@ model CafeteriaMenuItem {
   createdAt   DateTime @default(now())
 
   @@index([menuId, dayOfWeek])
+}
+
+// Permanent cafe menu (always-available items like coffee, paninis, snacks)
+model CafeteriaCategory {
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  name      String   // "Hot Drinks", "Cold Drinks", "Paninis", "Salads", "Snacks"
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  items     CafeteriaCafeItem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId, isActive])
+}
+
+model CafeteriaCafeItem {
+  id          String   @id @default(cuid())
+  categoryId  String
+  category    CafeteriaCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name        String   // "Cappuccino", "Chicken Panini"
+  description String?
+  price       Float?   // AED
+  dietaryTags String?  // JSON array like weekly menu
+  allergens   String?  // JSON array
+  calories    Int?
+  isAvailable Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([categoryId])
 }
 
 // ============================================

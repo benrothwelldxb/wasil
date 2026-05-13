@@ -362,4 +362,254 @@ router.post('/:id/duplicate', isAdmin, async (req, res) => {
   }
 })
 
+// ==========================================
+// Cafe Menu (permanent items) - Parent endpoints
+// ==========================================
+
+function serializeCafeItem(item: any) {
+  return {
+    id: item.id,
+    categoryId: item.categoryId,
+    name: item.name,
+    description: item.description,
+    price: item.price,
+    dietaryTags: item.dietaryTags ? JSON.parse(item.dietaryTags) : [],
+    allergens: item.allergens ? JSON.parse(item.allergens) : [],
+    calories: item.calories,
+    isAvailable: item.isAvailable,
+    order: item.order,
+  }
+}
+
+function serializeCategory(cat: any) {
+  return {
+    id: cat.id,
+    name: cat.name,
+    order: cat.order,
+    isActive: cat.isActive,
+    items: (cat.items || []).map(serializeCafeItem),
+  }
+}
+
+// Get cafe menu (parent — active categories, available items)
+router.get('/cafe', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+
+    const categories = await prisma.cafeteriaCategory.findMany({
+      where: { schoolId: user.schoolId, isActive: true },
+      include: {
+        items: {
+          where: { isAvailable: true },
+          orderBy: { order: 'asc' },
+        },
+      },
+      orderBy: { order: 'asc' },
+    })
+
+    res.json(categories.map(serializeCategory))
+  } catch (error) {
+    console.error('Error fetching cafe menu:', error)
+    res.status(500).json({ error: 'Failed to fetch cafe menu' })
+  }
+})
+
+// ==========================================
+// Cafe Menu - Admin endpoints
+// ==========================================
+
+// List all categories with items (including inactive)
+router.get('/cafe/all', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+
+    const categories = await prisma.cafeteriaCategory.findMany({
+      where: { schoolId: user.schoolId },
+      include: {
+        items: { orderBy: { order: 'asc' } },
+      },
+      orderBy: { order: 'asc' },
+    })
+
+    res.json(categories.map(serializeCategory))
+  } catch (error) {
+    console.error('Error fetching cafe menu:', error)
+    res.status(500).json({ error: 'Failed to fetch cafe menu' })
+  }
+})
+
+// Create category
+router.post('/cafe/categories', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { name, order } = req.body
+
+    if (!name) return res.status(400).json({ error: 'name is required' })
+
+    const category = await prisma.cafeteriaCategory.create({
+      data: {
+        schoolId: user.schoolId,
+        name,
+        order: order ?? 0,
+      },
+      include: { items: true },
+    })
+
+    logAudit({ req, action: 'CREATE', resourceType: 'CAFETERIA_MENU' as any, resourceId: category.id, metadata: { type: 'cafe_category', name } })
+
+    res.status(201).json(serializeCategory(category))
+  } catch (error) {
+    console.error('Error creating cafe category:', error)
+    res.status(500).json({ error: 'Failed to create category' })
+  }
+})
+
+// Update category
+router.put('/cafe/categories/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const { name, order, isActive } = req.body
+
+    const existing = await prisma.cafeteriaCategory.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+    if (!existing) return res.status(404).json({ error: 'Category not found' })
+
+    const category = await prisma.cafeteriaCategory.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(order !== undefined && { order }),
+        ...(isActive !== undefined && { isActive }),
+      },
+      include: { items: { orderBy: { order: 'asc' } } },
+    })
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'CAFETERIA_MENU' as any, resourceId: id, metadata: { type: 'cafe_category' } })
+
+    res.json(serializeCategory(category))
+  } catch (error) {
+    console.error('Error updating cafe category:', error)
+    res.status(500).json({ error: 'Failed to update category' })
+  }
+})
+
+// Delete category (cascades items)
+router.delete('/cafe/categories/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const existing = await prisma.cafeteriaCategory.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+    if (!existing) return res.status(404).json({ error: 'Category not found' })
+
+    await prisma.cafeteriaCategory.delete({ where: { id } })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'CAFETERIA_MENU' as any, resourceId: id, metadata: { type: 'cafe_category' } })
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting cafe category:', error)
+    res.status(500).json({ error: 'Failed to delete category' })
+  }
+})
+
+// Add item to category
+router.post('/cafe/categories/:id/items', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const { name, description, price, dietaryTags, allergens, calories, isAvailable, order } = req.body
+
+    if (!name) return res.status(400).json({ error: 'name is required' })
+
+    const category = await prisma.cafeteriaCategory.findFirst({
+      where: { id, schoolId: user.schoolId },
+    })
+    if (!category) return res.status(404).json({ error: 'Category not found' })
+
+    const item = await prisma.cafeteriaCafeItem.create({
+      data: {
+        categoryId: id,
+        name,
+        description: description || null,
+        price: price ?? null,
+        dietaryTags: dietaryTags ? JSON.stringify(dietaryTags) : null,
+        allergens: allergens && allergens.length > 0 ? JSON.stringify(allergens) : null,
+        calories: calories || null,
+        isAvailable: isAvailable ?? true,
+        order: order ?? 0,
+      },
+    })
+
+    logAudit({ req, action: 'CREATE', resourceType: 'CAFETERIA_MENU' as any, resourceId: item.id, metadata: { type: 'cafe_item', name, categoryId: id } })
+
+    res.status(201).json(serializeCafeItem(item))
+  } catch (error) {
+    console.error('Error adding cafe item:', error)
+    res.status(500).json({ error: 'Failed to add item' })
+  }
+})
+
+// Update item
+router.put('/cafe/items/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const { name, description, price, dietaryTags, allergens, calories, isAvailable, order } = req.body
+
+    // Verify the item belongs to the user's school
+    const existing = await prisma.cafeteriaCafeItem.findFirst({
+      where: { id, category: { schoolId: user.schoolId } },
+    })
+    if (!existing) return res.status(404).json({ error: 'Item not found' })
+
+    const item = await prisma.cafeteriaCafeItem.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description: description || null }),
+        ...(price !== undefined && { price: price ?? null }),
+        ...(dietaryTags !== undefined && { dietaryTags: dietaryTags ? JSON.stringify(dietaryTags) : null }),
+        ...(allergens !== undefined && { allergens: allergens && allergens.length > 0 ? JSON.stringify(allergens) : null }),
+        ...(calories !== undefined && { calories: calories || null }),
+        ...(isAvailable !== undefined && { isAvailable }),
+        ...(order !== undefined && { order }),
+      },
+    })
+
+    logAudit({ req, action: 'UPDATE', resourceType: 'CAFETERIA_MENU' as any, resourceId: id, metadata: { type: 'cafe_item' } })
+
+    res.json(serializeCafeItem(item))
+  } catch (error) {
+    console.error('Error updating cafe item:', error)
+    res.status(500).json({ error: 'Failed to update item' })
+  }
+})
+
+// Delete item
+router.delete('/cafe/items/:id', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const existing = await prisma.cafeteriaCafeItem.findFirst({
+      where: { id, category: { schoolId: user.schoolId } },
+    })
+    if (!existing) return res.status(404).json({ error: 'Item not found' })
+
+    await prisma.cafeteriaCafeItem.delete({ where: { id } })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'CAFETERIA_MENU' as any, resourceId: id, metadata: { type: 'cafe_item' } })
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting cafe item:', error)
+    res.status(500).json({ error: 'Failed to delete item' })
+  }
+})
+
 export default router

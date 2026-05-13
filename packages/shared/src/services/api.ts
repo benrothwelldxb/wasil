@@ -1936,6 +1936,24 @@ export const cafeteria = {
   delete: (id: string) => fetchApi<{ success: boolean }>(`/api/cafeteria/${id}`, { method: 'DELETE' }),
   duplicate: (id: string, weekOf: string) =>
     fetchApi<{ id: string; weekOf: string }>(`/api/cafeteria/${id}/duplicate`, { method: 'POST', body: JSON.stringify({ weekOf }) }),
+
+  // Cafe menu (permanent items)
+  cafeMenu: () =>
+    fetchApi<import('../types').CafeteriaCategory[]>('/api/cafeteria/cafe'),
+  cafeMenuAll: () =>
+    fetchApi<import('../types').CafeteriaCategory[]>('/api/cafeteria/cafe/all'),
+  createCategory: (data: { name: string; order?: number }) =>
+    fetchApi<import('../types').CafeteriaCategory>('/api/cafeteria/cafe/categories', { method: 'POST', body: JSON.stringify(data) }),
+  updateCategory: (id: string, data: { name?: string; order?: number; isActive?: boolean }) =>
+    fetchApi<import('../types').CafeteriaCategory>(`/api/cafeteria/cafe/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCategory: (id: string) =>
+    fetchApi<{ success: boolean }>(`/api/cafeteria/cafe/categories/${id}`, { method: 'DELETE' }),
+  addCafeItem: (categoryId: string, data: { name: string; description?: string; price?: number; dietaryTags?: string[]; allergens?: string[]; calories?: number }) =>
+    fetchApi<import('../types').CafeMenuItem>(`/api/cafeteria/cafe/categories/${categoryId}/items`, { method: 'POST', body: JSON.stringify(data) }),
+  updateCafeItem: (id: string, data: any) =>
+    fetchApi<import('../types').CafeMenuItem>(`/api/cafeteria/cafe/items/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCafeItem: (id: string) =>
+    fetchApi<{ success: boolean }>(`/api/cafeteria/cafe/items/${id}`, { method: 'DELETE' }),
 }
 
 // Inclusion
