@@ -55,11 +55,11 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
           boxShadow: '0 2px 12px rgba(45, 34, 37, 0.06)',
         }}
       >
-        {/* Wasil icon */}
+        {/* Wasil icon — navigate home */}
         <button
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          onClick={() => navigate('/')}
           className="flex items-center justify-center"
-          aria-label="Scroll to top"
+          aria-label="Go to home"
           style={{
             minWidth: '44px',
             minHeight: '44px',
