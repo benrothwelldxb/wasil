@@ -3,6 +3,7 @@ import prisma from '../services/prisma.js'
 import { isAdmin, isStaff, isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
+import { generateDailyRegistersHtml } from '../services/attendanceRegisterPdf.js'
 
 const router = Router()
 
@@ -526,6 +527,25 @@ router.get('/export', isStaff, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error exporting attendance:', error)
     res.status(500).json({ error: 'Failed to export attendance' })
+  }
+})
+
+// GET /registers/print?date=YYYY-MM-DD — printable daily registers for all classes
+router.get('/registers/print', isStaff, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10)
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' })
+    }
+
+    const html = await generateDailyRegistersHtml(user.schoolId, date)
+    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    res.send(html)
+  } catch (error) {
+    console.error('Error generating daily registers:', error)
+    res.status(500).json({ error: 'Failed to generate registers' })
   }
 })
 

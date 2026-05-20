@@ -2007,9 +2007,18 @@ export const attendance = {
       body: JSON.stringify({ status, reviewNotes }),
     }),
   analytics: () => fetchApi<AttendanceAnalytics>('/api/attendance/analytics'),
-  exportCSV: (startDate: string, endDate: string) => {
+  exportCSV: (startDate: string, endDate: string) =>
+    downloadCSV(
+      `/api/attendance/export?startDate=${startDate}&endDate=${endDate}`,
+      `attendance_${startDate}_to_${endDate}.csv`,
+    ),
+  printRegistersHtml: async (date: string): Promise<string> => {
+    const headers: Record<string, string> = {}
     const token = getAccessToken()
-    window.open(`${API_URL}/api/attendance/export?startDate=${startDate}&endDate=${endDate}&token=${token}`, '_blank')
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const response = await fetch(`${API_URL}/api/attendance/registers/print?date=${date}`, { headers })
+    if (!response.ok) throw new Error('Failed to load registers')
+    return response.text()
   },
 
   // Parent

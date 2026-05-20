@@ -5,6 +5,7 @@ import {
   Clock,
   ClipboardList,
   Download,
+  Printer,
   Users,
   TrendingUp,
 } from 'lucide-react'
@@ -125,6 +126,21 @@ function TakeAttendanceTab() {
 
   const markedCount = rows.filter((r) => r.status !== null).length
 
+  const handlePrintAllRegisters = async () => {
+    try {
+      const html = await api.attendance.printRegistersHtml(date)
+      const win = window.open('', '_blank')
+      if (win) {
+        win.document.write(html)
+        win.document.close()
+      } else {
+        toast.error('Please allow pop-ups to print registers')
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to load registers')
+    }
+  }
+
   const handleSave = async () => {
     const records = rows
       .filter((r) => r.status !== null)
@@ -181,6 +197,14 @@ function TakeAttendanceTab() {
             ))}
           </select>
         </div>
+        <button
+          onClick={handlePrintAllRegisters}
+          className="px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          title="Open a printable register for every class on this date"
+        >
+          <Printer className="w-4 h-4" />
+          Print all registers
+        </button>
         {loaded && rows.length > 0 && (
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-sm font-semibold" style={{ color: markedCount === rows.length ? '#2D8B4E' : '#C47A20' }}>
@@ -454,9 +478,9 @@ function AnalyticsTab() {
 
   const { data: stats } = useApi<AttendanceAnalytics>(() => api.attendance.analytics(), [])
 
-  const handleExport = () => {
+  const handleExport = async () => {
     try {
-      api.attendance.exportCSV(exportStart, exportEnd)
+      await api.attendance.exportCSV(exportStart, exportEnd)
       toast.success('CSV export started')
     } catch (err: any) {
       toast.error(err.message || 'Export failed')
