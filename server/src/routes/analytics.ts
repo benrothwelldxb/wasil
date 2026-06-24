@@ -83,13 +83,19 @@ router.get('/overview', isAdmin, async (req, res) => {
       where: { schoolId, createdAt: { gte: startOfMonth } },
     })
 
-    // Message read rate: average ack count / estimated target count across recent messages
+    // Message read rate: only count acknowledgments from PARENT users, since the
+    // denominator (totalParents) only counts parents. Staff/admins acking their
+    // own messages would otherwise push this above 100%.
     const recentMessages = await prisma.message.findMany({
       where: { schoolId },
       select: {
         id: true,
         targetClass: true,
-        _count: { select: { acknowledgments: true } },
+        _count: {
+          select: {
+            acknowledgments: { where: { user: { role: 'PARENT' } } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 30,
@@ -100,7 +106,7 @@ router.get('/overview', isAdmin, async (req, res) => {
       const totalAcks = recentMessages.reduce((sum, m) => sum + m._count.acknowledgments, 0)
       const totalPossible = recentMessages.length * totalParents
       messageReadRate = totalPossible > 0
-        ? Math.round((totalAcks / totalPossible) * 1000) / 10
+        ? Math.min(Math.round((totalAcks / totalPossible) * 1000) / 10, 100)
         : 0
     }
 
@@ -208,7 +214,11 @@ router.get('/messages', isAdmin, async (req, res) => {
     const messages = await prisma.message.findMany({
       where: { schoolId },
       include: {
-        _count: { select: { acknowledgments: true } },
+        _count: {
+          select: {
+            acknowledgments: { where: { user: { role: 'PARENT' } } },
+          },
+        },
         form: {
           include: {
             _count: { select: { responses: true } },
