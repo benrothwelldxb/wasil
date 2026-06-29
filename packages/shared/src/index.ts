@@ -21,6 +21,7 @@ export { useApi, useMutation } from './hooks/useApi'
 
 // Components
 export { LoadingScreen } from './components/LoadingScreen'
+export { SessionExpiredModal } from './components/SessionExpiredModal'
 export { ConfirmModal } from './components/ui/ConfirmModal'
 export { ColorPicker } from './components/ui/ColorPicker'
 export { ToastProvider, useToast } from './components/Toast'

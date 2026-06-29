@@ -143,9 +143,26 @@ if (!isNative) {
   _tokenStorageReady = true
 }
 
+// Fired when a request fails with 401 and we cannot refresh the session.
+// Apps listen for this to show a "Session expired" prompt without losing
+// the current view (Gmail-style).
+export const SESSION_EXPIRED_EVENT = 'auth:session-expired'
+let sessionExpiredDispatched = false
+function dispatchSessionExpired() {
+  if (sessionExpiredDispatched) return
+  sessionExpiredDispatched = true
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT))
+  }
+}
+export function resetSessionExpiredFlag() {
+  sessionExpiredDispatched = false
+}
+
 export function setTokens(access: string, refresh: string) {
   accessToken = access
   refreshTokenValue = refresh
+  resetSessionExpiredFlag()
   // Write-through to persistent storage (fire-and-forget; errors are non-fatal)
   persistRefreshToken(refresh).catch(() => {})
 }
@@ -201,6 +218,7 @@ async function tryRefresh(): Promise<boolean> {
 }
 
 async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
+  const hadAuth = !!accessToken
   const isFormData = options?.body instanceof FormData
   const headers: Record<string, string> = isFormData
     ? {}
@@ -240,6 +258,11 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
+    // Session expired: we had an access token going in, but the request still
+    // ended with 401 (refresh failed or wasn't available). Surface to the app.
+    if (response.status === 401 && hadAuth) {
+      dispatchSessionExpired()
+    }
     const error = await response.json().catch(() => ({ error: 'Request failed' }))
     // Enrich rate limit errors with retry info
     if (response.status === 429) {
