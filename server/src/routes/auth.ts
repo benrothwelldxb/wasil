@@ -74,7 +74,9 @@ const twoFactorDisableSchema = z.object({
 })
 
 const SALT_ROUNDS = 12
-const LOCKOUT_THRESHOLD = 10
+// Reduced from 10 to 5 in P3: lower threshold trades a tiny support burden for
+// a meaningfully harder brute-force window.
+const LOCKOUT_THRESHOLD = 5
 const LOCKOUT_DURATION_MS = 30 * 60 * 1000 // 30 minutes
 
 const router = Router()
@@ -203,10 +205,32 @@ const magicLinkLimiter = rateLimit({
   legacyHeaders: false,
 })
 
+// Per-email magic-link limit: prevents an attacker rotating IPs to spam a
+// single account with magic links.
+const magicLinkPerEmailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => req.body?.email?.toLowerCase() || 'unknown',
+  message: { error: 'Too many requests for this email, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
 const registerLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   message: { error: 'Too many registration attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+// Per-email registration limit: stops mass-creating accounts from one
+// email address through rotating IPs.
+const registerPerEmailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  keyGenerator: (req) => req.body?.email?.toLowerCase() || 'unknown',
+  message: { error: 'Too many registration attempts for this email' },
   standardHeaders: true,
   legacyHeaders: false,
 })
@@ -223,6 +247,28 @@ const magicLinkVerifyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { error: 'Too many verification attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+// 2FA verify and recovery limits. These are session-scoped (the sessionToken
+// the user just got from /login) so a brute-force attempt is bounded.
+const twoFactorVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => req.body?.sessionToken || req.ip || 'unknown',
+  message: { error: 'Too many 2FA attempts, please log in again' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+// Recovery codes are higher-value (single-use, 8 of them) so the bar is
+// stricter: 3 per session.
+const twoFactorRecoverLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  keyGenerator: (req) => req.body?.sessionToken || req.ip || 'unknown',
+  message: { error: 'Too many recovery attempts, please log in again' },
   standardHeaders: true,
   legacyHeaders: false,
 })
@@ -541,22 +587,27 @@ router.post('/set-password', setPasswordLimiter, validate(setPasswordSchema), as
     // Hash and store password
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
 
-    // Update user with password and optionally role (SUPER_ADMIN not allowed via this endpoint)
+    // Update user with password and optionally role (SUPER_ADMIN not allowed via this endpoint).
+    // Always revoke all refresh tokens for this user so a stolen token from
+    // before the password change can't outlive the change.
     if (role === 'ADMIN' || role === 'STAFF') {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash,
-          role: role as 'ADMIN' | 'STAFF',
-        },
-      })
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: user.id },
+          data: { passwordHash, role: role as 'ADMIN' | 'STAFF' },
+        }),
+        prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
+      ])
       return res.json({ message: 'Password set successfully', roleUpdated: true })
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash },
-    })
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash },
+      }),
+      prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
+    ])
 
     res.json({ message: 'Password set successfully' })
   } catch (error) {
@@ -566,7 +617,7 @@ router.post('/set-password', setPasswordLimiter, validate(setPasswordSchema), as
 })
 
 // Register parent with password (from invitation)
-router.post('/register', registerLimiter, validate(registerSchema), async (req, res) => {
+router.post('/register', registerLimiter, registerPerEmailLimiter, validate(registerSchema), async (req, res) => {
   const { invitationId, accessCode, email, password, name } = req.body
 
   if (!invitationId && !accessCode) {
@@ -711,7 +762,7 @@ router.post('/register', registerLimiter, validate(registerSchema), async (req, 
 })
 
 // Request magic link for login (existing users only)
-router.post('/magic-link/request', magicLinkLimiter, validate(magicLinkRequestSchema), async (req, res) => {
+router.post('/magic-link/request', magicLinkLimiter, magicLinkPerEmailLimiter, validate(magicLinkRequestSchema), async (req, res) => {
   const { email } = req.body
 
   try {
@@ -1120,7 +1171,7 @@ router.post('/2fa/confirm-setup', isAuthenticated, validate(twoFactorConfirmSche
 })
 
 // Verify 2FA code after password login
-router.post('/2fa/verify', validate(twoFactorVerifySchema), async (req, res) => {
+router.post('/2fa/verify', twoFactorVerifyLimiter, validate(twoFactorVerifySchema), async (req, res) => {
   const { sessionToken, code } = req.body
 
   const session = validateTwoFactorSession(sessionToken)
@@ -1168,7 +1219,7 @@ router.post('/2fa/verify', validate(twoFactorVerifySchema), async (req, res) => 
 })
 
 // Use recovery code to login
-router.post('/2fa/recover', validate(twoFactorRecoverSchema), async (req, res) => {
+router.post('/2fa/recover', twoFactorRecoverLimiter, validate(twoFactorRecoverSchema), async (req, res) => {
   const { sessionToken, code } = req.body
 
   const session = validateTwoFactorSession(sessionToken)

@@ -254,12 +254,17 @@ router.post('/parents/:id/set-password', isAdmin, async (req: Request, res: Resp
     const bcrypt = await import('bcrypt')
     const passwordHash = await bcrypt.default.hash(password, 12)
 
-    await prisma.user.update({
-      where: { id },
-      data: { passwordHash },
-    })
+    // Revoke any existing sessions atomically with the password change so a
+    // stolen refresh token from before the change can't outlive it.
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id },
+        data: { passwordHash },
+      }),
+      prisma.refreshToken.deleteMany({ where: { userId: id } }),
+    ])
 
-    logAudit({ req, action: 'UPDATE', resourceType: 'PARENT_INVITATION' as any, resourceId: id, metadata: { action: 'set-password', parentEmail: parent.email } })
+    logAudit({ req, action: 'UPDATE', resourceType: 'USER', resourceId: id, metadata: { action: 'set-password', parentEmail: parent.email } })
 
     res.json({ message: `Password set for ${parent.email}` })
   } catch (error) {

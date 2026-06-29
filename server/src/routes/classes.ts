@@ -93,7 +93,32 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { name, colorBg, colorText, staffIds, yearGroupId } = req.body
+    const { name, colorBg, colorText, staffIds, yearGroupId } = req.body as {
+      name: string
+      colorBg?: string
+      colorText?: string
+      staffIds?: string[]
+      yearGroupId?: string | null
+    }
+
+    // Multi-tenant guards: staffIds and yearGroupId must belong to the admin's
+    // school. Without these, an admin could attach another school's staff to
+    // their class or set a yearGroupId that doesn't belong to them.
+    if (staffIds?.length) {
+      const validCount = await prisma.user.count({
+        where: { id: { in: staffIds }, schoolId: user.schoolId, role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] } },
+      })
+      if (validCount !== staffIds.length) {
+        return res.status(400).json({ error: 'One or more staffIds are not in your school' })
+      }
+    }
+    if (yearGroupId) {
+      const yg = await prisma.yearGroup.findFirst({
+        where: { id: yearGroupId, schoolId: user.schoolId },
+        select: { id: true },
+      })
+      if (!yg) return res.status(400).json({ error: 'yearGroupId is not in your school' })
+    }
 
     const newClass = await prisma.class.create({
       data: {
@@ -147,7 +172,13 @@ router.put('/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { name, colorBg, colorText, staffIds, yearGroupId } = req.body
+    const { name, colorBg, colorText, staffIds, yearGroupId } = req.body as {
+      name?: string
+      colorBg?: string
+      colorText?: string
+      staffIds?: string[]
+      yearGroupId?: string | null
+    }
 
     // Verify class belongs to user's school
     const existing = await prisma.class.findFirst({
@@ -156,6 +187,23 @@ router.put('/:id', isAdmin, async (req, res) => {
 
     if (!existing) {
       return res.status(404).json({ error: 'Class not found' })
+    }
+
+    // Same cross-school guards as the POST path
+    if (staffIds !== undefined && staffIds.length > 0) {
+      const validCount = await prisma.user.count({
+        where: { id: { in: staffIds }, schoolId: user.schoolId, role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] } },
+      })
+      if (validCount !== staffIds.length) {
+        return res.status(400).json({ error: 'One or more staffIds are not in your school' })
+      }
+    }
+    if (yearGroupId) {
+      const yg = await prisma.yearGroup.findFirst({
+        where: { id: yearGroupId, schoolId: user.schoolId },
+        select: { id: true },
+      })
+      if (!yg) return res.status(400).json({ error: 'yearGroupId is not in your school' })
     }
 
     // Update class and staff assignments in a transaction
