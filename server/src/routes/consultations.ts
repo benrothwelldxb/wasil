@@ -497,7 +497,7 @@ router.get('/google-auth-url', isAdmin, async (req, res) => {
       return res.json({ url: null, configured: false })
     }
 
-    const url = getGoogleAuthUrl(user.schoolId)
+    const url = getGoogleAuthUrl(user.schoolId, user.id)
     res.json({ url, configured: true })
   } catch (error) {
     console.error('Error getting Google auth URL:', error)

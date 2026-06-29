@@ -1303,31 +1303,61 @@ router.post('/token/refresh', async (req, res) => {
 // ==========================================
 // Google Calendar OAuth callback
 // ==========================================
+// This endpoint is hit by Google's redirect after the admin grants consent.
+// It runs without an authenticated session (browser cookies don't carry our
+// Authorization-header JWTs), so the only proof of intent is the signed
+// `state` token we issued when the flow was initiated. We:
+//   1. Verify the HMAC signature and freshness of `state`
+//   2. Look up the bound user and confirm they're still an admin of the
+//      school the token was issued for
+//   3. Only then write the resulting refresh token to that school
 router.get('/google-calendar/callback', async (req: Request, res: Response) => {
-  try {
-    const { code, state: schoolId } = req.query
+  const adminUrl = process.env.ADMIN_URL || 'http://localhost:3001'
+  const fail = (reason: string) => {
+    console.error('Google Calendar OAuth callback rejected:', reason)
+    res.redirect(`${adminUrl}/consultations?google_calendar=error`)
+  }
 
-    if (!code || !schoolId || typeof code !== 'string' || typeof schoolId !== 'string') {
-      return res.status(400).send('Missing code or school ID')
+  try {
+    const { code, state } = req.query
+
+    if (!code || !state || typeof code !== 'string' || typeof state !== 'string') {
+      return fail('missing code or state')
+    }
+
+    const { consumeOAuthState } = await import('../services/oauthState.js')
+    let bound: { schoolId: string; userId: string }
+    try {
+      bound = consumeOAuthState(state)
+    } catch (err) {
+      return fail(`state verification failed: ${(err as Error).message}`)
+    }
+
+    // Verify the user the state was issued for is still an admin of that school.
+    // This catches: stolen state from a since-demoted account, or a user whose
+    // school assignment has changed.
+    const user = await prisma.user.findFirst({
+      where: { id: bound.userId, schoolId: bound.schoolId, role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
+      select: { id: true },
+    })
+    if (!user) {
+      return fail('user is no longer an admin of the bound school')
     }
 
     const { exchangeGoogleCode } = await import('../services/googleMeet.js')
     const { refreshToken, email } = await exchangeGoogleCode(code)
 
     await prisma.school.update({
-      where: { id: schoolId },
+      where: { id: bound.schoolId },
       data: {
         googleCalendarRefreshToken: refreshToken,
         googleCalendarEmail: email,
       },
     })
 
-    // Redirect back to admin with success
-    const adminUrl = process.env.ADMIN_URL || 'http://localhost:3001'
     res.redirect(`${adminUrl}/consultations?google_calendar=connected`)
   } catch (error) {
     console.error('Google Calendar OAuth callback error:', error)
-    const adminUrl = process.env.ADMIN_URL || 'http://localhost:3001'
     res.redirect(`${adminUrl}/consultations?google_calendar=error`)
   }
 })
