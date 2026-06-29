@@ -39,6 +39,7 @@ import inclusionRoutes from './routes/inclusion.js'
 import cafeteriaRoutes from './routes/cafeteria.js'
 import attendanceRoutes from './routes/attendance.js'
 import schoolSettingsRoutes from './routes/schoolSettings.js'
+import prisma from './services/prisma.js'
 import { initFirebase } from './services/firebase.js'
 import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders } from './services/cleanup.js'
 import { cleanupOldAuditLogs } from './services/audit.js'
@@ -70,7 +71,12 @@ app.use(cors({
   origin: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(','),
   credentials: true,
 }))
-app.use(express.json())
+// JSON body limit. Explicit cap stops a single client from queueing
+// arbitrarily large payloads (default in Express is 100kb; this raises it to
+// 1mb to comfortably fit forms with many fields, but no larger). Anything
+// bigger should go through multer (multipart upload).
+app.use(express.json({ limit: '1mb' }))
+app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 
 // Passport initialization (OAuth strategies only, no sessions)
 app.use(passport.initialize())
@@ -114,9 +120,23 @@ app.use('/api/cafeteria', cafeteriaRoutes)
 app.use('/api/attendance', attendanceRoutes)
 app.use('/api/school-settings', schoolSettingsRoutes)
 
-// Health check
+// Liveness probe — the process is up. Cheap and always returns 200.
+// Use this to decide "should we restart the container?".
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+// Readiness probe — the process can actually serve traffic.
+// Verifies the DB connection so a load balancer stops routing to an instance
+// whose Postgres has gone away. Returns 503 on failure.
+app.get('/health/ready', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`
+    res.json({ status: 'ready', timestamp: new Date().toISOString() })
+  } catch (error) {
+    console.error('Readiness check failed:', error)
+    res.status(503).json({ status: 'not_ready', error: 'database unreachable' })
+  }
 })
 
 // Error handling middleware
