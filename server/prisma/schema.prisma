@@ -753,8 +753,11 @@ enum AuditResourceType {
 
 model AuditLog {
   id           String            @id @default(cuid())
-  userId       String
-  user         User              @relation(fields: [userId], references: [id])
+  // userId is nullable + SetNull on User delete so deleting a user doesn't
+  // cascade-delete the audit trail or fail the user delete with an FK
+  // violation. userName is also anonymised on delete (see audit.ts).
+  userId       String?
+  user         User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
   userName     String
   action       AuditAction
   resourceType AuditResourceType

@@ -1,6 +1,6 @@
 import { Request } from 'express'
 import prisma from './prisma.js'
-import { AuditAction, AuditResourceType } from '@prisma/client'
+import { AuditAction, AuditResourceType, Prisma } from '@prisma/client'
 
 interface LogAuditParams {
   req: Request
@@ -86,6 +86,24 @@ export function computeChanges(
   }
 
   return Object.keys(changes).length > 0 ? changes : null
+}
+
+/**
+ * Anonymise audit log rows owned by a soon-to-be-deleted user.
+ *
+ * The FK is ON DELETE SET NULL so deleting the User won't kill the trail,
+ * but we also need to strip the redundant userName field (which carries the
+ * person's actual name) for GDPR. Call this BEFORE deleting the User row,
+ * ideally in the same transaction so the two writes are atomic.
+ */
+export async function anonymizeUserAuditLogs(
+  client: Prisma.TransactionClient | typeof prisma,
+  userId: string,
+): Promise<void> {
+  await client.auditLog.updateMany({
+    where: { userId },
+    data: { userName: '[deleted user]' },
+  })
 }
 
 /**

@@ -48,6 +48,7 @@ import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders 
 import { cleanupOldAuditLogs } from './services/audit.js'
 import { sendDueAttendanceDigests } from './services/attendanceDigest.js'
 import { drainOutbox } from './services/outbox.js'
+import { withJobLock } from './services/jobLock.js'
 
 dotenv.config()
 
@@ -208,6 +209,34 @@ function runJob(job: string, fn: () => unknown | Promise<unknown>): () => void {
   }
 }
 
+// Bucket the current UTC time into a string key for idempotency.
+// 'hour' buckets give "YYYY-MM-DD-HH" (e.g. 2026-06-29-14); 'day' gives
+// "YYYY-MM-DD". A job using the same bucket as periodKey runs at most once
+// per bucket per (jobKey).
+function bucketKey(bucket: 'hour' | 'day'): string {
+  const now = new Date()
+  const date = now.toISOString().slice(0, 10)
+  if (bucket === 'day') return date
+  const hour = String(now.getUTCHours()).padStart(2, '0')
+  return `${date}-${hour}`
+}
+
+// Wrap a job in withJobLock so cross-process replicas don't double-run it,
+// AND a job that has already completed for the current bucket is skipped.
+// Pass-through for jobs that legitimately want to run on every tick (like
+// the outbox drain).
+function locked(
+  jobKey: string,
+  bucket: 'hour' | 'day',
+  fn: () => Promise<void> | void,
+): () => Promise<void> {
+  return async () => {
+    await withJobLock(jobKey, bucketKey(bucket), async () => {
+      await fn()
+    })
+  }
+}
+
 app.listen(PORT, () => {
   logger.info({ port: PORT }, 'Server running')
 
@@ -215,11 +244,29 @@ app.listen(PORT, () => {
   const SIX_HOURS = 6 * ONE_HOUR
   const ONE_DAY = 24 * ONE_HOUR
 
-  const tokenCleanup = runJob('cleanupExpiredTokens', cleanupExpiredTokens)
-  const consultationReminders = runJob('sendConsultationReminders', sendConsultationReminders)
-  const auditCleanup = runJob('cleanupOldAuditLogs', cleanupOldAuditLogs)
-  const scheduleReminders = runJob('sendScheduleReminders', sendScheduleReminders)
-  const attendanceDigests = runJob('sendDueAttendanceDigests', sendDueAttendanceDigests)
+  // All scheduled work goes through runJob() (catches errors) and locked()
+  // (mutual exclusion + per-bucket idempotency). The outbox drain
+  // legitimately wants to run on every tick — no idempotency wrapper.
+  const tokenCleanup = runJob(
+    'cleanupExpiredTokens',
+    locked('cleanupExpiredTokens', 'day', cleanupExpiredTokens),
+  )
+  const consultationReminders = runJob(
+    'sendConsultationReminders',
+    locked('sendConsultationReminders', 'hour', sendConsultationReminders),
+  )
+  const auditCleanup = runJob(
+    'cleanupOldAuditLogs',
+    locked('cleanupOldAuditLogs', 'day', cleanupOldAuditLogs),
+  )
+  const scheduleReminders = runJob(
+    'sendScheduleReminders',
+    locked('sendScheduleReminders', 'hour', sendScheduleReminders),
+  )
+  const attendanceDigests = runJob(
+    'sendDueAttendanceDigests',
+    locked('sendDueAttendanceDigests', 'hour', sendDueAttendanceDigests),
+  )
   const outboxDrain = runJob('drainOutbox', drainOutbox)
 
   tokenCleanup()

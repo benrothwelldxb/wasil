@@ -3,7 +3,7 @@ import { Role } from '@prisma/client'
 import prisma from '../services/prisma.js'
 import { isAdmin, isAuthenticated } from '../middleware/auth.js'
 import { SUPPORTED_LANGUAGES } from '../services/translation.js'
-import { logAudit, computeChanges } from '../services/audit.js'
+import { logAudit, computeChanges, anonymizeUserAuditLogs } from '../services/audit.js'
 
 const router = Router()
 
@@ -251,7 +251,13 @@ router.delete('/:id', isAdmin, async (req, res) => {
       return res.status(403).json({ error: 'Cannot delete a SUPER_ADMIN' })
     }
 
-    await prisma.user.delete({ where: { id } })
+    // Anonymise the user's audit trail and delete the user atomically. The
+    // FK from AuditLog.userId is ON DELETE SET NULL so the trail itself
+    // survives; stripping userName here is the GDPR step.
+    await prisma.$transaction(async tx => {
+      await anonymizeUserAuditLogs(tx, id)
+      await tx.user.delete({ where: { id } })
+    })
 
     await logAudit({
       req,
