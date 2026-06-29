@@ -1,5 +1,5 @@
 import prisma from './prisma.js'
-import { sendEmail } from './email.js'
+import { enqueueEmail } from './outbox.js'
 
 export interface DigestRow {
   studentName: string
@@ -180,13 +180,11 @@ export async function sendDigestForSchool(schoolId: string, date: string): Promi
   const html = renderDigestHtml(data)
   const text = renderDigestText(data)
 
-  await Promise.all(
-    admins.map(a =>
-      sendEmail({ to: a.email, subject, html, text }).catch(err =>
-        console.error(`[AttendanceDigest] Failed to send to ${a.email}:`, err),
-      ),
-    ),
-  )
+  // Enqueue one outbox row per admin. The worker handles retries — a transient
+  // Resend outage no longer means we silently lose a recipient.
+  for (const a of admins) {
+    await enqueueEmail(schoolId, { to: a.email, subject, html, text })
+  }
 
   return admins.length
 }

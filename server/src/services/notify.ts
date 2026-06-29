@@ -1,6 +1,6 @@
 import { Request } from 'express'
 import prisma from './prisma.js'
-import { sendPushNotification, removeInvalidTokens } from './firebase.js'
+import { enqueuePush } from './outbox.js'
 
 // ECA Notification Types
 export const ECA_NOTIFICATION_TYPES = {
@@ -126,15 +126,15 @@ export async function sendNotification({ req, type, title, body, resourceType, r
       })),
     })
 
-    // Dispatch push notifications via FCM
+    // Enqueue the push delivery — worker drains and retries on failure
     const deviceTokens = await prisma.deviceToken.findMany({
       where: { userId: { in: parentUserIds } },
       select: { token: true },
     })
 
     if (deviceTokens.length > 0) {
-      const tokens = deviceTokens.map(dt => dt.token)
-      const result = await sendPushNotification(tokens, {
+      await enqueuePush(schoolId, {
+        tokens: deviceTokens.map(dt => dt.token),
         title,
         body,
         data: {
@@ -146,12 +146,6 @@ export async function sendNotification({ req, type, title, body, resourceType, r
           )),
         },
       })
-
-      if (result.failedTokens.length > 0) {
-        await removeInvalidTokens(result.failedTokens)
-      }
-
-      console.log(`Push sent: ${result.successCount} success, ${result.failureCount} failed`)
     }
   } catch (error) {
     console.error('Failed to send notification:', error)
@@ -285,15 +279,15 @@ export async function sendEcaInvitationNotification({
     })),
   })
 
-  // Send push notifications
+  // Enqueue push delivery — worker drains and retries
   const deviceTokens = await prisma.deviceToken.findMany({
     where: { userId: { in: parentUserIds } },
     select: { token: true },
   })
 
   if (deviceTokens.length > 0) {
-    const tokens = deviceTokens.map(dt => dt.token)
-    const result = await sendPushNotification(tokens, {
+    await enqueuePush(schoolId, {
+      tokens: deviceTokens.map(dt => dt.token),
       title: `ECA ${isTryout ? 'Try-out' : 'Invitation'}`,
       body: `${student.firstName} has received a${isTryout ? ' try-out' : 'n invitation'} for ${activityName}.`,
       data: {
@@ -304,9 +298,5 @@ export async function sendEcaInvitationNotification({
         studentId,
       },
     })
-
-    if (result.failedTokens.length > 0) {
-      await removeInvalidTokens(result.failedTokens)
-    }
   }
 }

@@ -360,6 +360,7 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
     const schoolName = (consultation as any).school?.name || ''
 
     const emailDetails = {
+      schoolId: user.schoolId,
       teacherName: teacher.name,
       childName: studentName,
       date: consultationDate,
@@ -369,10 +370,10 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
     }
 
     if (user.email) {
-      sendBookingConfirmationToParent(user.email, emailDetails).catch(e => console.error('[Consultation] Email to parent failed:', e))
+      await sendBookingConfirmationToParent(user.email, emailDetails)
     }
     if (teacher.email) {
-      sendBookingNotificationToTeacher(teacher.email, { ...emailDetails, parentName: user.name || 'Parent' }).catch(e => console.error('[Consultation] Email to teacher failed:', e))
+      await sendBookingNotificationToTeacher(teacher.email, { ...emailDetails, parentName: user.name || 'Parent' })
     }
 
     sendConsultationBookingNotification({
@@ -450,6 +451,7 @@ router.delete('/parent/bookings/:bookingId', isAuthenticated, async (req, res) =
     const schoolName = (consultation as any).school?.name || ''
 
     const emailDetails = {
+      schoolId: user.schoolId,
       teacherName: teacher.name,
       childName: booking.studentName,
       date: slotDate,
@@ -459,10 +461,10 @@ router.delete('/parent/bookings/:bookingId', isAuthenticated, async (req, res) =
     }
 
     if (user.email) {
-      sendCancellationToParent(user.email, emailDetails).catch(e => console.error('[Consultation] Cancellation email to parent failed:', e))
+      await sendCancellationToParent(user.email, emailDetails)
     }
     if (teacher.email) {
-      sendCancellationToTeacher(teacher.email, { ...emailDetails, parentName: user.name || 'Parent' }).catch(e => console.error('[Consultation] Cancellation email to teacher failed:', e))
+      await sendCancellationToTeacher(teacher.email, { ...emailDetails, parentName: user.name || 'Parent' })
     }
 
     sendConsultationCancellationNotification({

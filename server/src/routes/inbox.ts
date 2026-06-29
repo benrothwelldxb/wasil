@@ -413,9 +413,9 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
           select: { email: true },
         })
         if (staffEmail?.email) {
-          const { sendEmail } = await import('../services/email.js')
+          const { enqueueEmail } = await import('../services/outbox.js')
           const school = await prisma.school.findUnique({ where: { id: conversation.schoolId }, select: { name: true } })
-          sendEmail({
+          await enqueueEmail(conversation.schoolId, {
             to: staffEmail.email,
             subject: `New message from ${conversation.parent.name} — ${school?.name || 'School'}`,
             html: `<div style="font-family: sans-serif; max-width: 520px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px;">
@@ -435,7 +435,7 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
               </div>
             </div>`,
             text: `New message from ${conversation.parent.name}\n\n"${content.trim()}"\n\nPlease do not reply to this email. Reply in the admin portal: ${inboxLink}`,
-          }).catch(err => console.error('Failed to send new conversation email to teacher:', err))
+          })
         }
       }
     }

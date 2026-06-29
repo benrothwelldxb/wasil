@@ -92,27 +92,29 @@ export async function sendConsultationReminders(): Promise<void> {
 
       // Send email to parent
       if (booking.parent.email) {
-        sendReminderToParent(booking.parent.email, {
+        await sendReminderToParent(booking.parent.email, {
+          schoolId: booking.parent.schoolId,
           teacherName: teacher.name,
           childName: booking.studentName,
           date: slotDate,
           time: `${slot.startTime} - ${slot.endTime}`,
           location: booking.meetingLink || location,
           schoolName,
-        }).catch(e => console.error('[Reminder] Parent email failed:', e))
+        })
       }
 
       // Send reminder to teacher
       if (teacher.email) {
         const { sendReminderToTeacher } = await import('./consultationEmails.js')
-        sendReminderToTeacher(teacher.email, {
+        await sendReminderToTeacher(teacher.email, {
+          schoolId: booking.parent.schoolId,
           parentName: booking.studentName,
           childName: booking.studentName,
           date: slotDate,
           time: `${slot.startTime} - ${slot.endTime}`,
           location: booking.meetingLink || location,
           schoolName,
-        }).catch(e => console.error('[Reminder] Teacher email failed:', e))
+        })
       }
 
       // Send push to parent

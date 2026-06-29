@@ -1,6 +1,7 @@
-import { sendEmail } from './email.js'
+import { enqueueEmail } from './outbox.js'
 
 interface BookingDetails {
+  schoolId: string
   teacherName: string
   childName: string
   date: string
@@ -75,7 +76,7 @@ export async function sendBookingConfirmationToParent(
     </div>`,
   )
 
-  await sendEmail({
+  await enqueueEmail(details.schoolId, {
     to,
     subject: `Booking Confirmed — ${details.teacherName}`,
     html,
@@ -95,7 +96,7 @@ export async function sendBookingNotificationToTeacher(
     </p>` + detailsBlock(details),
   )
 
-  await sendEmail({
+  await enqueueEmail(details.schoolId, {
     to,
     subject: `New Booking — ${details.parentName} (${details.childName})`,
     html,
@@ -115,7 +116,7 @@ export async function sendCancellationToParent(
     </p>` + detailsBlock(details),
   )
 
-  await sendEmail({
+  await enqueueEmail(details.schoolId, {
     to,
     subject: `Booking Cancelled — ${details.teacherName}`,
     html,
@@ -135,7 +136,7 @@ export async function sendCancellationToTeacher(
     </p>` + detailsBlock(details),
   )
 
-  await sendEmail({
+  await enqueueEmail(details.schoolId, {
     to,
     subject: `Booking Cancelled — ${details.parentName} (${details.childName})`,
     html,
@@ -155,7 +156,7 @@ export async function sendReminderToParent(
     </p>` + detailsBlock(details),
   )
 
-  await sendEmail({
+  await enqueueEmail(details.schoolId, {
     to,
     subject: `Reminder: Consultation Tomorrow — ${details.teacherName}`,
     html,
@@ -166,6 +167,7 @@ export async function sendReminderToParent(
 export async function sendReminderToTeacher(
   to: string,
   details: {
+    schoolId: string
     parentName: string
     childName: string
     date: string
@@ -173,10 +175,10 @@ export async function sendReminderToTeacher(
     location: string
     schoolName: string
   },
-): Promise<boolean> {
+): Promise<void> {
   const formattedDate = formatDateForEmail(details.date)
 
-  return sendEmail({
+  await enqueueEmail(details.schoolId, {
     to,
     subject: `Reminder: Consultation Tomorrow with ${details.childName}'s parent`,
     html: buildEmailHtml(
