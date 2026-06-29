@@ -92,6 +92,17 @@ export async function isAuthenticated(req: Request, res: Response, next: NextFun
     }
 
     req.user = user as Express.User
+    // Enrich the per-request logger so every subsequent log line carries
+    // schoolId/userId/role — invaluable when debugging a specific parent's
+    // complaint from prod logs.
+    const reqAny = req as Request & { log?: { child: (bindings: Record<string, unknown>) => unknown } }
+    if (reqAny.log?.child) {
+      reqAny.log = reqAny.log.child({
+        userId: user.id,
+        schoolId: user.schoolId,
+        role: user.role,
+      }) as typeof reqAny.log
+    }
     next()
   } catch {
     return res.status(401).json({ error: 'Unauthorized' })

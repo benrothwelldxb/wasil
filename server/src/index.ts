@@ -3,6 +3,9 @@ import cors from 'cors'
 import helmet from 'helmet'
 import passport from 'passport'
 import dotenv from 'dotenv'
+import { pinoHttp } from 'pino-http'
+import logger from './services/logger.js'
+import { captureException } from './services/errorReporter.js'
 
 import { configurePassport } from './middleware/passport.js'
 import authRoutes from './routes/auth.js'
@@ -62,6 +65,27 @@ initFirebase()
 
 const app = express()
 const PORT = process.env.PORT || 4000
+
+// Per-request structured logger. Attaches `req.log` carrying `reqId` and a
+// sane summary of the request/response. Auth middleware later enriches it
+// with schoolId/userId via withUserLogContext().
+app.use(
+  pinoHttp({
+    logger,
+    customLogLevel: (_req, res, err) => {
+      if (err) return 'error'
+      if (res.statusCode >= 500) return 'error'
+      if (res.statusCode >= 400) return 'warn'
+      return 'info'
+    },
+    // Drop the chatty request/response objects from the default serializers
+    // — keep just what's useful in production logs.
+    serializers: {
+      req: req => ({ method: req.method, url: req.url, id: req.id }),
+      res: res => ({ statusCode: res.statusCode }),
+    },
+  }),
+)
 
 // Security headers
 app.use(helmet())
@@ -139,35 +163,75 @@ app.get('/health/ready', async (_req, res) => {
   }
 })
 
-// Error handling middleware
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Error:', err)
+// Error handling middleware. Logs through the per-request pino child (so the
+// reqId/schoolId/userId context is preserved), then funnels through the error
+// reporter so a future Sentry hook captures it too.
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const reqAny = req as express.Request & { log?: typeof logger }
+  ;(reqAny.log ?? logger).error({ err, route: req.path }, 'unhandled error')
+  captureException(err, {
+    route: req.path,
+    schoolId: req.user?.schoolId,
+    userId: req.user?.id,
+  })
   res.status(500).json({ error: 'Internal server error' })
 })
 
+// Don't lose async errors that escape the express stack
+process.on('unhandledRejection', reason => {
+  logger.error({ err: reason }, 'unhandled promise rejection')
+  captureException(reason, { source: 'unhandledRejection' })
+})
+process.on('uncaughtException', err => {
+  logger.error({ err }, 'uncaught exception')
+  captureException(err, { source: 'uncaughtException' })
+})
+
+// Wraps a periodic job so neither a sync throw nor a rejected promise can take
+// the process down or silently disappear. Every failure is structured-logged
+// AND funneled through the error reporter (so Sentry, once wired, sees it).
+function runJob(job: string, fn: () => void | Promise<void>): () => void {
+  return () => {
+    try {
+      const result = fn()
+      if (result && typeof (result as Promise<unknown>).catch === 'function') {
+        ;(result as Promise<unknown>).catch(err => {
+          logger.error({ err, job }, 'scheduled job failed')
+          captureException(err, { job })
+        })
+      }
+    } catch (err) {
+      logger.error({ err, job }, 'scheduled job threw synchronously')
+      captureException(err, { job })
+    }
+  }
+}
+
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
+  logger.info({ port: PORT }, 'Server running')
 
-  // Run token cleanup every 6 hours
-  const SIX_HOURS = 6 * 60 * 60 * 1000
-  cleanupExpiredTokens() // Run once on startup
-  setInterval(cleanupExpiredTokens, SIX_HOURS)
-
-  // Run consultation reminders every hour
   const ONE_HOUR = 60 * 60 * 1000
-  sendConsultationReminders()
-  setInterval(sendConsultationReminders, ONE_HOUR)
+  const SIX_HOURS = 6 * ONE_HOUR
+  const ONE_DAY = 24 * ONE_HOUR
 
-  // Run audit log retention cleanup daily (delete logs older than 1 year)
-  const ONE_DAY = 24 * 60 * 60 * 1000
-  cleanupOldAuditLogs()
-  setInterval(cleanupOldAuditLogs, ONE_DAY)
+  const tokenCleanup = runJob('cleanupExpiredTokens', cleanupExpiredTokens)
+  const consultationReminders = runJob('sendConsultationReminders', sendConsultationReminders)
+  const auditCleanup = runJob('cleanupOldAuditLogs', cleanupOldAuditLogs)
+  const scheduleReminders = runJob('sendScheduleReminders', sendScheduleReminders)
+  const attendanceDigests = runJob('sendDueAttendanceDigests', sendDueAttendanceDigests)
 
-  // Run schedule reminders check every hour (sends at ~6pm Gulf time)
-  sendScheduleReminders()
-  setInterval(sendScheduleReminders, ONE_HOUR)
+  tokenCleanup()
+  setInterval(tokenCleanup, SIX_HOURS)
 
-  // Attendance digest: per-school, hourly check against configured send time
-  sendDueAttendanceDigests()
-  setInterval(sendDueAttendanceDigests, ONE_HOUR)
+  consultationReminders()
+  setInterval(consultationReminders, ONE_HOUR)
+
+  auditCleanup()
+  setInterval(auditCleanup, ONE_DAY)
+
+  scheduleReminders()
+  setInterval(scheduleReminders, ONE_HOUR)
+
+  attendanceDigests()
+  setInterval(attendanceDigests, ONE_HOUR)
 })

@@ -35,6 +35,8 @@
     "passport": "^0.7.0",
     "passport-azure-ad": "^4.3.5",
     "passport-google-oauth20": "^2.0.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
     "qrcode": "^1.5.4",
     "resend": "^6.9.2",
     "twilio": "^6.0.0",
