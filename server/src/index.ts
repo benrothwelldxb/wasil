@@ -47,6 +47,7 @@ import { initFirebase } from './services/firebase.js'
 import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders } from './services/cleanup.js'
 import { cleanupOldAuditLogs } from './services/audit.js'
 import { sendDueAttendanceDigests } from './services/attendanceDigest.js'
+import { drainOutbox } from './services/outbox.js'
 
 dotenv.config()
 
@@ -190,7 +191,7 @@ process.on('uncaughtException', err => {
 // Wraps a periodic job so neither a sync throw nor a rejected promise can take
 // the process down or silently disappear. Every failure is structured-logged
 // AND funneled through the error reporter (so Sentry, once wired, sees it).
-function runJob(job: string, fn: () => void | Promise<void>): () => void {
+function runJob(job: string, fn: () => unknown | Promise<unknown>): () => void {
   return () => {
     try {
       const result = fn()
@@ -219,6 +220,7 @@ app.listen(PORT, () => {
   const auditCleanup = runJob('cleanupOldAuditLogs', cleanupOldAuditLogs)
   const scheduleReminders = runJob('sendScheduleReminders', sendScheduleReminders)
   const attendanceDigests = runJob('sendDueAttendanceDigests', sendDueAttendanceDigests)
+  const outboxDrain = runJob('drainOutbox', drainOutbox)
 
   tokenCleanup()
   setInterval(tokenCleanup, SIX_HOURS)
@@ -234,4 +236,9 @@ app.listen(PORT, () => {
 
   attendanceDigests()
   setInterval(attendanceDigests, ONE_HOUR)
+
+  // Drain the outbox aggressively so push/email feel near-realtime
+  const THIRTY_SECONDS = 30 * 1000
+  outboxDrain()
+  setInterval(outboxDrain, THIRTY_SECONDS)
 })

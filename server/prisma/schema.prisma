@@ -103,6 +103,9 @@ model School {
   attendanceRecords   AttendanceRecord[]
   attendanceRequests  AttendanceRequest[]
 
+  // Outbox (email + push delivery queue)
+  outboxEntries       OutboxEntry[]
+
   // Google Calendar integration
   googleCalendarRefreshToken String?
   googleCalendarEmail        String?
@@ -1833,4 +1836,59 @@ enum RequestApprovalStatus {
   PENDING
   APPROVED
   DECLINED
+}
+
+// ─── Outbox: reliable delivery for email + push ──────────────────────────────
+// Routes enqueue rows here inside their own transaction. A background worker
+// drains pending rows with exponential backoff. Decouples request latency from
+// downstream provider availability and gives us a single place to see what
+// failed and why.
+model OutboxEntry {
+  id        String        @id @default(cuid())
+  schoolId  String
+  school    School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  kind      OutboxKind
+  payload   Json          // kind-specific delivery details
+
+  status    OutboxStatus  @default(PENDING)
+  attempts  Int           @default(0)
+  lastError String?
+  runAfter  DateTime      @default(now()) // when the worker is allowed to pick this up
+
+  sentAt    DateTime?
+  failedAt  DateTime?
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([status, runAfter])
+  @@index([schoolId])
+}
+
+enum OutboxKind {
+  EMAIL
+  PUSH
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// ─── JobRun: per-period idempotency for scheduled work ───────────────────────
+// Cron callbacks acquire a JobRun for `(jobKey, periodKey)` before running.
+// If a row already exists, the job has run for that period and is skipped.
+// Combined with pg_try_advisory_lock for mutual exclusion across processes.
+model JobRun {
+  id          String   @id @default(cuid())
+  jobKey      String   // e.g. "attendance-digest"
+  periodKey   String   // e.g. "2026-06-29" for a daily job
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  succeeded   Boolean  @default(false)
+  error       String?
+
+  @@unique([jobKey, periodKey])
+  @@index([jobKey, startedAt])
 }
