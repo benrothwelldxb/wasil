@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
+import { logAudit, computeChanges } from '../services/audit.js'
 
 const router = Router()
 
@@ -105,11 +106,37 @@ router.patch('/', isAuthenticated, isAdmin, async (req: Request, res: Response) 
       return res.status(400).json({ error: 'No valid fields to update' })
     }
 
+    // Snapshot before, write, then audit the diff. Module toggles and digest
+    // config are sensitive (turning off attendance hides registers from
+    // teachers, attendanceDigestEnabled controls daily PII emails to admins)
+    // so a clean trail of who flipped what and when is non-negotiable.
+    const before = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: SETTINGS_SELECT,
+    })
+
     const school = await prisma.school.update({
       where: { id: user.schoolId },
       data,
       select: SETTINGS_SELECT,
     })
+
+    if (before) {
+      const changes = computeChanges(
+        before as unknown as Record<string, unknown>,
+        school as unknown as Record<string, unknown>,
+      )
+      if (changes) {
+        await logAudit({
+          req,
+          action: 'UPDATE',
+          resourceType: 'SCHOOL',
+          resourceId: user.schoolId,
+          changes,
+          metadata: { source: 'school-settings' },
+        })
+      }
+    }
 
     res.json(school)
   } catch (error) {

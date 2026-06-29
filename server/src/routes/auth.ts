@@ -10,6 +10,7 @@ import { isAuthenticated } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { generateAccessToken, generateRefreshToken, revokeRefreshToken, rotateRefreshToken } from '../services/jwt.js'
 import { sendMagicLinkEmail, sendInvitationEmail } from '../services/email.js'
+import { logAudit } from '../services/audit.js'
 import { serializeUser } from '../services/serializers.js'
 import {
   generateSecret as generateTotpSecret,
@@ -1299,6 +1300,17 @@ router.post('/2fa/disable', isAuthenticated, validate(twoFactorDisableSchema), a
         twoFactorRecoveryCodes: null,
         twoFactorSetupAt: null,
       },
+    })
+
+    // Audit: 2FA disable is a high-value security event. The user proved
+    // they hold the TOTP secret immediately before this row was written,
+    // so the trail tells us *which* authenticated user did it and when.
+    await logAudit({
+      req,
+      action: 'UPDATE',
+      resourceType: 'USER',
+      resourceId: user.id,
+      metadata: { action: '2fa-disabled' },
     })
 
     res.json({ success: true })

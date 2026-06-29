@@ -334,7 +334,7 @@ router.patch('/:id/branding', isAuthenticated, isSuperAdmin, async (req, res) =>
       },
     })
 
-    const changes = computeChanges(existingSchool as any, school as any, ['name', 'shortName', 'brandColor', 'accentColor', 'tagline', 'principalName', 'principalTitle', 'paymentUrl', 'academicYear'])
+    const changes = computeChanges(existingSchool as any, school as any, ['name', 'shortName', 'city', 'brandColor', 'accentColor', 'tagline', 'logoUrl', 'logoIconUrl', 'principalName', 'principalTitle', 'paymentUrl', 'academicYear'])
     logAudit({ req, action: 'UPDATE', resourceType: 'SCHOOL', resourceId: id, metadata: { name: school.name }, changes })
 
     res.json(school)
