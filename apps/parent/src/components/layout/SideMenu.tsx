@@ -28,7 +28,7 @@ import {
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import * as api from '@wasil/shared'
-import type { ParentGroupInfo } from '@wasil/shared'
+import type { ParentGroupInfo, SchoolSettings } from '@wasil/shared'
 
 interface SideMenuProps {
   open: boolean
@@ -61,6 +61,7 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   const [hasActiveConsultations, setHasActiveConsultations] = useState(false)
   const [hasIeps, setHasIeps] = useState(false)
   const [hasReports, setHasReports] = useState(false)
+  const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null)
 
   useEffect(() => {
     if (open && languages.length === 0) {
@@ -105,6 +106,15 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
     }
   }, [open, user, parentGroups.length])
 
+  // Load school feature toggles
+  useEffect(() => {
+    if (open && user && !schoolSettings) {
+      api.schoolSettings.get()
+        .then(setSchoolSettings)
+        .catch(() => { /* leave null — items default to visible */ })
+    }
+  }, [open, user, schoolSettings])
+
   if (!open || !user) return null
 
   const currentLanguage = languages.find(l => l.code === user.preferredLanguage) || { code: 'en', name: 'English' }
@@ -139,6 +149,10 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   type MenuItem = { icon: any; labelKey: string; path: string }
   type MenuSection = { label?: string; items: MenuItem[] }
 
+  // If schoolSettings hasn't loaded, default to true (items visible).
+  const isEnabled = (flag: keyof SchoolSettings) =>
+    schoolSettings ? !!schoolSettings[flag] : true
+
   const sections: MenuSection[] = []
 
   // Main
@@ -149,26 +163,36 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   })
 
   // School Life
-  const schoolLife: MenuItem[] = [
-    { icon: Bell, labelKey: 'nav.eventsCalendar', path: '/events' },
-    { icon: Calendar, labelKey: 'nav.termDates', path: '/term-dates' },
-    { icon: User, labelKey: 'nav.principalUpdates', path: '/principal-updates' },
-    { icon: ClipboardCheck, labelKey: 'nav.attendance', path: '/attendance' },
-  ]
-  if (hasActiveEca) {
+  const schoolLife: MenuItem[] = []
+  if (isEnabled('eventsEnabled')) {
+    schoolLife.push({ icon: Bell, labelKey: 'nav.eventsCalendar', path: '/events' })
+  }
+  if (isEnabled('termDatesEnabled')) {
+    schoolLife.push({ icon: Calendar, labelKey: 'nav.termDates', path: '/term-dates' })
+  }
+  if (isEnabled('weeklyUpdatesEnabled')) {
+    schoolLife.push({ icon: User, labelKey: 'nav.principalUpdates', path: '/principal-updates' })
+  }
+  if (isEnabled('attendanceEnabled')) {
+    schoolLife.push({ icon: ClipboardCheck, labelKey: 'nav.attendance', path: '/attendance' })
+  }
+  if (hasActiveEca && isEnabled('ecaEnabled')) {
     schoolLife.push({ icon: Sparkles, labelKey: 'nav.activities', path: '/activities' })
   }
-  if (hasActiveConsultations) {
+  if (hasActiveConsultations && isEnabled('consultationsEnabled')) {
     schoolLife.push({ icon: CalendarCheck, labelKey: 'nav.consultations', path: '/consultations' })
   }
-  sections.push({ label: 'School Life', items: schoolLife })
+  if (schoolLife.length > 0) sections.push({ label: 'School Life', items: schoolLife })
 
   // Services
-  const services: MenuItem[] = [
-    { icon: Clock, labelKey: 'nav.schoolServices', path: '/school-services' },
-    { icon: UtensilsCrossed, labelKey: 'nav.lunchMenu', path: '/lunch-menu' },
-  ]
-  sections.push({ label: 'Services', items: services })
+  const services: MenuItem[] = []
+  if (isEnabled('schoolServicesEnabled')) {
+    services.push({ icon: Clock, labelKey: 'nav.schoolServices', path: '/school-services' })
+  }
+  if (isEnabled('lunchMenuEnabled')) {
+    services.push({ icon: UtensilsCrossed, labelKey: 'nav.lunchMenu', path: '/lunch-menu' })
+  }
+  if (services.length > 0) sections.push({ label: 'Services', items: services })
 
   // My Child
   const myChild: MenuItem[] = []

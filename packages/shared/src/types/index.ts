@@ -1368,3 +1368,55 @@ export interface ConsultationBooking {
   consultationTitle?: string
   consultationDate?: string
 }
+
+// ── School Settings (module toggles + attendance digest) ────────────────────
+export type SchoolModuleFlag =
+  | 'inboxEnabled'
+  | 'postsEnabled'
+  | 'emergencyAlertsEnabled'
+  | 'formsEnabled'
+  | 'eventsEnabled'
+  | 'weeklyUpdatesEnabled'
+  | 'pulseEnabled'
+  | 'attendanceEnabled'
+  | 'ecaEnabled'
+  | 'consultationsEnabled'
+  | 'schoolServicesEnabled'
+  | 'lunchMenuEnabled'
+  | 'termDatesEnabled'
+  | 'scheduleEnabled'
+  | 'policiesEnabled'
+  | 'filesEnabled'
+  | 'linksEnabled'
+  | 'knowledgeBaseEnabled'
+
+export type SchoolModuleFlags = Record<SchoolModuleFlag, boolean>
+
+export interface SchoolSettings extends SchoolModuleFlags {
+  id: string
+  name: string
+  timezone: string
+  attendanceDigestEnabled: boolean
+  attendanceDigestTime: string | null // HH:MM
+}
+
+export type SchoolSettingsUpdate = Partial<Omit<SchoolSettings, 'id' | 'name'>>
+
+// ── Attendance Digest ───────────────────────────────────────────────────────
+export interface AttendanceDigestRow {
+  studentName: string
+  className: string
+  status: 'ABSENT' | 'LATE' | 'EXCUSED'
+  notes: string | null
+}
+
+export interface AttendanceDigest {
+  schoolName: string
+  date: string
+  formattedDate: string
+  absent: AttendanceDigestRow[]
+  late: AttendanceDigestRow[]
+  excused: AttendanceDigestRow[]
+  totalStudents: number
+  totalMarked: number
+}

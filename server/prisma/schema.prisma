@@ -24,6 +24,35 @@ model School {
   principalTitle  String?  // e.g. "Principal", "Head Teacher", "Director"
   cafeteriaUrl    String?  // URL to cafeteria ordering portal
   archived        Boolean  @default(false) // Soft delete flag
+
+  // Locale
+  timezone     String   @default("Asia/Dubai") // IANA timezone, used for scheduled jobs (e.g. digests)
+
+  // Module enabled flags — all default true so existing schools keep current behavior
+  inboxEnabled            Boolean @default(true)
+  postsEnabled            Boolean @default(true)
+  emergencyAlertsEnabled  Boolean @default(true)
+  formsEnabled            Boolean @default(true)
+  eventsEnabled           Boolean @default(true)
+  weeklyUpdatesEnabled    Boolean @default(true)
+  pulseEnabled            Boolean @default(true)
+  attendanceEnabled       Boolean @default(true)
+  ecaEnabled              Boolean @default(true)
+  consultationsEnabled    Boolean @default(true)
+  schoolServicesEnabled   Boolean @default(true)
+  lunchMenuEnabled        Boolean @default(true)
+  termDatesEnabled        Boolean @default(true)
+  scheduleEnabled         Boolean @default(true)
+  policiesEnabled         Boolean @default(true)
+  filesEnabled            Boolean @default(true)
+  linksEnabled            Boolean @default(true)
+  knowledgeBaseEnabled    Boolean @default(true)
+
+  // Attendance digest
+  attendanceDigestEnabled       Boolean @default(false)
+  attendanceDigestTime          String? // HH:MM in school timezone, e.g. "09:00"
+  attendanceDigestLastSentDate  String? // YYYY-MM-DD, dedupes daily send
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

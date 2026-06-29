@@ -38,9 +38,11 @@ import searchRoutes from './routes/search.js'
 import inclusionRoutes from './routes/inclusion.js'
 import cafeteriaRoutes from './routes/cafeteria.js'
 import attendanceRoutes from './routes/attendance.js'
+import schoolSettingsRoutes from './routes/schoolSettings.js'
 import { initFirebase } from './services/firebase.js'
 import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders } from './services/cleanup.js'
 import { cleanupOldAuditLogs } from './services/audit.js'
+import { sendDueAttendanceDigests } from './services/attendanceDigest.js'
 
 dotenv.config()
 
@@ -110,6 +112,7 @@ app.use('/api/search', searchRoutes)
 app.use('/api/inclusion', inclusionRoutes)
 app.use('/api/cafeteria', cafeteriaRoutes)
 app.use('/api/attendance', attendanceRoutes)
+app.use('/api/school-settings', schoolSettingsRoutes)
 
 // Health check
 app.get('/health', (_req, res) => {
@@ -143,4 +146,8 @@ app.listen(PORT, () => {
   // Run schedule reminders check every hour (sends at ~6pm Gulf time)
   sendScheduleReminders()
   setInterval(sendScheduleReminders, ONE_HOUR)
+
+  // Attendance digest: per-school, hourly check against configured send time
+  sendDueAttendanceDigests()
+  setInterval(sendDueAttendanceDigests, ONE_HOUR)
 })

@@ -31,10 +31,12 @@ import {
   UtensilsCrossed,
   ChevronDown,
   ClipboardCheck,
+  Settings,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth, useTheme, config } from '@wasil/shared'
 import * as api from '@wasil/shared'
+import type { SchoolModuleFlag, SchoolSettings } from '@wasil/shared'
 
 interface NavItem {
   icon: LucideIcon
@@ -43,6 +45,7 @@ interface NavItem {
   superAdminOnly?: boolean
   adminOnly?: boolean  // hidden from STAFF role
   badgeKey?: string
+  flagKey?: SchoolModuleFlag  // hidden when the corresponding module is disabled
 }
 
 interface NavSection {
@@ -57,38 +60,38 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Communication',
     defaultOpen: true,
     items: [
-      { icon: Inbox, label: 'Inbox', path: '/inbox', badgeKey: 'inbox' },
-      { icon: MessageSquare, label: 'Posts', path: '/messages' },
-      { icon: AlertTriangle, label: 'Emergency Alerts', path: '/emergency-alerts', adminOnly: true },
+      { icon: Inbox, label: 'Inbox', path: '/inbox', badgeKey: 'inbox', flagKey: 'inboxEnabled' },
+      { icon: MessageSquare, label: 'Posts', path: '/messages', flagKey: 'postsEnabled' },
+      { icon: AlertTriangle, label: 'Emergency Alerts', path: '/emergency-alerts', adminOnly: true, flagKey: 'emergencyAlertsEnabled' },
     ],
   },
   {
     label: 'Engagement',
     defaultOpen: true,
     items: [
-      { icon: ClipboardList, label: 'Forms', path: '/forms', adminOnly: true },
-      { icon: Calendar, label: 'Events', path: '/events' },
-      { icon: Newspaper, label: 'Weekly Updates', path: '/weekly', adminOnly: true },
-      { icon: Activity, label: 'Parent Pulse', path: '/pulse', adminOnly: true },
-      { icon: ClipboardCheck, label: 'Attendance', path: '/attendance' },
+      { icon: ClipboardList, label: 'Forms', path: '/forms', adminOnly: true, flagKey: 'formsEnabled' },
+      { icon: Calendar, label: 'Events', path: '/events', flagKey: 'eventsEnabled' },
+      { icon: Newspaper, label: 'Weekly Updates', path: '/weekly', adminOnly: true, flagKey: 'weeklyUpdatesEnabled' },
+      { icon: Activity, label: 'Parent Pulse', path: '/pulse', adminOnly: true, flagKey: 'pulseEnabled' },
+      { icon: ClipboardCheck, label: 'Attendance', path: '/attendance', flagKey: 'attendanceEnabled' },
     ],
   },
   {
     label: 'Programmes',
     defaultOpen: true,
     items: [
-      { icon: Sparkles, label: 'Activities (ECA)', path: '/eca' },
-      { icon: CalendarCheck, label: 'Consultations', path: '/consultations' },
-      { icon: Clock, label: 'School Services', path: '/school-services', adminOnly: true },
-      { icon: UtensilsCrossed, label: 'Lunch Menu', path: '/cafeteria', adminOnly: true },
+      { icon: Sparkles, label: 'Activities (ECA)', path: '/eca', flagKey: 'ecaEnabled' },
+      { icon: CalendarCheck, label: 'Consultations', path: '/consultations', flagKey: 'consultationsEnabled' },
+      { icon: Clock, label: 'School Services', path: '/school-services', adminOnly: true, flagKey: 'schoolServicesEnabled' },
+      { icon: UtensilsCrossed, label: 'Lunch Menu', path: '/cafeteria', adminOnly: true, flagKey: 'lunchMenuEnabled' },
     ],
   },
   {
     label: 'Calendar',
     defaultOpen: false,
     items: [
-      { icon: CalendarDays, label: 'Term Dates', path: '/term-dates' },
-      { icon: Clock, label: 'Schedule', path: '/schedule' },
+      { icon: CalendarDays, label: 'Term Dates', path: '/term-dates', flagKey: 'termDatesEnabled' },
+      { icon: Clock, label: 'Schedule', path: '/schedule', flagKey: 'scheduleEnabled' },
     ],
   },
   {
@@ -116,10 +119,10 @@ const NAV_SECTIONS: NavSection[] = [
     defaultOpen: false,
     adminOnly: true,
     items: [
-      { icon: FileText, label: 'Policies', path: '/policies' },
-      { icon: FolderOpen, label: 'Files', path: '/files' },
-      { icon: ExternalLink, label: 'Links', path: '/links' },
-      { icon: BookOpen, label: 'Knowledge Base', path: '/knowledge-base' },
+      { icon: FileText, label: 'Policies', path: '/policies', flagKey: 'policiesEnabled' },
+      { icon: FolderOpen, label: 'Files', path: '/files', flagKey: 'filesEnabled' },
+      { icon: ExternalLink, label: 'Links', path: '/links', flagKey: 'linksEnabled' },
+      { icon: BookOpen, label: 'Knowledge Base', path: '/knowledge-base', flagKey: 'knowledgeBaseEnabled' },
     ],
   },
   {
@@ -128,6 +131,7 @@ const NAV_SECTIONS: NavSection[] = [
     adminOnly: true,
     items: [
       { icon: BarChart3, label: 'Analytics', path: '/analytics' },
+      { icon: Settings, label: 'School Settings', path: '/school-settings' },
       { icon: Shield, label: 'Audit Log', path: '/audit-log' },
       { icon: Building, label: 'Schools', path: '/schools', superAdminOnly: true },
     ],
@@ -155,6 +159,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const theme = useTheme()
   const navigate = useNavigate()
   const [inboxUnread, setInboxUnread] = useState(0)
+  const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null)
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
     const stored = loadCollapsedSections()
     // Apply defaults for sections not in storage
@@ -177,6 +182,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     fetchUnread()
     const interval = setInterval(fetchUnread, 30000)
     return () => clearInterval(interval)
+  }, [user])
+
+  // Load school feature toggles
+  useEffect(() => {
+    if (!user) return
+    api.schoolSettings.get()
+      .then(setSchoolSettings)
+      .catch(() => { /* leave null — items default to visible */ })
   }, [user])
 
   const toggleSection = (label: string) => {
@@ -247,6 +260,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           const visibleItems = section.items.filter(item => {
             if (item.superAdminOnly && !isSuperAdmin) return false
             if (item.adminOnly && !isAdmin) return false
+            if (item.flagKey && schoolSettings && !schoolSettings[item.flagKey]) return false
             return true
           })
           if (visibleItems.length === 0) return null

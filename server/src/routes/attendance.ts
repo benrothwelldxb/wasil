@@ -4,6 +4,7 @@ import { isAdmin, isStaff, isAuthenticated, loadUserWithRelations } from '../mid
 import { logAudit } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { generateDailyRegistersHtml } from '../services/attendanceRegisterPdf.js'
+import { buildDigestData, sendDigestForSchool } from '../services/attendanceDigest.js'
 
 const router = Router()
 
@@ -527,6 +528,38 @@ router.get('/export', isStaff, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error exporting attendance:', error)
     res.status(500).json({ error: 'Failed to export attendance' })
+  }
+})
+
+// GET /digest?date=YYYY-MM-DD — today's absences/late/excused for in-app view
+router.get('/digest', isStaff, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' })
+    }
+    const data = await buildDigestData(user.schoolId, date)
+    res.json(data)
+  } catch (error) {
+    console.error('Error building digest:', error)
+    res.status(500).json({ error: 'Failed to build digest' })
+  }
+})
+
+// POST /digest/send — admin sends digest email immediately (does not affect cron dedupe)
+router.post('/digest/send', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const date = (req.body?.date as string) || new Date().toISOString().slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' })
+    }
+    const recipients = await sendDigestForSchool(user.schoolId, date)
+    res.json({ recipients, date })
+  } catch (error) {
+    console.error('Error sending digest:', error)
+    res.status(500).json({ error: 'Failed to send digest' })
   }
 })
 

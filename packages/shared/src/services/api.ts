@@ -1980,6 +1980,7 @@ import type {
   AttendanceRequest as AttendanceRequestInterface,
   AttendanceStatus as AttendanceStatusEnum,
   ChildAttendanceSummary,
+  AttendanceDigest,
 } from '../types'
 
 export const attendance = {
@@ -2020,6 +2021,13 @@ export const attendance = {
     if (!response.ok) throw new Error('Failed to load registers')
     return response.text()
   },
+  digest: (date?: string) =>
+    fetchApi<AttendanceDigest>(`/api/attendance/digest${date ? `?date=${date}` : ''}`),
+  sendDigest: (date?: string) =>
+    fetchApi<{ recipients: number; date: string }>('/api/attendance/digest/send', {
+      method: 'POST',
+      body: JSON.stringify(date ? { date } : {}),
+    }),
 
   // Parent
   submitRequest: (data: { studentId: string; type: string; startDate: string; endDate?: string; reason: string; notes?: string; time?: string }) =>
@@ -2029,6 +2037,17 @@ export const attendance = {
     }),
   myRequests: () => fetchApi<AttendanceRequestInterface[]>('/api/attendance/my-requests'),
   myChildren: () => fetchApi<ChildAttendanceSummary[]>('/api/attendance/my-children'),
+}
+
+import type { SchoolSettings, SchoolSettingsUpdate } from '../types'
+
+export const schoolSettings = {
+  get: () => fetchApi<SchoolSettings>('/api/school-settings'),
+  update: (data: SchoolSettingsUpdate) =>
+    fetchApi<SchoolSettings>('/api/school-settings', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 }
 
 export default {
@@ -2065,4 +2084,5 @@ export default {
   cafeteria,
   inclusion,
   attendance,
+  schoolSettings,
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useEffect } from 'react'
 import {
   Check,
   X,
@@ -8,6 +8,9 @@ import {
   Printer,
   Users,
   TrendingUp,
+  Mail,
+  Copy,
+  RefreshCw,
 } from 'lucide-react'
 import { useApi, useToast, api, useAuth } from '@wasil/shared'
 import type {
@@ -16,10 +19,11 @@ import type {
   AttendanceRequest,
   AttendanceStatus,
   AttendanceAnalytics,
+  AttendanceDigest,
   RequestApprovalStatus,
 } from '@wasil/shared'
 
-type Tab = 'take' | 'requests' | 'analytics'
+type Tab = 'take' | 'digest' | 'requests' | 'analytics'
 type RequestFilter = 'ALL' | 'PENDING' | 'APPROVED' | 'DECLINED'
 
 const STATUS_COLORS: Record<AttendanceStatus, { bg: string; text: string; border: string }> = {
@@ -469,6 +473,163 @@ function RequestsTab() {
   )
 }
 
+// ── Today's Absences Tab ─────────────────────────────────────
+
+function TodaysAbsencesTab() {
+  const toast = useToast()
+  const [date, setDate] = useState(todayString())
+  const [digest, setDigest] = useState<AttendanceDigest | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [sending, setSending] = useState(false)
+
+  const load = useCallback(async (d: string) => {
+    setLoading(true)
+    try {
+      const data = await api.attendance.digest(d)
+      setDigest(data)
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to load digest')
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => { load(date) }, [date, load])
+
+  const handleSendNow = async () => {
+    setSending(true)
+    try {
+      const result = await api.attendance.sendDigest(date)
+      toast.success(`Digest sent to ${result.recipients} admin${result.recipients === 1 ? '' : 's'}`)
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send digest')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const handleCopy = async () => {
+    if (!digest) return
+    const lines: string[] = []
+    lines.push(`${digest.schoolName} — ${digest.formattedDate}`)
+    lines.push(`${digest.totalMarked} of ${digest.totalStudents} marked`)
+    lines.push('')
+    const section = (label: string, rows: typeof digest.absent) => {
+      lines.push(`${label} (${rows.length}):`)
+      if (rows.length === 0) {
+        lines.push('  (none)')
+      } else {
+        rows.forEach(r => {
+          const note = r.notes ? ` — ${r.notes}` : ''
+          lines.push(`  • ${r.studentName} (${r.className})${note}`)
+        })
+      }
+      lines.push('')
+    }
+    section('Absent', digest.absent)
+    section('Late', digest.late)
+    section('Excused', digest.excused)
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'))
+      toast.success('Copied to clipboard')
+    } catch {
+      toast.error('Copy failed — your browser blocked clipboard access')
+    }
+  }
+
+  const Section = ({ label, color, rows }: { label: string; color: string; rows: AttendanceDigest['absent'] }) => (
+    <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold" style={{ color }}>{label}</h3>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: color + '20', color }}>
+          {rows.length}
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-sm text-slate-400 italic">None.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {rows.map((r, i) => (
+            <li key={i} className="flex items-baseline justify-between gap-3 text-sm">
+              <div className="min-w-0">
+                <span className="font-semibold text-slate-800">{r.studentName}</span>
+                <span className="text-slate-500 ml-2">{r.className}</span>
+              </div>
+              {r.notes && <span className="text-xs text-slate-500 truncate max-w-[40%]">{r.notes}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
+          />
+        </div>
+        <button
+          onClick={() => load(date)}
+          className="px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          title="Reload"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Refresh
+        </button>
+        <div className="ml-auto flex gap-2">
+          <button
+            onClick={handleCopy}
+            disabled={!digest}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <Copy className="w-4 h-4" />
+            Copy as text
+          </button>
+          <button
+            onClick={handleSendNow}
+            disabled={sending}
+            className="px-5 py-2.5 rounded-xl text-white text-sm font-bold flex items-center gap-2"
+            style={{ backgroundColor: '#C4506E', opacity: sending ? 0.6 : 1 }}
+          >
+            <Mail className="w-4 h-4" />
+            {sending ? 'Sending...' : 'Email digest now'}
+          </button>
+        </div>
+      </div>
+
+      {loading && !digest && (
+        <div className="text-center py-12 text-slate-400 text-sm">Loading...</div>
+      )}
+
+      {digest && (
+        <>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{digest.schoolName}</p>
+              <p className="text-lg font-bold text-slate-800 mt-1">{digest.formattedDate}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-semibold text-slate-500">Marked today</p>
+              <p className="text-lg font-bold text-slate-800">{digest.totalMarked} / {digest.totalStudents}</p>
+            </div>
+          </div>
+
+          <Section label="Absent" color="#DC2626" rows={digest.absent} />
+          <Section label="Late" color="#C47A20" rows={digest.late} />
+          <Section label="Excused" color="#5B6EC4" rows={digest.excused} />
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Analytics Tab ────────────────────────────────────────────
 
 function AnalyticsTab() {
@@ -598,6 +759,7 @@ export function AttendancePage() {
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'take', label: 'Take Attendance', icon: <Check className="w-4 h-4" /> },
+    { key: 'digest', label: "Today's Absences", icon: <Mail className="w-4 h-4" /> },
     { key: 'requests', label: 'Requests', icon: <ClipboardList className="w-4 h-4" /> },
     { key: 'analytics', label: 'Analytics', icon: <TrendingUp className="w-4 h-4" /> },
   ]
@@ -628,6 +790,7 @@ export function AttendancePage() {
       </div>
 
       {activeTab === 'take' && <TakeAttendanceTab />}
+      {activeTab === 'digest' && <TodaysAbsencesTab />}
       {activeTab === 'requests' && <RequestsTab />}
       {activeTab === 'analytics' && <AnalyticsTab />}
     </div>
