@@ -6,7 +6,6 @@ import dotenv from 'dotenv'
 import { pinoHttp } from 'pino-http'
 import logger from './services/logger.js'
 import { captureException } from './services/errorReporter.js'
-import { initSentry } from './services/sentry.js'
 
 import { configurePassport } from './middleware/passport.js'
 import authRoutes from './routes/auth.js'
@@ -60,10 +59,6 @@ if (process.env.NODE_ENV === 'production') {
     }
   }
 }
-
-// Wire up error reporting first so anything that fails during startup gets
-// captured. Both calls are no-ops when their respective env vars are absent.
-initSentry()
 
 // Initialize Firebase for push notifications (optional)
 initFirebase()

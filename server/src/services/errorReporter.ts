@@ -25,14 +25,10 @@ let captureFn: CaptureFn = (err, context) => {
 }
 
 /**
- * Replace the default capture implementation. Call this once at startup, e.g.
- * from index.ts after env vars are loaded:
- *
- *   if (process.env.SENTRY_DSN) {
- *     const Sentry = await import('@sentry/node')
- *     Sentry.init({ dsn: process.env.SENTRY_DSN })
- *     setErrorReporter((err, context) => Sentry.captureException(err, { extra: context }))
- *   }
+ * Replace the default capture implementation. Call this once at startup.
+ * Right now nothing does — every captured exception flows through pino only.
+ * When you're ready to add Sentry / Datadog / Honeybadger / etc, install the
+ * SDK and call setErrorReporter() with an adapter that wraps its capture API.
  */
 export function setErrorReporter(fn: CaptureFn): void {
   captureFn = fn
