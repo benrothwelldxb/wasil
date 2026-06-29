@@ -4,6 +4,7 @@ import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { policyUpload } from '../upload.js'
 import { uploadFile, deleteFile, generateKey } from '../services/storage.js'
+import { checkUpload } from '../services/uploadValidation.js'
 
 const router = Router()
 
@@ -54,6 +55,11 @@ router.post('/', isAdmin, policyUpload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'PDF file is required' })
     }
 
+    const check = checkUpload(file.buffer, file.mimetype, file.originalname, ['application/pdf'])
+    if (!check.valid) {
+      return res.status(400).json({ error: `File rejected: ${check.reason}` })
+    }
+
     const key = generateKey('policies', file.originalname)
     const fileUrl = await uploadFile(file.buffer, key, file.mimetype)
 
@@ -101,6 +107,11 @@ router.put('/:id', isAdmin, policyUpload.single('file'), async (req, res) => {
     if (description !== undefined) updateData.description = description || null
 
     if (file) {
+      const check = checkUpload(file.buffer, file.mimetype, file.originalname, ['application/pdf'])
+      if (!check.valid) {
+        return res.status(400).json({ error: `File rejected: ${check.reason}` })
+      }
+
       // Delete old file from R2
       const oldKey = extractKeyFromUrl(existing.fileUrl)
       if (oldKey) {

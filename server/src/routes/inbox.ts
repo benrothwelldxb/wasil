@@ -3,6 +3,7 @@ import multer from 'multer'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../middleware/auth.js'
 import { uploadFile, generateKey } from '../services/storage.js'
+import { checkUpload } from '../services/uploadValidation.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 
 const router = Router()
@@ -1059,8 +1060,9 @@ router.post('/upload', isAuthenticated, attachmentUpload.single('file'), async (
       return res.status(400).json({ error: 'File is required' })
     }
 
-    if (!ATTACHMENT_MIME_TYPES.includes(uploaded.mimetype)) {
-      return res.status(400).json({ error: 'File type not allowed' })
+    const check = checkUpload(uploaded.buffer, uploaded.mimetype, uploaded.originalname, ATTACHMENT_MIME_TYPES)
+    if (!check.valid) {
+      return res.status(400).json({ error: `File rejected: ${check.reason}` })
     }
 
     const safeName = uploaded.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')

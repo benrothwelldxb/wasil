@@ -8,6 +8,7 @@ import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
 import { uploadFile, generateKey } from '../services/storage.js'
+import { checkUpload } from '../services/uploadValidation.js'
 
 const router = Router()
 
@@ -57,8 +58,9 @@ router.post('/upload', isStaff, attachmentUpload.single('file'), async (req, res
       return res.status(400).json({ error: 'File is required' })
     }
 
-    if (!ATTACHMENT_MIME_TYPES.includes(uploaded.mimetype)) {
-      return res.status(400).json({ error: 'File type not allowed. Supported: images, PDF, Word documents.' })
+    const check = checkUpload(uploaded.buffer, uploaded.mimetype, uploaded.originalname, ATTACHMENT_MIME_TYPES)
+    if (!check.valid) {
+      return res.status(400).json({ error: `File rejected: ${check.reason}. Supported: images, PDF, Word documents.` })
     }
 
     const key = generateKey('message-attachments', uploaded.originalname)

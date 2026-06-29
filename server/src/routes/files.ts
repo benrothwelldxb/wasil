@@ -4,6 +4,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { uploadFile, deleteFile as deleteR2File, generateKey } from '../services/storage.js'
+import { checkUpload } from '../services/uploadValidation.js'
 
 const fileUpload = multer({
   storage: multer.memoryStorage(),
@@ -236,9 +237,10 @@ router.post('/file', isAdmin, fileUpload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'File is required' })
     }
 
-    // Validate file type against allowlist
-    if (!ALLOWED_MIME_TYPES.includes(uploaded.mimetype)) {
-      return res.status(400).json({ error: 'File type not allowed' })
+    // Validate against MIME allowlist + extension match + magic bytes
+    const check = checkUpload(uploaded.buffer, uploaded.mimetype, uploaded.originalname, ALLOWED_MIME_TYPES)
+    if (!check.valid) {
+      return res.status(400).json({ error: `File rejected: ${check.reason}` })
     }
 
     const key = generateKey('files', uploaded.originalname)
