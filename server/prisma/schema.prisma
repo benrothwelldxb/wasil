@@ -745,6 +745,7 @@ enum AuditResourceType {
   EMERGENCY_ALERT
   ATTENDANCE
   ATTENDANCE_REQUEST
+  USER
 }
 
 model AuditLog {
