@@ -981,6 +981,7 @@ export interface NotificationPreferences {
   ecaUpdates: boolean
   consultations: boolean
   schoolServices: boolean
+  scheduleReminders: boolean
 }
 
 // Cafeteria Types

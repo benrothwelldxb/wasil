@@ -1,6 +1,25 @@
 import { Request } from 'express'
 import prisma from './prisma.js'
-import { enqueuePush } from './outbox.js'
+import { enqueuePush, enqueueEmail } from './outbox.js'
+
+// Notification types that warrant an email fallback when the parent has been
+// inactive in the app. Chatty / repetitive types are deliberately excluded —
+// we don't want to email someone every time a schedule item changes.
+const EMAIL_FALLBACK_TYPES = new Set([
+  'MESSAGE',
+  'WEEKLY_MESSAGE',
+  'EMERGENCY_ALERT',
+  'FORM',
+  'EVENT',
+  'PULSE_SURVEY',
+  'ECA_REGISTRATION_OPEN',
+  'ECA_ALLOCATION_RESULTS',
+  'CONSULTATION',
+])
+
+// How long without a login before we treat a parent as "inactive" and start
+// emailing important notifications too.
+const INACTIVE_THRESHOLD_DAYS = 7
 
 // ECA Notification Types
 export const ECA_NOTIFICATION_TYPES = {
@@ -148,6 +167,42 @@ export async function sendNotification({ req, type, title, body, resourceType, r
           )),
         },
       })
+    }
+
+    // Email fallback: for important notification types, send an email to
+    // any parent who hasn't opened the app in a week. Push alone is unreliable
+    // if the parent has disabled OS-level notifications or hasn't installed
+    // the app.
+    if (EMAIL_FALLBACK_TYPES.has(type)) {
+      const inactiveCutoff = new Date(Date.now() - INACTIVE_THRESHOLD_DAYS * 24 * 60 * 60 * 1000)
+      const inactiveParents = await prisma.user.findMany({
+        where: {
+          id: { in: parentUserIds },
+          email: { not: '' },
+          OR: [
+            { lastLoginAt: null },
+            { lastLoginAt: { lt: inactiveCutoff } },
+          ],
+        },
+        select: { email: true },
+      })
+      if (inactiveParents.length > 0) {
+        const school = await prisma.school.findUnique({
+          where: { id: schoolId },
+          select: { name: true },
+        })
+        const subject = `[${school?.name ?? 'School'}] ${title}`
+        const html = `<!DOCTYPE html><html><body style="font-family: sans-serif; max-width: 520px; margin: 0 auto; padding: 24px;">
+          <p style="color: #475569; font-size: 12px; margin: 0 0 6px;">${school?.name ?? ''}</p>
+          <h2 style="color: #0f172a; font-size: 18px; margin: 0 0 14px;">${title}</h2>
+          <p style="color: #334155; font-size: 14px; line-height: 1.55; margin: 0 0 16px; white-space: pre-line;">${body}</p>
+          <p style="color: #94a3b8; font-size: 12px; margin: 24px 0 0;">You're receiving this email because we noticed you haven't opened the app in a while. Open the app to manage how you're contacted.</p>
+        </body></html>`
+        const text = `${school?.name ?? ''}\n${title}\n\n${body}\n\nYou're receiving this email because we noticed you haven't opened the app in a while.`
+        for (const parent of inactiveParents) {
+          await enqueueEmail(schoolId, { to: parent.email, subject, html, text })
+        }
+      }
     }
   } catch (error) {
     console.error('Failed to send notification:', error)

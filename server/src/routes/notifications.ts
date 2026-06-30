@@ -119,6 +119,7 @@ router.get('/preferences', isAuthenticated, async (req, res) => {
         ecaUpdates: true,
         consultations: true,
         schoolServices: true,
+        scheduleReminders: true,
       })
     }
 
@@ -133,6 +134,7 @@ router.get('/preferences', isAuthenticated, async (req, res) => {
       ecaUpdates: prefs.ecaUpdates,
       consultations: prefs.consultations,
       schoolServices: prefs.schoolServices,
+      scheduleReminders: prefs.scheduleReminders,
     })
   } catch (error) {
     console.error('Error fetching notification preferences:', error)
@@ -144,7 +146,7 @@ router.get('/preferences', isAuthenticated, async (req, res) => {
 router.put('/preferences', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
-    const { posts, directMessages, emergencyAlerts, forms, events, weeklyUpdates, pulseSurveys, ecaUpdates, consultations, schoolServices } = req.body
+    const { posts, directMessages, emergencyAlerts, forms, events, weeklyUpdates, pulseSurveys, ecaUpdates, consultations, schoolServices, scheduleReminders } = req.body
 
     const prefs = await prisma.notificationPreference.upsert({
       where: { userId: user.id },
@@ -160,6 +162,7 @@ router.put('/preferences', isAuthenticated, async (req, res) => {
         ecaUpdates: ecaUpdates ?? true,
         consultations: consultations ?? true,
         schoolServices: schoolServices ?? true,
+        scheduleReminders: scheduleReminders ?? true,
       },
       update: {
         ...(posts !== undefined && { posts }),
@@ -172,6 +175,7 @@ router.put('/preferences', isAuthenticated, async (req, res) => {
         ...(ecaUpdates !== undefined && { ecaUpdates }),
         ...(consultations !== undefined && { consultations }),
         ...(schoolServices !== undefined && { schoolServices }),
+        ...(scheduleReminders !== undefined && { scheduleReminders }),
       },
     })
 
@@ -186,6 +190,7 @@ router.put('/preferences', isAuthenticated, async (req, res) => {
       ecaUpdates: prefs.ecaUpdates,
       consultations: prefs.consultations,
       schoolServices: prefs.schoolServices,
+      scheduleReminders: prefs.scheduleReminders,
     })
   } catch (error) {
     console.error('Error updating notification preferences:', error)

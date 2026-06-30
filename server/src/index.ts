@@ -49,6 +49,7 @@ import { cleanupOldAuditLogs } from './services/audit.js'
 import { sendDueAttendanceDigests } from './services/attendanceDigest.js'
 import { drainOutbox } from './services/outbox.js'
 import { withJobLock } from './services/jobLock.js'
+import { sendEventRsvpReminders } from './services/eventReminders.js'
 
 dotenv.config()
 
@@ -267,6 +268,10 @@ app.listen(PORT, () => {
     'sendDueAttendanceDigests',
     locked('sendDueAttendanceDigests', 'hour', sendDueAttendanceDigests),
   )
+  const eventReminders = runJob(
+    'sendEventRsvpReminders',
+    locked('sendEventRsvpReminders', 'hour', sendEventRsvpReminders),
+  )
   const outboxDrain = runJob('drainOutbox', drainOutbox)
 
   tokenCleanup()
@@ -283,6 +288,9 @@ app.listen(PORT, () => {
 
   attendanceDigests()
   setInterval(attendanceDigests, ONE_HOUR)
+
+  eventReminders()
+  setInterval(eventReminders, ONE_HOUR)
 
   // Drain the outbox aggressively so push/email feel near-realtime
   const THIRTY_SECONDS = 30 * 1000

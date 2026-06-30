@@ -43,6 +43,12 @@ const SECTIONS: Array<{
       { key: 'schoolServices', label: 'School Services', description: 'Wraparound care and services', icon: Clock, color: '#7A6469' },
     ],
   },
+  {
+    title: 'Day-to-Day',
+    items: [
+      { key: 'scheduleReminders', label: 'Schedule Reminders', description: "Evening reminders about tomorrow's activities and changes to the class schedule", icon: Bell, color: '#C47A5B' },
+    ],
+  },
 ]
 
 export function NotificationSettingsPage() {
