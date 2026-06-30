@@ -2,6 +2,7 @@ import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
 import { translateTexts } from '../services/translation.js'
+import { sendNotification } from '../services/notify.js'
 
 const router = Router()
 
@@ -126,11 +127,13 @@ router.get('/all', isAdmin, async (req, res) => {
   }
 })
 
-// Create schedule item (admin only)
+// Create schedule item (admin only). Pass notifyParents: true in the body
+// to push the change to affected class/year-group parents (defaults off so
+// staff can draft items without spamming).
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { targetClass, classId, yearGroupId, isRecurring, dayOfWeek, date, type, label, description, icon } = req.body
+    const { targetClass, classId, yearGroupId, isRecurring, dayOfWeek, date, type, label, description, icon, notifyParents } = req.body
 
     const scheduleItem = await prisma.scheduleItem.create({
       data: {
@@ -148,6 +151,18 @@ router.post('/', isAdmin, async (req, res) => {
         icon: icon || null,
       },
     })
+
+    if (notifyParents) {
+      sendNotification({
+        req,
+        type: 'SCHEDULE_CHANGE',
+        title: 'Schedule updated',
+        body: `New on the schedule: ${label}`,
+        resourceType: 'SCHEDULE',
+        resourceId: scheduleItem.id,
+        target: { targetClass, classId, yearGroupId, schoolId: user.schoolId },
+      }).catch(err => console.error('Failed to send schedule change notification:', err))
+    }
 
     res.status(201).json({
       id: scheduleItem.id,
@@ -170,11 +185,11 @@ router.post('/', isAdmin, async (req, res) => {
   }
 })
 
-// Update schedule item (admin only)
+// Update schedule item (admin only). Same notifyParents flag as POST.
 router.put('/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
-    const { targetClass, classId, yearGroupId, isRecurring, dayOfWeek, active, date, type, label, description, icon } = req.body
+    const { targetClass, classId, yearGroupId, isRecurring, dayOfWeek, active, date, type, label, description, icon, notifyParents } = req.body
 
     const scheduleItem = await prisma.scheduleItem.update({
       where: { id },
@@ -192,6 +207,18 @@ router.put('/:id', isAdmin, async (req, res) => {
         icon: icon || null,
       },
     })
+
+    if (notifyParents) {
+      sendNotification({
+        req,
+        type: 'SCHEDULE_CHANGE',
+        title: 'Schedule updated',
+        body: `Updated on the schedule: ${label}`,
+        resourceType: 'SCHEDULE',
+        resourceId: scheduleItem.id,
+        target: { targetClass, classId, yearGroupId, schoolId: scheduleItem.schoolId },
+      }).catch(err => console.error('Failed to send schedule change notification:', err))
+    }
 
     res.json({
       id: scheduleItem.id,

@@ -84,6 +84,7 @@ export async function sendNotification({ req, type, title, body, resourceType, r
       EMERGENCY_ALERT: 'emergencyAlerts',
       FORM: 'forms',
       EVENT: 'events',
+      EVENT_REMINDER: 'events',
       PULSE_SURVEY: 'pulseSurveys',
       ECA_REGISTRATION_OPEN: 'ecaUpdates',
       ECA_REGISTRATION_CLOSING: 'ecaUpdates',
@@ -91,6 +92,7 @@ export async function sendNotification({ req, type, title, body, resourceType, r
       ECA_INVITATION: 'ecaUpdates',
       CONSULTATION: 'consultations',
       SCHOOL_SERVICE: 'schoolServices',
+      SCHEDULE_CHANGE: 'scheduleReminders',
     }
 
     const prefKey = PREF_MAP[type]

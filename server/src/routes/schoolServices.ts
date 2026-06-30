@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
+import { enqueuePush } from '../services/outbox.js'
 
 const router = Router()
 
@@ -236,6 +237,40 @@ router.post('/parent/register', isAuthenticated, async (req, res) => {
             startDate: startDate || null,
           },
         })
+
+    // Confirmation push + in-app notification — parents like the
+    // reassurance that the system received the registration, especially
+    // since service spots are scarce and the immediate page response can
+    // be missed if they're switching apps.
+    const paymentRequired = service.paymentMethod === 'ONLINE' || service.paymentMethod === 'CASH_ONLY'
+    const statusBody = registrationStatus === 'WAITLISTED'
+      ? `${studentName} is on the waitlist for ${service.name}. We'll let you know if a place opens up.`
+      : `${studentName} is registered for ${service.name}. ${paymentRequired ? 'Payment is required to confirm the place.' : 'You\'re all set.'}`
+
+    await prisma.notification.create({
+      data: {
+        userId: user.id,
+        type: 'SCHOOL_SERVICE',
+        title: registrationStatus === 'WAITLISTED' ? 'Added to waitlist' : 'Registration confirmed',
+        body: statusBody,
+        resourceType: 'SCHOOL_SERVICE',
+        resourceId: service.id,
+        schoolId: user.schoolId,
+      },
+    })
+
+    const tokens = await prisma.deviceToken.findMany({
+      where: { userId: user.id },
+      select: { token: true },
+    })
+    if (tokens.length > 0) {
+      await enqueuePush(user.schoolId, {
+        tokens: tokens.map(t => t.token),
+        title: registrationStatus === 'WAITLISTED' ? 'Added to waitlist' : 'Registration confirmed',
+        body: statusBody,
+        data: { type: 'SCHOOL_SERVICE', resourceType: 'SCHOOL_SERVICE', resourceId: service.id },
+      })
+    }
 
     res.json(serializeRegistration(registration))
   } catch (error: any) {
