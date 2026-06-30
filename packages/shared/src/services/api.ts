@@ -1259,8 +1259,28 @@ export const students = {
     fetchApi<{ message: string }>(`/api/students/reports/${reportId}`, { method: 'DELETE' }),
   myChildrenReports: () =>
     fetchApi<StudentReport[]>('/api/students/reports/my-children'),
-  allReports: () =>
-    fetchApi<StudentReport[]>('/api/students/reports/all'),
+  allReports: (params?: { page?: number; limit?: number; academicYear?: string }) => {
+    const sp = new URLSearchParams()
+    if (params?.page) sp.set('page', String(params.page))
+    if (params?.limit) sp.set('limit', String(params.limit))
+    if (params?.academicYear) sp.set('academicYear', params.academicYear)
+    const qs = sp.toString() ? `?${sp.toString()}` : ''
+    // The endpoint is paginated; existing callers expect the array.
+    // Unwrap here and surface a wrapper helper for paginated callers below.
+    return fetchApi<{ reports: StudentReport[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
+      `/api/students/reports/all${qs}`,
+    ).then(r => r.reports)
+  },
+  allReportsPaged: (params?: { page?: number; limit?: number; academicYear?: string }) => {
+    const sp = new URLSearchParams()
+    if (params?.page) sp.set('page', String(params.page))
+    if (params?.limit) sp.set('limit', String(params.limit))
+    if (params?.academicYear) sp.set('academicYear', params.academicYear)
+    const qs = sp.toString() ? `?${sp.toString()}` : ''
+    return fetchApi<{ reports: StudentReport[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
+      `/api/students/reports/all${qs}`,
+    )
+  },
 }
 
 export const links = {

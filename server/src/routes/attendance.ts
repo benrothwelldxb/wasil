@@ -741,39 +741,62 @@ router.get('/my-children', isAuthenticated, async (req: Request, res: Response) 
       },
     })
 
+    const studentIds = links.map(l => l.student.id)
+    if (studentIds.length === 0) {
+      return res.json([])
+    }
+
     // Two weeks ago
     const twoWeeksAgo = new Date()
     twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
     const twoWeeksAgoStr = twoWeeksAgo.toISOString().slice(0, 10)
 
-    const summaries = await Promise.all(links.map(async link => {
-      const student = link.student
-
-      // All-time counts
-      const records = await prisma.attendanceRecord.findMany({
-        where: { studentId: student.id },
-      })
-
-      const present = records.filter(r => r.status === 'PRESENT').length
-      const absent = records.filter(r => r.status === 'ABSENT').length
-      const late = records.filter(r => r.status === 'LATE').length
-      const excused = records.filter(r => r.status === 'EXCUSED').length
-
-      // Recent records (last 2 weeks)
-      const recentRecords = await prisma.attendanceRecord.findMany({
-        where: { studentId: student.id, date: { gte: twoWeeksAgoStr } },
+    // Two batched queries instead of N per-child loops:
+    //   - groupBy: all-time counts per (studentId, status)
+    //   - findMany: recent records across all children at once
+    const [counts, recentAcrossChildren] = await Promise.all([
+      prisma.attendanceRecord.groupBy({
+        by: ['studentId', 'status'],
+        where: { studentId: { in: studentIds } },
+        _count: { _all: true },
+      }),
+      prisma.attendanceRecord.findMany({
+        where: { studentId: { in: studentIds }, date: { gte: twoWeeksAgoStr } },
         orderBy: { date: 'desc' },
-      })
+      }),
+    ])
 
+    // Bucket results by studentId in memory
+    const countsByStudent = new Map<string, { present: number; absent: number; late: number; excused: number }>()
+    for (const c of counts) {
+      const entry = countsByStudent.get(c.studentId) ?? { present: 0, absent: 0, late: 0, excused: 0 }
+      if (c.status === 'PRESENT') entry.present = c._count._all
+      else if (c.status === 'ABSENT') entry.absent = c._count._all
+      else if (c.status === 'LATE') entry.late = c._count._all
+      else if (c.status === 'EXCUSED') entry.excused = c._count._all
+      countsByStudent.set(c.studentId, entry)
+    }
+
+    const recentByStudent = new Map<string, typeof recentAcrossChildren>()
+    for (const r of recentAcrossChildren) {
+      const list = recentByStudent.get(r.studentId) ?? []
+      list.push(r)
+      recentByStudent.set(r.studentId, list)
+    }
+
+    const summaries = links.map(link => {
+      const student = link.student
+      const counts = countsByStudent.get(student.id) ?? { present: 0, absent: 0, late: 0, excused: 0 }
+      const recent = recentByStudent.get(student.id) ?? []
       return {
         studentId: student.id,
         studentName: `${student.firstName} ${student.lastName}`,
         className: student.class.name,
-        present,
-        absent,
-        late,
-        excused,
-        recentRecords: recentRecords.map(r => ({
+        present: counts.present,
+        absent: counts.absent,
+        late: counts.late,
+        excused: counts.excused,
+        recentRecords: recent.map(r => ({
           id: r.id,
           studentId: r.studentId,
           studentName: `${student.firstName} ${student.lastName}`,
@@ -785,7 +808,7 @@ router.get('/my-children', isAuthenticated, async (req: Request, res: Response) 
           createdAt: r.createdAt.toISOString(),
         })),
       }
-    }))
+    })
 
     res.json(summaries)
   } catch (error) {

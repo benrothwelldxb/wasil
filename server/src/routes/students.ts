@@ -285,29 +285,51 @@ router.post('/reports/bulk', isAdmin, reportUpload.array('files', 200), async (r
   }
 })
 
-// List all reports for the school (admin)
+// List all reports for the school (admin). Paginated — over multiple
+// academic years this set can easily reach 10k+ rows.
 router.get('/reports/all', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const reports = await prisma.studentReport.findMany({
-      where: { schoolId: user.schoolId },
-      include: { student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } } },
-      orderBy: { createdAt: 'desc' },
-    })
+    const { page = '1', limit = '50', academicYear } = req.query
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1)
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit as string, 10) || 50))
+    const skip = (pageNum - 1) * limitNum
 
-    res.json(reports.map(r => ({
-      id: r.id,
-      studentId: r.studentId,
-      studentName: `${r.student.firstName} ${r.student.lastName}`,
-      className: r.student.class.name,
-      fileName: r.fileName,
-      fileUrl: r.fileUrl,
-      fileSize: r.fileSize,
-      reportType: r.reportType,
-      reportPeriod: r.reportPeriod,
-      academicYear: r.academicYear,
-      createdAt: r.createdAt.toISOString(),
-    })))
+    const where: Record<string, unknown> = { schoolId: user.schoolId }
+    if (academicYear) where.academicYear = academicYear as string
+
+    const [reports, total] = await Promise.all([
+      prisma.studentReport.findMany({
+        where,
+        include: { student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } } },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limitNum,
+      }),
+      prisma.studentReport.count({ where }),
+    ])
+
+    res.json({
+      reports: reports.map(r => ({
+        id: r.id,
+        studentId: r.studentId,
+        studentName: `${r.student.firstName} ${r.student.lastName}`,
+        className: r.student.class.name,
+        fileName: r.fileName,
+        fileUrl: r.fileUrl,
+        fileSize: r.fileSize,
+        reportType: r.reportType,
+        reportPeriod: r.reportPeriod,
+        academicYear: r.academicYear,
+        createdAt: r.createdAt.toISOString(),
+      })),
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    })
   } catch (error) {
     console.error('Error fetching all reports:', error)
     res.status(500).json({ error: 'Failed to fetch reports' })
