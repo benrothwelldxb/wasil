@@ -1,5 +1,6 @@
 import prisma from './prisma.js'
 import { enqueueEmail } from './outbox.js'
+import { nowInTimezone } from './dateTime.js'
 
 export interface DigestRow {
   studentName: string
@@ -189,35 +190,6 @@ export async function sendDigestForSchool(schoolId: string, date: string): Promi
   return admins.length
 }
 
-/**
- * Returns the date in the given IANA timezone as YYYY-MM-DD, plus current HH:MM.
- * Falls back to UTC if the timezone is invalid.
- */
-function nowInTimezone(timezone: string): { date: string; time: string } {
-  try {
-    const fmt = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })
-    const parts = fmt.formatToParts(new Date())
-    const get = (t: string) => parts.find(p => p.type === t)?.value ?? ''
-    const date = `${get('year')}-${get('month')}-${get('day')}`
-    const hour = get('hour') === '24' ? '00' : get('hour')
-    const time = `${hour}:${get('minute')}`
-    return { date, time }
-  } catch {
-    const now = new Date()
-    return {
-      date: now.toISOString().slice(0, 10),
-      time: now.toISOString().slice(11, 16),
-    }
-  }
-}
 
 /**
  * Cron entry point — call hourly. For each school with the digest enabled,

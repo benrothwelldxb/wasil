@@ -5,6 +5,7 @@ import { logAudit } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { generateDailyRegistersHtml } from '../services/attendanceRegisterPdf.js'
 import { buildDigestData, sendDigestForSchool } from '../services/attendanceDigest.js'
+import { todayForSchool } from '../services/dateTime.js'
 
 const router = Router()
 
@@ -16,7 +17,9 @@ const router = Router()
 router.get('/today', isStaff, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+    // "Today" must mean the school's local today, not the server's UTC day.
+    // A Dubai school opens at 7am local — that's 3am UTC — so this matters.
+    const today = await todayForSchool(user.schoolId)
 
     // Get all classes for this school with student counts
     const classes = await prisma.class.findMany({
@@ -100,7 +103,7 @@ router.get('/class/:classId', isStaff, async (req: Request, res: Response) => {
   try {
     const user = req.user!
     const { classId } = req.params
-    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10)
+    const date = (req.query.date as string) || (await todayForSchool(user.schoolId))
 
     // Verify class belongs to this school
     const classRecord = await prisma.class.findFirst({
@@ -405,15 +408,19 @@ router.patch('/requests/:id', isStaff, async (req: Request, res: Response) => {
 router.get('/analytics', isStaff, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const today = new Date().toISOString().slice(0, 10)
+    // Today/week/month must be in the school's timezone — otherwise a Dubai
+    // school's "this week" rolls over at 4am local time instead of midnight.
+    const today = await todayForSchool(user.schoolId)
 
-    // Calculate date ranges
-    const now = new Date()
-    const weekStart = new Date(now)
-    weekStart.setDate(now.getDate() - now.getDay()) // Sunday
+    // Week and month start are derived from today's calendar date in school
+    // time, then formatted back to YYYY-MM-DD strings. Parsing today as a
+    // local Date gives us the right calendar week/month boundaries.
+    const todayLocal = new Date(`${today}T00:00:00`)
+    const weekStart = new Date(todayLocal)
+    weekStart.setDate(todayLocal.getDate() - todayLocal.getDay()) // Sunday
     const weekStartStr = weekStart.toISOString().slice(0, 10)
 
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthStart = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), 1)
     const monthStartStr = monthStart.toISOString().slice(0, 10)
 
     // Total students
@@ -535,7 +542,7 @@ router.get('/export', isStaff, async (req: Request, res: Response) => {
 router.get('/digest', isStaff, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10)
+    const date = (req.query.date as string) || (await todayForSchool(user.schoolId))
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' })
     }
@@ -551,7 +558,7 @@ router.get('/digest', isStaff, async (req: Request, res: Response) => {
 router.post('/digest/send', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const date = (req.body?.date as string) || new Date().toISOString().slice(0, 10)
+    const date = (req.body?.date as string) || (await todayForSchool(user.schoolId))
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' })
     }
@@ -567,7 +574,7 @@ router.post('/digest/send', isAdmin, async (req: Request, res: Response) => {
 router.get('/registers/print', isStaff, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10)
+    const date = (req.query.date as string) || (await todayForSchool(user.schoolId))
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' })

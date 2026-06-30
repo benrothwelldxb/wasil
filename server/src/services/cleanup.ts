@@ -1,6 +1,9 @@
 import prisma from './prisma.js'
 import { sendReminderToParent } from './consultationEmails.js'
 import { sendConsultationReminderNotification } from './consultationNotify.js'
+import { nowInTimezone } from './dateTime.js'
+import { enqueuePush } from './outbox.js'
+import { withJobLock } from './jobLock.js'
 
 /**
  * Clean up expired tokens from the database.
@@ -159,151 +162,45 @@ export async function sendConsultationReminders(): Promise<void> {
  * Runs hourly but only sends once per day (checks if current hour is 18:00 UTC+4 = 14:00 UTC).
  * Groups activities by parent and sends one notification per parent.
  */
-let lastScheduleReminderDate: string | null = null
-
 export async function sendScheduleReminders(): Promise<void> {
   try {
-    // Only run at ~6pm Gulf time (UTC+4 = 14:00 UTC)
-    const now = new Date()
-    const gulfHour = (now.getUTCHours() + 4) % 24
-    if (gulfHour < 17 || gulfHour > 19) return // Only between 5-7pm Gulf time
-
-    // Only send once per day
-    const todayStr = now.toISOString().split('T')[0]
-    if (lastScheduleReminderDate === todayStr) return
-    lastScheduleReminderDate = todayStr
-
-    // Get tomorrow's day of week (0=Sun, 1=Mon, ..., 6=Sat)
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-    const tomorrowDay = tomorrow.getDay()
-
-    // Skip if tomorrow is weekend (Sat=6, Sun=0) — adjust for UAE if needed (Fri=5, Sat=6)
-    if (tomorrowDay === 0 || tomorrowDay === 6) return
-
-    // Get all active recurring schedule items for tomorrow
-    const scheduleItems = await prisma.scheduleItem.findMany({
-      where: {
-        isRecurring: true,
-        dayOfWeek: tomorrowDay,
-        active: true,
-      },
-      include: {
-        class: { select: { id: true, name: true } },
-        yearGroup: { select: { id: true, name: true } },
-        school: { select: { id: true, name: true } },
-      },
+    // Iterate schools and decide per-school whether it's the right local
+    // time to send. Previously this was hardcoded to Gulf time; now each
+    // school's timezone is respected. Idempotency is per (school, school-
+    // local date) via JobRun so a restart at 6pm can't double-send.
+    const schools = await prisma.school.findMany({
+      where: { archived: false },
+      select: { id: true, timezone: true, name: true },
     })
-
-    if (scheduleItems.length === 0) return
-
-    // Group items by school
-    const bySchool = new Map<string, typeof scheduleItems>()
-    for (const item of scheduleItems) {
-      const list = bySchool.get(item.schoolId) || []
-      list.push(item)
-      bySchool.set(item.schoolId, list)
-    }
 
     let totalSent = 0
 
-    for (const [schoolId, items] of bySchool) {
-      // Get all parents with their children's class info
-      const parents = await prisma.user.findMany({
-        where: { schoolId, role: 'PARENT' },
-        select: {
-          id: true,
-          name: true,
-          children: { select: { name: true, classId: true } },
-          studentLinks: {
-            select: {
-              student: { select: { firstName: true, lastName: true, classId: true, class: { select: { yearGroupId: true } } } },
-            },
-          },
-        },
+    for (const school of schools) {
+      const { date: localDate, time: localTime } = nowInTimezone(school.timezone)
+      const [hourStr] = localTime.split(':')
+      const localHour = parseInt(hourStr, 10)
+
+      // Send between 5-7pm local time so the cron's hourly tick has a
+      // chance to land in-window in every timezone.
+      if (localHour < 17 || localHour > 19) continue
+
+      // Compute tomorrow's day-of-week in the school's local calendar.
+      // Parse localDate as a calendar date (T00:00:00 means "treat this as
+      // wall-clock midnight"), add one day, then read its weekday.
+      const tomorrow = new Date(`${localDate}T00:00:00`)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      const tomorrowDay = tomorrow.getDay()
+
+      // Skip if tomorrow is weekend. The UAE moved to Sat-Sun weekend in
+      // 2022 so Sat=6 / Sun=0 is now correct for most Gulf schools.
+      // TODO: when we add per-school weekend config, read it here instead.
+      if (tomorrowDay === 0 || tomorrowDay === 6) continue
+
+      // Per-school idempotency: don't fire twice in one local day even if
+      // the cron ticks again within the 5-7pm window.
+      await withJobLock(`schedule-reminders:${school.id}`, localDate, async () => {
+        totalSent += await sendSchoolScheduleReminders(school.id, tomorrowDay)
       })
-
-      // Check which parents have schedule reminders disabled
-      const disabledPrefs = await prisma.notificationPreference.findMany({
-        where: { userId: { in: parents.map(p => p.id) }, scheduleReminders: false },
-        select: { userId: true },
-      })
-      const disabledSet = new Set(disabledPrefs.map(p => p.userId))
-
-      for (const parent of parents) {
-        if (disabledSet.has(parent.id)) continue
-
-        // Get this parent's children's class IDs and year group IDs
-        const childClassIds = new Set<string>()
-        const childYearGroupIds = new Set<string>()
-        const childNames: string[] = []
-
-        for (const child of parent.children) {
-          childClassIds.add(child.classId)
-          childNames.push(child.name)
-        }
-        for (const link of parent.studentLinks) {
-          childClassIds.add(link.student.classId)
-          if (link.student.class.yearGroupId) childYearGroupIds.add(link.student.class.yearGroupId)
-          childNames.push(`${link.student.firstName} ${link.student.lastName}`)
-        }
-
-        if (childClassIds.size === 0) continue
-
-        // Find relevant items for this parent's children
-        const relevantItems = items.filter(item => {
-          if (item.targetClass === 'Whole School') return true
-          if (item.classId && childClassIds.has(item.classId)) return true
-          if (item.yearGroupId && childYearGroupIds.has(item.yearGroupId)) return true
-          return false
-        })
-
-        if (relevantItems.length === 0) continue
-
-        // Build notification body
-        const activityList = relevantItems
-          .map(item => `${item.icon || '📋'} ${item.label}`)
-          .join(', ')
-
-        const firstName = (parent.name || '').split(' ')[0] || 'Parent'
-        const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][tomorrowDay]
-
-        // Create notification record
-        await prisma.notification.create({
-          data: {
-            userId: parent.id,
-            type: 'SCHEDULE_REMINDER',
-            title: `Tomorrow's Schedule — ${dayName}`,
-            body: activityList,
-            resourceType: 'SCHEDULE',
-            resourceId: schoolId,
-            data: { route: '/' },
-            schoolId,
-          },
-        })
-
-        // Send push notification
-        const tokens = await prisma.deviceToken.findMany({
-          where: { userId: parent.id },
-          select: { token: true },
-        })
-
-        if (tokens.length > 0) {
-          const { sendPushNotification, removeInvalidTokens } = await import('./firebase.js')
-          const result = await sendPushNotification(
-            tokens.map(t => t.token),
-            {
-              title: `📅 Tomorrow's Schedule`,
-              body: activityList,
-              data: { type: 'SCHEDULE_REMINDER', route: '/' },
-            }
-          )
-          if (result.failedTokens.length > 0) {
-            removeInvalidTokens(result.failedTokens).catch(() => {})
-          }
-        }
-
-        totalSent++
-      }
     }
 
     if (totalSent > 0) {
@@ -312,4 +209,107 @@ export async function sendScheduleReminders(): Promise<void> {
   } catch (error) {
     console.error('[Schedule Reminders] Error:', error)
   }
+}
+
+/**
+ * Send schedule reminders for one school for tomorrow's day-of-week. Pulled
+ * out so the per-school loop reads cleanly.
+ */
+async function sendSchoolScheduleReminders(schoolId: string, tomorrowDay: number): Promise<number> {
+  let totalSent = 0
+  const items = await prisma.scheduleItem.findMany({
+    where: {
+      schoolId,
+      isRecurring: true,
+      dayOfWeek: tomorrowDay,
+      active: true,
+    },
+    include: {
+      class: { select: { id: true, name: true } },
+      yearGroup: { select: { id: true, name: true } },
+      school: { select: { id: true, name: true } },
+    },
+  })
+  if (items.length === 0) return 0
+
+  // Parents with their children's class + year group, so we can match items
+  const parents = await prisma.user.findMany({
+    where: { schoolId, role: 'PARENT' },
+    select: {
+      id: true,
+      name: true,
+      children: { select: { name: true, classId: true } },
+      studentLinks: {
+        select: {
+          student: { select: { firstName: true, lastName: true, classId: true, class: { select: { yearGroupId: true } } } },
+        },
+      },
+    },
+  })
+
+  // Parents who've opted out of schedule reminders
+  const disabledPrefs = await prisma.notificationPreference.findMany({
+    where: { userId: { in: parents.map(p => p.id) }, scheduleReminders: false },
+    select: { userId: true },
+  })
+  const disabledSet = new Set(disabledPrefs.map(p => p.userId))
+
+  const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][tomorrowDay]
+
+  for (const parent of parents) {
+    if (disabledSet.has(parent.id)) continue
+
+    const childClassIds = new Set<string>()
+    const childYearGroupIds = new Set<string>()
+    for (const child of parent.children) childClassIds.add(child.classId)
+    for (const link of parent.studentLinks) {
+      childClassIds.add(link.student.classId)
+      if (link.student.class.yearGroupId) childYearGroupIds.add(link.student.class.yearGroupId)
+    }
+    if (childClassIds.size === 0) continue
+
+    const relevantItems = items.filter(item => {
+      if (item.targetClass === 'Whole School') return true
+      if (item.classId && childClassIds.has(item.classId)) return true
+      if (item.yearGroupId && childYearGroupIds.has(item.yearGroupId)) return true
+      return false
+    })
+    if (relevantItems.length === 0) continue
+
+    const activityList = relevantItems
+      .map(item => `${item.icon || '📋'} ${item.label}`)
+      .join(', ')
+
+    // In-app notification: created inline (parents see it immediately)
+    await prisma.notification.create({
+      data: {
+        userId: parent.id,
+        type: 'SCHEDULE_REMINDER',
+        title: `Tomorrow's Schedule — ${dayName}`,
+        body: activityList,
+        resourceType: 'SCHEDULE',
+        resourceId: schoolId,
+        data: { route: '/' },
+        schoolId,
+      },
+    })
+
+    // Push delivery via the outbox so a brief FCM blip doesn't lose work.
+    const tokens = await prisma.deviceToken.findMany({
+      where: { userId: parent.id },
+      select: { token: true },
+    })
+    if (tokens.length > 0) {
+      await enqueuePush(schoolId, {
+        tokens: tokens.map(t => t.token),
+        title: `📅 Tomorrow's Schedule`,
+        body: activityList,
+        data: { type: 'SCHEDULE_REMINDER', route: '/' },
+      })
+    }
+
+    totalSent++
+  }
+
+  return totalSent
 }
