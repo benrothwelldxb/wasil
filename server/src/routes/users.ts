@@ -279,6 +279,88 @@ router.get('/languages', isAuthenticated, async (_req, res) => {
   res.json(SUPPORTED_LANGUAGES)
 })
 
+// ─── Contact-details confirmation ────────────────────────────────────────────
+// Parents are periodically asked to confirm their mobile number is still
+// current. School.contactConfirmDays governs the cadence; 0 disables it.
+// Staff/admins don't need this prompt.
+
+function normalisePhone(raw: string): string | null {
+  const cleaned = raw.trim().replace(/[^\d+]/g, '')
+  // Allow digits + optional leading + with 6-20 chars (covers international)
+  if (!/^\+?\d{6,20}$/.test(cleaned)) return null
+  return cleaned
+}
+
+// GET /me/contact-prompt — should the contact-details modal be shown?
+router.get('/me/contact-prompt', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') {
+      return res.json({ needsConfirmation: false, phone: null, daysOverdue: 0 })
+    }
+
+    const [me, school] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: user.id },
+        select: { phone: true, phoneConfirmedAt: true },
+      }),
+      prisma.school.findUnique({
+        where: { id: user.schoolId },
+        select: { contactConfirmDays: true },
+      }),
+    ])
+
+    const intervalDays = school?.contactConfirmDays ?? 0
+    if (intervalDays <= 0) {
+      return res.json({ needsConfirmation: false, phone: me?.phone ?? null, daysOverdue: 0 })
+    }
+
+    const now = Date.now()
+    const intervalMs = intervalDays * 24 * 60 * 60 * 1000
+    const lastConfirmed = me?.phoneConfirmedAt?.getTime() ?? 0
+    const overdue = lastConfirmed === 0 ? true : now - lastConfirmed > intervalMs
+    const daysOverdue = lastConfirmed === 0 ? 0 : Math.max(0, Math.floor((now - lastConfirmed - intervalMs) / (24 * 60 * 60 * 1000)))
+
+    res.json({
+      needsConfirmation: overdue,
+      phone: me?.phone ?? null,
+      daysOverdue,
+    })
+  } catch (error) {
+    console.error('Error fetching contact prompt:', error)
+    res.status(500).json({ error: 'Failed to load contact prompt' })
+  }
+})
+
+// POST /me/contact-confirm — parent confirms or updates their number
+router.post('/me/contact-confirm', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') {
+      return res.status(403).json({ error: 'Only parents can use this endpoint' })
+    }
+
+    const { phone } = req.body as { phone?: string }
+    if (typeof phone !== 'string') {
+      return res.status(400).json({ error: 'phone is required' })
+    }
+    const normalised = normalisePhone(phone)
+    if (!normalised) {
+      return res.status(400).json({ error: 'Please enter a valid mobile number (digits only, 6–20 characters)' })
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { phone: normalised, phoneConfirmedAt: new Date() },
+    })
+
+    res.json({ phone: normalised, confirmedAt: new Date().toISOString() })
+  } catch (error) {
+    console.error('Error confirming contact details:', error)
+    res.status(500).json({ error: 'Failed to confirm contact details' })
+  }
+})
+
 // Update user's language preference
 router.patch('/me/language', isAuthenticated, async (req, res) => {
   try {

@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { AuthProvider, ThemeProvider, SessionExpiredModal } from '@wasil/shared'
+import { AuthProvider, ThemeProvider, SessionExpiredModal, ContactConfirmModal } from '@wasil/shared'
 import App from './App'
 import './index.css'
 import './i18n'
@@ -13,6 +13,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <ThemeProvider>
           <App />
           <SessionExpiredModal />
+          <ContactConfirmModal />
         </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>

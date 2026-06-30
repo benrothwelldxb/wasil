@@ -52,6 +52,7 @@ const SETTINGS_SELECT = {
   knowledgeBaseEnabled: true,
   attendanceDigestEnabled: true,
   attendanceDigestTime: true,
+  contactConfirmDays: true,
 } as const
 
 // GET /api/school-settings — any authenticated user can read settings for their school
@@ -100,6 +101,9 @@ router.patch('/', isAuthenticated, isAdmin, async (req: Request, res: Response) 
       }
     } else if (body.attendanceDigestTime === null) {
       data.attendanceDigestTime = null
+    }
+    if (typeof body.contactConfirmDays === 'number' && Number.isInteger(body.contactConfirmDays) && body.contactConfirmDays >= 0 && body.contactConfirmDays <= 3650) {
+      data.contactConfirmDays = body.contactConfirmDays
     }
 
     if (Object.keys(data).length === 0) {

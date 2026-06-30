@@ -1398,6 +1398,13 @@ export interface SchoolSettings extends SchoolModuleFlags {
   timezone: string
   attendanceDigestEnabled: boolean
   attendanceDigestTime: string | null // HH:MM
+  contactConfirmDays: number // days between contact-details prompts; 0 disables
+}
+
+export interface ContactPrompt {
+  needsConfirmation: boolean
+  phone: string | null
+  daysOverdue: number
 }
 
 export type SchoolSettingsUpdate = Partial<Omit<SchoolSettings, 'id' | 'name'>>

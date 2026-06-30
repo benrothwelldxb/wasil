@@ -826,6 +826,13 @@ export const users = {
       method: 'PATCH',
       body: JSON.stringify({ language }),
     }),
+  contactPrompt: () =>
+    fetchApi<import('../types').ContactPrompt>('/api/users/me/contact-prompt'),
+  confirmContact: (phone: string) =>
+    fetchApi<{ phone: string; confirmedAt: string }>('/api/users/me/contact-confirm', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    }),
 }
 
 // Classes
