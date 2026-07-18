@@ -59,6 +59,11 @@ interface JobLockResult {
  * Failures in `fn` are recorded on the JobRun row and re-raised so the
  * caller's catch / error reporter sees them.
  */
+// Generous ceiling for how long a single job may hold the lock transaction
+// open. Our scheduled jobs finish in well under this; it exists only so a
+// wedged job eventually releases rather than pinning a connection forever.
+const JOB_LOCK_TIMEOUT_MS = 10 * 60 * 1000
+
 export async function withJobLock(
   jobKey: string,
   periodKey: string,
@@ -66,20 +71,26 @@ export async function withJobLock(
 ): Promise<JobLockResult> {
   const key = lockKey(jobKey)
 
-  // Try to acquire the advisory lock. If false, another process is in this
-  // job; we bail quietly.
-  const [{ pg_try_advisory_lock }] = await prisma.$queryRaw<
-    Array<{ pg_try_advisory_lock: boolean }>
-  >`SELECT pg_try_advisory_lock(${key}) AS pg_try_advisory_lock`
+  // Everything runs inside a single interactive transaction so the advisory
+  // lock is acquired, held, and released on ONE pinned connection. Postgres
+  // advisory locks are session-scoped; the previous code took the lock with
+  // `pg_try_advisory_lock` on one pooled connection and released it with
+  // `pg_advisory_unlock` on a *different* one, so the unlock silently no-op'd
+  // and the lock leaked until the connection was recycled — nondeterministically
+  // wedging the job. `pg_try_advisory_xact_lock` is bound to this transaction
+  // and is released automatically when it commits or rolls back.
+  let thrown: unknown
+  const outcome = await prisma.$transaction(async (tx): Promise<JobLockResult> => {
+    const [{ locked }] = await tx.$queryRaw<Array<{ locked: boolean }>>`
+      SELECT pg_try_advisory_xact_lock(${key}) AS locked`
 
-  if (!pg_try_advisory_lock) {
-    logger.debug({ jobKey, periodKey }, 'job lock not acquired — another worker is running')
-    return { ran: false, errored: false }
-  }
+    if (!locked) {
+      logger.debug({ jobKey, periodKey }, 'job lock not acquired — another worker is running')
+      return { ran: false, errored: false }
+    }
 
-  try {
     // Idempotency check: if we already completed this period, skip.
-    const existing = await prisma.jobRun.findUnique({
+    const existing = await tx.jobRun.findUnique({
       where: { jobKey_periodKey: { jobKey, periodKey } },
       select: { completedAt: true, succeeded: true },
     })
@@ -88,8 +99,8 @@ export async function withJobLock(
       return { ran: false, errored: false }
     }
 
-    // Insert (or update an earlier failed run) and mark it started
-    const runRow = await prisma.jobRun.upsert({
+    // Insert (or update an earlier failed run) and mark it started.
+    const runRow = await tx.jobRun.upsert({
       where: { jobKey_periodKey: { jobKey, periodKey } },
       create: { jobKey, periodKey, startedAt: new Date() },
       update: { startedAt: new Date(), completedAt: null, succeeded: false, error: null },
@@ -98,22 +109,24 @@ export async function withJobLock(
 
     try {
       await fn()
-      await prisma.jobRun.update({
+      await tx.jobRun.update({
         where: { id: runRow.id },
         data: { completedAt: new Date(), succeeded: true },
       })
       return { ran: true, errored: false }
     } catch (err) {
+      // Record the failure and let the transaction COMMIT (so the failed
+      // JobRun row persists and the lock is released), then re-raise below.
       const errorMsg = err instanceof Error ? err.message : String(err)
-      await prisma.jobRun.update({
+      await tx.jobRun.update({
         where: { id: runRow.id },
         data: { completedAt: new Date(), succeeded: false, error: errorMsg },
       })
-      throw err
+      thrown = err
+      return { ran: true, errored: true }
     }
-  } finally {
-    // Release the advisory lock. Crashes here are fine — Postgres drops the
-    // lock on session close anyway, but releasing eagerly is cleaner.
-    await prisma.$queryRaw`SELECT pg_advisory_unlock(${key})`.catch(() => {})
-  }
+  }, { timeout: JOB_LOCK_TIMEOUT_MS, maxWait: 10_000 })
+
+  if (thrown) throw thrown
+  return outcome
 }

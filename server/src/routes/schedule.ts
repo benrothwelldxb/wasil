@@ -191,6 +191,15 @@ router.put('/:id', isAdmin, async (req, res) => {
     const { id } = req.params
     const { targetClass, classId, yearGroupId, isRecurring, dayOfWeek, active, date, type, label, description, icon, notifyParents } = req.body
 
+    // Tenant guard: only update schedule items in the admin's own school.
+    const owned = await prisma.scheduleItem.findFirst({
+      where: { id, schoolId: req.user!.schoolId },
+      select: { id: true },
+    })
+    if (!owned) {
+      return res.status(404).json({ error: 'Schedule item not found' })
+    }
+
     const scheduleItem = await prisma.scheduleItem.update({
       where: { id },
       data: {
@@ -246,9 +255,13 @@ router.delete('/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
 
-    await prisma.scheduleItem.delete({
-      where: { id },
+    // Tenant guard: scoped delete can't remove other schools' schedule items.
+    const result = await prisma.scheduleItem.deleteMany({
+      where: { id, schoolId: req.user!.schoolId },
     })
+    if (result.count === 0) {
+      return res.status(404).json({ error: 'Schedule item not found' })
+    }
 
     res.json({ message: 'Schedule item deleted successfully' })
   } catch (error) {

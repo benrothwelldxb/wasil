@@ -78,6 +78,15 @@ router.put('/category/:id', isAdmin, async (req, res) => {
     const { id } = req.params
     const { name, icon, color, order } = req.body
 
+    // Tenant guard: only touch categories in the admin's own school.
+    const owned = await prisma.knowledgeCategory.findFirst({
+      where: { id, schoolId: req.user!.schoolId },
+      select: { id: true },
+    })
+    if (!owned) {
+      return res.status(404).json({ error: 'Category not found' })
+    }
+
     const category = await prisma.knowledgeCategory.update({
       where: { id },
       data: { name, icon, color, order },
@@ -102,9 +111,13 @@ router.delete('/category/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
 
-    await prisma.knowledgeCategory.delete({
-      where: { id },
+    // Tenant guard: deleteMany scoped by school won't touch other tenants' rows.
+    const result = await prisma.knowledgeCategory.deleteMany({
+      where: { id, schoolId: req.user!.schoolId },
     })
+    if (result.count === 0) {
+      return res.status(404).json({ error: 'Category not found' })
+    }
 
     res.json({ message: 'Category deleted successfully' })
   } catch (error) {
@@ -117,6 +130,16 @@ router.delete('/category/:id', isAdmin, async (req, res) => {
 router.post('/article', isAdmin, async (req, res) => {
   try {
     const { title, content, categoryId } = req.body
+
+    // Tenant guard: the target category must belong to the admin's school,
+    // otherwise an admin could attach articles into another school's KB.
+    const category = await prisma.knowledgeCategory.findFirst({
+      where: { id: categoryId, schoolId: req.user!.schoolId },
+      select: { id: true },
+    })
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' })
+    }
 
     const article = await prisma.knowledgeArticle.create({
       data: {
@@ -146,6 +169,15 @@ router.put('/article/:id', isAdmin, async (req, res) => {
     const { id } = req.params
     const { title, content } = req.body
 
+    // Tenant guard via the article's parent category.
+    const owned = await prisma.knowledgeArticle.findFirst({
+      where: { id, category: { schoolId: req.user!.schoolId } },
+      select: { id: true },
+    })
+    if (!owned) {
+      return res.status(404).json({ error: 'Article not found' })
+    }
+
     const article = await prisma.knowledgeArticle.update({
       where: { id },
       data: { title, content },
@@ -169,6 +201,15 @@ router.put('/article/:id', isAdmin, async (req, res) => {
 router.delete('/article/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
+
+    // Tenant guard via the article's parent category.
+    const owned = await prisma.knowledgeArticle.findFirst({
+      where: { id, category: { schoolId: req.user!.schoolId } },
+      select: { id: true },
+    })
+    if (!owned) {
+      return res.status(404).json({ error: 'Article not found' })
+    }
 
     await prisma.knowledgeArticle.delete({
       where: { id },

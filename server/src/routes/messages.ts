@@ -9,6 +9,7 @@ import { sendNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload } from '../services/uploadValidation.js'
+import { sanitizeRichText } from '../services/htmlSanitizer.js'
 
 const router = Router()
 
@@ -319,7 +320,7 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
     const message = await prisma.message.create({
       data: {
         title,
-        content,
+        content: sanitizeRichText(content),
         targetClass,
         classId: classId || null,
         yearGroupId: yearGroupId || null,
@@ -425,7 +426,7 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
       where: { id },
       data: {
         title,
-        content,
+        content: sanitizeRichText(content),
         targetClass,
         classId: classId || null,
         yearGroupId: yearGroupId || null,

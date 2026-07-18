@@ -114,8 +114,8 @@ router.put('/:id', isAdmin, async (req, res) => {
     const { id } = req.params
     const { term, termName, label, sublabel, date, endDate, type, color, academicYear } = req.body
 
-    const existing = await prisma.termDate.findUnique({
-      where: { id },
+    const existing = await prisma.termDate.findFirst({
+      where: { id, schoolId: req.user!.schoolId },
     })
 
     if (!existing) {
@@ -212,9 +212,13 @@ router.delete('/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
 
-    await prisma.termDate.delete({
-      where: { id },
+    // Tenant guard: scoped delete can't remove another school's term dates.
+    const result = await prisma.termDate.deleteMany({
+      where: { id, schoolId: req.user!.schoolId },
     })
+    if (result.count === 0) {
+      return res.status(404).json({ error: 'Term date not found' })
+    }
 
     logAudit({ req, action: 'DELETE', resourceType: 'TERM_DATE', resourceId: id })
 

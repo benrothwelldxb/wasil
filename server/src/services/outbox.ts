@@ -4,6 +4,7 @@ import logger from './logger.js'
 import { captureException } from './errorReporter.js'
 import { sendEmail } from './email.js'
 import { sendPushNotification, removeInvalidTokens } from './firebase.js'
+import { sendSMS, sendWhatsApp } from './twilio.js'
 
 /**
  * Outbox: reliable delivery for outbound email and push notifications.
@@ -28,6 +29,21 @@ interface EmailPayload {
   subject: string
   html: string
   text?: string
+  // Optional: an AlertDelivery row to mark SENT/FAILED as this entry resolves,
+  // so the emergency-alert dashboard reflects real per-recipient outcomes.
+  alertDeliveryId?: string
+}
+
+interface SmsPayload {
+  to: string
+  body: string
+  alertDeliveryId?: string
+}
+
+interface WhatsappPayload {
+  to: string
+  body: string
+  alertDeliveryId?: string
 }
 
 interface PushPayload {
@@ -73,13 +89,80 @@ export async function enqueuePush(
   })
 }
 
+export async function enqueueSms(
+  schoolId: string,
+  payload: SmsPayload,
+  client: TxClient = prisma,
+): Promise<void> {
+  await client.outboxEntry.create({
+    data: {
+      schoolId,
+      kind: 'SMS',
+      payload: payload as unknown as Prisma.InputJsonValue,
+    },
+  })
+}
+
+export async function enqueueWhatsapp(
+  schoolId: string,
+  payload: WhatsappPayload,
+  client: TxClient = prisma,
+): Promise<void> {
+  await client.outboxEntry.create({
+    data: {
+      schoolId,
+      kind: 'WHATSAPP',
+      payload: payload as unknown as Prisma.InputJsonValue,
+    },
+  })
+}
+
 // ─── Dispatch ────────────────────────────────────────────────────────────────
 
-async function dispatch(kind: 'EMAIL' | 'PUSH', payload: unknown): Promise<void> {
+type OutboxDispatchKind = 'EMAIL' | 'PUSH' | 'SMS' | 'WHATSAPP'
+
+// When an entry carries an AlertDelivery id, reflect the final per-recipient
+// outcome back onto that row so the emergency-alert dashboard stays accurate.
+async function markAlertDelivery(
+  alertDeliveryId: string | undefined,
+  status: 'SENT' | 'FAILED',
+  fields: { externalId?: string | null; error?: string | null } = {},
+): Promise<void> {
+  if (!alertDeliveryId) return
+  await prisma.alertDelivery.update({
+    where: { id: alertDeliveryId },
+    data: {
+      status,
+      externalId: fields.externalId ?? null,
+      error: fields.error ?? null,
+      sentAt: status === 'SENT' ? new Date() : null,
+    },
+  }).catch(err => {
+    // The alert delivery row may have been removed; don't fail the dispatch.
+    logger.warn({ err, alertDeliveryId }, 'outbox: markAlertDelivery failed')
+  })
+}
+
+async function dispatch(kind: OutboxDispatchKind, payload: unknown): Promise<void> {
   if (kind === 'EMAIL') {
     const p = payload as EmailPayload
     const ok = await sendEmail({ to: p.to, subject: p.subject, html: p.html, text: p.text })
     if (!ok) throw new Error('sendEmail returned false')
+    await markAlertDelivery(p.alertDeliveryId, 'SENT')
+    return
+  }
+  if (kind === 'SMS') {
+    const p = payload as SmsPayload
+    const result = await sendSMS(p.to, p.body)
+    if (!result) throw new Error('sendSMS returned null')
+    await markAlertDelivery(p.alertDeliveryId, 'SENT', { externalId: result.sid })
+    return
+  }
+  if (kind === 'WHATSAPP') {
+    const p = payload as WhatsappPayload
+    const result = await sendWhatsApp(p.to, p.body)
+    if (!result) throw new Error('sendWhatsApp returned null')
+    await markAlertDelivery(p.alertDeliveryId, 'SENT', { externalId: result.sid })
     return
   }
   if (kind === 'PUSH') {
@@ -120,7 +203,7 @@ export async function drainOutbox(): Promise<{ processed: number; failed: number
   const claimed = await prisma.$transaction(async tx => {
     const rows = await tx.$queryRaw<Array<{
       id: string
-      kind: 'EMAIL' | 'PUSH'
+      kind: OutboxDispatchKind
       payload: unknown
       attempts: number
     }>>`
@@ -182,6 +265,11 @@ export async function drainOutbox(): Promise<{ processed: number; failed: number
       })
 
       if (giveUp) {
+        // Reflect the permanent failure onto the AlertDelivery row (if any) so
+        // the emergency-alert dashboard shows it as failed rather than pending.
+        const alertDeliveryId = (row.payload as { alertDeliveryId?: string } | null)?.alertDeliveryId
+        await markAlertDelivery(alertDeliveryId, 'FAILED', { error: errorMsg })
+
         logger.error(
           { outboxId: row.id, kind: row.kind, attempts: nextAttempt, err },
           'outbox entry permanently failed',

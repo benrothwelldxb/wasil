@@ -6,7 +6,7 @@ import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import QRCode from 'qrcode'
 import prisma from '../services/prisma.js'
-import { isAuthenticated } from '../middleware/auth.js'
+import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { generateAccessToken, generateRefreshToken, revokeRefreshToken, rotateRefreshToken } from '../services/jwt.js'
 import { sendMagicLinkEmail, sendInvitationEmail } from '../services/email.js'
@@ -662,20 +662,50 @@ router.post('/register', registerLimiter, registerPerEmailLimiter, validate(regi
       return res.status(400).json({ error: 'This invitation has already been used or revoked' })
     }
 
+    // If the invitation was issued to a specific email, the registrant's
+    // email must match it — a pending invite must not be redirected onto an
+    // arbitrary account.
+    const boundEmail = invitation.parentEmail?.toLowerCase()
+    if (boundEmail && boundEmail !== email.toLowerCase()) {
+      return res.status(400).json({ error: 'This invitation was issued to a different email address' })
+    }
+
     // Check if user already exists
     let user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
     })
 
     if (user) {
-      // User exists — link new children/students to existing account
-      // Set password if they don't have one
-      if (!user.passwordHash) {
+      // SECURITY: /register must never authenticate an existing account
+      // without proof of ownership. Without these guards, anyone holding a
+      // valid pending invitation could obtain tokens for any account whose
+      // email they know (including admins) — a full account-takeover.
+      // Already-registered users add invitations via the authenticated
+      // /parent-invitations/redeem flow instead.
+      if (user.role !== 'PARENT') {
+        return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' })
+      }
+
+      if (user.passwordHash) {
+        // Account is already set up — require the correct password before
+        // linking the invitation and issuing tokens.
+        const validPassword = await bcrypt.compare(password, user.passwordHash)
+        if (!validPassword) {
+          return res.status(409).json({ error: 'An account with this email already exists. Please sign in to add these students to your account.' })
+        }
+      } else if (boundEmail) {
+        // First-time claim of a pre-provisioned, email-bound parent account:
+        // safe to set the initial password because the invitation proves the
+        // school issued it to exactly this email.
         const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
         await prisma.user.update({
           where: { id: user.id },
           data: { passwordHash },
         })
+      } else {
+        // Passwordless account, but this code-only invite isn't bound to the
+        // email — don't let it claim an arbitrary existing account.
+        return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' })
       }
     } else {
       // Create new user with password
@@ -1009,9 +1039,14 @@ router.post('/magic-link/verify', magicLinkVerifyLimiter, async (req, res) => {
   }
 })
 
-// Send magic link for registration (from invitation)
-router.post('/magic-link/send-registration', async (req, res) => {
+// Send magic link for registration (from invitation).
+// SECURITY: admin-only and scoped to the admin's own school. This endpoint
+// emails a registration link to an address taken from the request, so leaving
+// it unauthenticated let anyone who learned an invitationId redirect the link
+// to their own inbox and claim the invitation's children (and email-bomb).
+router.post('/magic-link/send-registration', magicLinkLimiter, isAdmin, async (req, res) => {
   const { invitationId, email } = req.body
+  const requester = req.user!
 
   if (!invitationId) {
     return res.status(400).json({ error: 'Invitation ID is required' })
@@ -1026,7 +1061,9 @@ router.post('/magic-link/send-registration', async (req, res) => {
       },
     })
 
-    if (!invitation) {
+    // 404 (not 403) when the invitation belongs to another school, so an admin
+    // can't probe for the existence of other tenants' invitations.
+    if (!invitation || invitation.schoolId !== requester.schoolId) {
       return res.status(404).json({ error: 'Invitation not found' })
     }
 

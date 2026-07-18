@@ -156,8 +156,8 @@ router.get('/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
 
-    const pulse = await prisma.pulseSurvey.findUnique({
-      where: { id },
+    const pulse = await prisma.pulseSurvey.findFirst({
+      where: { id, schoolId: req.user!.schoolId },
       include: {
         responses: true,
       },
@@ -518,6 +518,16 @@ router.post('/:id/send', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
 
+    // Tenant guard: an admin must not open another school's survey (which would
+    // push a notification to that school's whole parent body).
+    const owned = await prisma.pulseSurvey.findFirst({
+      where: { id, schoolId: req.user!.schoolId },
+      select: { id: true },
+    })
+    if (!owned) {
+      return res.status(404).json({ error: 'Pulse survey not found' })
+    }
+
     const pulse = await prisma.pulseSurvey.update({
       where: { id },
       data: {
@@ -672,6 +682,15 @@ router.get('/comparison', isAdmin, async (req, res) => {
 router.post('/:id/close', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
+
+    // Tenant guard: an admin must not force-close another school's survey.
+    const owned = await prisma.pulseSurvey.findFirst({
+      where: { id, schoolId: req.user!.schoolId },
+      select: { id: true },
+    })
+    if (!owned) {
+      return res.status(404).json({ error: 'Pulse survey not found' })
+    }
 
     const pulse = await prisma.pulseSurvey.update({
       where: { id },

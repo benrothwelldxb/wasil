@@ -110,6 +110,10 @@ model School {
   // Outbox (email + push delivery queue)
   outboxEntries       OutboxEntry[]
 
+  // External providers (ECA / catering) linked to this school
+  providerLinks       ProviderSchoolLink[]
+  providerClubBookings EcaProviderBooking[]
+
   // Google Calendar integration
   googleCalendarRefreshToken String?
   googleCalendarEmail        String?
@@ -187,6 +191,7 @@ model User {
 
   // ECA relations
   ecaSelections        EcaSelection[] @relation("EcaSelections")
+  clubBookings         EcaProviderBooking[] @relation("ClubBookings")
   ecaActivitiesManaged EcaActivity[]  @relation("EcaActivityStaff")
   ecaInvitationsSent   EcaInvitation[] @relation("EcaInvitationsSent")
   ecaAttendanceMarked  EcaAttendance[] @relation("EcaAttendanceMarkedBy")
@@ -272,6 +277,7 @@ model Student {
   ecaWaitlists    EcaWaitlist[]
   ecaInvitations  EcaInvitation[]
   ecaAttendance   EcaAttendance[]
+  providerBookings EcaProviderBooking[]
 
   // Inbox relations
   conversations   Conversation[]
@@ -1034,6 +1040,12 @@ model EcaActivity {
   isActive             Boolean  @default(true)
   cost                 Float?   // Cost per term (null = free)
   costDescription      String?  // Free text like "55 AED per term"
+  // External provider-run club (null = school-run). Ownership for the provider
+  // portal is enforced by providerId; paymentUrl is the external pay link.
+  providerId           String?
+  provider             Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  paymentUrl           String?
+  providerBookings     EcaProviderBooking[]
   isCancelled          Boolean  @default(false)
   cancelReason         String?
   selections           EcaSelection[]
@@ -1046,6 +1058,7 @@ model EcaActivity {
 
   @@index([ecaTermId, dayOfWeek, timeSlot])
   @@index([schoolId, isActive])
+  @@index([providerId])
 }
 
 enum EcaTimeSlot {
@@ -1650,6 +1663,9 @@ model CafeteriaMenu {
   id        String   @id @default(cuid())
   schoolId  String
   school    School   @relation(fields: [schoolId], references: [id])
+  // External catering provider that owns this menu (null = school-run).
+  providerId String?
+  provider   Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
   weekOf    DateTime // Monday of the week
   title     String?  // "Week 3 Menu" (optional)
   imageUrl  String?  // Optional: uploaded menu image/PDF instead of items
@@ -1661,6 +1677,7 @@ model CafeteriaMenu {
 
   @@unique([schoolId, weekOf])
   @@index([schoolId, isPublished])
+  @@index([providerId])
 }
 
 model CafeteriaMenuItem {
@@ -1880,6 +1897,138 @@ model OutboxEntry {
 enum OutboxKind {
   EMAIL
   PUSH
+  SMS
+  WHATSAPP
+}
+
+// ─── External providers ──────────────────────────────────────────────────────
+// Commercial third parties (extra-curricular clubs, catering) who self-manage
+// their offerings through a separate provider portal. Kept entirely distinct
+// from the User table so none of the parent/staff schoolId assumptions are
+// weakened. A Provider can serve many schools (ProviderSchoolLink); v1 links
+// exactly one.
+
+enum ProviderType {
+  ECA
+  CATERING
+}
+
+enum ProviderStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model Provider {
+  id          String         @id @default(cuid())
+  name        String
+  type        ProviderType
+  status      ProviderStatus @default(ACTIVE)
+  logoUrl     String?
+  contactEmail String?
+  contactPhone String?
+
+  schoolLinks ProviderSchoolLink[]
+  users       ProviderUser[]
+  invitations ProviderInvitation[]
+  ecaActivities EcaActivity[]
+  cafeteriaMenus CafeteriaMenu[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ProviderSchoolLink {
+  id         String   @id @default(cuid())
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  schoolId   String
+  school     School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  // Per-link governance: whether this provider may see parent contact details
+  // for bookings at this school.
+  shareParentContact Boolean @default(true)
+  createdAt  DateTime @default(now())
+
+  @@unique([providerId, schoolId])
+  @@index([schoolId])
+}
+
+model ProviderUser {
+  id         String   @id @default(cuid())
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  email        String  @unique
+  name         String
+  passwordHash String?
+
+  // 2FA (same scheme as staff) — fields present now, endpoints follow.
+  twoFactorSecret        String?
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorRecoveryCodes String?
+  twoFactorSetupAt       DateTime?
+
+  // Account lockout
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  lastLoginAt   DateTime?
+  refreshTokens ProviderRefreshToken[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([providerId])
+}
+
+model ProviderRefreshToken {
+  id             String       @id @default(cuid())
+  token          String       @unique
+  providerUserId String
+  providerUser   ProviderUser @relation(fields: [providerUserId], references: [id], onDelete: Cascade)
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+}
+
+model ProviderInvitation {
+  id         String   @id @default(cuid())
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  email      String
+  token      String   @unique
+  status     String   @default("PENDING") // PENDING, REDEEMED, EXPIRED, REVOKED
+  expiresAt  DateTime?
+  redeemedAt DateTime?
+
+  createdAt  DateTime @default(now())
+
+  @@index([providerId, status])
+}
+
+// A parent's booking of a paid, provider-run club (direct enrolment — distinct
+// from the school's ranked-selection/allocation flow). Payment happens on the
+// provider's external link; Wasil tracks the booking + payment status.
+model EcaProviderBooking {
+  id            String   @id @default(cuid())
+  ecaActivityId String
+  ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parentUserId  String
+  parentUser    User     @relation("ClubBookings", fields: [parentUserId], references: [id], onDelete: Cascade)
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  paymentStatus PaymentStatus @default(UNPAID)
+  cancelledAt   DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([ecaActivityId, studentId])
+  @@index([ecaActivityId])
+  @@index([parentUserId])
+  @@index([schoolId])
 }
 
 enum OutboxStatus {

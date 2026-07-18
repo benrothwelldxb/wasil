@@ -3,8 +3,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
-import { sendSMS, sendWhatsApp } from '../services/twilio.js'
-import { sendEmail } from '../services/email.js'
+import { enqueueSms, enqueueWhatsapp, enqueueEmail } from '../services/outbox.js'
 
 const router = Router()
 
@@ -297,49 +296,33 @@ router.post('/', isAdmin, async (req, res) => {
         )
       }
 
-      // SMS delivery
+      // SMS delivery — enqueue through the reliable outbox (retry/backoff) rather
+      // than firing Twilio inline. The drain worker marks this AlertDelivery
+      // SENT/FAILED via the alertDeliveryId carried in the payload.
       if (sendSms && parent.phone) {
         deliveryPromises.push(
           (async () => {
             const delivery = await prisma.alertDelivery.create({
               data: { alertId: alert.id, parentId: parent.id, channel: 'SMS', status: 'PENDING' },
             })
-            const result = await sendSMS(parent.phone!, alertBody)
-            await prisma.alertDelivery.update({
-              where: { id: delivery.id },
-              data: {
-                status: result ? 'SENT' : 'FAILED',
-                externalId: result?.sid || null,
-                error: result ? null : 'SMS send failed',
-                sentAt: result ? new Date() : null,
-              },
-            })
+            await enqueueSms(user.schoolId, { to: parent.phone!, body: alertBody, alertDeliveryId: delivery.id })
           })()
         )
       }
 
-      // WhatsApp delivery
+      // WhatsApp delivery — via the outbox.
       if (sendWhatsapp && parent.phone) {
         deliveryPromises.push(
           (async () => {
             const delivery = await prisma.alertDelivery.create({
               data: { alertId: alert.id, parentId: parent.id, channel: 'WHATSAPP', status: 'PENDING' },
             })
-            const result = await sendWhatsApp(parent.phone!, alertBody)
-            await prisma.alertDelivery.update({
-              where: { id: delivery.id },
-              data: {
-                status: result ? 'SENT' : 'FAILED',
-                externalId: result?.sid || null,
-                error: result ? null : 'WhatsApp send failed',
-                sentAt: result ? new Date() : null,
-              },
-            })
+            await enqueueWhatsapp(user.schoolId, { to: parent.phone!, body: alertBody, alertDeliveryId: delivery.id })
           })()
         )
       }
 
-      // Email delivery
+      // Email delivery — via the outbox.
       if (doSendEmail) {
         deliveryPromises.push(
           (async () => {
@@ -359,19 +342,12 @@ router.post('/', isAdmin, async (req, res) => {
                 </div>
               </div>
             `
-            const success = await sendEmail({
+            await enqueueEmail(user.schoolId, {
               to: parent.email,
               subject: `EMERGENCY: ${title}`,
               html: emailHtml,
               text: alertBody,
-            })
-            await prisma.alertDelivery.update({
-              where: { id: delivery.id },
-              data: {
-                status: success ? 'SENT' : 'FAILED',
-                error: success ? null : 'Email send failed',
-                sentAt: success ? new Date() : null,
-              },
+              alertDeliveryId: delivery.id,
             })
           })()
         )
@@ -395,9 +371,11 @@ router.post('/', isAdmin, async (req, res) => {
       })
     }
 
-    // Fire-and-forget: dispatch SMS, WhatsApp, Email in parallel
+    // Fire-and-forget: record deliveries + enqueue them onto the outbox in
+    // parallel. Actual provider sends (Twilio/Resend) happen in the drain worker
+    // with retry/backoff, so a transient provider blip no longer loses an alert.
     Promise.all(deliveryPromises).catch(err => {
-      console.error('Error dispatching alert deliveries:', err)
+      console.error('Error enqueueing alert deliveries:', err)
     })
 
     logAudit({
@@ -559,7 +537,7 @@ router.post('/:id/resend', isAdmin, async (req, res) => {
     }
 
     const alertBody = `[${alert.type}] ${alert.title}\n\n${alert.message}`
-    let resentCount = 0
+    let requeuedCount = 0
 
     const resendPromises = failedDeliveries.map(async (delivery) => {
       // Get parent info
@@ -569,42 +547,32 @@ router.post('/:id/resend', isAdmin, async (req, res) => {
       })
       if (!parent) return
 
-      let success = false
-      let externalId: string | null = null
-
+      // Reset the delivery to pending and re-enqueue it through the outbox,
+      // which will retry with backoff and mark it SENT/FAILED on resolution.
       if (delivery.channel === 'SMS' && parent.phone) {
-        const result = await sendSMS(parent.phone, alertBody)
-        success = !!result
-        externalId = result?.sid || null
+        await prisma.alertDelivery.update({ where: { id: delivery.id }, data: { status: 'PENDING', error: null } })
+        await enqueueSms(user.schoolId, { to: parent.phone, body: alertBody, alertDeliveryId: delivery.id })
+        requeuedCount++
       } else if (delivery.channel === 'WHATSAPP' && parent.phone) {
-        const result = await sendWhatsApp(parent.phone, alertBody)
-        success = !!result
-        externalId = result?.sid || null
+        await prisma.alertDelivery.update({ where: { id: delivery.id }, data: { status: 'PENDING', error: null } })
+        await enqueueWhatsapp(user.schoolId, { to: parent.phone, body: alertBody, alertDeliveryId: delivery.id })
+        requeuedCount++
       } else if (delivery.channel === 'EMAIL') {
-        success = await sendEmail({
+        await prisma.alertDelivery.update({ where: { id: delivery.id }, data: { status: 'PENDING', error: null } })
+        await enqueueEmail(user.schoolId, {
           to: parent.email,
           subject: `EMERGENCY: ${alert.title}`,
           html: `<p><strong>${alert.title}</strong></p><p>${alert.message}</p>`,
           text: alertBody,
+          alertDeliveryId: delivery.id,
         })
+        requeuedCount++
       }
-
-      await prisma.alertDelivery.update({
-        where: { id: delivery.id },
-        data: {
-          status: success ? 'SENT' : 'FAILED',
-          externalId: externalId || delivery.externalId,
-          error: success ? null : `Resend failed`,
-          sentAt: success ? new Date() : delivery.sentAt,
-        },
-      })
-
-      if (success) resentCount++
     })
 
     await Promise.all(resendPromises)
 
-    res.json({ message: `Resent ${resentCount} of ${failedDeliveries.length} failed deliveries`, resent: resentCount, total: failedDeliveries.length })
+    res.json({ message: `Re-queued ${requeuedCount} of ${failedDeliveries.length} failed deliveries for delivery`, resent: requeuedCount, total: failedDeliveries.length })
   } catch (error) {
     console.error('Error resending alert:', error)
     res.status(500).json({ error: 'Failed to resend alert' })

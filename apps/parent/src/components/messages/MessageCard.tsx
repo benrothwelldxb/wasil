@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import DOMPurify from 'dompurify'
 import { ThumbsUp, Share2, AlertTriangle, Pin, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
@@ -31,6 +32,11 @@ export function MessageCard({
 }: MessageCardProps) {
   const { t } = useTranslation()
   const theme = useTheme()
+
+  // Defense-in-depth: message bodies are sanitized on the server before storage,
+  // but we sanitize again on render so any legacy row written before that fix
+  // (or any other HTML source) can never execute script in the parent app.
+  const sanitizedContent = useMemo(() => DOMPurify.sanitize(message.content || ''), [message.content])
 
   const form = message.form
   const hasForm = !!form
@@ -274,7 +280,7 @@ export function MessageCard({
         <div
           className="text-sm leading-relaxed font-medium mb-3 rich-content"
           style={{ color: '#7A6469' }}
-          dangerouslySetInnerHTML={{ __html: message.content }}
+          dangerouslySetInnerHTML={{ __html: sanitizedContent }}
         />
 
         {/* Attachments indicator */}

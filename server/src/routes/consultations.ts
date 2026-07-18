@@ -4,6 +4,7 @@ import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, isGoogleCalendarConfigured } from '../services/googleMeet.js'
 import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, sendCancellationToParent, sendCancellationToTeacher } from '../services/consultationEmails.js'
 import { sendConsultationBookingNotification, sendConsultationCancellationNotification } from '../services/consultationNotify.js'
+import { serializeBookingForParent } from '../services/consultationSerializers.js'
 
 const router = Router()
 
@@ -133,14 +134,7 @@ router.get('/parent', isAuthenticated, async (req, res) => {
           date: s.date,
           isBreak: s.isBreak,
           isCustom: s.isCustom,
-          booking: s.booking ? {
-            id: s.booking.id,
-            parentId: s.booking.parentId,
-            studentName: s.booking.studentName,
-            notes: s.booking.notes,
-            meetingLink: s.booking.meetingLink,
-            createdAt: s.booking.createdAt.toISOString(),
-          } : null,
+          booking: serializeBookingForParent(s.booking, user.id),
         })),
         availabilityWindows: t.availabilityWindows,
         createdAt: t.createdAt.toISOString(),
@@ -234,15 +228,7 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
           date: s.date,
           isBreak: s.isBreak,
           isCustom: s.isCustom,
-          booking: s.booking ? {
-            id: s.booking.id,
-            parentId: s.booking.parentId,
-            studentId: s.booking.studentId,
-            studentName: s.booking.studentName,
-            notes: s.booking.notes,
-            meetingLink: s.booking.meetingLink,
-            createdAt: s.booking.createdAt.toISOString(),
-          } : null,
+          booking: serializeBookingForParent(s.booking, user.id),
         })),
         availabilityWindows: t.availabilityWindows,
         createdAt: t.createdAt.toISOString(),
