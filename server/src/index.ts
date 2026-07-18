@@ -1,3 +1,7 @@
+// Must be imported before any routes are defined: patches Express 4 so that a
+// rejected promise thrown from an async route handler is forwarded to the error
+// middleware instead of hanging the request until timeout.
+import 'express-async-errors'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
@@ -6,6 +10,7 @@ import dotenv from 'dotenv'
 import { pinoHttp } from 'pino-http'
 import logger from './services/logger.js'
 import { captureException } from './services/errorReporter.js'
+import { initErrorReporting } from './services/sentry.js'
 
 import { configurePassport } from './middleware/passport.js'
 import authRoutes from './routes/auth.js'
@@ -42,6 +47,10 @@ import inclusionRoutes from './routes/inclusion.js'
 import cafeteriaRoutes from './routes/cafeteria.js'
 import attendanceRoutes from './routes/attendance.js'
 import schoolSettingsRoutes from './routes/schoolSettings.js'
+import providerAuthRoutes from './routes/providerAuth.js'
+import providersRoutes from './routes/providers.js'
+import providerPortalRoutes from './routes/providerPortal.js'
+import clubsRoutes from './routes/clubs.js'
 import prisma from './services/prisma.js'
 import { initFirebase } from './services/firebase.js'
 import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders } from './services/cleanup.js'
@@ -52,6 +61,9 @@ import { withJobLock } from './services/jobLock.js'
 import { sendEventRsvpReminders } from './services/eventReminders.js'
 
 dotenv.config()
+
+// Forward captured exceptions to Sentry when SENTRY_DSN is configured (no-op otherwise).
+initErrorReporting()
 
 // Validate required environment variables
 const REQUIRED_ENV_VARS = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'DATABASE_URL', 'TOTP_ENCRYPTION_KEY', 'CORS_ORIGIN']
@@ -146,6 +158,11 @@ app.use('/api/inclusion', inclusionRoutes)
 app.use('/api/cafeteria', cafeteriaRoutes)
 app.use('/api/attendance', attendanceRoutes)
 app.use('/api/school-settings', schoolSettingsRoutes)
+// External provider portal: separate auth surface + admin-side management.
+app.use('/provider/auth', providerAuthRoutes)
+app.use('/api/providers', providersRoutes)
+app.use('/api/provider-portal', providerPortalRoutes)
+app.use('/api/clubs', clubsRoutes)
 
 // Liveness probe — the process is up. Cheap and always returns 200.
 // Use this to decide "should we restart the container?".

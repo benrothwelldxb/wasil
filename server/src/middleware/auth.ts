@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import { verifyAccessToken } from '../services/jwt.js'
+import { verifyAccessToken, verifyProviderAccessToken } from '../services/jwt.js'
 import prisma from '../services/prisma.js'
 
 // Extend Express Request to include user
@@ -12,6 +12,14 @@ declare global {
       role: 'PARENT' | 'STAFF' | 'ADMIN' | 'SUPER_ADMIN'
       schoolId: string
       preferredLanguage: string
+    }
+    interface Request {
+      // Set by requireProvider for external provider-portal requests. Distinct
+      // from `user` (staff/parent) so the two principal types never mix.
+      providerUser?: {
+        id: string
+        providerId: string
+      }
     }
   }
 }
@@ -142,6 +150,48 @@ export function isSuperAdmin(req: Request, res: Response, next: NextFunction) {
     }
     res.status(403).json({ error: 'Forbidden - Super Admin access required' })
   })
+}
+
+/**
+ * Authenticate an external provider-portal request. Verifies a provider-kind
+ * JWT (verifyProviderAccessToken rejects staff/parent tokens), confirms the
+ * ProviderUser and its Provider are still active, and attaches req.providerUser.
+ * Every provider route MUST scope its queries by req.providerUser.providerId.
+ */
+export async function requireProvider(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  try {
+    const payload = verifyProviderAccessToken(authHeader.slice(7))
+
+    const providerUser = await prisma.providerUser.findUnique({
+      where: { id: payload.providerUserId },
+      select: { id: true, providerId: true, provider: { select: { status: true } } },
+    })
+
+    if (!providerUser || providerUser.providerId !== payload.providerId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+    if (providerUser.provider.status !== 'ACTIVE') {
+      return res.status(403).json({ error: 'Provider account is suspended' })
+    }
+
+    req.providerUser = { id: providerUser.id, providerId: providerUser.providerId }
+
+    const reqAny = req as Request & { log?: { child: (bindings: Record<string, unknown>) => unknown } }
+    if (reqAny.log?.child) {
+      reqAny.log = reqAny.log.child({
+        providerUserId: providerUser.id,
+        providerId: providerUser.providerId,
+      }) as typeof reqAny.log
+    }
+    next()
+  } catch {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
 }
 
 // Check if user can send to a specific class or whole school

@@ -2100,10 +2100,90 @@ export const schoolSettings = {
     }),
 }
 
+// ─── External providers (admin-side management) ──────────────────────────────
+export interface ProviderSummary {
+  id: string
+  name: string
+  type: 'ECA' | 'CATERING'
+  status: 'ACTIVE' | 'SUSPENDED'
+  logoUrl: string | null
+  contactEmail: string | null
+  contactPhone: string | null
+  shareParentContact: boolean
+  userCount: number
+  activityCount: number
+  createdAt: string
+}
+export interface ProviderDetail {
+  id: string
+  name: string
+  type: 'ECA' | 'CATERING'
+  status: 'ACTIVE' | 'SUSPENDED'
+  logoUrl: string | null
+  contactEmail: string | null
+  contactPhone: string | null
+  shareParentContact: boolean
+  users: Array<{ id: string; email: string; name: string; hasPassword: boolean; lastLoginAt: string | null }>
+  pendingInvites: Array<{ id: string; email: string; expiresAt: string | null }>
+}
+export interface ProviderInviteResult { id: string; email: string; token: string; expiresAt: string }
+
+export const providers = {
+  list: () => fetchApi<ProviderSummary[]>('/api/providers'),
+  get: (id: string) => fetchApi<ProviderDetail>(`/api/providers/${id}`),
+  create: (data: { name: string; type: 'ECA' | 'CATERING'; contactEmail?: string; contactPhone?: string }) =>
+    fetchApi<{ id: string }>('/api/providers', { method: 'POST', body: JSON.stringify(data) }),
+  update: (
+    id: string,
+    data: { name?: string; status?: 'ACTIVE' | 'SUSPENDED'; contactEmail?: string | null; contactPhone?: string | null; shareParentContact?: boolean },
+  ) => fetchApi<{ message: string }>(`/api/providers/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  invite: (id: string, email: string) =>
+    fetchApi<ProviderInviteResult>(`/api/providers/${id}/invitations`, { method: 'POST', body: JSON.stringify({ email }) }),
+}
+
+// ─── Paid provider-run clubs (parent-facing) ─────────────────────────────────
+export interface ClubStudent { id: string; name: string; className: string | null }
+export interface ClubActivity {
+  id: string
+  name: string
+  description: string | null
+  providerName: string | null
+  dayOfWeek: number
+  timeSlot: string
+  location: string | null
+  cost: number | null
+  costDescription: string | null
+  maxCapacity: number | null
+  spotsBooked: number
+  spotsLeft: number | null
+}
+export interface ClubBooking {
+  id: string
+  activityId: string
+  activityName: string
+  studentId: string
+  paymentStatus: string
+  paymentUrl: string | null
+  cost: number | null
+  costDescription: string | null
+  cancelled: boolean
+  createdAt: string
+}
+export interface ClubsResponse { students: ClubStudent[]; clubs: ClubActivity[]; bookings: ClubBooking[] }
+
+export const clubs = {
+  list: () => fetchApi<ClubsResponse>('/api/clubs'),
+  book: (activityId: string, studentId: string) =>
+    fetchApi<ClubBooking>(`/api/clubs/${activityId}/book`, { method: 'POST', body: JSON.stringify({ studentId }) }),
+  cancelBooking: (id: string) => fetchApi<{ message: string }>(`/api/clubs/bookings/${id}`, { method: 'DELETE' }),
+}
+
 export default {
   auth,
   messages,
   forms,
+  providers,
+  clubs,
   events,
   schedule,
   termDates,

@@ -32,6 +32,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   Settings,
+  Store,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth, useTheme, config } from '@wasil/shared'
@@ -102,6 +103,7 @@ const NAV_SECTIONS: NavSection[] = [
       { icon: GraduationCap, label: 'Students', path: '/students' },
       { icon: UserCog, label: 'Staff', path: '/staff' },
       { icon: UserPlus, label: 'Parents', path: '/parents' },
+      { icon: Store, label: 'Providers', path: '/providers', adminOnly: true },
     ],
   },
   {

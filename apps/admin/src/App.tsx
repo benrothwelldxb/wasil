@@ -15,6 +15,7 @@ import { ClassesPage } from './pages/ClassesPage'
 import { StudentsPage } from './pages/StudentsPage'
 import { StaffPage } from './pages/StaffPage'
 import { ParentsPage } from './pages/ParentsPage'
+import { ProvidersPage } from './pages/ProvidersPage'
 import { PoliciesPage } from './pages/PoliciesPage'
 import { FilesPage } from './pages/FilesPage'
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage'
@@ -239,6 +240,7 @@ export default function App() {
         <Route path="/students" element={<StudentsPage />} />
         <Route path="/staff" element={<StaffPage />} />
         <Route path="/parents" element={<ParentsPage />} />
+        <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/policies" element={<PoliciesPage />} />
         <Route path="/files" element={<FilesPage />} />
         <Route path="/links" element={<LinksPage />} />

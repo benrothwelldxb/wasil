@@ -219,3 +219,94 @@ Highest-value mobile feature for a school communications app — parents need to
 | 7. Offline Caching | Small | Phase 5 | Mobile + Web |
 
 Phases 1, 2, and 3 can be done in parallel. Phase 4 depends on Phase 1 (JWT). Phase 5 depends on 1 + 4. Phase 6 depends on 5.
+
+---
+
+# External Provider Portal (ECA & Catering)
+
+## Goal
+Let external commercial parties — extra-curricular club operators and the
+catering provider — self-manage their offerings through a **separate portal
+with its own login**, without touching the staff/parent hub. Providers create
+activities, upload visuals, and view their bookings; parents browse and book
+provider-run paid clubs alongside school-run ECAs.
+
+## Decisions (locked)
+- **Reach:** `Provider` is modelled multi-school-capable (`ProviderSchoolLink`
+  many-to-many); v1 links each provider to exactly one school.
+- **Payments:** link + status only — provider sets a price and an external
+  payment link; Wasil records booking + `PaymentStatus`. No card data, no
+  marketplace. Reuses the `schoolServices` pattern.
+- **Booking data shared with providers:** child name, class, safety/allergy
+  flags, **and** parent contact (name/email/phone), governed per-provider-per-
+  school by `ProviderSchoolLink.shareParentContact`. Access is audit-logged.
+
+## Identity model
+A provider is a **new principal type**, deliberately kept out of the `User`
+table so none of the parent/staff `schoolId` assumptions gain a nullable
+exception. Providers get:
+- Their own tables: `Provider`, `ProviderUser`, `ProviderRefreshToken`,
+  `ProviderInvitation`, `ProviderSchoolLink`.
+- Their own login surface (`/provider/auth/*`) reusing the **same** hardened
+  crypto/token services (bcrypt cost 12, lockout, atomic refresh rotation).
+- Tokens carry `kind: 'provider'` — `verifyAccessToken` rejects them and
+  `verifyProviderAccessToken` rejects staff/parent tokens. Hard boundary.
+- A future `apps/provider` web app (Vite + `packages/shared`, no Capacitor).
+
+## Security posture (this is the #1 risk — a new external actor with write access)
+- `requireProvider` verifies the provider token, confirms the ProviderUser and
+  its Provider are ACTIVE, attaches `req.providerUser`.
+- Every provider query MUST filter by `req.providerUser.providerId`. Admin
+  management routes scope every action through `ProviderSchoolLink` for the
+  admin's own school (`getLinkedProvider`).
+- Ownership on activities (Phase B) = `activity.providerId === me.providerId`.
+- 2FA fields present on `ProviderUser` now; endpoints follow.
+- Parent-contact sharing needs consent copy + a privacy-policy line.
+
+## Phases
+- **A — Foundation (DONE):** provider tables + migration, provider auth
+  (`/provider/auth`: login, register-from-invitation, refresh, logout, /me),
+  `requireProvider` middleware, token `kind` isolation, admin management
+  (`/api/providers`: create+link, list, get, update, invite). Guardrail tests:
+  token isolation, provider rotation, login lockout/suspension, register.
+- **B — Activities (DONE):** `EcaActivity.providerId` (nullable) + `paymentUrl`
+  + migration; provider activity CRUD (`/api/provider-portal/activities` + `/terms`)
+  scoped to (providerId, linked schools); admin `ProvidersPage` (create/link,
+  invite, suspend, contact-sharing toggle) wired into sidebar; `apps/provider`
+  `ActivitiesPage` (create/edit/delete clubs with term, schedule, capacity, cost,
+  payment link). Guardrail tests: activity ownership + unlinked-school scoping.
+  Still open: 2FA endpoints, logo/photo uploads.
+- **C — Parent-facing clubs (DONE):** `EcaProviderBooking` model + migration;
+  parent `/api/clubs` (browse/book/cancel, capacity-checked, ownership-scoped)
+  + parent `ClubsPage` (book a child, pay on the provider link, track status);
+  provider `/api/provider-portal/bookings` (child+class+parent contact **gated by
+  the per-school `shareParentContact` toggle**, access-logged) + PATCH payment
+  status; provider `BookingsPage`. Guardrail tests: booking ownership/tenancy/
+  capacity/dedupe, contact gating both ways, payment-update ownership.
+  NOTE: "safety/allergy flags" deferred — no per-student medical field exists in
+  the schema yet (would need `Student.medicalNotes` + admin UI first).
+- **D — Notifications + catering (DONE):**
+  - Outbox notifications on booking events: parent gets a booking-confirmation
+    (push + in-app) and a payment-confirmed notification; the provider's users
+    get a new-booking email — all via the reliable-delivery outbox
+    (`services/clubNotify.ts`, wired into `clubs.ts` + the payment PATCH).
+  - Catering variant: `CafeteriaMenu.providerId` + migration; provider-scoped
+    weekly-menu CRUD (`/api/provider-portal/menus`, ownership + linked-school
+    scoped, whole-menu save with per-day items); the portal shell is now
+    **type-aware** (CATERING → Menus; ECA → Activities + Bookings) with a
+    `MenusPage` and a type-adaptive dashboard. Guardrail tests: menu
+    ownership/tenancy scoping.
+
+## Status — Phases A–D complete
+Providers can be onboarded (admin), self-manage clubs or menus (portal), take
+paid bookings, and get notified; parents browse/book/pay. All server code
+typechecks with 55 guardrail tests passing; all four frontends build clean.
+Remaining follow-ups: provider 2FA endpoints, logo/photo uploads, per-student
+medical/allergy flags (needs a `Student.medicalNotes` field first), and running
+the 4 provider migrations against a dev Postgres.
+
+## Status
+Phase A backend is complete, typechecks clean, and is covered by guardrail
+tests. Remaining Phase A work: the `apps/provider` frontend shell and the 2FA
+endpoints. DB-dependent behavior (the migration, live auth) needs one run
+against a dev Postgres to confirm.
