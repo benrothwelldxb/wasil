@@ -22,10 +22,16 @@ interface AuthResponse {
   refreshToken: string
 }
 
+interface LoginResult {
+  twoFactorRequired: boolean
+  sessionToken?: string
+}
+
 interface AuthState {
   providerUser: ProviderUser | null
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<LoginResult>
+  verifyTwoFactor: (sessionToken: string, code: string, recovery?: boolean) => Promise<void>
   register: (token: string, password: string, name?: string) => Promise<void>
   logout: () => Promise<void>
   refreshMe: () => Promise<void>
@@ -54,10 +60,25 @@ export function ProviderAuthProvider({ children }: { children: ReactNode }) {
     refreshMe().finally(() => setLoading(false))
   }, [refreshMe])
 
-  const login = useCallback(async (email: string, password: string) => {
-    const data = await apiFetch<AuthResponse>('/provider/auth/login', {
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    const data = await apiFetch<AuthResponse | { twoFactorRequired: true; twoFactorSessionToken: string }>('/provider/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    })
+    if ('twoFactorRequired' in data && data.twoFactorRequired) {
+      return { twoFactorRequired: true, sessionToken: data.twoFactorSessionToken }
+    }
+    const auth = data as AuthResponse
+    setTokens(auth.accessToken, auth.refreshToken)
+    setProviderUser(auth.providerUser)
+    return { twoFactorRequired: false }
+  }, [])
+
+  const verifyTwoFactor = useCallback(async (sessionToken: string, code: string, recovery = false) => {
+    const endpoint = recovery ? '/provider/auth/2fa/recover' : '/provider/auth/2fa/verify'
+    const data = await apiFetch<AuthResponse>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ sessionToken, code }),
     })
     setTokens(data.accessToken, data.refreshToken)
     setProviderUser(data.providerUser)
@@ -86,7 +107,7 @@ export function ProviderAuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ providerUser, loading, login, register, logout, refreshMe }}>
+    <AuthContext.Provider value={{ providerUser, loading, login, verifyTwoFactor, register, logout, refreshMe }}>
       {children}
     </AuthContext.Provider>
   )

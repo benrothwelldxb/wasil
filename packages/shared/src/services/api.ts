@@ -1202,7 +1202,7 @@ export const students = {
     return fetchApi<StudentSearchResult[]>(`/api/students/search?${searchParams.toString()}`)
   },
   get: (id: string) => fetchApi<Student>(`/api/students/${id}`),
-  create: (data: { firstName: string; lastName: string; classId: string; externalId?: string }) =>
+  create: (data: { firstName: string; lastName: string; classId: string; externalId?: string; allergies?: string[]; medicalNotes?: string | null }) =>
     fetchApi<Student>('/api/students', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -1212,7 +1212,7 @@ export const students = {
       method: 'POST',
       body: JSON.stringify({ students }),
     }),
-  update: (id: string, data: { firstName?: string; lastName?: string; classId?: string; externalId?: string }) =>
+  update: (id: string, data: { firstName?: string; lastName?: string; classId?: string; externalId?: string; allergies?: string[]; medicalNotes?: string | null }) =>
     fetchApi<Student>(`/api/students/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),

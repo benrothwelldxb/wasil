@@ -1,10 +1,16 @@
 import { Router } from 'express'
+import multer from 'multer'
 import { z } from 'zod'
 import prisma from '../services/prisma.js'
 import { requireProvider } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
+import { uploadFile, generateKey } from '../services/storage.js'
+import { checkUpload } from '../services/uploadValidation.js'
 import logger from '../services/logger.js'
 import { notifyClubBookingPaid } from '../services/clubNotify.js'
+
+const logoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024 } })
+const LOGO_MIMES = ['image/png', 'image/jpeg', 'image/webp']
 
 // Provider self-service portal. Every route is guarded by requireProvider and
 // scoped to req.providerUser.providerId — a provider can only ever read or
@@ -319,7 +325,7 @@ router.get('/bookings', async (req, res) => {
     const bookings = await prisma.ecaProviderBooking.findMany({
       where: { ecaActivity: { providerId }, cancelledAt: null },
       include: {
-        student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } },
+        student: { select: { firstName: true, lastName: true, allergies: true, medicalNotes: true, class: { select: { name: true } } } },
         parentUser: { select: { name: true, email: true, phone: true } },
         ecaActivity: { select: { id: true, name: true } },
       },
@@ -342,6 +348,10 @@ router.get('/bookings', async (req, res) => {
         activityName: b.ecaActivity.name,
         studentName: `${b.student.firstName} ${b.student.lastName}`,
         className: b.student.class?.name || null,
+        // Safety info always accompanies a booking — the provider is supervising
+        // this child at the activity, independent of parent-contact sharing.
+        allergies: b.student.allergies ? (JSON.parse(b.student.allergies) as string[]) : [],
+        medicalNotes: b.student.medicalNotes,
         paymentStatus: b.paymentStatus,
         // Only expose parent contact when the school has enabled sharing.
         parent: share ? { name: b.parentUser.name, email: b.parentUser.email, phone: b.parentUser.phone } : null,
@@ -351,6 +361,27 @@ router.get('/bookings', async (req, res) => {
   } catch (error) {
     console.error('Provider bookings error:', error)
     res.status(500).json({ error: 'Failed to load bookings' })
+  }
+})
+
+// ─── Upload / update the provider's logo ─────────────────────────────────────
+router.post('/logo', logoUpload.single('logo'), async (req, res) => {
+  try {
+    const file = req.file
+    if (!file) return res.status(400).json({ error: 'Logo file is required' })
+
+    // MIME allowlist + extension match + magic-byte sniff.
+    const check = checkUpload(file.buffer, file.mimetype, file.originalname, LOGO_MIMES)
+    if (!check.valid) return res.status(400).json({ error: `Invalid image: ${check.reason}` })
+
+    const key = generateKey('provider-logos', file.originalname)
+    const logoUrl = await uploadFile(file.buffer, key, file.mimetype)
+    await prisma.provider.update({ where: { id: req.providerUser!.providerId }, data: { logoUrl } })
+
+    res.json({ logoUrl })
+  } catch (error) {
+    console.error('Provider logo upload error:', error)
+    res.status(500).json({ error: 'Failed to upload logo' })
   }
 })
 

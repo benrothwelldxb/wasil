@@ -263,6 +263,9 @@ model Student {
   lastName    String
   externalId  String?  // Optional: Student ID from school MIS (UPN)
   photoUrl    String?  // Student photo URL
+  // Safety info surfaced to activity/club staff (incl. external providers).
+  allergies    String? // JSON array of strings, e.g. ["nuts","dairy"]
+  medicalNotes String? // Free-text medical/care notes
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id])
   classId     String

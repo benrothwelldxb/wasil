@@ -53,6 +53,8 @@ router.get('/', isAdmin, async (req: Request, res: Response) => {
         lastName: s.lastName,
         fullName: `${s.firstName} ${s.lastName}`,
         externalId: s.externalId,
+        allergies: s.allergies ? (JSON.parse(s.allergies) as string[]) : [],
+        medicalNotes: s.medicalNotes,
         classId: s.classId,
         className: s.class.name,
         parentCount: s._count.parentLinks,
@@ -431,6 +433,8 @@ router.get('/:id', isAdmin, async (req: Request, res: Response) => {
       lastName: student.lastName,
       fullName: `${student.firstName} ${student.lastName}`,
       externalId: student.externalId,
+      allergies: student.allergies ? (JSON.parse(student.allergies) as string[]) : [],
+      medicalNotes: student.medicalNotes,
       classId: student.classId,
       className: student.class.name,
       parentCount: student.parentLinks.length,
@@ -490,7 +494,7 @@ router.get('/:id/reports', isAdmin, async (req: Request, res: Response) => {
 router.post('/', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const { firstName, lastName, externalId, classId } = req.body
+    const { firstName, lastName, externalId, classId, allergies, medicalNotes } = req.body
 
     if (!firstName?.trim() || !lastName?.trim()) {
       return res.status(400).json({ error: 'First name and last name are required' })
@@ -524,6 +528,8 @@ router.post('/', isAdmin, async (req: Request, res: Response) => {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         externalId: externalId?.trim() || null,
+        allergies: Array.isArray(allergies) && allergies.length ? JSON.stringify(allergies) : null,
+        medicalNotes: medicalNotes?.trim() || null,
         classId,
         schoolId: user.schoolId,
       },
@@ -666,7 +672,7 @@ router.put('/:id', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { firstName, lastName, externalId, classId } = req.body
+    const { firstName, lastName, externalId, classId, allergies, medicalNotes } = req.body
 
     const existing = await prisma.student.findFirst({
       where: { id, schoolId: user.schoolId },
@@ -702,6 +708,8 @@ router.put('/:id', isAdmin, async (req: Request, res: Response) => {
         firstName: firstName?.trim() || existing.firstName,
         lastName: lastName?.trim() || existing.lastName,
         externalId: externalId !== undefined ? (externalId?.trim() || null) : existing.externalId,
+        allergies: allergies !== undefined ? (Array.isArray(allergies) && allergies.length ? JSON.stringify(allergies) : null) : existing.allergies,
+        medicalNotes: medicalNotes !== undefined ? (medicalNotes?.trim() || null) : existing.medicalNotes,
         classId: classId || existing.classId,
       },
       include: {

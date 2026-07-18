@@ -36,6 +36,8 @@ export function StudentsPage() {
   const [lastName, setLastName] = useState('')
   const [classId, setClassId] = useState('')
   const [externalId, setExternalId] = useState('')
+  const [allergies, setAllergies] = useState('')
+  const [medicalNotes, setMedicalNotes] = useState('')
 
   // Bulk import
   const [bulkText, setBulkText] = useState('')
@@ -176,6 +178,8 @@ export function StudentsPage() {
     setLastName('')
     setClassId('')
     setExternalId('')
+    setAllergies('')
+    setMedicalNotes('')
     setBulkText('')
     setBulkResult(null)
     setReportFiles([])
@@ -188,6 +192,8 @@ export function StudentsPage() {
     setLastName(student.lastName)
     setClassId(student.classId)
     setExternalId(student.externalId || '')
+    setAllergies((student.allergies || []).join(', '))
+    setMedicalNotes(student.medicalNotes || '')
     setShowForm(true)
     setShowBulkImport(false)
   }
@@ -201,12 +207,17 @@ export function StudentsPage() {
 
     setIsSubmitting(true)
     try {
+      const safety = {
+        allergies: allergies.split(',').map(a => a.trim()).filter(Boolean),
+        medicalNotes: medicalNotes.trim() || null,
+      }
       if (editingStudent) {
         await api.students.update(editingStudent.id, {
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           classId,
           externalId: externalId.trim() || undefined,
+          ...safety,
         })
       } else {
         await api.students.create({
@@ -214,6 +225,7 @@ export function StudentsPage() {
           lastName: lastName.trim(),
           classId,
           externalId: externalId.trim() || undefined,
+          ...safety,
         })
       }
       resetForm()
@@ -805,6 +817,29 @@ export function StudentsPage() {
                 onChange={e => setExternalId(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 placeholder="S2025-001"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 mt-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Allergies</label>
+              <input
+                type="text"
+                value={allergies}
+                onChange={e => setAllergies(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Comma-separated, e.g. nuts, dairy"
+              />
+              <p className="text-xs text-gray-400 mt-1">Shown to activity and club staff, including external providers.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Medical notes</label>
+              <textarea
+                value={medicalNotes}
+                onChange={e => setMedicalNotes(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Any care notes staff should be aware of"
               />
             </div>
           </div>

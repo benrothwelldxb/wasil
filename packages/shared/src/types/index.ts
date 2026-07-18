@@ -647,6 +647,8 @@ export interface Student {
   fullName: string
   externalId?: string
   photoUrl?: string | null
+  allergies?: string[]
+  medicalNotes?: string | null
   classId: string
   className: string
   parentCount: number

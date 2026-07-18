@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Mail, Phone, Users } from 'lucide-react'
+import { AlertTriangle, Loader2, Mail, Phone, Users } from 'lucide-react'
 import { apiFetch, ApiError } from '../api'
 
 interface Booking {
@@ -8,6 +8,8 @@ interface Booking {
   activityName: string
   studentName: string
   className: string | null
+  allergies: string[]
+  medicalNotes: string | null
   paymentStatus: 'UNPAID' | 'PAID' | 'PARTIAL' | 'WAIVED'
   parent: { name: string; email: string; phone: string | null } | null
   createdAt: string
@@ -98,6 +100,16 @@ export function BookingsPage() {
                   <td className="py-3 pr-4">
                     <div className="font-semibold text-warm-text-primary">{b.studentName}</div>
                     {b.className && <div className="text-xs text-warm-text-tertiary">{b.className}</div>}
+                    {(b.allergies.length > 0 || b.medicalNotes) && (
+                      <div className="mt-1.5 flex flex-wrap gap-1 items-center">
+                        {b.allergies.map(a => (
+                          <span key={a} className="inline-flex items-center gap-1 text-[11px] font-semibold bg-red-50 text-red-700 px-1.5 py-0.5 rounded">
+                            <AlertTriangle className="h-3 w-3" /> {a}
+                          </span>
+                        ))}
+                        {b.medicalNotes && <span className="text-[11px] text-warm-error" title={b.medicalNotes}>⚕ {b.medicalNotes}</span>}
+                      </div>
+                    )}
                   </td>
                   <td className="py-3 pr-4 text-warm-text-secondary">{b.activityName}</td>
                   <td className="py-3 pr-4">

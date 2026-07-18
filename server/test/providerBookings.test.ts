@@ -31,7 +31,7 @@ function makeApp() {
 
 const booking = {
   id: 'bk-1', schoolId: 'school-1', paymentStatus: 'UNPAID', createdAt: new Date(),
-  student: { firstName: 'Kid', lastName: 'One', class: { name: '3A' } },
+  student: { firstName: 'Kid', lastName: 'One', allergies: JSON.stringify(['nuts', 'dairy']), medicalNotes: 'Asthma', class: { name: '3A' } },
   parentUser: { name: 'Parent P', email: 'p@x.com', phone: '+971500000000' },
   ecaActivity: { id: 'act-1', name: 'Chess' },
 }
@@ -48,6 +48,9 @@ describe('GET /api/provider-portal/bookings — contact gating', () => {
     expect(res.status).toBe(200)
     expect(res.body[0].studentName).toBe('Kid One') // still see child + class
     expect(res.body[0].parent).toBeNull()            // but never contact
+    // Safety info is always present (independent of contact sharing).
+    expect(res.body[0].allergies).toEqual(['nuts', 'dairy'])
+    expect(res.body[0].medicalNotes).toBe('Asthma')
   })
 
   it('includes parent contact when the school has sharing ON', async () => {

@@ -74,6 +74,20 @@ describe('POST /provider/auth/login', () => {
     expect(res.body.accessToken).toBe('provider-access')
     expect(res.body.providerUser.providerId).toBe('prov-1')
   })
+
+  it('returns a 2FA challenge (no tokens) when 2FA is enabled', async () => {
+    const passwordHash = await bcrypt.hash('correct-horse', 4)
+    prismaMock.providerUser.findUnique.mockResolvedValue({
+      id: 'pu-1', providerId: 'prov-1', email: 'coach@x.com', name: 'Coach',
+      passwordHash, failedLoginAttempts: 0, lockedUntil: null,
+      twoFactorEnabled: true, twoFactorSecret: 'encrypted-secret', provider: ACTIVE_PROVIDER,
+    })
+    const res = await request(makeApp()).post('/provider/auth/login').send({ email: 'coach@x.com', password: 'correct-horse' })
+    expect(res.status).toBe(200)
+    expect(res.body.twoFactorRequired).toBe(true)
+    expect(res.body.twoFactorSessionToken).toBeTypeOf('string')
+    expect(res.body.accessToken).toBeUndefined()
+  })
 })
 
 describe('POST /provider/auth/register (invitation)', () => {

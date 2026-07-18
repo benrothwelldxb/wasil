@@ -4,22 +4,81 @@ import { ApiError } from '../api'
 import { useProviderAuth } from '../auth'
 
 export function LoginPage() {
-  const { login } = useProviderAuth()
+  const { login, verifyTwoFactor } = useProviderAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // 2FA step
+  const [sessionToken, setSessionToken] = useState<string | null>(null)
+  const [code, setCode] = useState('')
+  const [useRecovery, setUseRecovery] = useState(false)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
     try {
-      await login(email.trim(), password)
+      const result = await login(email.trim(), password)
+      if (result.twoFactorRequired && result.sessionToken) {
+        setSessionToken(result.sessionToken)
+        setSubmitting(false)
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to sign in. Please try again.')
       setSubmitting(false)
     }
+  }
+
+  const handleVerify = async (e: FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setSubmitting(true)
+    try {
+      await verifyTwoFactor(sessionToken!, code.trim(), useRecovery)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Verification failed.')
+      setSubmitting(false)
+    }
+  }
+
+  if (sessionToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-extrabold text-warm-text-primary">Two-factor verification</h1>
+            <p className="text-sm text-warm-text-secondary mt-1">
+              {useRecovery ? 'Enter one of your recovery codes.' : 'Enter the 6-digit code from your authenticator app.'}
+            </p>
+          </div>
+          <form onSubmit={handleVerify} className="warm-card p-6 space-y-4">
+            {error && <div className="rounded-warm bg-red-50 border border-red-200 text-red-600 text-sm px-3 py-2.5">{error}</div>}
+            <input
+              autoFocus
+              inputMode={useRecovery ? 'text' : 'numeric'}
+              value={code}
+              onChange={e => setCode(e.target.value)}
+              placeholder={useRecovery ? 'Recovery code' : '123456'}
+              className="w-full rounded-warm-btn border border-warm-border px-3 py-2.5 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+              required
+            />
+            <button type="submit" disabled={submitting} className="w-full flex items-center justify-center gap-2 rounded-warm-btn bg-brand text-white font-semibold py-2.5 text-sm disabled:opacity-60">
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {submitting ? 'Verifying…' : 'Verify'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setUseRecovery(!useRecovery); setCode(''); setError(null) }}
+              className="w-full text-xs text-warm-text-secondary hover:text-brand"
+            >
+              {useRecovery ? 'Use your authenticator app instead' : 'Lost your device? Use a recovery code'}
+            </button>
+          </form>
+        </div>
+      </div>
+    )
   }
 
   return (
