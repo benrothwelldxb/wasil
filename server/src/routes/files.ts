@@ -202,6 +202,12 @@ router.post('/folder', isAdmin, async (req, res) => {
     const user = req.user!
     const { name, icon, color, parentId } = req.body
 
+    // A nested folder's parent must belong to this school.
+    if (parentId) {
+      const parent = await prisma.fileFolder.findFirst({ where: { id: parentId, schoolId: user.schoolId }, select: { id: true } })
+      if (!parent) return res.status(400).json({ error: 'Invalid parent folder' })
+    }
+
     const folder = await prisma.fileFolder.create({
       data: {
         name,
@@ -241,6 +247,12 @@ router.post('/file', isAdmin, fileUpload.single('file'), async (req, res) => {
     const check = checkUpload(uploaded.buffer, uploaded.mimetype, uploaded.originalname, ALLOWED_MIME_TYPES)
     if (!check.valid) {
       return res.status(400).json({ error: `File rejected: ${check.reason}` })
+    }
+
+    // A file's target folder must belong to this school.
+    if (folderId) {
+      const folder = await prisma.fileFolder.findFirst({ where: { id: folderId, schoolId: user.schoolId }, select: { id: true } })
+      if (!folder) return res.status(400).json({ error: 'Invalid folder' })
     }
 
     const key = generateKey('files', uploaded.originalname)
@@ -311,11 +323,14 @@ router.delete('/folder/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
 
-    // This will fail if folder has files or subfolders due to foreign key constraints
-    // Admin should move/delete contents first
-    await prisma.fileFolder.delete({
-      where: { id },
+    // Scope to the admin's school so a folder id from another tenant can't be
+    // deleted. (Fails anyway if the folder has files/subfolders via FK.)
+    const removed = await prisma.fileFolder.deleteMany({
+      where: { id, schoolId: req.user!.schoolId },
     })
+    if (removed.count === 0) {
+      return res.status(404).json({ error: 'Folder not found' })
+    }
 
     logAudit({ req, action: 'DELETE', resourceType: 'FOLDER', resourceId: id })
 

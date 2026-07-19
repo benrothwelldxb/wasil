@@ -155,6 +155,14 @@ router.post('/', isAdmin, validate(createStaffSchema), async (req, res) => {
       return res.status(400).json({ error: 'A user with this email already exists' })
     }
 
+    // Every assigned class must belong to the admin's school.
+    if (assignedClassIds?.length) {
+      const valid = await prisma.class.count({ where: { id: { in: assignedClassIds }, schoolId: adminUser.schoolId } })
+      if (valid !== new Set(assignedClassIds).size) {
+        return res.status(400).json({ error: 'One or more classes are invalid' })
+      }
+    }
+
     // Create user with assigned classes
     const staff = await prisma.user.create({
       data: {
@@ -359,6 +367,14 @@ router.put('/:id', isAdmin, validate(updateStaffSchema), async (req, res) => {
       const emailExists = await prisma.user.findUnique({ where: { email } })
       if (emailExists) {
         return res.status(400).json({ error: 'A user with this email already exists' })
+      }
+    }
+
+    // Every assigned class must belong to the admin's school.
+    if (assignedClassIds?.length) {
+      const valid = await prisma.class.count({ where: { id: { in: assignedClassIds }, schoolId: adminUser.schoolId } })
+      if (valid !== new Set(assignedClassIds).size) {
+        return res.status(400).json({ error: 'One or more classes are invalid' })
       }
     }
 

@@ -310,6 +310,19 @@ router.post('/conversations', isAuthenticated, async (req, res) => {
 })
 
 // Send message in conversation
+// Where-clause matching a conversation the requester participates in (or is an
+// admin for). Used to gate every per-conversation action.
+function participantWhere(id: string, user: Express.User) {
+  return {
+    id,
+    OR: [
+      { parentId: user.id },
+      { staffId: user.id },
+      ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
+    ],
+  }
+}
+
 router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
@@ -322,14 +335,7 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
 
     // Verify user is participant
     const conversation = await prisma.conversation.findFirst({
-      where: {
-        id,
-        OR: [
-          { parentId: user.id },
-          { staffId: user.id },
-          ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
-        ],
-      },
+      where: participantWhere(id, user),
       include: {
         parent: { select: { id: true, name: true } },
         staff: { select: { id: true, name: true } },
@@ -339,6 +345,17 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
 
     if (!conversation) {
       return res.status(404).json({ error: 'Conversation not found' })
+    }
+
+    // Validate the reply target belongs to THIS conversation — otherwise a
+    // participant could quote (and surface) a message from another, possibly
+    // cross-tenant, conversation via the reply preview.
+    if (replyToId) {
+      const replyTarget = await prisma.conversationMessage.findFirst({
+        where: { id: replyToId, conversationId: id },
+        select: { id: true },
+      })
+      if (!replyTarget) return res.status(400).json({ error: 'Invalid reply target' })
     }
 
     const message = await prisma.conversationMessage.create({
@@ -661,6 +678,10 @@ router.post('/conversations/:id/messages/:messageId/react', isAuthenticated, asy
       return res.status(400).json({ error: `Invalid emoji. Allowed: ${ALLOWED_REACTION_EMOJIS.join(', ')}` })
     }
 
+    // The requester must participate in the conversation, not merely know its id.
+    const convo = await prisma.conversation.findFirst({ where: participantWhere(id, user), select: { id: true } })
+    if (!convo) return res.status(404).json({ error: 'Conversation not found' })
+
     // Verify the message exists in this conversation
     const message = await prisma.conversationMessage.findFirst({
       where: { id: messageId, conversationId: id },
@@ -779,6 +800,8 @@ router.get('/conversations/:id/export', isAuthenticated, async (req, res) => {
 // Typing indicator
 router.post('/conversations/:id/typing', isAuthenticated, async (req, res) => {
   const { id } = req.params
+  const convo = await prisma.conversation.findFirst({ where: participantWhere(id, req.user!), select: { id: true } })
+  if (!convo) return res.status(404).json({ error: 'Conversation not found' })
   setTyping(id, req.user!.id)
   res.json({ ok: true })
 })

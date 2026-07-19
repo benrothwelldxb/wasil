@@ -1,6 +1,7 @@
 import { Router } from 'express'
+import { Prisma } from '@prisma/client'
 import prisma from '../services/prisma.js'
-import { isAuthenticated } from '../middleware/auth.js'
+import { isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -28,6 +29,45 @@ router.get('/', isAuthenticated, async (req, res) => {
     const isStaffOrAdmin = ['STAFF', 'ADMIN', 'SUPER_ADMIN'].includes(user.role)
     const results: SearchResult[] = []
 
+    // Resolve the parent's audience so search never surfaces content addressed
+    // to other classes/year-groups (a parent must only find what they can see).
+    let parentMessageAudience: Prisma.MessageWhereInput | undefined
+    let parentFormAudience: Prisma.FormWhereInput | undefined
+    if (isParent) {
+      const full = await loadUserWithRelations(user.id)
+      const classIds = [
+        ...(full?.children?.map(c => c.classId) || []),
+        ...(full?.studentLinks?.map(l => l.student.classId) || []),
+      ].filter(Boolean) as string[]
+      const studentIds = full?.studentLinks?.map(l => l.studentId) || []
+
+      const classes = classIds.length
+        ? await prisma.class.findMany({ where: { id: { in: classIds } }, select: { yearGroupId: true } })
+        : []
+      const yearGroupIds = [...new Set(classes.map(c => c.yearGroupId).filter(Boolean))] as string[]
+      const groupLinks = studentIds.length
+        ? await prisma.studentGroupLink.findMany({ where: { studentId: { in: studentIds } }, select: { groupId: true } })
+        : []
+      const groupIds = [...new Set(groupLinks.map(l => l.groupId))]
+
+      parentMessageAudience = {
+        OR: [
+          { targetClass: 'Whole School' },
+          { classId: { in: classIds } },
+          ...(yearGroupIds.length ? [{ yearGroupId: { in: yearGroupIds } }] : []),
+          ...(groupIds.length ? [{ groupId: { in: groupIds } }] : []),
+        ],
+      }
+      parentFormAudience = {
+        status: 'ACTIVE',
+        OR: [
+          { targetClass: 'Whole School' },
+          ...classIds.map(cid => ({ classIds: { array_contains: cid } })),
+          ...yearGroupIds.map(yg => ({ yearGroupIds: { array_contains: yg } })),
+        ],
+      }
+    }
+
     // Search messages/posts
     const messages = await prisma.message.findMany({
       where: {
@@ -36,6 +76,7 @@ router.get('/', isAuthenticated, async (req, res) => {
           { title: { contains: q, mode: 'insensitive' } },
           { content: { contains: q, mode: 'insensitive' } },
         ],
+        ...(parentMessageAudience ? { AND: [parentMessageAudience] } : {}),
       },
       select: { id: true, title: true, targetClass: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
@@ -109,6 +150,7 @@ router.get('/', isAuthenticated, async (req, res) => {
           { title: { contains: q, mode: 'insensitive' } },
           { description: { contains: q, mode: 'insensitive' } },
         ],
+        ...(parentFormAudience ? { AND: [parentFormAudience] } : {}),
       },
       select: { id: true, title: true, status: true, createdAt: true },
       orderBy: { createdAt: 'desc' },

@@ -316,6 +316,13 @@ router.put('/registrations/:regId/status', isAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Invalid status' })
     }
 
+    // Tenant guard via the registration's parent service.
+    const owned = await prisma.serviceRegistration.findFirst({
+      where: { id: req.params.regId, service: { schoolId: req.user!.schoolId } },
+      select: { id: true },
+    })
+    if (!owned) return res.status(404).json({ error: 'Registration not found' })
+
     const registration = await prisma.serviceRegistration.update({
       where: { id: req.params.regId },
       data: { status },
@@ -337,6 +344,13 @@ router.put('/registrations/:regId/payment', isAdmin, async (req, res) => {
     if (!validStatuses.includes(paymentStatus)) {
       return res.status(400).json({ error: 'Invalid payment status' })
     }
+
+    // Tenant guard via the registration's parent service.
+    const owned = await prisma.serviceRegistration.findFirst({
+      where: { id: req.params.regId, service: { schoolId: req.user!.schoolId } },
+      select: { id: true },
+    })
+    if (!owned) return res.status(404).json({ error: 'Registration not found' })
 
     const registration = await prisma.serviceRegistration.update({
       where: { id: req.params.regId },

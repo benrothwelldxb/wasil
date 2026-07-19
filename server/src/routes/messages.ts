@@ -342,8 +342,9 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
 
     // Auto-activate attached form
     if (formId) {
-      await prisma.form.update({
-        where: { id: formId },
+      // Scope by school so a message can't flip another school's form ACTIVE.
+      await prisma.form.updateMany({
+        where: { id: formId, schoolId: user.schoolId },
         data: { status: 'ACTIVE' },
       })
     }
@@ -445,8 +446,8 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
 
     // Auto-activate newly attached form
     if (formId && formId !== existing.formId) {
-      await prisma.form.update({
-        where: { id: formId },
+      await prisma.form.updateMany({
+        where: { id: formId, schoolId: user.schoolId },
         data: { status: 'ACTIVE' },
       })
     }

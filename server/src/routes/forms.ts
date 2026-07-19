@@ -6,6 +6,7 @@ import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../mid
 import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
+import { tenant } from '../services/tenant.js'
 
 const router = Router()
 
@@ -314,7 +315,7 @@ router.post('/:id/respond', isAuthenticated, async (req, res) => {
     const { answers } = req.body
 
     const form = await prisma.form.findFirst({
-      where: { id, status: 'ACTIVE' },
+      where: tenant(user.schoolId, { id, status: 'ACTIVE' }),
     })
 
     if (!form) {

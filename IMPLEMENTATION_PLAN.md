@@ -310,3 +310,101 @@ Phase A backend is complete, typechecks clean, and is covered by guardrail
 tests. Remaining Phase A work: the `apps/provider` frontend shell and the 2FA
 endpoints. DB-dependent behavior (the migration, live auth) needs one run
 against a dev Postgres to confirm.
+
+---
+
+# Pre-launch hardening & product roadmap
+
+Prioritised plan agreed after Phases A–D. Each batch is independently
+shippable and verified (typecheck + guardrail tests + app builds).
+**Descoped:** payment-processor integration — clubs stay link-only; Wasil tracks
+the manual paid/unpaid status only.
+
+## Batch 1 — Security close-out + tenant-scoping helper  (DONE)
+Delivered: `tenant()` scoping helper (`services/tenant.ts`); M1 refresh-token
+hashing (staff + provider); M3 files folder delete + parent/folder ownership;
+M4 inbox reply-target validation; M5 inbox reaction/typing participant checks;
+M6 forms-respond school scope; M7 form-activation school scope; M8 consultation
+teacher-removal scope; M9 school-services registration status/payment scope; M11
+parent search audience filter (messages + forms); L2 SVG event-handler
+rejection; L8 staff class-assignment school validation. +8 guardrail tests (64
+total). **Deferred:** L4 refresh-token reuse detection (needs a token-family
+schema change + rotation rework — own change); L5–L7 eca/child-write
+cross-tenant integrity writes (cuid-gated, lower risk); full repository refactor
+(using the `tenant()` helper + incremental migration instead).
+
+### Original scope
+
+The provider portal added a new external write-actor; tenant isolation is now
+the highest-risk surface. Close the remaining review cluster and centralise
+scoping so it's one testable thing.
+- Extract a `scopedWhere(user, extra)` / thin repository helper; migrate the
+  hand-rolled `schoolId` filters (~300 call sites) incrementally, starting with
+  the deviations.
+- Fix remaining items (verify each against current code first):
+  M1 hash refresh tokens (staff + provider); M3 files folder delete +
+  parent/folder ownership; M4 inbox `replyToId` conversation check; M5 inbox
+  reactions/typing participant check; M6 cross-tenant form respond; M7 form
+  activation via `formId`; M8 consultation teacher removal scope; M9
+  schoolServices registration status/payment scope; M11 parent search audience
+  filter; L2 strip SVG event handlers; L4 refresh-token reuse detection; L5–L8
+  eca/child-write/staff class-assignment tenant checks.
+- Guardrail tests: tenant-A-cannot-touch-tenant-B per fixed route.
+
+## Batch 2 — CI + test floor  (LAUNCH-BLOCKING)
+No CI exists today; 35 route modules are near-uncovered while money now flows.
+- GitHub Actions: install workspaces, `prisma generate`, typecheck (server +
+  all apps), run server vitest, build all four frontends — on every PR.
+- Add a Postgres service + a small integration layer for the money/auth paths
+  (booking lifecycle, payment-status transitions, refresh/rotation, register)
+  alongside the existing mocked unit tests.
+- Extend unit coverage to the highest-traffic existing routes (messages create,
+  forms respond, notifications).
+
+## Batch 3 — Data protection & governance
+New PII flow: parent contact + child allergy/medical data shared with external
+companies. Under UAE PDPL this needs real controls.
+- `ParentConsent` record (parent + provider + version + timestamp) captured at
+  booking time; surface consent copy before the first booking with a provider.
+- Provider audit trail: extend `AuditLog` to support a provider actor
+  (`actorType` + nullable `providerUserId`) and log provider mutations + PII
+  access to the table (not just structured logs).
+- Provider offboarding flow: decide + implement handling of a removed provider's
+  activities/menus/bookings (soft-archive vs the current FK `SET NULL` detach).
+- Draft privacy-policy language + a provider data-processing agreement template
+  (content — flag for legal review, not a code deliverable).
+
+## Batch 4 — Parent experience: failure surfacing + timezone
+Small fixes, high daily value; low risk.
+- Wire `ToastProvider` into `apps/parent/main.tsx`; surface the silent
+  `catch`/console.error sites (send, RSVP, react, mute, book) as toasts; add a
+  shared `ErrorState` with retry for failed fetches (they currently render as
+  empty states).
+- Shared `todayLocalISO()` (Asia/Dubai); replace the UTC `new Date().toISO...`
+  "today" logic in parent + admin pages.
+
+## Batch 5 — RTL + Arabic completeness  (highest product value for a .ae school)
+- On `i18n.changeLanguage`, set `document.documentElement.dir`/`lang`; audit
+  directional CSS (Tailwind logical utilities / `rtl:` variants).
+- Complete translation coverage for the ~half of parent pages with no
+  `useTranslation`, and the hardcoded `BottomTabBar` labels.
+- QA pass in Arabic across the main flows (incl. the new Clubs page).
+
+## Batch 6 — Provider ops: invite emails + admin analytics
+- Send provider invitation emails via the outbox (registration link) instead of
+  returning the raw token for copy-paste.
+- Admin analytics for clubs/catering: enrolment, paid vs unpaid, fill rates,
+  revenue-at-manual-status, per provider — scoped to the school.
+
+## Batch 7 — Observability
+- Wire `SENTRY_DSN` (env + deploy config; adapter already built).
+- Outbox monitoring: an admin view + alert for `FAILED` entries, prioritising
+  emergency-alert and booking/payment kinds; a cron that flags stuck entries.
+
+## Later (post-launch)
+Waitlists for full clubs; provider↔parent messaging; two-way calendar sync.
+
+## Suggested order
+1 → 2 (both launch-blocking) → 3 (legal) → 4 (quick wins) → 5 (RTL, large) →
+6 → 7. Batches 1, 2, 4, 6, 7 are squarely code+test; 3 and 5 carry
+legal/QA components beyond code.

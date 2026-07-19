@@ -61,3 +61,14 @@ describe('rotateRefreshToken (R3 atomic-rotation guardrail)', () => {
     expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1)
   })
 })
+
+// Guards M1: refresh tokens are stored as a hash, never in plaintext.
+describe('generateRefreshToken storage', () => {
+  it('persists a SHA-256 hash, not the returned token', async () => {
+    const { generateRefreshToken } = await import('../src/services/jwt')
+    const raw = await generateRefreshToken({ id: 'u1' })
+    const stored = (prismaMock.refreshToken.create.mock.calls[0][0] as { data: { token: string } }).data.token
+    expect(stored).not.toBe(raw)
+    expect(stored).toMatch(/^[a-f0-9]{64}$/)
+  })
+})

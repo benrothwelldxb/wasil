@@ -24,6 +24,13 @@ export function generateAccessToken(user: { id: string; role: string; schoolId: 
   )
 }
 
+// Refresh tokens are stored as a SHA-256 hash, never in plaintext — a read-only
+// DB/backup leak then yields nothing usable. The random 48-byte token has full
+// entropy, so a plain (unsalted) hash is sufficient and lets us look up by hash.
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex')
+}
+
 export async function generateRefreshToken(user: { id: string }): Promise<string> {
   const token = crypto.randomBytes(48).toString('hex')
   const expiresAt = new Date()
@@ -32,7 +39,7 @@ export async function generateRefreshToken(user: { id: string }): Promise<string
   await prisma.$transaction([
     prisma.refreshToken.create({
       data: {
-        token,
+        token: hashToken(token),
         userId: user.id,
         expiresAt,
       },
@@ -54,7 +61,7 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 }
 
 export async function revokeRefreshToken(token: string): Promise<void> {
-  await prisma.refreshToken.deleteMany({ where: { token } })
+  await prisma.refreshToken.deleteMany({ where: { token: hashToken(token) } })
 }
 
 export async function rotateRefreshToken(oldToken: string): Promise<{ accessToken: string; refreshToken: string } | null> {
@@ -66,7 +73,7 @@ export async function rotateRefreshToken(oldToken: string): Promise<{ accessToke
   // instead of an unhandled 500 that hangs the auth path.
   const user = await prisma.$transaction(async (tx) => {
     const stored = await tx.refreshToken.findUnique({
-      where: { token: oldToken },
+      where: { token: hashToken(oldToken) },
       include: { user: true },
     })
     if (!stored) return null
@@ -118,7 +125,7 @@ export async function generateProviderRefreshToken(pu: { id: string }): Promise<
   expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS)
 
   await prisma.$transaction([
-    prisma.providerRefreshToken.create({ data: { token, providerUserId: pu.id, expiresAt } }),
+    prisma.providerRefreshToken.create({ data: { token: hashToken(token), providerUserId: pu.id, expiresAt } }),
     prisma.providerUser.update({ where: { id: pu.id }, data: { lastLoginAt: new Date() } }),
   ])
 
@@ -126,7 +133,7 @@ export async function generateProviderRefreshToken(pu: { id: string }): Promise<
 }
 
 export async function revokeProviderRefreshToken(token: string): Promise<void> {
-  await prisma.providerRefreshToken.deleteMany({ where: { token } })
+  await prisma.providerRefreshToken.deleteMany({ where: { token: hashToken(token) } })
 }
 
 export async function rotateProviderRefreshToken(
@@ -135,7 +142,7 @@ export async function rotateProviderRefreshToken(
   // Same atomic claim-and-rotate as rotateRefreshToken, for provider tokens.
   const providerUser = await prisma.$transaction(async (tx) => {
     const stored = await tx.providerRefreshToken.findUnique({
-      where: { token: oldToken },
+      where: { token: hashToken(oldToken) },
       include: { providerUser: true },
     })
     if (!stored) return null

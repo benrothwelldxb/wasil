@@ -71,8 +71,10 @@ const SNIFFERS: Record<string, (buf: Buffer) => boolean> = {
     // SVG is text — accept if the first 2KB include an <svg tag and no <script
     const head = buf.subarray(0, 2048).toString('utf-8').toLowerCase()
     if (!head.includes('<svg')) return false
-    // Block obvious XSS vectors in SVGs uploaded to a school context
+    // Block XSS vectors in SVGs uploaded to a school context: scripts,
+    // javascript: URLs, and inline event handlers (onload=, onerror=, …).
     if (head.includes('<script') || head.includes('javascript:')) return false
+    if (/\son\w+\s*=/.test(head)) return false
     return true
   },
   // Office Open XML formats are zip containers

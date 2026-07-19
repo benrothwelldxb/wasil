@@ -929,7 +929,10 @@ router.delete('/:id/teachers/:ctId', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Consultation not found' })
     }
 
-    await prisma.consultationTeacher.delete({ where: { id: ctId } })
+    // Scope to this consultation so a ctId from another (cross-tenant)
+    // consultation can't be deleted via the school-scoped parent event.
+    const removed = await prisma.consultationTeacher.deleteMany({ where: { id: ctId, consultationId: id } })
+    if (removed.count === 0) return res.status(404).json({ error: 'Teacher not found' })
     res.json({ message: 'Teacher removed successfully' })
   } catch (error) {
     console.error('Error removing teacher:', error)
