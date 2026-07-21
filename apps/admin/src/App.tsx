@@ -37,11 +37,31 @@ import { SettingsPage } from './pages/SettingsPage'
 const PARENT_APP_URL = import.meta.env.VITE_PARENT_URL || 'http://localhost:3000'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
+// Wasil Hub SSO — staff sign in at Hub and are launched into this admin app via
+// /auth/callback?code=... (handled by AuthCallback below). When VITE_STAFF_AUTH_MODE
+// is 'hub' (the default), unauthenticated staff are sent to Hub instead of seeing
+// Connect's own login page. Set to 'legacy' to roll back to the password/OAuth login.
+const HUB_LAUNCH_URL = import.meta.env.VITE_HUB_LAUNCH_URL || 'https://hub.wasil.app/launch/connect'
+const STAFF_AUTH_MODE = import.meta.env.VITE_STAFF_AUTH_MODE || 'hub'
+
 function ParentRedirect() {
   useEffect(() => {
     window.location.href = PARENT_APP_URL
   }, [])
   return <LoadingScreen />
+}
+
+function HubRedirect() {
+  useEffect(() => {
+    // Full navigation, not a router push — Hub is a different origin.
+    window.location.assign(HUB_LAUNCH_URL)
+  }, [])
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4 p-4">
+      <LoadingScreen />
+      <p className="text-sm text-slate-500">Signing you in via Wasil Hub…</p>
+    </div>
+  )
 }
 
 function ProtectedRoute({ children, superAdminOnly = false }: { children: React.ReactNode; superAdminOnly?: boolean }) {
@@ -204,6 +224,8 @@ export default function App() {
             user?.role === 'PARENT'
               ? <ParentRedirect />
               : <Navigate to="/analytics" replace />
+          ) : STAFF_AUTH_MODE === 'hub' ? (
+            <HubRedirect />
           ) : (
             <LoginPage />
           )

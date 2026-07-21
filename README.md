@@ -182,6 +182,43 @@ For development, use the demo login buttons on the login page:
 3. Add callback URL: `https://your-api.com/auth/microsoft/callback`
 4. Set `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`
 
+## Hub SSO (staff)
+
+Staff sign-in for the admin app is delegated to **Wasil Hub**, the ecosystem's
+identity provider. Instead of a password/Google/Microsoft login inside Connect,
+staff click "Connect" on the Hub dashboard:
+
+```
+Hub dashboard ──▶ Hub /launch/connect ──▶ Connect API GET /auth/hub/exchange?hub_token=<JWT>
+                                                │  verifies the Hub JWT, issues Connect's
+                                                │  own session tokens
+                                                ▼
+                            admin app  /auth/callback?code=<code>  (existing OAuth handoff)
+                                                ▼
+                                        admin dashboard
+```
+
+The admin app's `/auth/callback` route is unchanged — it already knows how to
+exchange a `?code` for a session. What changed is the *entry point*: an
+unauthenticated staff member hitting the admin app is now redirected to Hub
+rather than shown Connect's own login page.
+
+This is controlled by a coexistence flag so it can be rolled back without a
+redeploy of application logic:
+
+| Var | Where | Meaning |
+| --- | --- | --- |
+| `VITE_STAFF_AUTH_MODE` | `apps/admin/.env` | `hub` (default) redirects unauthenticated staff to Hub. `legacy` restores Connect's own login page — the rollback path. |
+| `VITE_HUB_LAUNCH_URL` | `apps/admin/.env` | Where staff are sent to sign in (default `https://hub.wasil.app/launch/connect`). |
+| `HUB_URL` / `HUB_ISSUER` / `HUB_AUDIENCE` / `HUB_JWKS_URL` | `server/.env` | Used by the API to verify Hub-issued JWTs at `GET /auth/hub/exchange` and mint Connect's own tokens. See `HUB-INTEGRATION.md` for the full server-side design. |
+
+The legacy password/Google/Microsoft login page (`apps/admin/src/pages/LoginPage.tsx`)
+is kept in the codebase but only rendered when `VITE_STAFF_AUTH_MODE=legacy` —
+it is not deleted, just unrouted, so it stays available for emergency rollback.
+
+Parents are unaffected — they continue to use Connect's existing
+invitation/magic-link flow; Hub SSO in this stage covers staff only.
+
 ## Features
 
 - **Messages**: Announcements with action items (consent, payment, RSVP)
