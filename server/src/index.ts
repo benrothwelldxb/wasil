@@ -15,6 +15,8 @@ import { initErrorReporting } from './services/sentry.js'
 import { configurePassport } from './middleware/passport.js'
 import authRoutes from './routes/auth.js'
 import hubAuthRoutes from './routes/hubAuth.js'
+import hubSyncRoutes from './routes/hubSync.js'
+import hubWebhookRoutes from './routes/hubWebhook.js'
 import messagesRoutes from './routes/messages.js'
 import formsRoutes from './routes/forms.js'
 import eventsRoutes from './routes/events.js'
@@ -111,6 +113,11 @@ app.use(cors({
   origin: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(','),
   credentials: true,
 }))
+// Wasil Hub webhook receiver — MUST be mounted before express.json() because
+// its HMAC signature is computed over the raw request bytes (it parses the body
+// with express.raw internally). See routes/hubWebhook.ts.
+app.use('/api/hub', hubWebhookRoutes)
+
 // JSON body limit. Explicit cap stops a single client from queueing
 // arbitrarily large payloads (default in Express is 100kb; this raises it to
 // 1mb to comfortably fit forms with many fields, but no larger). Anything
@@ -166,6 +173,8 @@ app.use('/provider/auth', providerAuthRoutes)
 app.use('/api/providers', providersRoutes)
 app.use('/api/provider-portal', providerPortalRoutes)
 app.use('/api/clubs', clubsRoutes)
+// Admin-triggered Wasil Hub MIS sync (POST /api/admin/hub-sync)
+app.use('/api/admin', hubSyncRoutes)
 
 // Liveness probe — the process is up. Cheap and always returns 200.
 // Use this to decide "should we restart the container?".
