@@ -25,3 +25,6 @@ apps/parent/android/local.properties
 # Android signing
 apps/parent/android/app/wasil-release.keystore
 apps/parent/android/app/signing.properties
+
+# Agent worktrees (transient)
+.claude/worktrees/

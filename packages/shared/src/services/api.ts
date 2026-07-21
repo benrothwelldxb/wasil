@@ -13,6 +13,7 @@ import type {
   FormAnalytics,
   Event,
   ScheduleItem,
+  SubjectReminder,
   TermDate,
   WeeklyMessage,
   KnowledgeCategory,
@@ -577,6 +578,28 @@ export const schedule = {
     fetchApi<{ message: string }>(`/api/schedule/${id}`, {
       method: 'DELETE',
     }),
+  // The editable subject→reminder map the Hub "today" helper uses. Admin-only
+  // writes; list seeds the school's defaults on first call.
+  reminders: {
+    list: () => fetchApi<SubjectReminder[]>('/api/schedule/reminders'),
+    create: (data: { subject: string; emoji: string; reminder: string }) =>
+      fetchApi<SubjectReminder>('/api/schedule/reminders', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (
+      id: string,
+      data: Partial<{ subject: string; emoji: string; reminder: string; active: boolean }>,
+    ) =>
+      fetchApi<SubjectReminder>(`/api/schedule/reminders/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    remove: (id: string) =>
+      fetchApi<{ message: string }>(`/api/schedule/reminders/${id}`, {
+        method: 'DELETE',
+      }),
+  },
 }
 
 // Term Dates
@@ -2178,12 +2201,38 @@ export const clubs = {
   cancelBooking: (id: string) => fetchApi<{ message: string }>(`/api/clubs/bookings/${id}`, { method: 'DELETE' }),
 }
 
+// Timetable — the "Today your child has Swimming/Library" helper, sourced from
+// Wasil Hub. Each item is a reminder-worthy block (Swimming/PE → kit, Library →
+// books); ordinary lessons are omitted. A child whose class has no Hub timetable
+// (or no Hub link) comes back with `items: []` — fall back to schedule.list().
+export interface TimetableReminderItem {
+  /** Subject name as Hub named it, e.g. "Swimming". */
+  subject: string
+  /** True for specialist subjects (Swimming, PE). */
+  specialist: boolean
+  /** A single emoji for the item, e.g. "🩱". */
+  emoji: string
+  /** Short parent-facing nudge, e.g. "Bring swimming kit". */
+  reminder: string
+}
+export interface TimetableTodayChild {
+  studentId: string
+  name: string
+  className: string
+  items: TimetableReminderItem[]
+}
+
+export const timetable = {
+  today: () => fetchApi<TimetableTodayChild[]>('/api/timetable/today'),
+}
+
 export default {
   auth,
   messages,
   forms,
   providers,
   clubs,
+  timetable,
   events,
   schedule,
   termDates,

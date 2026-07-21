@@ -54,6 +54,7 @@ import providerAuthRoutes from './routes/providerAuth.js'
 import providersRoutes from './routes/providers.js'
 import providerPortalRoutes from './routes/providerPortal.js'
 import clubsRoutes from './routes/clubs.js'
+import timetableRoutes from './routes/timetable.js'
 import prisma from './services/prisma.js'
 import { initFirebase } from './services/firebase.js'
 import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders } from './services/cleanup.js'
@@ -173,6 +174,8 @@ app.use('/provider/auth', providerAuthRoutes)
 app.use('/api/providers', providersRoutes)
 app.use('/api/provider-portal', providerPortalRoutes)
 app.use('/api/clubs', clubsRoutes)
+// "Today your child has …" timetable helper, sourced from Wasil Hub.
+app.use('/api/timetable', timetableRoutes)
 // Admin-triggered Wasil Hub MIS sync (POST /api/admin/hub-sync)
 app.use('/api/admin', hubSyncRoutes)
 
