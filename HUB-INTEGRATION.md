@@ -182,3 +182,84 @@ are timetabled per *class*, not per pupil, so Connect fetches ~16 class-days
 - **Opus**: `hubMis` timetable call + cache + webhook invalidation +
   `/api/timetable/today` + reminder map + Asia/Dubai "today" + shared api method + tests.
 - **Sonnet**: ParentDashboard child-card UI + fallback (after the server contract lands).
+
+---
+
+## Stage 4 — School Calendar (Hub events → Connect) + teacher proposals
+
+Hub owns the school calendar (`CalendarEvent`). Connect should **display** those
+events (its "School Calendar" / `EventsPage`) instead of admins re-entering them,
+and later let teachers **propose** events from Connect for Hub super-admin
+approval. Two phases; Phase A is a straight pull, Phase B needs new Hub write +
+moderation surface (coordinate on the Hub side first).
+
+### Hub surface that already exists (read)
+- `GET /api/v1/calendar/events?schoolId=&from=&to=[&guardian_email=|&staff_id=][&category=][&scoped=1]`
+  → `{ from, to, events:[CalendarEventDTO], state_hash, cursor }`. Windowed
+  (≤400d), identity-scoped (guardian view = WHOLE_SCHOOL + GUARDIAN_FACING only),
+  `calendar:read` (or `calendar:read:guardian`) scope.
+- `GET /api/v1/calendar/changes?...&since=<cursor>` — incremental deltas.
+- `calendar.updated` webhook (already in our subscribe list).
+- **CalendarEventDTO**: `{ id, title, description, category, location, all_day,
+  starts_at, ends_at, kit (TRIP→true), audience?, cohort?:{year_groups[],classes[]}|{whole_school} }`.
+- **Hub CalendarEvent model** carries: category, audience (WHOLE_SCHOOL /
+  GUARDIAN_FACING / …), cohort targeting (`wholeSchool` + `CalendarEventTarget`),
+  consent requirements, `externalMisId` / `misSource` (MANUAL default),
+  `createdByUserId`, recurrence (reserved).
+
+### Phase A — Hub calendar → Connect (one-way pull, Hub-owned)
+- **Link column**: `Event.hubCalendarEventId String? @unique` (mirror Hub id,
+  same pattern as the other hub-link columns).
+- **Client**: `hubCalendar.getEvents(hubSchoolId, from, to)` +
+  `getChanges(since)` → the DTO above. Needs `calendar:read` on the wsk token.
+- **Sync** (`services/hubCalendarSync.ts`): idempotent upsert keyed on
+  `hubCalendarEventId`. Map `starts_at`→`date`+`time`, `all_day`, `location`,
+  `title`, `description`; `kit`/category → a display badge; `audience` decides
+  parent visibility; **cohort → Connect targeting** (see decision 1). Windowed
+  pull on demand + `calendar.updated` webhook invalidation + `/changes` cursor
+  for incremental refresh (persist the cursor per school).
+- **Ownership**: Hub-sourced events become **read-only in Connect** (edit in Hub);
+  Connect-local events (if any remain) stay editable. Surface both, merged, under
+  **Engagement → Events** (`EventsPage`), with a small "from Hub" marker on synced
+  ones.
+- **Retire the CSV upload**: the admin Events page's client-side CSV bulk-import
+  (CsvRow / showCsvModal / showCsvGuide in `apps/admin/.../EventsPage.tsx`) becomes
+  redundant once Hub feeds events — remove that UI in Phase A (no server route to
+  delete; it's client-side create-per-row).
+
+**Open decisions (Phase A):**
+1. **Cohort mismatch** — Hub events can target *multiple* year-groups/classes;
+   Connect `Event` targets a single class/yearGroup or whole-school. Options:
+   (a) fan out one Connect `Event` per target, (b) extend `Event` to multi-target,
+   (c) collapse multi-target → whole-school for display. (Recommend a or c.)
+2. **RSVP/consent** — Hub has `consentRequirements`; Connect has `requiresRsvp`.
+   Phase A can ignore consent (display only) or map consent-required → RSVP.
+3. **Recurrence** — Hub recurrence is reserved/null today; treat each event as a
+   single occurrence until Hub emits expansions.
+
+### Phase B — teacher proposals in Connect → Hub approval (write-back)
+- Connect **STAFF** create a *proposed* event via a Connect form → stored locally
+  as `PENDING` with the teacher's `hubUserId` as proposer.
+- Connect POSTs it to a **new Hub endpoint** (Hub must build):
+  `POST /api/v1/calendar/events` with a pending/approval status + `createdByUserId`
+  + a Connect correlation id. Needs a new **`calendar:propose`/`calendar:write`**
+  scope.
+- Hub **super-admin** approves/rejects in Hub moderation UI → on approve it
+  becomes a normal `CalendarEvent` (`misSource = CONNECT`) and flows back via the
+  Phase A sync, replacing the local `PENDING` placeholder (matched on the
+  correlation id); on reject, the placeholder is marked rejected with a reason.
+- **Hub-side prerequisites (not ours to build):** a pending/approval **status**
+  on `CalendarEvent`, a moderation UI, `event.approved` / `event.rejected`
+  webhooks, and the `calendar:propose` scope + create endpoint. Flag & agree
+  these with Hub before Connect-side Phase B starts.
+
+### Prereqs before it works live
+1. `calendar:read` scope on the connect wsk token (Phase A).
+2. Hub write/approval surface + `calendar:propose` scope + approval webhooks (Phase B).
+
+### Delegation
+- **Opus**: `Event.hubCalendarEventId` migration + `hubCalendar` client + sync
+  service (upsert, cohort mapping, cursor, webhook invalidation) + read-only
+  guard on Hub-owned events + tests.
+- **Sonnet**: `EventsPage` merge/marker (Phase A); teacher proposal form +
+  pending/approved states (Phase B, after the Hub contract lands).
