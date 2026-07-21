@@ -3,8 +3,179 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
 import { translateTexts } from '../services/translation.js'
 import { sendNotification } from '../services/notify.js'
+import { ensureDefaultSubjectReminders } from '../services/subjectReminders.js'
+import { subjectKeyOf } from '../services/timetableReminders.js'
 
 const router = Router()
+
+// --- Subject reminder map -------------------------------------------------
+// The per-school, admin-editable wording the Hub "Today your child has …"
+// helper uses (subject name → emoji + parent-facing nudge). Separate from the
+// ScheduleItem grid: the grid drives the manual/fallback schedule; this map
+// only supplies wording for Hub-timetabled subjects. Routes are prefixed
+// `/reminders` so they never collide with the `/:id` ScheduleItem routes.
+
+// List this school's reminder map (seeding the defaults on first view).
+router.get('/reminders', isAuthenticated, async (req, res) => {
+  try {
+    const schoolId = req.user!.schoolId
+    await ensureDefaultSubjectReminders(schoolId)
+    const rows = await prisma.subjectReminder.findMany({
+      where: { schoolId },
+      orderBy: { subject: 'asc' },
+      select: {
+        id: true,
+        subject: true,
+        emoji: true,
+        reminder: true,
+        active: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    })
+    res.json(rows)
+  } catch (error) {
+    console.error('Error listing subject reminders:', error)
+    res.status(500).json({ error: 'Failed to load reminders' })
+  }
+})
+
+// Create a reminder row.
+router.post('/reminders', isAdmin, async (req, res) => {
+  try {
+    const { subject, emoji, reminder } = req.body ?? {}
+    if (typeof subject !== 'string' || !subject.trim()) {
+      return res.status(400).json({ error: 'subject is required' })
+    }
+    if (typeof emoji !== 'string' || !emoji.trim()) {
+      return res.status(400).json({ error: 'emoji is required' })
+    }
+    if (typeof reminder !== 'string' || !reminder.trim()) {
+      return res.status(400).json({ error: 'reminder is required' })
+    }
+    const subjectKey = subjectKeyOf(subject)
+    const existing = await prisma.subjectReminder.findUnique({
+      where: { schoolId_subjectKey: { schoolId: req.user!.schoolId, subjectKey } },
+    })
+    if (existing) {
+      return res.status(409).json({ error: 'A reminder for that subject already exists' })
+    }
+    const row = await prisma.subjectReminder.create({
+      data: {
+        schoolId: req.user!.schoolId,
+        subject: subject.trim(),
+        subjectKey,
+        emoji: emoji.trim(),
+        reminder: reminder.trim(),
+      },
+      select: {
+        id: true,
+        subject: true,
+        emoji: true,
+        reminder: true,
+        active: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    })
+    res.status(201).json(row)
+  } catch (error) {
+    console.error('Error creating subject reminder:', error)
+    res.status(500).json({ error: 'Failed to create reminder' })
+  }
+})
+
+// Update a reminder row (subject/emoji/reminder/active). Tenant-scoped.
+router.put('/reminders/:id', isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { subject, emoji, reminder, active } = req.body ?? {}
+
+    const owned = await prisma.subjectReminder.findFirst({
+      where: { id, schoolId: req.user!.schoolId },
+      select: { id: true },
+    })
+    if (!owned) {
+      return res.status(404).json({ error: 'Reminder not found' })
+    }
+
+    const data: {
+      subject?: string
+      subjectKey?: string
+      emoji?: string
+      reminder?: string
+      active?: boolean
+    } = {}
+    if (subject !== undefined) {
+      if (typeof subject !== 'string' || !subject.trim()) {
+        return res.status(400).json({ error: 'subject must be a non-empty string' })
+      }
+      const subjectKey = subjectKeyOf(subject)
+      // Guard the (schoolId, subjectKey) unique key against another row.
+      const clash = await prisma.subjectReminder.findUnique({
+        where: { schoolId_subjectKey: { schoolId: req.user!.schoolId, subjectKey } },
+      })
+      if (clash && clash.id !== id) {
+        return res.status(409).json({ error: 'A reminder for that subject already exists' })
+      }
+      data.subject = subject.trim()
+      data.subjectKey = subjectKey
+    }
+    if (emoji !== undefined) {
+      if (typeof emoji !== 'string' || !emoji.trim()) {
+        return res.status(400).json({ error: 'emoji must be a non-empty string' })
+      }
+      data.emoji = emoji.trim()
+    }
+    if (reminder !== undefined) {
+      if (typeof reminder !== 'string' || !reminder.trim()) {
+        return res.status(400).json({ error: 'reminder must be a non-empty string' })
+      }
+      data.reminder = reminder.trim()
+    }
+    if (active !== undefined) {
+      if (typeof active !== 'boolean') {
+        return res.status(400).json({ error: 'active must be a boolean' })
+      }
+      data.active = active
+    }
+
+    const row = await prisma.subjectReminder.update({
+      where: { id },
+      data,
+      select: {
+        id: true,
+        subject: true,
+        emoji: true,
+        reminder: true,
+        active: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    })
+    res.json(row)
+  } catch (error) {
+    console.error('Error updating subject reminder:', error)
+    res.status(500).json({ error: 'Failed to update reminder' })
+  }
+})
+
+// Delete a reminder row. Tenant-scoped.
+router.delete('/reminders/:id', isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params
+    const result = await prisma.subjectReminder.deleteMany({
+      where: { id, schoolId: req.user!.schoolId },
+    })
+    if (result.count === 0) {
+      return res.status(404).json({ error: 'Reminder not found' })
+    }
+    res.json({ message: 'Reminder deleted successfully' })
+  } catch (error) {
+    console.error('Error deleting subject reminder:', error)
+    res.status(500).json({ error: 'Failed to delete reminder' })
+  }
+})
 
 // Get schedule items
 router.get('/', isAuthenticated, async (req, res) => {

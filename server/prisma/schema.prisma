@@ -90,6 +90,7 @@ model School {
   auditLogs           AuditLog[]
   notifications       Notification[]
   invitations         ParentInvitation[]
+  subjectReminders    SubjectReminder[]
   linkCategories      LinkCategory[]
   externalLinks       ExternalLink[]
   groupCategories     GroupCategory[]
@@ -544,6 +545,28 @@ model ScheduleItem {
   icon        String?
 
   createdAt DateTime @default(now())
+}
+
+// Per-school, admin-editable reminder wording for Hub-sourced timetable subjects.
+// The Hub "Today your child has …" helper (GET /api/timetable/today) matches a
+// timetabled block's subject *name* (case-insensitive, via subjectKey) against
+// these rows and, on a hit, emits the emoji + parent-facing reminder text.
+// Unmapped subjects produce no reminder. Distinct from ScheduleItem (the manual
+// schedule grid) — this is the Hub timetable's parallel, editable nudge table.
+model SubjectReminder {
+  id         String   @id @default(cuid())
+  schoolId   String
+  school     School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  subject    String   // Display name as entered, e.g. "Swimming"
+  subjectKey String   // = subject.trim().toLowerCase(), the case-insensitive match key
+  emoji      String
+  reminder   String   // Parent-facing nudge text, e.g. "Remember swimwear, towel & goggles"
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([schoolId, subjectKey])
+  @@index([schoolId])
 }
 
 // Weekly Principal Message

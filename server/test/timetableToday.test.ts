@@ -104,49 +104,66 @@ describe('hubMis.getClassDay', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Reminder map
+// Reminder resolver — built from a school's editable map rows
 // ---------------------------------------------------------------------------
-describe('timetableReminders', () => {
-  it('maps Swimming → kit 🩱 (specialist)', async () => {
-    const { reminderForBlock } = await import('../src/services/timetableReminders')
-    const item = reminderForBlock({
+const MAP_ROWS = [
+  { subject: 'Swimming', emoji: '🏊', reminder: 'Remember swimwear, towel & goggles' },
+  { subject: 'PE', emoji: '🏃', reminder: 'Please wear PE kit' },
+  { subject: 'Library', emoji: '📚', reminder: 'Return library books' },
+]
+
+describe('timetableReminders resolver', () => {
+  it('maps Swimming → the row wording, carrying the specialist flag', async () => {
+    const { buildReminderResolver } = await import('../src/services/timetableReminders')
+    const item = buildReminderResolver(MAP_ROWS).reminderForBlock({
       subject: { id: 's', name: 'Swimming', color: null, isStatutory: false },
       specialist: true,
     })
-    expect(item).toEqual({ subject: 'Swimming', specialist: true, emoji: '🩱', reminder: 'Bring swimming kit' })
+    expect(item).toEqual({
+      subject: 'Swimming',
+      specialist: true,
+      emoji: '🏊',
+      reminder: 'Remember swimwear, towel & goggles',
+    })
   })
 
-  it('maps Library → books 📚 (non-specialist, case-insensitive)', async () => {
-    const { reminderForBlock } = await import('../src/services/timetableReminders')
-    const item = reminderForBlock({
+  it('matches case-insensitively (Library entered as "library")', async () => {
+    const { buildReminderResolver } = await import('../src/services/timetableReminders')
+    const item = buildReminderResolver(MAP_ROWS).reminderForBlock({
       subject: { id: 's', name: 'library', color: null, isStatutory: false },
       specialist: false,
     })
-    expect(item).toMatchObject({ specialist: false, emoji: '📚', reminder: 'Bring library books' })
+    expect(item).toMatchObject({ specialist: false, emoji: '📚', reminder: 'Return library books' })
   })
 
-  it('maps PE → kit 👟 including aliases', async () => {
-    const { reminderForBlock } = await import('../src/services/timetableReminders')
-    for (const name of ['PE', 'P.E.', 'Physical Education']) {
-      const item = reminderForBlock({
-        subject: { id: 's', name, color: null, isStatutory: false },
-        specialist: true,
-      })
-      expect(item).toMatchObject({ emoji: '👟', reminder: 'Bring PE kit' })
-    }
-  })
-
-  it('excludes ordinary lessons and subjectless blocks', async () => {
-    const { reminderForBlock } = await import('../src/services/timetableReminders')
+  it('skips inactive rows', async () => {
+    const { buildReminderResolver } = await import('../src/services/timetableReminders')
+    const resolver = buildReminderResolver([{ ...MAP_ROWS[0], active: false }])
     expect(
-      reminderForBlock({ subject: { id: 's', name: 'Maths', color: null, isStatutory: true }, specialist: false }),
+      resolver.reminderForBlock({
+        subject: { id: 's', name: 'Swimming', color: null, isStatutory: false },
+        specialist: true,
+      }),
     ).toBeNull()
-    expect(reminderForBlock({ subject: null, specialist: false })).toBeNull()
   })
 
-  it('remindersForBlocks keeps only reminder-worthy blocks, in order', async () => {
-    const { remindersForBlocks } = await import('../src/services/timetableReminders')
-    const items = remindersForBlocks(sampleDay('2026-07-13').blocks as never)
+  it('excludes unmapped subjects and subjectless blocks', async () => {
+    const { buildReminderResolver } = await import('../src/services/timetableReminders')
+    const resolver = buildReminderResolver(MAP_ROWS)
+    expect(
+      resolver.reminderForBlock({
+        subject: { id: 's', name: 'Maths', color: null, isStatutory: true },
+        specialist: false,
+      }),
+    ).toBeNull()
+    expect(resolver.reminderForBlock({ subject: null, specialist: false })).toBeNull()
+  })
+
+  it('remindersForBlocks keeps only mapped blocks, in order', async () => {
+    const { buildReminderResolver } = await import('../src/services/timetableReminders')
+    const items = buildReminderResolver(MAP_ROWS).remindersForBlocks(
+      sampleDay('2026-07-13').blocks as never,
+    )
     expect(items.map((i) => i.subject)).toEqual(['Swimming', 'Library'])
   })
 })
@@ -157,6 +174,7 @@ describe('timetableReminders', () => {
 const prismaMock = {
   school: { findUnique: vi.fn() },
   class: { findMany: vi.fn() },
+  subjectReminder: { findMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -184,6 +202,11 @@ describe('GET /api/timetable/today', () => {
     vi.clearAllMocks()
     process.env.HUB_SERVICE_TOKEN = 'wsk_test'
     prismaMock.school.findUnique.mockResolvedValue({ hubSchoolId: 'hub-school-1', timezone: 'Asia/Dubai' })
+    // The school's editable reminder map — Swimming + Library are mapped.
+    prismaMock.subjectReminder.findMany.mockResolvedValue([
+      { subject: 'Swimming', emoji: '🏊', reminder: 'Remember swimwear, towel & goggles' },
+      { subject: 'Library', emoji: '📚', reminder: 'Return library books' },
+    ])
   })
   afterEach(() => vi.unstubAllGlobals())
 

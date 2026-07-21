@@ -17,7 +17,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { getClassDayCached } from '../services/timetableCache.js'
-import { remindersForBlocks, type ReminderItem } from '../services/timetableReminders.js'
+import { buildReminderResolver, type ReminderItem } from '../services/timetableReminders.js'
 
 const router = Router()
 
@@ -67,8 +67,9 @@ router.get('/today', isAuthenticated, async (req, res) => {
     }
 
     // Resolve each child's Connect class to its Hub class id (and the school's
-    // Hub id + timezone). Without a Hub link nothing can be fetched.
-    const [school, classes] = await Promise.all([
+    // Hub id + timezone), plus load the school's editable reminder map. Without a
+    // Hub link nothing can be fetched.
+    const [school, classes, reminderRows] = await Promise.all([
       prisma.school.findUnique({
         where: { id: req.user!.schoolId },
         select: { hubSchoolId: true, timezone: true },
@@ -79,7 +80,13 @@ router.get('/today', isAuthenticated, async (req, res) => {
             select: { id: true, hubClassId: true },
           })
         : Promise.resolve([] as { id: string; hubClassId: string | null }[]),
+      prisma.subjectReminder.findMany({
+        where: { schoolId: req.user!.schoolId, active: true },
+        select: { subject: true, emoji: true, reminder: true },
+      }),
     ])
+
+    const resolver = buildReminderResolver(reminderRows)
 
     const hubClassByConnectId = new Map(classes.map((c) => [c.id, c.hubClassId]))
     const date = todayInTimezone(school?.timezone ?? 'UTC')
@@ -102,7 +109,7 @@ router.get('/today', isAuthenticated, async (req, res) => {
         distinctHubClassIds.map(async (hubClassId) => {
           try {
             const day = await getClassDayCached(school!.hubSchoolId!, hubClassId, date)
-            itemsByHubClass.set(hubClassId, remindersForBlocks(day?.blocks ?? []))
+            itemsByHubClass.set(hubClassId, resolver.remindersForBlocks(day?.blocks ?? []))
           } catch {
             // A per-class Hub failure shouldn't sink the whole response.
             itemsByHubClass.set(hubClassId, [])

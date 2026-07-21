@@ -357,6 +357,18 @@ export interface ScheduleItem {
   createdAt: string
 }
 
+// Per-school, admin-editable reminder wording for Hub-timetabled subjects.
+// Matched case-insensitively by subject name against Hub's "today" blocks.
+export interface SubjectReminder {
+  id: string
+  subject: string
+  emoji: string
+  reminder: string
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 // Weekly Message types
 export interface WeeklyMessage {
   id: string

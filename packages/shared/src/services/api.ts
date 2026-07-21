@@ -13,6 +13,7 @@ import type {
   FormAnalytics,
   Event,
   ScheduleItem,
+  SubjectReminder,
   TermDate,
   WeeklyMessage,
   KnowledgeCategory,
@@ -577,6 +578,28 @@ export const schedule = {
     fetchApi<{ message: string }>(`/api/schedule/${id}`, {
       method: 'DELETE',
     }),
+  // The editable subject→reminder map the Hub "today" helper uses. Admin-only
+  // writes; list seeds the school's defaults on first call.
+  reminders: {
+    list: () => fetchApi<SubjectReminder[]>('/api/schedule/reminders'),
+    create: (data: { subject: string; emoji: string; reminder: string }) =>
+      fetchApi<SubjectReminder>('/api/schedule/reminders', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (
+      id: string,
+      data: Partial<{ subject: string; emoji: string; reminder: string; active: boolean }>,
+    ) =>
+      fetchApi<SubjectReminder>(`/api/schedule/reminders/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    remove: (id: string) =>
+      fetchApi<{ message: string }>(`/api/schedule/reminders/${id}`, {
+        method: 'DELETE',
+      }),
+  },
 }
 
 // Term Dates
