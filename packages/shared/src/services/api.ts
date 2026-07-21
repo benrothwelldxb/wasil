@@ -2178,12 +2178,38 @@ export const clubs = {
   cancelBooking: (id: string) => fetchApi<{ message: string }>(`/api/clubs/bookings/${id}`, { method: 'DELETE' }),
 }
 
+// Timetable — the "Today your child has Swimming/Library" helper, sourced from
+// Wasil Hub. Each item is a reminder-worthy block (Swimming/PE → kit, Library →
+// books); ordinary lessons are omitted. A child whose class has no Hub timetable
+// (or no Hub link) comes back with `items: []` — fall back to schedule.list().
+export interface TimetableReminderItem {
+  /** Subject name as Hub named it, e.g. "Swimming". */
+  subject: string
+  /** True for specialist subjects (Swimming, PE). */
+  specialist: boolean
+  /** A single emoji for the item, e.g. "🩱". */
+  emoji: string
+  /** Short parent-facing nudge, e.g. "Bring swimming kit". */
+  reminder: string
+}
+export interface TimetableTodayChild {
+  studentId: string
+  name: string
+  className: string
+  items: TimetableReminderItem[]
+}
+
+export const timetable = {
+  today: () => fetchApi<TimetableTodayChild[]>('/api/timetable/today'),
+}
+
 export default {
   auth,
   messages,
   forms,
   providers,
   clubs,
+  timetable,
   events,
   schedule,
   termDates,

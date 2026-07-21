@@ -86,6 +86,34 @@ export interface HubSyncStatus {
   lastChangedAt: string | null
 }
 
+// --- Timetable DTOs (subset of Hub's EffectiveBlockDTO / effective-day shape) -
+// Only the fields Connect's "today your child has …" helper actually reads.
+// The full Hub block carries teachers/room/week internals we deliberately drop.
+export interface HubTimetableSubject {
+  id: string
+  name: string
+  color: string | null
+  isStatutory: boolean
+}
+export interface HubTimetableBlock {
+  start: string
+  end: string
+  label: string
+  /** null for a non-subject block (e.g. a break). */
+  subject: HubTimetableSubject | null
+  /** Specialist items (Swimming, PE) — Connect flags these for kit. */
+  specialist: boolean
+  block_type: string
+}
+export interface HubClassDay {
+  version_id: string
+  state_hash: string | null
+  date: string
+  day: number
+  week_label: 'A' | 'B' | null
+  blocks: HubTimetableBlock[]
+}
+
 // --- Fetch wrapper -----------------------------------------------------------
 async function call<T>(path: string): Promise<T> {
   const token = serviceToken()
@@ -95,6 +123,25 @@ async function call<T>(path: string): Promise<T> {
     headers: { authorization: `Bearer ${token}` },
     cache: 'no-store',
   })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new HubMisError(res.status, body || res.statusText)
+  }
+  return (await res.json()) as T
+}
+
+/** Like `call`, but a 404 resolves to `null` instead of throwing. Hub returns
+ * `404 {"error":"no published timetable"}` for a class that simply has no live
+ * timetable — an expected, non-error state the caller treats as "no items". */
+async function callAllow404<T>(path: string): Promise<T | null> {
+  const token = serviceToken()
+  if (!token) throw new HubServiceTokenMissingError()
+
+  const res = await fetch(`${misBaseUrl()}/api/v1${path}`, {
+    headers: { authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  })
+  if (res.status === 404) return null
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new HubMisError(res.status, body || res.statusText)
@@ -144,4 +191,18 @@ export async function listStaff(hubSchoolId: string): Promise<HubStaff[]> {
 export async function getSyncStatus(hubSchoolId: string): Promise<HubSyncStatus> {
   const params = new URLSearchParams({ schoolId: hubSchoolId })
   return call<HubSyncStatus>(`/sync-status?${params.toString()}`)
+}
+
+/** One class's *effective* (folded, published) timetable for a single day.
+ * Returns `null` when the school has no published timetable that covers the
+ * date (Hub 404 "no published timetable"). `date` is `YYYY-MM-DD`. Approach B:
+ * specialist subjects are timetabled per class, so we read per class (not per
+ * guardian) and share the result across that class's parents via the cache. */
+export async function getClassDay(
+  hubSchoolId: string,
+  hubClassId: string,
+  date: string,
+): Promise<HubClassDay | null> {
+  const params = new URLSearchParams({ schoolId: hubSchoolId, date, class_id: hubClassId })
+  return callAllow404<HubClassDay>(`/timetable/effective/day?${params.toString()}`)
 }

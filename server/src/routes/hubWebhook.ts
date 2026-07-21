@@ -16,6 +16,7 @@
 import { Router, raw, Request, Response } from 'express'
 import { createHash, createHmac, timingSafeEqual } from 'crypto'
 import prisma from '../services/prisma.js'
+import { invalidateSchool } from '../services/timetableCache.js'
 
 const router = Router()
 
@@ -53,9 +54,9 @@ router.post('/webhook', raw({ type: '*/*' }), async (req: Request, res: Response
     return res.status(401).json({ error: 'invalid_signature' })
   }
 
-  // Signature verified. Extract the Hub school id and mark it stale. Any parse
+  // Signature verified. Extract the Hub school id and event type. Any parse
   // failure is a malformed (but signed) body — 400.
-  let payload: { schoolId?: unknown }
+  let payload: { schoolId?: unknown; event?: unknown }
   try {
     payload = JSON.parse(rawBody)
   } catch {
@@ -66,9 +67,18 @@ router.post('/webhook', raw({ type: '*/*' }), async (req: Request, res: Response
     // Signed but no school to attribute the change to — accept, nothing to do.
     return res.json({ ok: true })
   }
+  const event = typeof payload.event === 'string' ? payload.event : null
 
-  // Set the freshness flag. If the school isn't linked here, the update matches
-  // nothing — fine; we simply have nothing to mark stale.
+  // A newly published timetable makes our cached class-days stale — drop them
+  // so the next parent request re-reads Hub. This is a timetable event, not a
+  // roster change, so we don't also stamp the roster-freshness flag for it.
+  if (event === 'timetable.version_published') {
+    invalidateSchool(hubSchoolId)
+    return res.json({ ok: true })
+  }
+
+  // Roster change: set the freshness flag. If the school isn't linked here, the
+  // update matches nothing — fine; we simply have nothing to mark stale.
   await prisma.school.updateMany({
     where: { hubSchoolId },
     data: { hubDataStaleSince: new Date() },
