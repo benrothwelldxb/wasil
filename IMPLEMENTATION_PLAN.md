@@ -351,7 +351,25 @@ scoping so it's one testable thing.
   eca/child-write/staff class-assignment tenant checks.
 - Guardrail tests: tenant-A-cannot-touch-tenant-B per fixed route.
 
-## Batch 2 — CI + test floor  (LAUNCH-BLOCKING)
+## Batch 2 — CI + test floor  (DONE)
+Delivered: `.github/workflows/ci.yml` — a `server` job (Postgres service →
+prisma generate → **migrate deploy** → migrate status → typecheck → unit tests →
+db push → **integration tests**) and a `web` matrix job (typecheck + vite build
+for admin/parent/provider) on every PR/push. A real-Postgres integration harness
+(`vitest.integration.config.ts`, `test/integration/`) with a provider
+tenant-isolation test proving scoping holds at the SQL layer.
+
+**Migration history repaired (important):** CI surfaced that the migration chain
+could never build a fresh database — there was *no* initial migration creating
+the base tables (only incremental ALTERs on a `db push` base), so `migrate
+deploy` failed on `School` not existing. Squashed the whole history to a single
+`00000000000000_init` baseline generated from the schema; `migrate deploy` now
+builds from scratch (validated locally against Postgres) and O1's deploy switch
+actually works. Existing db-push databases reconcile via
+`scripts/baseline-migrations.sh` (updated).
+
+### Original scope
+
 No CI exists today; 35 route modules are near-uncovered while money now flows.
 - GitHub Actions: install workspaces, `prisma generate`, typecheck (server +
   all apps), run server vitest, build all four frontends — on every PR.

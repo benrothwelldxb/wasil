@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  server:
+    name: Server (migrations, typecheck, tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wasil
+          POSTGRES_PASSWORD: wasil
+          POSTGRES_DB: wasil_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://wasil:wasil@localhost:5432/wasil_test
+      JWT_SECRET: ci-jwt-secret
+      JWT_REFRESH_SECRET: ci-jwt-refresh-secret
+      TOTP_ENCRYPTION_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+      - name: Generate Prisma client
+        working-directory: server
+        run: npx prisma generate
+      - name: Validate migrations apply to a fresh database
+        working-directory: server
+        run: npx prisma migrate deploy
+      - name: Migration status is up to date
+        working-directory: server
+        run: npx prisma migrate status
+      - name: Typecheck
+        working-directory: server
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Unit tests
+        working-directory: server
+        run: npm test
+      - name: Sync test DB to schema for integration tests
+        working-directory: server
+        run: npx prisma db push --skip-generate --accept-data-loss
+      - name: Integration tests (real Postgres)
+        working-directory: server
+        run: npm run test:integration
+
+  web:
+    name: Web (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [admin, parent, provider]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install workspace dependencies
+        run: npm ci
+      - name: Typecheck ${{ matrix.app }}
+        working-directory: apps/${{ matrix.app }}
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Build ${{ matrix.app }}
+        working-directory: apps/${{ matrix.app }}
+        run: npx vite build

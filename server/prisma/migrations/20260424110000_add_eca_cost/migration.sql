@@ -1,3 +1,0 @@
-ALTER TABLE "EcaActivity" ADD COLUMN "cost" DOUBLE PRECISION;
-ALTER TABLE "EcaActivity" ADD COLUMN "costDescription" TEXT;
-ALTER TABLE "EcaSettings" ADD COLUMN "showCost" BOOLEAN NOT NULL DEFAULT false;

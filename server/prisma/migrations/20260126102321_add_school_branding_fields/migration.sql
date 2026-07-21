@@ -1,5 +1,0 @@
--- AlterTable
-ALTER TABLE "School" ADD COLUMN     "logoIconUrl" TEXT,
-ADD COLUMN     "logoUrl" TEXT,
-ADD COLUMN     "tagline" TEXT,
-ADD COLUMN     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;

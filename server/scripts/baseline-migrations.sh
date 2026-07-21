@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 #
-# One-time prod baseline: mark every existing migration as already-applied.
-# Run this on production ONCE before cutting over the start script to
-# `prisma migrate deploy`. After baselining, Prisma's `_prisma_migrations`
-# table believes every migration in prisma/migrations is up-to-date with the
-# current DB state — which is true, because `db push` has kept them in sync.
+# One-time baseline for a database that was built with `db push` (so its schema
+# already matches prisma/schema.prisma but Prisma has no migration record).
+#
+# The migration history has been squashed to a single `00000000000000_init`
+# baseline generated from the schema, so `migrate deploy` now builds a fresh
+# database from scratch (CI, new environments). For an EXISTING db-push database
+# you don't want to re-run that DDL — this script marks the baseline as already
+# applied so future `migrate deploy` runs are clean no-ops until the next new
+# migration.
+#
+# If this database previously recorded the OLD (pre-squash) migrations, first
+# clear the record so only the baseline remains:
+#   psql "$DATABASE_URL" -c 'DELETE FROM "_prisma_migrations";'
+# (On a disposable dev database, `npx prisma migrate reset` is simpler.)
 #
 # Usage (from the Railway shell, with DATABASE_URL set):
 #   bash server/scripts/baseline-migrations.sh
