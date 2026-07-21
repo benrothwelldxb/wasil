@@ -28,6 +28,10 @@ model School {
   // Locale
   timezone     String   @default("Asia/Dubai") // IANA timezone, used for scheduled jobs (e.g. digests)
 
+  // Wasil Hub identity link. Set when this Connect school is linked to a Hub
+  // school; used to resolve the `sid` claim on Hub SSO handoff tokens.
+  hubSchoolId  String?  @unique
+
   // Module enabled flags — all default true so existing schools keep current behavior
   inboxEnabled            Boolean @default(true)
   postsEnabled            Boolean @default(true)
@@ -132,6 +136,11 @@ model User {
   googleId    String? @unique
   microsoftId String? @unique
   avatarUrl   String?
+
+  // Wasil Hub identity link. Set on first successful Hub SSO exchange when a
+  // pre-existing staff account is matched by email; thereafter the `sub` claim
+  // resolves straight to this user.
+  hubUserId   String? @unique
 
   // Password auth (for admin/staff)
   passwordHash String?
@@ -262,6 +271,7 @@ model Student {
   firstName   String
   lastName    String
   externalId  String?  // Optional: Student ID from school MIS (UPN)
+  hubPupilId  String?  @unique // Hub MIS link (Stage 2)
   photoUrl    String?  // Student photo URL
   // Safety info surfaced to activity/club staff (incl. external providers).
   allergies    String? // JSON array of strings, e.g. ["nuts","dairy"]
@@ -327,6 +337,7 @@ model YearGroup {
   id        String   @id @default(cuid())
   name      String   // "Reception", "Year 1", "Year 2"
   order     Int      // Sorting (0=Reception, 1=Year 1, etc.)
+  hubYearGroupId String? @unique // Hub MIS link (Stage 2)
   schoolId  String
   school    School   @relation(fields: [schoolId], references: [id])
   classes   Class[]
@@ -342,6 +353,7 @@ model YearGroup {
 model Class {
   id          String  @id @default(cuid())
   name        String  // "FS1 Blue", "Y2 Red"
+  hubClassId  String? @unique // Hub MIS link (Stage 2)
   colorBg     String  @default("bg-blue-500")
   colorText   String  @default("text-white")
   schoolId    String

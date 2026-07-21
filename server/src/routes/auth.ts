@@ -177,8 +177,10 @@ setInterval(() => {
   }
 }, 60 * 1000)
 
-// Export the authCodeStore for cleanup from other modules
-export { authCodeStore }
+// Export the authCodeStore for cleanup from other modules, and generateAuthCode
+// so the Hub SSO exchange route can reuse the exact same code→token handoff the
+// admin app's /auth/callback already consumes.
+export { authCodeStore, generateAuthCode }
 
 // --- Rate limiters ---
 const loginLimiter = rateLimit({

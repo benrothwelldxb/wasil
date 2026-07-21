@@ -14,6 +14,7 @@ import { initErrorReporting } from './services/sentry.js'
 
 import { configurePassport } from './middleware/passport.js'
 import authRoutes from './routes/auth.js'
+import hubAuthRoutes from './routes/hubAuth.js'
 import messagesRoutes from './routes/messages.js'
 import formsRoutes from './routes/forms.js'
 import eventsRoutes from './routes/events.js'
@@ -125,6 +126,8 @@ configurePassport()
 
 // Routes
 app.use('/auth', authRoutes)
+// Wasil Hub SSO exchange (GET/POST /auth/hub/exchange)
+app.use('/auth/hub', hubAuthRoutes)
 app.use('/api/messages', messagesRoutes)
 app.use('/api/forms', formsRoutes)
 app.use('/api/events', eventsRoutes)
