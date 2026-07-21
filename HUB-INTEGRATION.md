@@ -136,3 +136,49 @@ audience); parent SSO if/when parents become Hub identities.
 
 Each agent's output lands as its own reviewed commit; Fable integrates and runs
 CI (Batch 2 pipeline) before merge.
+
+---
+
+# Stage 3 — Timetable "today" helpers (class-based)
+
+Surface per-child, on the parent dashboard, the day's *reminder-worthy* subjects
+from Hub's timetable (source of truth): "Today Eshaal has **Swimming** — kit 🩱",
+"…**Library** — return your books 📚". Replaces Connect's manually-maintained
+`ScheduleItem` helper. Generic **reminder map** covers Swimming/PE/Library and
+future items — not hardcoded to one subject.
+
+**Approach B (class-based) — chosen.** Specialist subjects (PE/Swimming/Library)
+are timetabled per *class*, not per pupil, so Connect fetches ~16 class-days
+(cacheable, shared across all parents) rather than fanning out per child.
+
+## Hub side (already built)
+- `GET /api/v1/timetable/effective/day?schoolId=&date=YYYY-MM-DD&class_id=<hubClassId>`
+  → `{ blocks:[{ subject:{id,name,color,isStatutory}, specialist:boolean, start, end }], version_id, state_hash }` or `404 no published timetable`.
+- `specialist:true` = Swimming/PE (blockType SPECIALIST); Library appears as a
+  normal subject block (`subject.name = "Library"`).
+- Freshness: `timetable.version_published` webhook (payload carries versionId/stateHash).
+- **Prereq:** the connect `wsk_` token needs `timetable:read:class` scope — confirmed **missing** today (Hub team to add).
+
+## Connect side
+- `hubMis.getClassDay(hubSchoolId, hubClassId, date)` → blocks | null.
+- **Timetable cache**, per `(hubClassId, date)`, TTL + invalidated on the
+  `timetable.version_published` webhook (extend the existing `/api/hub/webhook` stub).
+- `GET /api/timetable/today` (parent auth): resolve parent → children
+  (`ParentStudentLink`) → distinct `Class.hubClassId` → class-day (cached) →
+  **reminder map** → per-child `{ studentId, name, className, items:[{subject, specialist, emoji, reminder}] }`. **"Today" in Asia/Dubai** (school tz). Falls back to Connect `ScheduleItem`s if Hub has no published timetable.
+- **Reminder map** (`services/timetableReminders.ts`): specialist flag / subject
+  name → `{ emoji, reminder }` (Swimming/PE → kit, Library → books, …).
+  Only reminder-worthy items are surfaced — not the full lesson list.
+- **Shared client**: `api.timetable.today()` + response type.
+- **Parent app**: ParentDashboard child cards show the reminder items,
+  replacing/augmenting the current manual-schedule line.
+
+## Prereqs before it works live
+1. `timetable:read:class` scope on the connect token.
+2. A published 2026/27 timetable in Hub.
+3. Parent↔child links populated (pupils synced for 2026/27 + parents linked).
+
+## Delegation
+- **Opus**: `hubMis` timetable call + cache + webhook invalidation +
+  `/api/timetable/today` + reminder map + Asia/Dubai "today" + shared api method + tests.
+- **Sonnet**: ParentDashboard child-card UI + fallback (after the server contract lands).
