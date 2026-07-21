@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Plus, X, Pencil, Trash2, RotateCcw, CalendarDays, Pause, Play, Grid3X3, Save, Check } from 'lucide-react'
+import { Plus, X, Pencil, Trash2, RotateCcw, CalendarDays, Pause, Play, Grid3X3, Save, Check, Bell } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
-import type { ScheduleItem, Class, YearGroup } from '@wasil/shared'
+import type { ScheduleItem, Class, YearGroup, SubjectReminder } from '@wasil/shared'
 
 const DAYS_OF_WEEK = [
   { value: 1, label: 'Mon', fullLabel: 'Monday' },
@@ -59,8 +59,105 @@ export function SchedulePage() {
   const { data: scheduleItems, refetch } = useApi<ScheduleItem[]>(() => api.schedule.listAll(), [])
   const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
   const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
+  const { data: reminderRows, refetch: refetchReminders } = useApi<SubjectReminder[]>(
+    () => api.schedule.reminders.list(),
+    [],
+  )
 
-  const [activeTab, setActiveTab] = useState<'grid' | 'recurring' | 'oneoff'>('grid')
+  // Editable copy of the reminder map (subject → emoji + wording for the Hub
+  // "today" helper). Synced from the API; each row saves individually.
+  const [reminderDrafts, setReminderDrafts] = useState<SubjectReminder[]>([])
+  const [savingReminderId, setSavingReminderId] = useState<string | null>(null)
+  const [newReminder, setNewReminder] = useState({ subject: '', emoji: '', reminder: '' })
+  const [addingReminder, setAddingReminder] = useState(false)
+  const [reminderDeleteConfirm, setReminderDeleteConfirm] = useState<{ id: string; label: string } | null>(null)
+
+  useEffect(() => {
+    if (reminderRows) setReminderDrafts(reminderRows.map(r => ({ ...r })))
+  }, [reminderRows])
+
+  const setReminderField = (id: string, field: 'subject' | 'emoji' | 'reminder', value: string) => {
+    setReminderDrafts(prev => prev.map(r => (r.id === id ? { ...r, [field]: value } : r)))
+  }
+
+  const reminderIsDirty = (row: SubjectReminder) => {
+    const original = reminderRows?.find(r => r.id === row.id)
+    if (!original) return false
+    return (
+      original.subject !== row.subject ||
+      original.emoji !== row.emoji ||
+      original.reminder !== row.reminder ||
+      original.active !== row.active
+    )
+  }
+
+  const saveReminder = async (row: SubjectReminder) => {
+    if (!row.subject.trim() || !row.emoji.trim() || !row.reminder.trim()) {
+      toast.error('Subject, emoji and reminder are all required')
+      return
+    }
+    setSavingReminderId(row.id)
+    try {
+      await api.schedule.reminders.update(row.id, {
+        subject: row.subject.trim(),
+        emoji: row.emoji.trim(),
+        reminder: row.reminder.trim(),
+        active: row.active,
+      })
+      await refetchReminders()
+      toast.success('Reminder saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save reminder')
+    } finally {
+      setSavingReminderId(null)
+    }
+  }
+
+  const toggleReminderActive = async (row: SubjectReminder) => {
+    setSavingReminderId(row.id)
+    try {
+      await api.schedule.reminders.update(row.id, { active: !row.active })
+      await refetchReminders()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update reminder')
+    } finally {
+      setSavingReminderId(null)
+    }
+  }
+
+  const addReminder = async () => {
+    if (!newReminder.subject.trim() || !newReminder.emoji.trim() || !newReminder.reminder.trim()) {
+      toast.error('Subject, emoji and reminder are all required')
+      return
+    }
+    setAddingReminder(true)
+    try {
+      await api.schedule.reminders.create({
+        subject: newReminder.subject.trim(),
+        emoji: newReminder.emoji.trim(),
+        reminder: newReminder.reminder.trim(),
+      })
+      setNewReminder({ subject: '', emoji: '', reminder: '' })
+      await refetchReminders()
+      toast.success('Reminder added')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add reminder')
+    } finally {
+      setAddingReminder(false)
+    }
+  }
+
+  const deleteReminder = async (id: string) => {
+    try {
+      await api.schedule.reminders.remove(id)
+      await refetchReminders()
+      toast.success('Reminder deleted')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete reminder')
+    }
+  }
+
+  const [activeTab, setActiveTab] = useState<'grid' | 'recurring' | 'oneoff' | 'reminders'>('grid')
   const [showForm, setShowForm] = useState(false)
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -384,7 +481,7 @@ export function SchedulePage() {
           <h1 className="text-2xl font-bold text-gray-900">Schedule & Reminders</h1>
           <p className="text-gray-600 mt-1">Set up recurring reminders (PE kit, swimming) and one-off events</p>
         </div>
-        {activeTab !== 'grid' && (
+        {(activeTab === 'recurring' || activeTab === 'oneoff') && (
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
@@ -424,6 +521,15 @@ export function SchedulePage() {
         >
           <CalendarDays className="w-4 h-4" />
           <span>One-Off Events</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('reminders')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
+            activeTab === 'reminders' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Bell className="w-4 h-4" />
+          <span>Reminder Wording</span>
         </button>
       </div>
 
@@ -616,6 +722,117 @@ export function SchedulePage() {
         </div>
       )}
 
+      {/* Reminder Wording */}
+      {activeTab === 'reminders' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="p-4 border-b border-gray-200">
+            <h2 className="font-semibold text-gray-900">Reminder Wording</h2>
+            <p className="text-sm text-gray-500">
+              The nudge parents see when their child has this subject on the timetable, e.g.
+              “Swimming — remember swimwear”. The days come from the school timetable automatically;
+              here you only set the wording. Subjects are matched by name.
+            </p>
+          </div>
+
+          <div className="divide-y divide-gray-100">
+            {reminderDrafts.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">
+                No reminder wording yet — add a subject below.
+              </div>
+            ) : (
+              reminderDrafts.map(row => (
+                <div key={row.id} className="p-4 flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={row.emoji}
+                    onChange={e => setReminderField(row.id, 'emoji', e.target.value)}
+                    className="w-14 text-center text-xl px-2 py-2 border border-gray-200 rounded-lg"
+                    aria-label="Emoji"
+                  />
+                  <input
+                    type="text"
+                    value={row.subject}
+                    onChange={e => setReminderField(row.id, 'subject', e.target.value)}
+                    placeholder="Subject"
+                    className="w-40 px-3 py-2 border border-gray-200 rounded-lg font-medium text-gray-900"
+                    aria-label="Subject"
+                  />
+                  <input
+                    type="text"
+                    value={row.reminder}
+                    onChange={e => setReminderField(row.id, 'reminder', e.target.value)}
+                    placeholder="What to bring / do"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-gray-700"
+                    aria-label="Reminder text"
+                  />
+                  <button
+                    onClick={() => toggleReminderActive(row)}
+                    disabled={savingReminderId === row.id}
+                    title={row.active ? 'Active — parents see this' : 'Hidden — parents will not see this'}
+                    className={`p-2 rounded-lg ${row.active ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-50'}`}
+                  >
+                    {row.active ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                  </button>
+                  <button
+                    onClick={() => saveReminder(row)}
+                    disabled={savingReminderId === row.id || !reminderIsDirty(row)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-sm disabled:opacity-40"
+                    style={{ backgroundColor: theme.colors.brandColor }}
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Save</span>
+                  </button>
+                  <button
+                    onClick={() => setReminderDeleteConfirm({ id: row.id, label: row.subject })}
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))
+            )}
+
+            {/* Add row */}
+            <div className="p-4 flex items-center gap-3 bg-gray-50/50">
+              <input
+                type="text"
+                value={newReminder.emoji}
+                onChange={e => setNewReminder(prev => ({ ...prev, emoji: e.target.value }))}
+                placeholder="🎵"
+                className="w-14 text-center text-xl px-2 py-2 border border-gray-200 rounded-lg bg-white"
+                aria-label="New emoji"
+              />
+              <input
+                type="text"
+                value={newReminder.subject}
+                onChange={e => setNewReminder(prev => ({ ...prev, subject: e.target.value }))}
+                placeholder="New subject"
+                className="w-40 px-3 py-2 border border-gray-200 rounded-lg bg-white"
+                aria-label="New subject"
+              />
+              <input
+                type="text"
+                value={newReminder.reminder}
+                onChange={e => setNewReminder(prev => ({ ...prev, reminder: e.target.value }))}
+                placeholder="What to bring / do"
+                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-white"
+                aria-label="New reminder text"
+                onKeyDown={e => { if (e.key === 'Enter') addReminder() }}
+              />
+              <button
+                onClick={addReminder}
+                disabled={addingReminder}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-sm disabled:opacity-50"
+                style={{ backgroundColor: theme.colors.brandColor }}
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -759,6 +976,21 @@ export function SchedulePage() {
           confirmLabel="Delete"
           onConfirm={handleDelete}
           onCancel={() => setDeleteConfirm(null)}
+          variant="danger"
+        />
+      )}
+
+      {reminderDeleteConfirm && (
+        <ConfirmModal
+          title="Delete Reminder"
+          message={`Delete the reminder wording for "${reminderDeleteConfirm.label}"? Parents will no longer see a nudge for this subject.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            const id = reminderDeleteConfirm.id
+            setReminderDeleteConfirm(null)
+            deleteReminder(id)
+          }}
+          onCancel={() => setReminderDeleteConfirm(null)}
           variant="danger"
         />
       )}
