@@ -38,11 +38,12 @@ const PARENT_APP_URL = import.meta.env.VITE_PARENT_URL || 'http://localhost:3000
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 // Wasil Hub SSO — staff sign in at Hub and are launched into this admin app via
-// /auth/callback?code=... (handled by AuthCallback below). When VITE_STAFF_AUTH_MODE
-// is 'hub' (the default), unauthenticated staff are sent to Hub instead of seeing
-// Connect's own login page. Set to 'legacy' to roll back to the password/OAuth login.
-const HUB_LAUNCH_URL = import.meta.env.VITE_HUB_LAUNCH_URL || 'https://hub.wasil.app/launch/connect'
-const STAFF_AUTH_MODE = import.meta.env.VITE_STAFF_AUTH_MODE || 'hub'
+// /auth/callback?code=... (handled by AuthCallback below). Defaults to 'legacy'
+// (Connect's own password/OAuth login) so a deploy can never lock staff out
+// before Hub is ready. Flip VITE_STAFF_AUTH_MODE='hub' to send unauthenticated
+// staff to Hub once the Hub-side app + school link are live.
+const HUB_LAUNCH_URL = import.meta.env.VITE_HUB_LAUNCH_URL || 'https://wasilhub.app/launch/connect'
+const STAFF_AUTH_MODE = import.meta.env.VITE_STAFF_AUTH_MODE || 'legacy'
 
 function ParentRedirect() {
   useEffect(() => {
