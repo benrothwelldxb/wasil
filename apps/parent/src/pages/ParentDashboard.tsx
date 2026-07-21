@@ -7,7 +7,7 @@ import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import { useApi, useMutation } from '@wasil/shared'
 import * as api from '@wasil/shared'
-import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event } from '@wasil/shared'
+import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild } from '@wasil/shared'
 import { Clock, Sparkles, MapPin, ChevronRight, Calendar, Shield, Cloud, AlertTriangle, Heart, Siren, X, Check } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { Link } from 'react-router-dom'
@@ -103,6 +103,10 @@ export function ParentDashboard() {
   )
   const { data: scheduleData } = useApi<ScheduleItem[]>(
     () => api.schedule.list(),
+    []
+  )
+  const { data: timetableToday } = useApi<TimetableTodayChild[]>(
+    () => api.timetable.today(),
     []
   )
   const { data: allClasses } = useApi<Class[]>(
@@ -406,8 +410,9 @@ export function ParentDashboard() {
         // Match schedule items to this child's class
         return !item.targetClass || item.targetClass === child.className || item.targetClass === 'Whole School'
       }),
+      timetableItems: timetableToday?.find(c => c.studentId === child.id)?.items ?? [],
     }))
-  }, [user, todaysEcaActivities, todaysSchedule])
+  }, [user, todaysEcaActivities, todaysSchedule, timetableToday])
 
   const CHILD_COLORS = [
     'linear-gradient(135deg, #5B8EC4, #7BA8D9)',
@@ -698,13 +703,13 @@ export function ParentDashboard() {
       )}
 
       {/* Your Family's Day — Child-centric cards */}
-      {childCards.length > 0 && (childCards.some(c => c.activities.length > 0) || todaysSchedule.length > 0) && (
+      {childCards.length > 0 && (childCards.some(c => c.activities.length > 0 || c.timetableItems.length > 0) || todaysSchedule.length > 0) && (
         <>
           <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#A8929A' }}>
             {t('dashboard.familyDay', "Your family's day")}
           </p>
           {childCards.map((child, idx) => (
-            (child.activities.length > 0 || child.schedule.length > 0) && (
+            (child.activities.length > 0 || child.schedule.length > 0 || child.timetableItems.length > 0) && (
               <div
                 key={child.id}
                 className="bg-white rounded-[22px] overflow-hidden"
@@ -759,27 +764,51 @@ export function ParentDashboard() {
                       </div>
                     </div>
                   ))}
-                  {/* Schedule items */}
-                  {child.schedule.map((item, sIdx) => (
-                    <div
-                      key={`s-${sIdx}`}
-                      className="rounded-[16px] p-[14px] flex items-center gap-3 mb-2"
-                      style={{ backgroundColor: '#FFF8F4' }}
-                    >
+                  {/* Timetable reminders (Hub-sourced) take priority over the legacy schedule when present */}
+                  {child.timetableItems.length > 0 ? (
+                    child.timetableItems.map((item, tIdx) => (
                       <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                        style={{ backgroundColor: '#EDF4FC' }}
+                        key={`t-${tIdx}`}
+                        className="rounded-[16px] p-[14px] flex items-center gap-3 mb-2"
+                        style={{ backgroundColor: '#FFF8F4' }}
                       >
-                        {item.icon || '\u{1F4CB}'}
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                          style={{ backgroundColor: '#EDF4FC' }}
+                        >
+                          {item.emoji}
+                        </div>
+                        <div>
+                          <h4 className="text-[15px] font-bold" style={{ color: '#2D2225' }}>{item.subject}</h4>
+                          <p className="text-[13px] font-medium" style={{ color: '#7A6469' }}>
+                            {item.reminder}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-[15px] font-bold" style={{ color: '#2D2225' }}>{item.label}</h4>
-                        <p className="text-[13px] font-medium" style={{ color: '#7A6469' }}>
-                          {item.description || ''}
-                        </p>
+                    ))
+                  ) : (
+                    /* Legacy schedule items — shown only when this child has no Hub timetable today */
+                    child.schedule.map((item, sIdx) => (
+                      <div
+                        key={`s-${sIdx}`}
+                        className="rounded-[16px] p-[14px] flex items-center gap-3 mb-2"
+                        style={{ backgroundColor: '#FFF8F4' }}
+                      >
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                          style={{ backgroundColor: '#EDF4FC' }}
+                        >
+                          {item.icon || '\u{1F4CB}'}
+                        </div>
+                        <div>
+                          <h4 className="text-[15px] font-bold" style={{ color: '#2D2225' }}>{item.label}</h4>
+                          <p className="text-[13px] font-medium" style={{ color: '#7A6469' }}>
+                            {item.description || ''}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             )
