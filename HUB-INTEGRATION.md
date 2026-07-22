@@ -266,3 +266,59 @@ moderation surface (coordinate on the Hub side first).
   guard on Hub-owned events + tests.
 - **Sonnet**: `EventsPage` merge/marker (Phase A); teacher proposal form +
   pending/approved states (Phase B, after the Hub contract lands).
+
+---
+
+## Stage 4 Phase A — UI (School Calendar admin) — READY
+
+Server contract is live (events carry `targets`, `hubCalendarEventId`, `source`;
+create/update accept `targets[]`; PUT/DELETE 409 on Hub-owned events). Remaining:
+
+- **`apps/admin/.../EventsPage.tsx`**: (1) **remove the CSV upload** entirely
+  (CsvRow / parseCsvLine / showCsvModal / showCsvGuide + button) — Hub feeds
+  events now; (2) **multi-target** create/edit: replace the single class/YG picker
+  with a multi-select writing `targets:[{classId?|yearGroupId?}]` (whole-school =
+  no targets); (3) **from-Hub events**: `source==='hub'` (or `hubCalendarEventId`)
+  → a "From Hub" badge + edit/delete hidden or disabled (avoids the 409), with a
+  "managed in Wasil Hub" note; (4) show each event's `targets` on the card.
+- **`apps/parent/.../EventsPage.tsx`**: display only — surface `targets` label;
+  no gating needed (server already scopes visibility).
+- **Delegation**: Sonnet (UI only; the server is done).
+
+## Stage 5 — This-week timetable overrides (cancel / move a session) — READY
+
+Connect-owned exception layer on top of Hub's base timetable, so a teacher can
+say "Swimming is cancelled / moved this week" and it flows to the parent reminder
+and the read-only grid. No Hub dependency.
+
+- **Model** `TimetableOverride { id, schoolId, classId (FK Class), date (the
+  specific day), subjectKey (normalised), subject, emoji?, action (CANCELLED |
+  ADDED), note?, createdByUserId?, createdAt, updatedAt, @@index([schoolId, classId, date]) }`.
+  Primitives compose: a **cancel** = one CANCELLED row on (class, date, subject);
+  a **move** = CANCELLED on the source date + ADDED on the target date (the UI
+  does both in one action); an **ad-hoc add** = one ADDED row. Migration additive.
+- **Apply** (both reads): for a given `(classId, date)` collect overrides — drop
+  reminder items whose `subjectKey` matches a CANCELLED row; append ADDED rows
+  (emoji/reminder text resolved from the `SubjectReminder` map, else the row's
+  own). Wire into `GET /api/timetable/today` (per child's class + today) and
+  `GET /api/timetable/grid` (per class + weekday date; mark cancelled/added
+  distinctly so the UI can style them).
+- **CRUD** `GET/POST/DELETE /api/timetable/overrides` (admin, school-scoped;
+  GET takes `from`/`to`). Shared `api.timetable.overrides.*`.
+- **Admin UI**: the read-only grid gains a per-cell action ("Cancel this week" /
+  "Move to…") that creates overrides; overridden cells render distinctly
+  (struck-through cancelled, moved-in highlighted) with an undo. Base stays Hub.
+- **Delegation**: Opus (model + migration + apply in today/grid + CRUD + tests),
+  then Sonnet (grid override UI, after the contract lands).
+
+## Stage 4 Phase B — Teacher event proposals — BLOCKED on Hub
+
+Connect-side design is ready, but it can't start until Hub exposes: a pending/
+approval **status** on `CalendarEvent`, a super-admin **moderation UI**,
+`event.approved` / `event.rejected` webhooks, and a **`calendar:propose`** scope +
+create endpoint (`POST /api/v1/calendar/events` accepting a Connect correlation
+id + proposer `hubUserId`). Once those exist: Connect STAFF form → local `PENDING`
+event → POST to Hub → on approval it syncs back via Phase A (matched on the
+correlation id) and the placeholder resolves; on reject, marked with a reason.
+**Delegation**: Opus (proposal endpoint + reconciliation + tests), Sonnet (form +
+pending/approved states) — deferred until the Hub contract is confirmed.
