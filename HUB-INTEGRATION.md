@@ -229,9 +229,12 @@ moderation surface (coordinate on the Hub side first).
 
 **Open decisions (Phase A):**
 1. **Cohort mismatch** — Hub events can target *multiple* year-groups/classes;
-   Connect `Event` targets a single class/yearGroup or whole-school. Options:
-   (a) fan out one Connect `Event` per target, (b) extend `Event` to multi-target,
-   (c) collapse multi-target → whole-school for display. (Recommend a or c.)
+   Connect `Event` was single-target. **DECIDED: extend `Event` to multi-target**
+   via a new `EventTarget` join (class/year-group rows; no rows = whole school),
+   used by both Hub-synced and manual events. Migrate existing events'
+   `classId`/`yearGroupId` into `EventTarget` rows; the parent visibility query
+   reads the join. **DECIDED: build Phase A now**, dormant behind `calendar:read`
+   with graceful fallback (like the timetable helper), and retire the CSV upload.
 2. **RSVP/consent** — Hub has `consentRequirements`; Connect has `requiresRsvp`.
    Phase A can ignore consent (display only) or map consent-required → RSVP.
 3. **Recurrence** — Hub recurrence is reserved/null today; treat each event as a
