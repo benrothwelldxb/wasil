@@ -80,6 +80,25 @@ export interface HubStaff {
   isInviteAccepted: boolean
 }
 
+// Mirror of Hub's GuardianDTO (subset). A guardian is a parent/carer linked to
+// one or more pupils. `email` is null for a guardian Hub holds no address for —
+// such a guardian can't be provisioned as a Connect login (User.email is
+// required + unique) and is skipped by the sync. Each `pupils[]` entry's
+// `pupilId` is a *Hub* pupil id (maps to Connect `Student.hubPupilId`).
+export interface HubGuardianPupilLink {
+  pupilId: string
+  relationship: string
+  isPrimary: boolean
+}
+export interface HubGuardian {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  pupils: HubGuardianPupilLink[]
+}
+
 // Mirror of Hub's SyncStatusDTO (subset) — the polling freshness signal.
 export interface HubSyncStatus {
   schoolId: string
@@ -184,6 +203,18 @@ export async function listStaff(hubSchoolId: string): Promise<HubStaff[]> {
   const params = new URLSearchParams({ schoolId: hubSchoolId })
   const { staff } = await call<{ staff: HubStaff[] }>(`/staff?${params.toString()}`)
   return staff
+}
+
+/** Guardians (parents/carers) for a Hub school, with their pupil links. Each
+ * link's `pupilId` is a Hub pupil id; sync resolves it to a Connect Student via
+ * `Student.hubPupilId`. Hub currently returns 0 guardians for every school, so
+ * this endpoint is a no-op in practice until guardian data lands upstream. */
+export async function listGuardians(hubSchoolId: string): Promise<HubGuardian[]> {
+  const params = new URLSearchParams({ schoolId: hubSchoolId })
+  const { guardians } = await call<{ guardians: HubGuardian[] }>(
+    `/guardians?${params.toString()}`,
+  )
+  return guardians
 }
 
 /** When did each MIS entity-type last change for this school? Polling fallback

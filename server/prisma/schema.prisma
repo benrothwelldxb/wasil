@@ -157,6 +157,12 @@ model User {
   // resolves straight to this user.
   hubUserId   String? @unique
 
+  // Wasil Hub guardian link (Stage 2 — guardian provisioning). Set when this
+  // Connect PARENT account was provisioned from a Hub guardian; the idempotency
+  // key so re-running the sync updates the same account instead of duplicating
+  // it. Null for every non-Hub-sourced user (staff, self-registered parents).
+  hubGuardianId String? @unique
+
   // Password auth (for admin/staff)
   passwordHash String?
 

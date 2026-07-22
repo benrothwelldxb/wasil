@@ -4,7 +4,15 @@
 // Hub is the source of truth. We sync in strict dependency order so foreign
 // keys always resolve:
 //
-//   year-groups → classes → pupils → staff
+//   year-groups → classes → pupils → guardians → staff
+//
+// Guardians are provisioned as Connect PARENT users and linked to their
+// children (after pupils, so Student.hubPupilId exists to resolve links). This
+// is the DATA layer only: a provisioned parent has NO password and cannot log
+// in yet — login / invitation delivery (magic link or access code) is a
+// documented follow-on, not built here. Hub currently returns 0 guardians, so
+// the guardian step is a safe no-op (all-zero summary, no writes) until data
+// lands upstream.
 //
 // Every upsert is keyed on the Hub id we mirror onto each Connect row
 // (`hubYearGroupId` / `hubClassId` / `hubPupilId` / `hubUserId`, all `@unique`),
@@ -22,7 +30,9 @@ import {
   listClasses,
   listPupils,
   listStaff,
+  listGuardians,
   type HubStaff,
+  type HubGuardian,
 } from './hubMis.js'
 
 /** The Connect school isn't linked to a Hub school — nothing to sync. */
@@ -46,6 +56,15 @@ export interface SyncSummary {
   pupils: number
   /** Staff, split by whether the Connect user was created or updated/linked. */
   staff: { created: number; updated: number }
+  /** Guardians provisioned as Connect PARENT users. `created` = brand-new
+   * accounts; `linked` = a pre-existing same-email user we attached the
+   * hubGuardianId to (role untouched); `skippedNoEmail` = guardians Hub holds
+   * no email for, which can't become a login and are skipped. */
+  guardians: { created: number; linked: number; skippedNoEmail: number }
+  /** Parent↔student links. `created` counts links upserted this run;
+   * `skippedNoPupil` counts guardian→pupil edges whose Hub pupil isn't synced
+   * into Connect yet (no matching Student.hubPupilId). */
+  parentLinks: { created: number; skippedNoPupil: number }
 }
 
 /**
@@ -105,12 +124,15 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   // Hub's v1 pupil surface), allergies, medicalNotes, photoUrl. Keyed on
   // hubPupilId.
   let pupils = 0
+  // hubPupilId → Connect Student id, so the guardian pass can resolve each
+  // guardian→pupil edge to a real Student without re-querying.
+  const studentIdByHubPupil = new Map<string, string>()
   for (const cls of hubClasses) {
     const classId = classIdByHub.get(cls.id)
     if (!classId) continue
     const hubPupils = await listPupils(hubSchoolId, { classId: cls.id })
     for (const p of hubPupils) {
-      await prisma.student.upsert({
+      const row = await prisma.student.upsert({
         where: { hubPupilId: p.id },
         create: {
           hubPupilId: p.id,
@@ -125,11 +147,41 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
           classId,
         },
       })
+      studentIdByHubPupil.set(p.id, row.id)
       pupils++
     }
   }
 
-  // --- 4. Staff ------------------------------------------------------------
+  // --- 4. Guardians → parent accounts + links ------------------------------
+  // Provision each Hub guardian as a Connect PARENT user and link it to its
+  // children. Runs after pupils so every Student.hubPupilId already exists to
+  // resolve links. Idempotent (keyed on hubGuardianId + the ParentStudentLink
+  // unique). DORMANT: Hub returns 0 guardians today, so this is a clean no-op
+  // (all-zero summary, no writes) until guardian data lands upstream.
+  const hubGuardians = await listGuardians(hubSchoolId)
+  const guardianSummary = { created: 0, linked: 0, skippedNoEmail: 0 }
+  const parentLinkSummary = { created: 0, skippedNoPupil: 0 }
+  for (const g of hubGuardians) {
+    const userId = await upsertGuardian(g, schoolId, guardianSummary)
+    if (!userId) continue // no-email guardian: can't be a login, already counted
+    for (const link of g.pupils) {
+      const studentId = studentIdByHubPupil.get(link.pupilId)
+      if (!studentId) {
+        // Pupil not synced into Connect yet — skip this edge, count it.
+        parentLinkSummary.skippedNoPupil++
+        continue
+      }
+      // Idempotent on the unique [userId, studentId] — re-runs never duplicate.
+      await prisma.parentStudentLink.upsert({
+        where: { userId_studentId: { userId, studentId } },
+        create: { userId, studentId },
+        update: {},
+      })
+      parentLinkSummary.created++
+    }
+  }
+
+  // --- 5. Staff ------------------------------------------------------------
   const hubStaff = await listStaff(hubSchoolId)
   let created = 0
   let updated = 0
@@ -150,7 +202,86 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     classes: hubClasses.length,
     pupils,
     staff: { created, updated },
+    guardians: guardianSummary,
+    parentLinks: parentLinkSummary,
   }
+}
+
+/**
+ * Provision a single Hub guardian as a Connect PARENT user. Resolution order
+ * mirrors `upsertStaff`'s "match by Hub id → else by email → else create; never
+ * rewrite an existing user's role" discipline:
+ *   1. Already linked — a user with this `hubGuardianId`. Refresh profile.
+ *   2. Email fallback — a pre-existing user in this school with a matching
+ *      (lowercased) email. Link its `hubGuardianId` (if free); role untouched —
+ *      a guardian who is also staff keeps their staff role.
+ *   3. Brand-new — create a PARENT user. Only here is a role assigned.
+ * A guardian with no email can't be provisioned (User.email is required +
+ * unique): skip it, count it in `skippedNoEmail`, never throw. Returns the
+ * resolved Connect user id, or `null` when skipped (no email).
+ */
+async function upsertGuardian(
+  g: HubGuardian,
+  schoolId: string,
+  summary: { created: number; linked: number; skippedNoEmail: number },
+): Promise<string | null> {
+  const name = `${g.firstName} ${g.lastName}`.trim()
+  const email = g.email?.trim().toLowerCase() || null
+
+  // (1) Already linked by Hub guardian id.
+  const linked = await prisma.user.findFirst({
+    where: { hubGuardianId: g.id, schoolId },
+  })
+  if (linked) {
+    await prisma.user.update({
+      where: { id: linked.id },
+      // Refresh profile; deliberately DO NOT touch `role`.
+      data: { name, phone: g.phone ?? undefined },
+    })
+    summary.linked++
+    return linked.id
+  }
+
+  // A guardian with no email can't back a login (User.email required + unique).
+  if (!email) {
+    summary.skippedNoEmail++
+    return null
+  }
+
+  // (2) Email fallback to a pre-existing account in this school. Link the
+  // guardian identity onto it WITHOUT changing its role (it may be staff).
+  const candidate = await prisma.user.findFirst({ where: { schoolId, email } })
+  if (candidate) {
+    // Only claim the hubGuardianId if it's free — never re-point one user's
+    // identity link onto another Hub guardian.
+    const linkHubGuardianId =
+      !candidate.hubGuardianId || candidate.hubGuardianId === g.id ? g.id : undefined
+    await prisma.user.update({
+      where: { id: candidate.id },
+      data: {
+        name,
+        phone: g.phone ?? undefined,
+        ...(linkHubGuardianId ? { hubGuardianId: linkHubGuardianId } : {}),
+      },
+    })
+    summary.linked++
+    return candidate.id
+  }
+
+  // (3) Brand-new PARENT account. No password — can't log in yet; login /
+  // invitation delivery is a documented follow-on (see hubSync module note).
+  const created = await prisma.user.create({
+    data: {
+      email,
+      name,
+      role: 'PARENT',
+      schoolId,
+      hubGuardianId: g.id,
+      phone: g.phone ?? undefined,
+    },
+  })
+  summary.created++
+  return created.id
 }
 
 /**

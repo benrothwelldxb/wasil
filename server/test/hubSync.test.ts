@@ -11,6 +11,7 @@ const prismaMock = {
   class: { upsert: vi.fn(), create: vi.fn() },
   student: { upsert: vi.fn(), create: vi.fn() },
   user: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  parentStudentLink: { upsert: vi.fn(), create: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -20,6 +21,7 @@ vi.mock('../src/services/hubMis', () => ({
   listClasses: vi.fn(),
   listPupils: vi.fn(),
   listStaff: vi.fn(),
+  listGuardians: vi.fn(),
 }))
 
 const {
@@ -27,6 +29,7 @@ const {
   listClasses,
   listPupils,
   listStaff,
+  listGuardians,
 } = await import('../src/services/hubMis')
 const { syncSchoolFromHub, SchoolNotLinkedError } = await import('../src/services/hubSync')
 
@@ -34,6 +37,7 @@ const mYearGroups = vi.mocked(listYearGroups)
 const mClasses = vi.mocked(listClasses)
 const mPupils = vi.mocked(listPupils)
 const mStaff = vi.mocked(listStaff)
+const mGuardians = vi.mocked(listGuardians)
 
 // A Hub-linked Connect school.
 const SCHOOL = { id: 'connect-school-1', hubSchoolId: 'hub-school-1' }
@@ -68,6 +72,9 @@ beforeEach(() => {
       : [],
   )
   mStaff.mockResolvedValue([])
+  // Dormant by default: Hub holds 0 guardians (the current live state).
+  mGuardians.mockResolvedValue([])
+  prismaMock.parentStudentLink.upsert.mockResolvedValue({ id: 'psl-1' })
 })
 
 describe('syncSchoolFromHub — dependency ordering + mapping', () => {
@@ -109,6 +116,8 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       classes: 1,
       pupils: 1,
       staff: { created: 0, updated: 0 },
+      guardians: { created: 0, linked: 0, skippedNoEmail: 0 },
+      parentLinks: { created: 0, skippedNoPupil: 0 },
     })
 
     // On success the school is marked fresh.
@@ -207,6 +216,140 @@ describe('syncSchoolFromHub — staff linking', () => {
     expect(prismaMock.user.update).not.toHaveBeenCalled()
 
     expect(summary.staff).toEqual({ created: 1, updated: 0 })
+  })
+})
+
+describe('syncSchoolFromHub — guardian provisioning', () => {
+  const GUARDIAN = {
+    id: 'hg1',
+    firstName: 'Layla',
+    lastName: 'Khan',
+    email: 'Layla.Khan@example.com',
+    phone: '+971500000000',
+    pupils: [{ pupilId: 'hp1', relationship: 'mother', isPrimary: true }],
+  }
+
+  it('creates a PARENT user and a parent↔student link for a new guardian', async () => {
+    mGuardians.mockResolvedValue([GUARDIAN])
+    prismaMock.user.findFirst.mockResolvedValue(null) // not linked, no email match
+    prismaMock.user.create.mockResolvedValue({ id: 'cu-parent' })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    const createArg = prismaMock.user.create.mock.calls[0][0] as any
+    expect(createArg.data.email).toBe('layla.khan@example.com') // lowercased
+    expect(createArg.data.name).toBe('Layla Khan')
+    expect(createArg.data.role).toBe('PARENT')
+    expect(createArg.data.hubGuardianId).toBe('hg1')
+    expect(createArg.data.schoolId).toBe('connect-school-1')
+
+    // The link resolves the Hub pupil id (hp1) to its Connect Student (cs-hp1),
+    // upserted idempotently on the [userId, studentId] unique.
+    expect(prismaMock.parentStudentLink.upsert).toHaveBeenCalledWith({
+      where: { userId_studentId: { userId: 'cu-parent', studentId: 'cs-hp1' } },
+      create: { userId: 'cu-parent', studentId: 'cs-hp1' },
+      update: {},
+    })
+
+    expect(summary.guardians).toEqual({ created: 1, linked: 0, skippedNoEmail: 0 })
+    expect(summary.parentLinks).toEqual({ created: 1, skippedNoPupil: 0 })
+  })
+
+  it('re-run is idempotent — no duplicate user or link', async () => {
+    mGuardians.mockResolvedValue([GUARDIAN])
+    let provisioned: any = null
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) =>
+      where.hubGuardianId ? provisioned : null,
+    )
+    prismaMock.user.create.mockImplementation(async () => {
+      provisioned = { id: 'cu-parent', role: 'PARENT', schoolId: 'connect-school-1', hubGuardianId: 'hg1' }
+      return provisioned
+    })
+    prismaMock.user.update.mockResolvedValue({ id: 'cu-parent' })
+
+    await syncSchoolFromHub('connect-school-1')
+    await syncSchoolFromHub('connect-school-1')
+
+    // Created once (first run); second run resolves by hubGuardianId → update.
+    expect(prismaMock.user.create).toHaveBeenCalledTimes(1)
+    // Links only ever go through the keyed upsert — never a bare create.
+    expect(prismaMock.parentStudentLink.create).not.toHaveBeenCalled()
+    expect(prismaMock.parentStudentLink.upsert).toHaveBeenCalledTimes(2)
+    for (const call of prismaMock.parentStudentLink.upsert.mock.calls) {
+      expect((call[0] as any).where).toEqual({
+        userId_studentId: { userId: 'cu-parent', studentId: 'cs-hp1' },
+      })
+    }
+  })
+
+  it('links a pre-existing same-email user WITHOUT changing its role', async () => {
+    mGuardians.mockResolvedValue([GUARDIAN])
+    // No hubGuardianId match, but an email match exists — and it's an ADMIN
+    // (this person is both staff and a parent). Role must stay ADMIN.
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) => {
+      if (where.hubGuardianId) return null
+      if (where.email === 'layla.khan@example.com') {
+        return { id: 'cu-admin', role: 'ADMIN', schoolId: 'connect-school-1', email: 'layla.khan@example.com', hubGuardianId: null }
+      }
+      return null
+    })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    const updateArg = prismaMock.user.update.mock.calls[0][0] as any
+    expect(updateArg.where).toEqual({ id: 'cu-admin' })
+    expect(updateArg.data).not.toHaveProperty('role') // never clobbered
+    expect(updateArg.data.hubGuardianId).toBe('hg1') // identity linked
+    expect(prismaMock.user.create).not.toHaveBeenCalled()
+
+    // The link is still made against the existing user.
+    expect(prismaMock.parentStudentLink.upsert).toHaveBeenCalledWith({
+      where: { userId_studentId: { userId: 'cu-admin', studentId: 'cs-hp1' } },
+      create: { userId: 'cu-admin', studentId: 'cs-hp1' },
+      update: {},
+    })
+
+    expect(summary.guardians).toEqual({ created: 0, linked: 1, skippedNoEmail: 0 })
+  })
+
+  it('skips a guardian with a null email (counted, no user or link written)', async () => {
+    mGuardians.mockResolvedValue([{ ...GUARDIAN, email: null }])
+    prismaMock.user.findFirst.mockResolvedValue(null)
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.user.create).not.toHaveBeenCalled()
+    expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
+    expect(summary.guardians).toEqual({ created: 0, linked: 0, skippedNoEmail: 1 })
+    expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 0 })
+  })
+
+  it('skips a pupil link whose Hub pupil is not synced into Connect (counted)', async () => {
+    mGuardians.mockResolvedValue([
+      { ...GUARDIAN, pupils: [{ pupilId: 'hp-unknown', relationship: 'father', isPrimary: true }] },
+    ])
+    prismaMock.user.findFirst.mockResolvedValue(null)
+    prismaMock.user.create.mockResolvedValue({ id: 'cu-parent' })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    // User is still created, but the unresolved pupil link is skipped.
+    expect(prismaMock.user.create).toHaveBeenCalledTimes(1)
+    expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
+    expect(summary.guardians).toEqual({ created: 1, linked: 0, skippedNoEmail: 0 })
+    expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 1 })
+  })
+
+  it('0 guardians → all-zero guardian/link summary, no user or link writes', async () => {
+    mGuardians.mockResolvedValue([])
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.user.create).not.toHaveBeenCalled()
+    expect(prismaMock.user.update).not.toHaveBeenCalled()
+    expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
+    expect(summary.guardians).toEqual({ created: 0, linked: 0, skippedNoEmail: 0 })
+    expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 0 })
   })
 })
 
