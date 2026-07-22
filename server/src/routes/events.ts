@@ -27,6 +27,11 @@ function buildGoogleCalendarUrl(event: { title: string; description?: string | n
   return `https://calendar.google.com/calendar/event?action=TEMPLATE&text=${title}&dates=${dateStr}/${endStr}&details=${details}&location=${location}`
 }
 
+const eventTargetSchema = z.object({
+  classId: z.string().optional(),
+  yearGroupId: z.string().optional(),
+})
+
 const createEventSchema = z.object({
   title: z.string().min(1).max(500),
   description: z.string().optional(),
@@ -37,11 +42,83 @@ const createEventSchema = z.object({
   classId: z.string().optional(),
   yearGroupId: z.string().optional(),
   groupId: z.string().optional(),
+  // Multi-target: zero or more targeted classes / year-groups. Empty array (or
+  // omitted with a whole-school targetClass) = whole-school. When exactly one
+  // target is given, the legacy scalar classId/yearGroupId are populated too so
+  // old single-target callers keep working.
+  targets: z.array(eventTargetSchema).optional(),
   requiresRsvp: z.boolean().optional(),
   recurrence: z.string().optional(),
   recurrenceEnd: z.string().optional(),
   customIntervalDays: z.number().optional(),
 })
+
+// Resolve request targeting into EventTarget rows + the legacy scalar fields.
+// - With a `targets` array: filter to non-empty rows; a single row also fills
+//   the scalar classId/yearGroupId (multi-target leaves them null).
+// - Without a `targets` array (legacy caller): derive one row from the scalar
+//   classId/yearGroupId, preserving the exact legacy scalar values.
+function resolveTargeting(body: {
+  targets?: { classId?: string; yearGroupId?: string }[]
+  classId?: string
+  yearGroupId?: string
+}): {
+  rows: { classId: string | null; yearGroupId: string | null }[]
+  scalarClassId: string | null
+  scalarYearGroupId: string | null
+} {
+  if (Array.isArray(body.targets)) {
+    const rows = body.targets
+      .map(t => ({ classId: t.classId || null, yearGroupId: t.yearGroupId || null }))
+      .filter(t => t.classId || t.yearGroupId)
+    const single = rows.length === 1 ? rows[0] : null
+    return {
+      rows,
+      scalarClassId: single?.classId ?? null,
+      scalarYearGroupId: single?.yearGroupId ?? null,
+    }
+  }
+  const classId = body.classId || null
+  const yearGroupId = body.yearGroupId || null
+  const rows: { classId: string | null; yearGroupId: string | null }[] = []
+  if (classId) rows.push({ classId, yearGroupId: null })
+  else if (yearGroupId) rows.push({ classId: null, yearGroupId })
+  return { rows, scalarClassId: classId, scalarYearGroupId: yearGroupId }
+}
+
+// The parent-visibility OR clause. Whole-school (label 'Whole School'/'all'),
+// OR an EventTarget row matching a child's class/year-group, OR the legacy
+// scalar classId/yearGroupId still matching (safety for un-backfilled rows),
+// OR a scalar groupId match (Hub has no groups — targeting stays scalar).
+function buildVisibilityOR(
+  allClassIds: string[],
+  childYearGroupIds: string[],
+  childGroupIds: string[],
+): any[] {
+  const or: any[] = [
+    { targetClass: 'Whole School' },
+    { targetClass: 'all' },
+  ]
+  if (allClassIds.length > 0) {
+    or.push({ targets: { some: { classId: { in: allClassIds } } } })
+    or.push({ classId: { in: allClassIds } })
+  }
+  if (childYearGroupIds.length > 0) {
+    or.push({ targets: { some: { yearGroupId: { in: childYearGroupIds } } } })
+    or.push({ yearGroupId: { in: childYearGroupIds } })
+  }
+  if (childGroupIds.length > 0) {
+    or.push({ groupId: { in: childGroupIds } })
+  }
+  return or
+}
+
+// Serialize EventTarget rows for API responses.
+function serializeTargets(
+  targets?: { classId: string | null; yearGroupId: string | null }[] | null,
+): { classId: string | null; yearGroupId: string | null }[] {
+  return (targets ?? []).map(t => ({ classId: t.classId, yearGroupId: t.yearGroupId }))
+}
 
 function generateRecurringDates(startDate: string, recurrence: string, endDate: string, customDays?: number): string[] {
   const dates: string[] = [startDate]
@@ -91,13 +168,7 @@ async function getEventsForUser(user: UserWithRelations) {
   return prisma.event.findMany({
     where: {
       schoolId: user.schoolId,
-      OR: [
-        { targetClass: 'Whole School' },
-        { targetClass: 'all' },
-        { classId: { in: allClassIds } },
-        ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
-        ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
-      ],
+      OR: buildVisibilityOR(allClassIds, childYearGroupIds, childGroupIds),
     },
     orderBy: { date: 'asc' },
   })
@@ -195,18 +266,13 @@ router.get('/', isAuthenticated, async (req, res) => {
     const events = await prisma.event.findMany({
       where: {
         schoolId: user.schoolId,
-        OR: [
-          { targetClass: 'Whole School' },
-          { targetClass: 'all' },
-          { classId: { in: allClassIds } },
-          ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
-          ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
-        ],
+        OR: buildVisibilityOR(allClassIds, childYearGroupIds, childGroupIds),
       },
       include: {
         rsvps: {
           where: { userId: user.id },
         },
+        targets: { select: { classId: true, yearGroupId: true } },
       },
       orderBy: { date: 'asc' },
     })
@@ -244,6 +310,9 @@ router.get('/', isAuthenticated, async (req, res) => {
       classId: event.classId,
       yearGroupId: event.yearGroupId,
       groupId: event.groupId,
+      targets: serializeTargets(event.targets),
+      hubCalendarEventId: event.hubCalendarEventId,
+      source: event.hubCalendarEventId ? 'hub' : 'connect',
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       parentEventId: event.parentEventId,
@@ -271,6 +340,7 @@ router.get('/all', isAdmin, async (req, res) => {
             user: { select: { name: true, email: true } },
           },
         },
+        targets: { select: { classId: true, yearGroupId: true } },
       },
       orderBy: { date: 'asc' },
     })
@@ -286,6 +356,9 @@ router.get('/all', isAdmin, async (req, res) => {
       classId: event.classId,
       yearGroupId: event.yearGroupId,
       groupId: event.groupId,
+      targets: serializeTargets(event.targets),
+      hubCalendarEventId: event.hubCalendarEventId,
+      source: event.hubCalendarEventId ? 'hub' : 'connect',
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       parentEventId: event.parentEventId,
@@ -311,7 +384,10 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isAdmin, validate(createEventSchema), async (req, res) => {
   try {
     const user = req.user!
-    const { title, description, date, time, location, targetClass, classId, yearGroupId, groupId, requiresRsvp, recurrence, recurrenceEnd, customIntervalDays } = req.body
+    const { title, description, date, time, location, targetClass, classId, yearGroupId, groupId, targets, requiresRsvp, recurrence, recurrenceEnd, customIntervalDays } = req.body
+
+    // Resolve multi-target rows + the legacy scalar fields (single-target).
+    const targeting = resolveTargeting({ targets, classId, yearGroupId })
 
     const sharedData = {
       title,
@@ -319,8 +395,8 @@ router.post('/', isAdmin, validate(createEventSchema), async (req, res) => {
       time: time || null,
       location: location || null,
       targetClass,
-      classId: classId || null,
-      yearGroupId: yearGroupId || null,
+      classId: targeting.scalarClassId,
+      yearGroupId: targeting.scalarYearGroupId,
       groupId: groupId || null,
       schoolId: user.schoolId,
       requiresRsvp: requiresRsvp || false,
@@ -330,26 +406,39 @@ router.post('/', isAdmin, validate(createEventSchema), async (req, res) => {
       // Recurring event: generate dates and create parent + children
       const dates = generateRecurringDates(date, recurrence, recurrenceEnd, customIntervalDays)
 
-      // Create parent event (first date)
-      const parentEvent = await prisma.event.create({
-        data: {
-          ...sharedData,
-          date: new Date(dates[0]),
-          recurrenceType: recurrence,
-        },
-      })
-
-      // Create child events for remaining dates
-      if (dates.length > 1) {
-        await prisma.event.createMany({
-          data: dates.slice(1).map(d => ({
+      // Create parent + children + shared EventTarget rows atomically. Every
+      // generated occurrence gets the same targets.
+      const parentEvent = await prisma.$transaction(async (tx) => {
+        const parent = await tx.event.create({
+          data: {
             ...sharedData,
-            date: new Date(d),
-            parentEventId: parentEvent.id,
+            date: new Date(dates[0]),
             recurrenceType: recurrence,
-          })),
+          },
         })
-      }
+
+        if (dates.length > 1) {
+          await tx.event.createMany({
+            data: dates.slice(1).map(d => ({
+              ...sharedData,
+              date: new Date(d),
+              parentEventId: parent.id,
+              recurrenceType: recurrence,
+            })),
+          })
+        }
+
+        if (targeting.rows.length > 0) {
+          const occurrences = await tx.event.findMany({
+            where: { OR: [{ id: parent.id }, { parentEventId: parent.id }] },
+            select: { id: true },
+          })
+          await tx.eventTarget.createMany({
+            data: occurrences.flatMap(o => targeting.rows.map(r => ({ eventId: o.id, ...r }))),
+          })
+        }
+        return parent
+      })
 
       logAudit({ req, action: 'CREATE', resourceType: 'EVENT', resourceId: parentEvent.id, metadata: { title: parentEvent.title, recurrence, recurringCount: dates.length } })
       sendNotification({ req, type: 'EVENT', title: parentEvent.title, body: parentEvent.description || 'New recurring event', resourceType: 'EVENT', resourceId: parentEvent.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
@@ -365,6 +454,9 @@ router.post('/', isAdmin, validate(createEventSchema), async (req, res) => {
         classId: parentEvent.classId,
         yearGroupId: parentEvent.yearGroupId,
         groupId: parentEvent.groupId,
+        targets: serializeTargets(targeting.rows),
+        hubCalendarEventId: parentEvent.hubCalendarEventId,
+        source: 'connect',
         schoolId: parentEvent.schoolId,
         requiresRsvp: parentEvent.requiresRsvp,
         recurrenceType: parentEvent.recurrenceType,
@@ -373,12 +465,20 @@ router.post('/', isAdmin, validate(createEventSchema), async (req, res) => {
         createdAt: parentEvent.createdAt.toISOString(),
       })
     } else {
-      // Single event
-      const event = await prisma.event.create({
-        data: {
-          ...sharedData,
-          date: new Date(date),
-        },
+      // Single event + its EventTarget rows, created atomically.
+      const event = await prisma.$transaction(async (tx) => {
+        const created = await tx.event.create({
+          data: {
+            ...sharedData,
+            date: new Date(date),
+          },
+        })
+        if (targeting.rows.length > 0) {
+          await tx.eventTarget.createMany({
+            data: targeting.rows.map(r => ({ eventId: created.id, ...r })),
+          })
+        }
+        return created
       })
 
       logAudit({ req, action: 'CREATE', resourceType: 'EVENT', resourceId: event.id, metadata: { title: event.title } })
@@ -395,6 +495,9 @@ router.post('/', isAdmin, validate(createEventSchema), async (req, res) => {
         classId: event.classId,
         yearGroupId: event.yearGroupId,
         groupId: event.groupId,
+        targets: serializeTargets(targeting.rows),
+        hubCalendarEventId: event.hubCalendarEventId,
+        source: 'connect',
         schoolId: event.schoolId,
         requiresRsvp: event.requiresRsvp,
         googleCalendarUrl: buildGoogleCalendarUrl(event),
@@ -447,7 +550,7 @@ router.put('/:id', isAdmin, validate(updateEventSchema), async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, description, date, time, location, targetClass, classId, yearGroupId, groupId, requiresRsvp } = req.body
+    const { title, description, date, time, location, targetClass, classId, yearGroupId, groupId, targets, requiresRsvp } = req.body
 
     // Verify event belongs to user's school
     const existing = await prisma.event.findFirst({
@@ -458,20 +561,38 @@ router.put('/:id', isAdmin, validate(updateEventSchema), async (req, res) => {
       return res.status(404).json({ error: 'Event not found' })
     }
 
-    const event = await prisma.event.update({
-      where: { id },
-      data: {
-        title,
-        description: description || null,
-        date: new Date(date),
-        time: time || null,
-        location: location || null,
-        targetClass,
-        classId: classId || null,
-        yearGroupId: yearGroupId || null,
-        groupId: groupId !== undefined ? (groupId || null) : existing.groupId,
-        requiresRsvp: requiresRsvp ?? existing.requiresRsvp,
-      },
+    // Read-only guard: Hub-owned events (mirrored from Hub's calendar) can't be
+    // edited in Connect — edit them in Hub, they re-sync here.
+    if (existing.hubCalendarEventId) {
+      return res.status(409).json({ error: 'This event is managed in Wasil Hub and cannot be edited in Connect. Edit it in Hub instead.' })
+    }
+
+    // Resolve multi-target rows + legacy scalars, then update + replace targets.
+    const targeting = resolveTargeting({ targets, classId, yearGroupId })
+
+    const event = await prisma.$transaction(async (tx) => {
+      const updated = await tx.event.update({
+        where: { id },
+        data: {
+          title,
+          description: description || null,
+          date: new Date(date),
+          time: time || null,
+          location: location || null,
+          targetClass,
+          classId: targeting.scalarClassId,
+          yearGroupId: targeting.scalarYearGroupId,
+          groupId: groupId !== undefined ? (groupId || null) : existing.groupId,
+          requiresRsvp: requiresRsvp ?? existing.requiresRsvp,
+        },
+      })
+      await tx.eventTarget.deleteMany({ where: { eventId: id } })
+      if (targeting.rows.length > 0) {
+        await tx.eventTarget.createMany({
+          data: targeting.rows.map(r => ({ eventId: id, ...r })),
+        })
+      }
+      return updated
     })
 
     res.json({
@@ -485,6 +606,9 @@ router.put('/:id', isAdmin, validate(updateEventSchema), async (req, res) => {
       classId: event.classId,
       yearGroupId: event.yearGroupId,
       groupId: event.groupId,
+      targets: serializeTargets(targeting.rows),
+      hubCalendarEventId: event.hubCalendarEventId,
+      source: event.hubCalendarEventId ? 'hub' : 'connect',
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       googleCalendarUrl: buildGoogleCalendarUrl(event),
@@ -513,6 +637,11 @@ router.delete('/:id', isAdmin, async (req, res) => {
 
     if (!existing) {
       return res.status(404).json({ error: 'Event not found' })
+    }
+
+    // Read-only guard: Hub-owned events can't be deleted in Connect.
+    if (existing.hubCalendarEventId) {
+      return res.status(409).json({ error: 'This event is managed in Wasil Hub and cannot be deleted in Connect. Remove it in Hub instead.' })
     }
 
     if (req.query.series === 'true' && existing.recurrenceType) {

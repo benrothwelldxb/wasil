@@ -291,6 +291,13 @@ export interface FormAnalytics {
 }
 
 // Event types
+// One targeted class or year-group for a multi-target event. Zero targets +
+// targetClass 'Whole School' means whole-school.
+export interface EventTarget {
+  classId?: string | null
+  yearGroupId?: string | null
+}
+
 export interface Event {
   id: string
   title: string
@@ -302,6 +309,12 @@ export interface Event {
   classId?: string
   yearGroupId?: string
   groupId?: string
+  // Multi-target visibility (classes / year-groups this event is shown to).
+  targets?: EventTarget[]
+  // Wasil Hub calendar link. When set, the event is mirrored read-only from Hub
+  // and must be edited in Hub, not Connect. `source` is the convenience flag.
+  hubCalendarEventId?: string | null
+  source?: 'hub' | 'connect'
   schoolId: string
   requiresRsvp: boolean
   parentEventId?: string | null

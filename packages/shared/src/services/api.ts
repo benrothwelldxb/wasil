@@ -503,6 +503,7 @@ export const events = {
     classId?: string
     yearGroupId?: string
     groupId?: string
+    targets?: { classId?: string; yearGroupId?: string }[]
     requiresRsvp?: boolean
     recurrence?: string
     recurrenceEnd?: string
@@ -522,6 +523,7 @@ export const events = {
     classId?: string
     yearGroupId?: string
     groupId?: string
+    targets?: { classId?: string; yearGroupId?: string }[]
     requiresRsvp?: boolean
   }) =>
     fetchApi<Event>(`/api/events/${id}`, {

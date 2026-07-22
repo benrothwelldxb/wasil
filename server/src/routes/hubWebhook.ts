@@ -17,6 +17,7 @@ import { Router, raw, Request, Response } from 'express'
 import { createHash, createHmac, timingSafeEqual } from 'crypto'
 import prisma from '../services/prisma.js'
 import { invalidateSchool } from '../services/timetableCache.js'
+import { resyncCalendarForSchool } from '../services/hubCalendarSync.js'
 
 const router = Router()
 
@@ -74,6 +75,27 @@ router.post('/webhook', raw({ type: '*/*' }), async (req: Request, res: Response
   // roster change, so we don't also stamp the roster-freshness flag for it.
   if (event === 'timetable.version_published') {
     invalidateSchool(hubSchoolId)
+    return res.json({ ok: true })
+  }
+
+  // Hub's school calendar changed — mark the school stale (drives the banner)
+  // and kick off a best-effort background resync. The resync is dormant-safe:
+  // if the token lacks `calendar:read` scope or the school isn't linked it's a
+  // clean no-op, so we never block the webhook ack on it.
+  if (event === 'calendar.updated') {
+    const linked = await prisma.school.findMany({
+      where: { hubSchoolId },
+      select: { id: true },
+    })
+    await prisma.school.updateMany({
+      where: { hubSchoolId },
+      data: { hubDataStaleSince: new Date() },
+    })
+    for (const s of linked) {
+      resyncCalendarForSchool(s.id).catch((err) =>
+        console.error('[hubWebhook] calendar resync failed', s.id, err),
+      )
+    }
     return res.json({ ok: true })
   }
 

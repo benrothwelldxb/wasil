@@ -40,6 +40,11 @@ model School {
   hubLastSyncedAt    DateTime?
   hubDataStaleSince  DateTime?
 
+  // Wasil Hub calendar sync (Stage 4 / Phase A). Cursor from the last
+  // `/api/v1/calendar/changes` pull, persisted per school for incremental
+  // refresh. Null until the first calendar sync runs.
+  hubCalendarCursor  Int?
+
   // Module enabled flags — all default true so existing schools keep current behavior
   inboxEnabled            Boolean @default(true)
   postsEnabled            Boolean @default(true)
@@ -352,6 +357,7 @@ model YearGroup {
   classes   Class[]
   messages  Message[]
   events    Event[]
+  eventTargets  EventTarget[]
   scheduleItems ScheduleItem[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -374,6 +380,7 @@ model Class {
   students             Student[]
   messages             Message[]
   events               Event[]
+  eventTargets         EventTarget[]
   scheduleItems        ScheduleItem[]
   assignedStaff        StaffClassAssignment[]
   childInvitationLinks ChildInvitationLink[]
@@ -470,6 +477,11 @@ model Event {
   date         DateTime
   time         String?
   location     String?
+  // `targetClass` stays a human display label (e.g. "Whole School", a class
+  // name, or a comma-joined list). Actual visibility targeting now lives in
+  // `targets` (EventTarget rows); the scalar `classId`/`yearGroupId`/`groupId`
+  // below are retained for backward compatibility (single-target callers +
+  // legacy rows). `groupId` targeting stays scalar — Hub has no groups.
   targetClass  String
   classId      String?
   class        Class?   @relation(fields: [classId], references: [id])
@@ -481,16 +493,41 @@ model Event {
   school       School   @relation(fields: [schoolId], references: [id])
   requiresRsvp Boolean  @default(false)
 
+  // Wasil Hub calendar link (Stage 4 / Phase A). When set, this event is
+  // mirrored (read-only) from Hub's CalendarEvent and must NOT be edited or
+  // deleted in Connect — its presence is the read-only marker.
+  hubCalendarEventId String? @unique
+
   parentEventId    String?
   recurrenceType   String?
 
-  rsvps EventRsvp[]
+  rsvps   EventRsvp[]
+  targets EventTarget[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([schoolId, date])
   @@index([parentEventId])
+}
+
+// Multi-target visibility for an Event — one row per targeted class or
+// year-group. ZERO rows + `targetClass = 'Whole School'` means whole-school.
+// Lets a single Event target several classes/year-groups (Hub calendar events
+// can), while the legacy scalar Event.classId/yearGroupId columns stay for
+// backward compatibility.
+model EventTarget {
+  id          String     @id @default(cuid())
+  eventId     String
+  event       Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  classId     String?
+  class       Class?     @relation(fields: [classId], references: [id])
+  yearGroupId String?
+  yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
+
+  @@index([eventId])
+  @@index([classId])
+  @@index([yearGroupId])
 }
 
 model EventRsvp {
