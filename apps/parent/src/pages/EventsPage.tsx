@@ -69,6 +69,21 @@ export function EventsPage() {
   const isWholeSchool = (targetClass: string) =>
     targetClass === 'Whole School' || targetClass === 'all' || targetClass === 'All Parents'
 
+  // Prefer resolving the new multi-target list to class names when every
+  // target is a class we have loaded; otherwise fall back to the event's
+  // existing (already human-readable) targetClass string.
+  const audienceLabel = (event: Event) => {
+    if (event.targets && event.targets.length > 0) {
+      const names = event.targets.map((target) =>
+        target.classId ? allClasses?.find((c) => c.id === target.classId)?.name : undefined
+      )
+      if (names.length > 0 && names.every((n): n is string => !!n)) {
+        return names.join(', ')
+      }
+    }
+    return isWholeSchool(event.targetClass) ? t('messages.wholeSchool', 'Whole School') : event.targetClass
+  }
+
   // All filtered events (used by both views)
   const filteredEvents = useMemo(() => {
     if (!events) return []
@@ -241,6 +256,7 @@ export function EventsPage() {
           setSelectedDate={setSelectedCalendarDate}
           handleRsvp={handleRsvp}
           isWholeSchool={isWholeSchool}
+          audienceLabel={audienceLabel}
           t={t}
         />
       )}
@@ -314,7 +330,7 @@ export function EventsPage() {
                             </div>
 
                             <p className="text-[13px] font-semibold mt-0.5" style={{ color: '#7A6469' }}>
-                              {isWholeSchool(event.targetClass) ? t('messages.wholeSchool', 'Whole School') : event.targetClass}
+                              {audienceLabel(event)}
                             </p>
 
                             {event.description && (
@@ -458,10 +474,11 @@ interface CalendarViewProps {
   setSelectedDate: (date: string | null) => void
   handleRsvp: (eventId: string, status: EventRsvpStatus) => void
   isWholeSchool: (targetClass: string) => boolean
+  audienceLabel: (event: Event) => string
   t: any
 }
 
-function CalendarView({ calendarMonth, setCalendarMonth, eventsByDate, selectedDate, setSelectedDate, handleRsvp, isWholeSchool, t }: CalendarViewProps) {
+function CalendarView({ calendarMonth, setCalendarMonth, eventsByDate, selectedDate, setSelectedDate, handleRsvp, isWholeSchool, audienceLabel, t }: CalendarViewProps) {
   const { year, month } = calendarMonth
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
@@ -612,7 +629,7 @@ function CalendarView({ calendarMonth, setCalendarMonth, eventsByDate, selectedD
                 >
                   <h3 className="text-[15px] font-bold" style={{ color: '#2D2225' }}>{event.title}</h3>
                   <p className="text-xs font-semibold mt-0.5" style={{ color: '#7A6469' }}>
-                    {isWholeSchool(event.targetClass) ? 'Whole School' : event.targetClass}
+                    {audienceLabel(event)}
                   </p>
                   {event.description && (
                     <EventDescription text={event.description} />

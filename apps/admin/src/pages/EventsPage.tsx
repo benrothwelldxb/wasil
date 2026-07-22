@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react'
-import { Plus, X, Pencil, Trash2, Calendar, Clock, MapPin, Upload, CheckCircle, Download, FileText, Copy, Repeat } from 'lucide-react'
+import React, { useState } from 'react'
+import { Plus, X, Pencil, Trash2, Calendar, Clock, MapPin, CheckCircle, Copy, Repeat, Link2 } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
 import type { Event, Class, YearGroup } from '@wasil/shared'
 
@@ -11,9 +11,8 @@ interface EventForm {
   date: string
   time: string
   location: string
-  targetClass: string
-  classId: string
-  yearGroupId: string
+  targetClassIds: string[]
+  targetYearGroupIds: string[]
   requiresRsvp: boolean
   recurrence: RecurrenceType
   recurrenceEnd: string
@@ -26,9 +25,8 @@ const emptyForm: EventForm = {
   date: '',
   time: '',
   location: '',
-  targetClass: 'all',
-  classId: '',
-  yearGroupId: '',
+  targetClassIds: [],
+  targetYearGroupIds: [],
   requiresRsvp: false,
   recurrence: 'none',
   recurrenceEnd: '',
@@ -60,47 +58,9 @@ function generateRecurringDates(startDate: string, recurrence: RecurrenceType, e
   return dates
 }
 
-interface CsvRow {
-  title: string
-  description: string
-  date: string
-  time: string
-  location: string
-  targetClass: string
-  requiresRsvp: boolean
-}
-
-function parseCsvLine(line: string): string[] {
-  const result: string[] = []
-  let current = ''
-  let inQuotes = false
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i]
-    if (inQuotes) {
-      if (char === '"') {
-        if (i + 1 < line.length && line[i + 1] === '"') {
-          current += '"'
-          i++
-        } else {
-          inQuotes = false
-        }
-      } else {
-        current += char
-      }
-    } else {
-      if (char === '"') {
-        inQuotes = true
-      } else if (char === ',') {
-        result.push(current.trim())
-        current = ''
-      } else {
-        current += char
-      }
-    }
-  }
-  result.push(current.trim())
-  return result
+// A Hub-synced event is read-only in Connect — it must be edited in Wasil Hub.
+function isFromHub(event: Event): boolean {
+  return event.source === 'hub' || !!event.hubCalendarEventId
 }
 
 export function EventsPage() {
@@ -116,62 +76,67 @@ export function EventsPage() {
   const [showSeriesDeleteChoice, setShowSeriesDeleteChoice] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // CSV state
-  const [showCsvGuide, setShowCsvGuide] = useState(false)
-  const [showCsvModal, setShowCsvModal] = useState(false)
-  const [csvData, setCsvData] = useState<CsvRow[]>([])
-  const [csvFileName, setCsvFileName] = useState('')
-  const [csvImporting, setCsvImporting] = useState(false)
-  const [csvImportResult, setCsvImportResult] = useState<{ success: number; failed: number } | null>(null)
-  const csvInputRef = useRef<HTMLInputElement>(null)
+  const classNameById = (id: string) => classes?.find((c) => c.id === id)?.name || id
+  const yearGroupNameById = (id: string) => yearGroups?.find((yg) => yg.id === id)?.name || id
 
-  const audienceOptions = [
-    { value: 'all', label: 'All Parents', classId: '', yearGroupId: '' },
-    ...(yearGroups || []).map((yg) => ({
-      value: `year-${yg.id}`,
-      label: yg.name,
-      classId: '',
-      yearGroupId: yg.id,
-    })),
-    ...(classes || []).map((c) => ({
-      value: `class-${c.id}`,
-      label: c.name,
-      classId: c.id,
-      yearGroupId: '',
-    })),
-  ]
-
-  const handleAudienceChange = (value: string) => {
-    const option = audienceOptions.find((o) => o.value === value)
-    if (option) {
-      setForm((f) => ({
-        ...f,
-        targetClass: value === 'all' ? 'all' : option.label,
-        classId: option.classId,
-        yearGroupId: option.yearGroupId,
-      }))
+  // Compact "1A, Year 3" style label for an event, from its multi-target list
+  // (falling back to the legacy single targetClass string for older events).
+  const eventAudienceLabel = (event: Event) => {
+    if (event.targets && event.targets.length > 0) {
+      const names = event.targets
+        .map((t) => (t.classId ? classNameById(t.classId) : t.yearGroupId ? yearGroupNameById(t.yearGroupId) : null))
+        .filter((n): n is string => !!n)
+      if (names.length > 0) return names.join(', ')
     }
+    if (event.targetClass === 'all' || event.targetClass === 'Whole School') return 'Whole School'
+    return event.targetClass
   }
 
-  const getAudienceValue = () => {
-    if (form.targetClass === 'all') return 'all'
-    if (form.classId) return `class-${form.classId}`
-    if (form.yearGroupId) return `year-${form.yearGroupId}`
-    return 'all'
+  const toggleClassTarget = (id: string) => {
+    setForm((f) => ({
+      ...f,
+      targetClassIds: f.targetClassIds.includes(id)
+        ? f.targetClassIds.filter((c) => c !== id)
+        : [...f.targetClassIds, id],
+    }))
+  }
+
+  const toggleYearGroupTarget = (id: string) => {
+    setForm((f) => ({
+      ...f,
+      targetYearGroupIds: f.targetYearGroupIds.includes(id)
+        ? f.targetYearGroupIds.filter((y) => y !== id)
+        : [...f.targetYearGroupIds, id],
+    }))
+  }
+
+  const buildTargetsPayload = () => {
+    const targets = [
+      ...form.targetYearGroupIds.map((yearGroupId) => ({ yearGroupId })),
+      ...form.targetClassIds.map((classId) => ({ classId })),
+    ]
+    const targetClass =
+      targets.length === 0
+        ? 'Whole School'
+        : [
+            ...form.targetYearGroupIds.map(yearGroupNameById),
+            ...form.targetClassIds.map(classNameById),
+          ].join(', ')
+    return { targets: targets.length > 0 ? targets : undefined, targetClass }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
     try {
+      const { targets, targetClass } = buildTargetsPayload()
       const basePayload = {
         title: form.title,
         description: form.description || undefined,
         time: form.time || undefined,
         location: form.location || undefined,
-        targetClass: form.targetClass,
-        classId: form.classId || undefined,
-        yearGroupId: form.yearGroupId || undefined,
+        targetClass,
+        targets,
         requiresRsvp: form.requiresRsvp,
       }
 
@@ -197,17 +162,30 @@ export function EventsPage() {
     }
   }
 
+  // Derive the multi-select state for a form from an existing event, falling
+  // back to the legacy singular classId/yearGroupId if targets isn't set.
+  const targetIdsFromEvent = (event: Event) => {
+    let targetClassIds = (event.targets || []).filter((t) => t.classId).map((t) => t.classId as string)
+    let targetYearGroupIds = (event.targets || []).filter((t) => t.yearGroupId).map((t) => t.yearGroupId as string)
+    if (targetClassIds.length === 0 && targetYearGroupIds.length === 0) {
+      if (event.classId) targetClassIds = [event.classId]
+      if (event.yearGroupId) targetYearGroupIds = [event.yearGroupId]
+    }
+    return { targetClassIds, targetYearGroupIds }
+  }
+
   const handleEdit = (event: Event) => {
+    if (isFromHub(event)) return // read-only, managed in Hub
     setEditingEvent(event)
+    const { targetClassIds, targetYearGroupIds } = targetIdsFromEvent(event)
     setForm({
       title: event.title,
       description: event.description || '',
       date: event.date.split('T')[0],
       time: event.time || '',
       location: event.location || '',
-      targetClass: event.targetClass,
-      classId: event.classId || '',
-      yearGroupId: event.yearGroupId || '',
+      targetClassIds,
+      targetYearGroupIds,
       requiresRsvp: event.requiresRsvp,
       recurrence: 'none',
       recurrenceEnd: '',
@@ -218,15 +196,15 @@ export function EventsPage() {
 
   const handleDuplicate = (event: Event) => {
     setEditingEvent(null)
+    const { targetClassIds, targetYearGroupIds } = targetIdsFromEvent(event)
     setForm({
       title: event.title,
       description: event.description || '',
       date: '', // leave blank so they pick a new date
       time: event.time || '',
       location: event.location || '',
-      targetClass: event.targetClass,
-      classId: event.classId || '',
-      yearGroupId: event.yearGroupId || '',
+      targetClassIds,
+      targetYearGroupIds,
       requiresRsvp: event.requiresRsvp,
       recurrence: 'none',
       recurrenceEnd: '',
@@ -242,6 +220,7 @@ export function EventsPage() {
   }
 
   const handleDeleteClick = (event: Event) => {
+    if (isFromHub(event)) return // read-only, managed in Hub
     setDeleteTarget(event)
     if (event.recurrenceType) {
       setShowSeriesDeleteChoice(true)
@@ -260,89 +239,13 @@ export function EventsPage() {
     }
   }
 
-  const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setCsvFileName(file.name)
-    setCsvImportResult(null)
-
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      const text = evt.target?.result as string
-      const lines = text.split('\n').filter((l) => l.trim())
-      if (lines.length < 2) return
-
-      const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase().trim())
-      const rows: CsvRow[] = []
-
-      for (let i = 1; i < lines.length; i++) {
-        const values = parseCsvLine(lines[i])
-        const row: Record<string, string> = {}
-        headers.forEach((h, idx) => {
-          row[h] = values[idx] || ''
-        })
-        rows.push({
-          title: row['title'] || '',
-          description: row['description'] || '',
-          date: row['date'] || '',
-          time: row['time'] || '',
-          location: row['location'] || '',
-          targetClass: row['targetclass'] || row['target_class'] || row['audience'] || 'all',
-          requiresRsvp: ['true', 'yes', '1'].includes((row['requiresrsvp'] || row['requires_rsvp'] || row['rsvp'] || '').toLowerCase()),
-        })
-      }
-
-      setCsvData(rows)
-      setShowCsvGuide(false)
-      setShowCsvModal(true)
-    }
-    reader.readAsText(file)
-
-    // Reset input
-    e.target.value = ''
-  }
-
-  const handleCsvImport = async () => {
-    setCsvImporting(true)
-    let success = 0
-    let failed = 0
-
-    for (const row of csvData) {
-      try {
-        await api.events.create({
-          title: row.title,
-          description: row.description || undefined,
-          date: row.date,
-          time: row.time || undefined,
-          location: row.location || undefined,
-          targetClass: row.targetClass,
-          requiresRsvp: row.requiresRsvp,
-        })
-        success++
-      } catch {
-        failed++
-      }
-    }
-
-    setCsvImporting(false)
-    setCsvImportResult({ success, failed })
-    refetchEvents()
-  }
+  const noAudienceSelected = form.targetClassIds.length === 0 && form.targetYearGroupIds.length === 0
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-slate-900">Events</h2>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowCsvGuide(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-medium"
-          >
-            <Upload className="w-4 h-4" />
-            Import CSV
-          </button>
-          <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
           <button
             onClick={() => { setShowForm(true); setEditingEvent(null); setForm(emptyForm) }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium"
@@ -417,17 +320,54 @@ export function EventsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Audience</label>
-              <select
-                value={getAudienceValue()}
-                onChange={(e) => handleAudienceChange(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {audienceOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              <p className="text-xs text-slate-500 mb-2">
+                Select one or more year groups / classes. Leave everything unchecked for Whole School.
+              </p>
+              <div className="grid grid-cols-2 gap-4 border border-slate-200 rounded-lg p-3 max-h-56 overflow-y-auto">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Year Groups</p>
+                  <div className="space-y-1.5">
+                    {(yearGroups || []).map((yg) => (
+                      <label key={yg.id} className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={form.targetYearGroupIds.includes(yg.id)}
+                          onChange={() => toggleYearGroupTarget(yg.id)}
+                          className="rounded border-slate-300"
+                        />
+                        {yg.name}
+                      </label>
+                    ))}
+                    {yearGroups && yearGroups.length === 0 && (
+                      <p className="text-xs text-slate-400">No year groups</p>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Classes</p>
+                  <div className="space-y-1.5">
+                    {(classes || []).map((c) => (
+                      <label key={c.id} className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={form.targetClassIds.includes(c.id)}
+                          onChange={() => toggleClassTarget(c.id)}
+                          className="rounded border-slate-300"
+                        />
+                        {c.name}
+                      </label>
+                    ))}
+                    {classes && classes.length === 0 && (
+                      <p className="text-xs text-slate-400">No classes</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 mt-1.5">
+                {noAudienceSelected
+                  ? 'Audience: Whole School'
+                  : `Audience: ${[...form.targetYearGroupIds.map(yearGroupNameById), ...form.targetClassIds.map(classNameById)].join(', ')}`}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -538,270 +478,99 @@ export function EventsPage() {
 
       {/* Event List */}
       <div className="space-y-3">
-        {(events || []).map((event) => (
-          <div
-            key={event.id}
-            className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h3 className="font-semibold text-slate-900">{event.title}</h3>
-                {event.description && (
-                  <p className="text-sm text-slate-600 mt-1">{event.description}</p>
-                )}
-                <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-slate-500">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5" />
-                    {new Date(event.date).toLocaleDateString()}
-                  </span>
-                  {event.time && (
+        {(events || []).map((event) => {
+          const fromHub = isFromHub(event)
+          return (
+            <div
+              key={event.id}
+              className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-slate-900">{event.title}</h3>
+                  {event.description && (
+                    <p className="text-sm text-slate-600 mt-1">{event.description}</p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-slate-500">
                     <span className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5" />
-                      {event.time}
+                      <Calendar className="w-3.5 h-3.5" />
+                      {new Date(event.date).toLocaleDateString()}
                     </span>
+                    {event.time && (
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        {event.time}
+                      </span>
+                    )}
+                    {event.location && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5" />
+                        {event.location}
+                      </span>
+                    )}
+                    <span className="px-2 py-0.5 bg-slate-100 rounded-full text-xs font-medium text-slate-600">
+                      {eventAudienceLabel(event)}
+                    </span>
+                    {event.requiresRsvp && (
+                      <span className="flex items-center gap-1 text-green-600">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        RSVP
+                      </span>
+                    )}
+                    {event.recurrenceType && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-indigo-50 rounded-full text-xs font-medium text-indigo-600">
+                        <Repeat className="w-3 h-3" />
+                        {event.recurrenceType.charAt(0).toUpperCase() + event.recurrenceType.slice(1)}
+                      </span>
+                    )}
+                    {fromHub && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 rounded-full text-xs font-medium text-blue-600">
+                        <Link2 className="w-3 h-3" />
+                        From Hub
+                      </span>
+                    )}
+                  </div>
+                  {fromHub && (
+                    <p className="text-xs text-slate-400 italic mt-1.5">
+                      Managed in Wasil Hub — edit or delete this event there.
+                    </p>
                   )}
-                  {event.location && (
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5" />
-                      {event.location}
-                    </span>
-                  )}
-                  <span className="px-2 py-0.5 bg-slate-100 rounded-full text-xs font-medium text-slate-600">
-                    {event.targetClass === 'all' ? 'All Parents' : event.targetClass}
-                  </span>
-                  {event.requiresRsvp && (
-                    <span className="flex items-center gap-1 text-green-600">
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      RSVP
-                    </span>
-                  )}
-                  {event.recurrenceType && (
-                    <span className="flex items-center gap-1 px-2 py-0.5 bg-indigo-50 rounded-full text-xs font-medium text-indigo-600">
-                      <Repeat className="w-3 h-3" />
-                      {event.recurrenceType.charAt(0).toUpperCase() + event.recurrenceType.slice(1)}
-                    </span>
+                </div>
+                <div className="flex items-center gap-1 ml-4">
+                  <button
+                    onClick={() => handleDuplicate(event)}
+                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
+                    title="Duplicate event"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                  {!fromHub && (
+                    <>
+                      <button
+                        onClick={() => handleEdit(event)}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                        title="Edit event"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteClick(event)}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                        title="Delete event"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-1 ml-4">
-                <button
-                  onClick={() => handleDuplicate(event)}
-                  className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
-                  title="Duplicate event"
-                >
-                  <Copy className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleEdit(event)}
-                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                  title="Edit event"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDeleteClick(event)}
-                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                  title="Delete event"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
         {events && events.length === 0 && (
           <p className="text-center text-slate-400 py-8">No events yet.</p>
         )}
       </div>
-
-      {/* CSV Guide Modal */}
-      {showCsvGuide && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-lg w-full shadow-xl">
-            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#FFF0F3' }}>
-                  <FileText className="w-5 h-5" style={{ color: '#C4506E' }} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Import Events from CSV</h3>
-                  <p className="text-sm text-slate-500">Bulk import events using a spreadsheet</p>
-                </div>
-              </div>
-              <button onClick={() => setShowCsvGuide(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-5">
-              {/* Format description */}
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900 mb-2">Required columns</h4>
-                <div className="bg-slate-50 rounded-lg p-3 space-y-1.5">
-                  <div className="flex items-start gap-2 text-sm">
-                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">title</span>
-                    <span className="text-slate-600">Event name (required)</span>
-                  </div>
-                  <div className="flex items-start gap-2 text-sm">
-                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">date</span>
-                    <span className="text-slate-600">Date in YYYY-MM-DD format (required)</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900 mb-2">Optional columns</h4>
-                <div className="bg-slate-50 rounded-lg p-3 space-y-1.5">
-                  <div className="flex items-start gap-2 text-sm">
-                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">description</span>
-                    <span className="text-slate-600">Event description</span>
-                  </div>
-                  <div className="flex items-start gap-2 text-sm">
-                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">time</span>
-                    <span className="text-slate-600">Time range, e.g. "09:00 - 11:00"</span>
-                  </div>
-                  <div className="flex items-start gap-2 text-sm">
-                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">location</span>
-                    <span className="text-slate-600">Venue or room name</span>
-                  </div>
-                  <div className="flex items-start gap-2 text-sm">
-                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">targetClass</span>
-                    <span className="text-slate-600">Audience: "all", "Whole School", or a class name</span>
-                  </div>
-                  <div className="flex items-start gap-2 text-sm">
-                    <span className="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 shrink-0">rsvp</span>
-                    <span className="text-slate-600">Require RSVP: "yes" or "no"</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Sample download */}
-              <button
-                onClick={() => {
-                  const sample = `title,date,description,time,location,targetClass,rsvp
-Sports Day,2026-06-15,Annual sports day for all students,09:00 - 15:00,School Field,all,yes
-Y2 Assembly,2026-05-20,Year 2 class assembly,08:30 - 09:00,Main Hall,Y2 Red,no
-End of Term Concert,2026-07-10,Summer concert performance,14:00 - 15:30,MPH,Whole School,no`
-                  const blob = new Blob([sample], { type: 'text/csv' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = 'events-sample.csv'
-                  a.click()
-                  URL.revokeObjectURL(url)
-                }}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-slate-300 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                Download sample CSV
-              </button>
-            </div>
-
-            {/* Upload button */}
-            <div className="p-6 border-t border-slate-200">
-              <button
-                onClick={() => csvInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-white text-sm font-semibold"
-                style={{ backgroundColor: '#C4506E' }}
-              >
-                <Upload className="w-4 h-4" />
-                Choose CSV File
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CSV Import Modal */}
-      {showCsvModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-3xl w-full shadow-xl max-h-[80vh] flex flex-col">
-            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">Import Events from CSV</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  {csvFileName} - {csvData.length} event{csvData.length !== 1 ? 's' : ''} found
-                </p>
-              </div>
-              <button
-                onClick={() => { setShowCsvModal(false); setCsvData([]); setCsvImportResult(null) }}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-auto p-6">
-              {csvImportResult ? (
-                <div className="text-center py-8">
-                  <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-                  <p className="text-lg font-semibold text-slate-900">Import Complete</p>
-                  <p className="text-sm text-slate-600 mt-2">
-                    {csvImportResult.success} imported successfully
-                    {csvImportResult.failed > 0 && `, ${csvImportResult.failed} failed`}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left py-2 px-3 font-medium text-slate-600">Title</th>
-                        <th className="text-left py-2 px-3 font-medium text-slate-600">Date</th>
-                        <th className="text-left py-2 px-3 font-medium text-slate-600">Time</th>
-                        <th className="text-left py-2 px-3 font-medium text-slate-600">Location</th>
-                        <th className="text-left py-2 px-3 font-medium text-slate-600">Audience</th>
-                        <th className="text-left py-2 px-3 font-medium text-slate-600">RSVP</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {csvData.map((row, i) => (
-                        <tr key={i} className="border-b border-slate-100">
-                          <td className="py-2 px-3 text-slate-900">{row.title}</td>
-                          <td className="py-2 px-3 text-slate-600">{row.date}</td>
-                          <td className="py-2 px-3 text-slate-600">{row.time || '-'}</td>
-                          <td className="py-2 px-3 text-slate-600">{row.location || '-'}</td>
-                          <td className="py-2 px-3 text-slate-600">{row.targetClass}</td>
-                          <td className="py-2 px-3 text-slate-600">{row.requiresRsvp ? 'Yes' : 'No'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            <div className="p-6 border-t border-slate-200 flex justify-end gap-2">
-              {csvImportResult ? (
-                <button
-                  onClick={() => { setShowCsvModal(false); setCsvData([]); setCsvImportResult(null) }}
-                  className="px-4 py-2 rounded-lg text-white text-sm font-medium"
-                  style={{ backgroundColor: theme.colors.brandColor }}
-                >
-                  Done
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={() => { setShowCsvModal(false); setCsvData([]) }}
-                    className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleCsvImport}
-                    disabled={csvImporting || csvData.length === 0}
-                    className="px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50"
-                    style={{ backgroundColor: theme.colors.brandColor }}
-                  >
-                    {csvImporting ? 'Importing...' : `Import ${csvData.length} Event${csvData.length !== 1 ? 's' : ''}`}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation — series choice */}
       {deleteTarget && showSeriesDeleteChoice && (
