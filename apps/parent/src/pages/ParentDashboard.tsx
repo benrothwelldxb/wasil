@@ -273,7 +273,17 @@ export function ParentDashboard() {
     return diffDays > 0 ? diffDays : null
   }, [openRegistrationTerm])
 
-  // Upcoming events this week
+  // Events happening TODAY (school calendar — now Hub-sourced). Surfaced on the
+  // "today" strip, taking over the role the retired one-off schedule items had.
+  const todaysEvents = useMemo(() => {
+    if (!events) return []
+    return events
+      .filter(e => e.date === todayString)
+      .sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+  }, [events, todayString])
+
+  // Upcoming events — the rest of this week, excluding today (today has its own
+  // block above, so we don't show the same event twice).
   const upcomingThisWeek = useMemo(() => {
     if (!events) return []
     const now = new Date()
@@ -286,7 +296,7 @@ export function ParentDashboard() {
     return events
       .filter(e => {
         const eventDate = new Date(e.date + 'T00:00:00')
-        return eventDate >= now && eventDate <= endOfWeek
+        return eventDate > now && eventDate <= endOfWeek
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, 3) // Show max 3
@@ -638,6 +648,41 @@ export function ParentDashboard() {
             <p className="text-[13px] font-medium" style={{ color: '#B07A1B' }}>
               {t('dashboard.formsUrgent', { count: urgencySummary, defaultValue: `Due within 3 days` })}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Today at school — today's calendar events (Hub-sourced) */}
+      {todaysEvents.length > 0 && (
+        <div className="bg-white rounded-[22px] overflow-hidden" style={{ border: '1.5px solid #F0E4E6' }}>
+          <div className="p-[18px]">
+            <p className="text-xs font-bold uppercase tracking-wider mb-[14px]" style={{ color: '#A8929A' }}>
+              {t('dashboard.todayAtSchool', 'Today at school')}
+            </p>
+            <div className="space-y-2">
+              {todaysEvents.map(event => (
+                <div
+                  key={event.id}
+                  className="rounded-[16px] p-[14px] flex items-center gap-3"
+                  style={{ backgroundColor: '#FFF8F4' }}
+                >
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                    style={{ backgroundColor: '#EDF4FC' }}
+                  >
+                    {'\u{1F4C5}'}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-[15px] font-bold truncate" style={{ color: '#2D2225' }}>{event.title}</h4>
+                    {(event.time || event.location) && (
+                      <p className="text-[13px] font-medium" style={{ color: '#7A6469' }}>
+                        {[event.time, event.location].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
