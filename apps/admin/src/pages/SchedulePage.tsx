@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Plus, X, Pencil, Trash2, RotateCcw, CalendarDays, Pause, Play, Grid3X3, Save, Check, Bell } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
-import type { ScheduleItem, Class, YearGroup, SubjectReminder } from '@wasil/shared'
+import type { ScheduleItem, Class, YearGroup, SubjectReminder, TimetableGrid } from '@wasil/shared'
 
 const DAYS_OF_WEEK = [
   { value: 1, label: 'Mon', fullLabel: 'Monday' },
@@ -63,6 +63,10 @@ export function SchedulePage() {
     () => api.schedule.reminders.list(),
     [],
   )
+  // Hub-sourced read-only timetable. When Hub has an answer for the current
+  // week, the Quick Setup grid becomes a confirmation view instead of a
+  // manual editor — the manual grid below remains as a fallback only.
+  const { data: hubGrid } = useApi<TimetableGrid>(() => api.timetable.grid(), [])
 
   // Editable copy of the reminder map (subject → emoji + wording for the Hub
   // "today" helper). Synced from the API; each row saves individually.
@@ -449,6 +453,42 @@ export function SchedulePage() {
 
   const getDayLabel = (day: number) => DAYS_OF_WEEK.find(d => d.value === day)?.fullLabel || ''
 
+  // Hub can answer for the current week once it returns at least one class
+  // with allocations; otherwise (no link, no data) we fall back to the
+  // manual grid below so nothing appears to silently vanish.
+  const isHubBacked = !!hubGrid?.hubAvailable && hubGrid.classes.length > 0
+
+  // Match a Hub subject name to the same colour used for that type in the
+  // manual grid legend, so read-only chips look consistent with GRID_TYPES.
+  const subjectChipColor = (subject: string): string => {
+    const key = subject.trim().toLowerCase()
+    if (key === 'pe' || key.includes('physical education')) return GRID_TYPES.find(t => t.value === 'pe')!.color
+    if (key.includes('swim')) return GRID_TYPES.find(t => t.value === 'swimming')!.color
+    if (key.includes('librar')) return GRID_TYPES.find(t => t.value === 'library')!.color
+    return 'bg-gray-100 text-gray-700 border-gray-300'
+  }
+
+  const renderHubCell = (cls: Class, day: number) => {
+    const hubClass = hubGrid?.classes.find(c => c.classId === cls.id)
+    const subjects = hubClass?.allocations[day] || []
+    if (subjects.length === 0) {
+      return <div className="flex justify-center text-gray-300 text-sm select-none">–</div>
+    }
+    return (
+      <div className="flex flex-wrap gap-1 justify-center">
+        {subjects.map((s, i) => (
+          <span
+            key={`${s.subject}-${i}`}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium ${subjectChipColor(s.subject)}`}
+          >
+            <span>{s.emoji}</span>
+            <span>{s.subject}</span>
+          </span>
+        ))}
+      </div>
+    )
+  }
+
   const renderCell = (classId: string, day: number) => {
     const cell = gridState[classId]?.[day] || emptyCell
     return (
@@ -502,7 +542,7 @@ export function SchedulePage() {
           }`}
         >
           <Grid3X3 className="w-4 h-4" />
-          <span>Quick Setup</span>
+          <span>Timetable</span>
         </button>
         <button
           onClick={() => setActiveTab('recurring')}
@@ -536,13 +576,20 @@ export function SchedulePage() {
       {/* Grid View */}
       {activeTab === 'grid' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold text-gray-900">Weekly Schedule Grid</h2>
-              <p className="text-sm text-gray-500">Click icons to toggle on/off for each class and day</p>
-            </div>
-            <div className="flex items-center space-x-3">
-              {/* Legend */}
+          {isHubBacked ? (
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-gray-900">Weekly Timetable</h2>
+                <p className="text-sm text-gray-500">
+                  From the school timetable — managed in Wasil Hub (read-only)
+                  {hubGrid?.weekOf && (
+                    <>
+                      {' • '}
+                      Week of {new Date(hubGrid.weekOf).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </>
+                  )}
+                </p>
+              </div>
               <div className="flex items-center space-x-2 text-sm">
                 {GRID_TYPES.filter(t => t.value).map(t => (
                   <span key={t.value} className={`px-2 py-1 rounded ${t.color} border`}>
@@ -550,31 +597,48 @@ export function SchedulePage() {
                   </span>
                 ))}
               </div>
-              <div className="flex items-center space-x-2 text-sm font-medium">
-                {isSavingGrid ? (
-                  <span className="flex items-center gap-1.5 text-gray-400">
-                    <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
-                    Saving...
-                  </span>
-                ) : gridSaved ? (
-                  <span className="flex items-center gap-1.5 text-green-600">
-                    <Check className="w-4 h-4" />
-                    Saved
-                  </span>
-                ) : hasGridChanges ? (
-                  <span className="flex items-center gap-1.5 text-amber-500">
-                    <div className="w-2 h-2 rounded-full bg-amber-400" />
-                    Unsaved
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5 text-gray-300">
-                    <Check className="w-4 h-4" />
-                    Up to date
-                  </span>
-                )}
+            </div>
+          ) : (
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-gray-900">Weekly Schedule Grid</h2>
+                <p className="text-sm text-gray-500">Click icons to toggle on/off for each class and day</p>
+              </div>
+              <div className="flex items-center space-x-3">
+                {/* Legend */}
+                <div className="flex items-center space-x-2 text-sm">
+                  {GRID_TYPES.filter(t => t.value).map(t => (
+                    <span key={t.value} className={`px-2 py-1 rounded ${t.color} border`}>
+                      {t.icon} {t.label}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center space-x-2 text-sm font-medium">
+                  {isSavingGrid ? (
+                    <span className="flex items-center gap-1.5 text-gray-400">
+                      <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+                      Saving...
+                    </span>
+                  ) : gridSaved ? (
+                    <span className="flex items-center gap-1.5 text-green-600">
+                      <Check className="w-4 h-4" />
+                      Saved
+                    </span>
+                  ) : hasGridChanges ? (
+                    <span className="flex items-center gap-1.5 text-amber-500">
+                      <div className="w-2 h-2 rounded-full bg-amber-400" />
+                      Unsaved
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-gray-300">
+                      <Check className="w-4 h-4" />
+                      Up to date
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -602,7 +666,7 @@ export function SchedulePage() {
                     </td>
                     {DAYS_OF_WEEK.map(day => (
                       <td key={day.value} className="px-2 py-2">
-                        {renderCell(cls.id, day.value)}
+                        {isHubBacked ? renderHubCell(cls, day.value) : renderCell(cls.id, day.value)}
                       </td>
                     ))}
                   </tr>
