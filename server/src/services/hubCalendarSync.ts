@@ -32,8 +32,20 @@ export interface CalendarSyncSummary {
   targetsResolved: number
   /** Cohort targets whose name didn't resolve to a Connect class/year-group. */
   targetsSkipped: number
+  /** Hub events dropped because they aren't parent-facing (e.g. STAFF_ONLY). */
+  skippedNonParentFacing: number
   /** The /changes cursor persisted for this school (null if Hub sent none). */
   cursor: number | null
+}
+
+// Connect's School Calendar is a PARENT-FACING surface, so we only mirror events
+// a guardian is allowed to see. Hub's `audience` on a full read is one of
+// WHOLE_SCHOOL / GUARDIAN_FACING / STAFF_ONLY; we keep the first two and drop
+// staff-only. A missing audience (e.g. a guardian-scoped read that omits it) is
+// treated as parent-facing.
+const PARENT_FACING_AUDIENCES = new Set(['WHOLE_SCHOOL', 'GUARDIAN_FACING'])
+function isParentFacing(audience?: string): boolean {
+  return !audience || PARENT_FACING_AUDIENCES.has(audience)
 }
 
 /** A default forward-looking window when a caller (webhook) has none: from a
@@ -65,6 +77,7 @@ export async function syncCalendar(
     upserted: 0,
     targetsResolved: 0,
     targetsSkipped: 0,
+    skippedNonParentFacing: 0,
     cursor: null,
   })
 
@@ -92,8 +105,14 @@ export async function syncCalendar(
   let upserted = 0
   let targetsResolved = 0
   let targetsSkipped = 0
+  let skippedNonParentFacing = 0
 
   for (const dto of res.events) {
+    // Parent-facing app: never mirror staff-only events into the School Calendar.
+    if (!isParentFacing(dto.audience)) {
+      skippedNonParentFacing++
+      continue
+    }
     const resolved = resolveCohort(dto.cohort, classByName, ygByName)
     targetsSkipped += resolved.skipped
 
@@ -141,7 +160,7 @@ export async function syncCalendar(
     })
   }
 
-  return { skipped: false, upserted, targetsResolved, targetsSkipped, cursor }
+  return { skipped: false, upserted, targetsResolved, targetsSkipped, skippedNonParentFacing, cursor }
 }
 
 /** Convenience for the webhook: resync a school over the default window. Always

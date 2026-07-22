@@ -102,6 +102,24 @@ describe('syncCalendar — upsert + idempotency', () => {
     await syncCalendar('connect-school-1', WINDOW)
     expect((prismaMock.event.upsert.mock.calls[0][0] as any).create.time).toBeNull()
   })
+
+  it('drops STAFF_ONLY events (parent-facing app) but keeps WHOLE_SCHOOL / GUARDIAN_FACING', async () => {
+    mGetEvents.mockResolvedValue(
+      eventsResponse([
+        dto({ id: 'hev-staff', audience: 'STAFF_ONLY' }),
+        dto({ id: 'hev-whole', audience: 'WHOLE_SCHOOL' }),
+        dto({ id: 'hev-guardian', audience: 'GUARDIAN_FACING' }),
+      ]),
+    )
+
+    const summary = await syncCalendar('connect-school-1', WINDOW)
+
+    expect(summary.upserted).toBe(2)
+    expect(summary.skippedNonParentFacing).toBe(1)
+    const upsertedIds = prismaMock.event.upsert.mock.calls.map((c: any) => c[0].where.hubCalendarEventId)
+    expect(upsertedIds).toEqual(['hev-whole', 'hev-guardian'])
+    expect(upsertedIds).not.toContain('hev-staff')
+  })
 })
 
 describe('syncCalendar — cohort mapping', () => {
@@ -185,6 +203,7 @@ describe('syncCalendar — dormant', () => {
       upserted: 0,
       targetsResolved: 0,
       targetsSkipped: 0,
+      skippedNonParentFacing: 0,
       cursor: null,
     })
     expect(mGetEvents).not.toHaveBeenCalled()
