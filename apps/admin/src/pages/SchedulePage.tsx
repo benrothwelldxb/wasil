@@ -499,6 +499,14 @@ export function SchedulePage() {
   // manual grid below so nothing appears to silently vanish.
   const isHubBacked = !!hubGrid?.hubAvailable && hubGrid.classes.length > 0
 
+  // If Hub takes over (recurring/one-off tabs get hidden), don't leave a user
+  // stranded on a now-hidden tab.
+  useEffect(() => {
+    if (isHubBacked && (activeTab === 'recurring' || activeTab === 'oneoff')) {
+      setActiveTab('grid')
+    }
+  }, [isHubBacked, activeTab])
+
   // Match a Hub subject name to the same colour used for that type in the
   // manual grid legend, so read-only chips look consistent with GRID_TYPES.
   const subjectChipColor = (subject: string): string => {
@@ -889,24 +897,32 @@ export function SchedulePage() {
           <Grid3X3 className="w-4 h-4" />
           <span>Timetable</span>
         </button>
-        <button
-          onClick={() => setActiveTab('recurring')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
-            activeTab === 'recurring' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          <RotateCcw className="w-4 h-4" />
-          <span>All Recurring</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('oneoff')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
-            activeTab === 'oneoff' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          <CalendarDays className="w-4 h-4" />
-          <span>One-Off Events</span>
-        </button>
+        {/* The manual recurring/one-off ScheduleItem tabs are superseded once Hub
+            owns the timetable (recurring → the read-only grid) and calendar
+            (one-offs → Engagement → Events). Hidden when Hub-connected; kept as a
+            fallback for schools with no Hub timetable. */}
+        {!isHubBacked && (
+          <>
+            <button
+              onClick={() => setActiveTab('recurring')}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
+                activeTab === 'recurring' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>All Recurring</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('oneoff')}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
+                activeTab === 'oneoff' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <CalendarDays className="w-4 h-4" />
+              <span>One-Off Events</span>
+            </button>
+          </>
+        )}
         <button
           onClick={() => setActiveTab('reminders')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
