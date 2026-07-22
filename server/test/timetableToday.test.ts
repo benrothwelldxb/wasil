@@ -179,13 +179,17 @@ const prismaMock = {
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
 const loadUserWithRelations = vi.fn()
-vi.mock('../src/middleware/auth', () => ({
-  isAuthenticated: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+vi.mock('../src/middleware/auth', () => {
+  const setUser = (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     ;(req as express.Request & { user: unknown }).user = { id: 'parent-1', schoolId: 'connect-school-1' }
     next()
-  },
-  loadUserWithRelations: (...args: unknown[]) => loadUserWithRelations(...args),
-}))
+  }
+  return {
+    isAuthenticated: setUser,
+    isAdmin: setUser,
+    loadUserWithRelations: (...args: unknown[]) => loadUserWithRelations(...args),
+  }
+})
 
 async function makeApp() {
   const { default: router } = await import('../src/routes/timetable')
@@ -306,5 +310,64 @@ describe('GET /api/timetable/today', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Route — GET /api/timetable/grid (admin, read-only Hub allocation)
+// ---------------------------------------------------------------------------
+describe('GET /api/timetable/grid', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.HUB_SERVICE_TOKEN = 'wsk_test'
+    prismaMock.school.findUnique.mockResolvedValue({ hubSchoolId: 'hub-school-1', timezone: 'Asia/Dubai' })
+    prismaMock.subjectReminder.findMany.mockResolvedValue([
+      { subject: 'Swimming', emoji: '🏊', reminder: 'Remember swimwear, towel & goggles' },
+      { subject: 'Library', emoji: '📚', reminder: 'Return library books' },
+    ])
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('returns each Hub-linked class with reminder-worthy subjects per weekday', async () => {
+    prismaMock.class.findMany.mockResolvedValue([
+      { id: 'cc-1', name: '1A', hubClassId: 'hc-1' },
+      { id: 'cc-2', name: '2B', hubClassId: null }, // not Hub-linked → empty allocations
+    ])
+    // Every weekday returns the same sample day (Swimming + Library reminder-worthy).
+    const fetchMock = vi.fn(async () => fetchResponse(200, sampleDay('2026-07-20')))
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+
+    const res = await request(await makeApp()).get('/api/timetable/grid')
+    expect(res.status).toBe(200)
+    expect(res.body.hubAvailable).toBe(true)
+    expect(res.body.weekOf).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+    const byId = Object.fromEntries(
+      (res.body.classes as { classId: string }[]).map((c) => [c.classId, c]),
+    )
+    // 1A (Hub-linked): Mon(1) has the two reminder subjects, deduped by subject.
+    expect(byId['cc-1'].allocations['1'].map((s: { subject: string }) => s.subject)).toEqual([
+      'Swimming',
+      'Library',
+    ])
+    // A class fetched for 5 weekdays, not once per anything else.
+    const hc1Calls = fetchMock.mock.calls.filter((c) => (c[0] as string).includes('class_id=hc-1'))
+    expect(hc1Calls).toHaveLength(5)
+    // 2B (no hubClassId): never fetched, empty allocations.
+    expect(byId['cc-2'].allocations).toEqual({})
+    expect(fetchMock.mock.calls.some((c) => (c[0] as string).includes('class_id=null'))).toBe(false)
+  })
+
+  it('degrades to hubAvailable:false with empty allocations when the token is unset', async () => {
+    delete process.env.HUB_SERVICE_TOKEN
+    prismaMock.class.findMany.mockResolvedValue([{ id: 'cc-1', name: '1A', hubClassId: 'hc-1' }])
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+
+    const res = await request(await makeApp()).get('/api/timetable/grid')
+    expect(res.status).toBe(200)
+    expect(res.body.hubAvailable).toBe(false)
+    expect(res.body.classes[0].allocations).toEqual({})
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

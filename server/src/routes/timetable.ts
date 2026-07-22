@@ -14,7 +14,7 @@
 
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
-import { isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
+import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { getClassDayCached } from '../services/timetableCache.js'
 import { buildReminderResolver, type ReminderItem } from '../services/timetableReminders.js'
@@ -132,6 +132,122 @@ router.get('/today', isAuthenticated, async (req, res) => {
   } catch (error) {
     console.error('Error building timetable/today:', error)
     res.status(500).json({ error: 'Failed to load timetable' })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// GET /api/timetable/grid   (admin) — read-only "what Hub has allocated"
+//
+// A confirmation view for staff: for each Hub-linked class, which reminder-worthy
+// specialist subjects (Swimming, PE, Library, …) fall on which weekday of the
+// current week, straight from Hub's timetable. Nothing here is editable — Hub
+// owns the days. Degrades to `hubAvailable:false` + empty allocations when Hub
+// can't answer (no token / school not linked / no published timetable), so the
+// admin UI can fall back to the manual grid.
+// ---------------------------------------------------------------------------
+
+/** A reminder-worthy subject on a given weekday. */
+interface GridSubject {
+  subject: string
+  emoji: string
+  specialist: boolean
+}
+interface GridClass {
+  classId: string
+  className: string
+  /** weekday (1=Mon … 5=Fri) → subjects allocated that day. */
+  allocations: Record<number, GridSubject[]>
+}
+export interface TimetableGrid {
+  /** Monday of the week shown, YYYY-MM-DD (school timezone). */
+  weekOf: string
+  /** True when at least one class's day was answered by Hub. */
+  hubAvailable: boolean
+  classes: GridClass[]
+}
+
+/** Mon–Fri dates (YYYY-MM-DD) of the week containing `todayISO`. Pure string
+ * arithmetic via a UTC anchor, so no timezone drift. */
+function weekdayDates(todayISO: string): { monday: string; dates: { weekday: number; date: string }[] } {
+  const anchor = new Date(`${todayISO}T00:00:00.000Z`)
+  const dow = anchor.getUTCDay() // 0=Sun … 6=Sat
+  const mondayOffset = dow === 0 ? -6 : 1 - dow
+  const monday = new Date(anchor)
+  monday.setUTCDate(anchor.getUTCDate() + mondayOffset)
+  const dates: { weekday: number; date: string }[] = []
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday)
+    d.setUTCDate(monday.getUTCDate() + i)
+    dates.push({ weekday: i + 1, date: d.toISOString().slice(0, 10) })
+  }
+  return { monday: monday.toISOString().slice(0, 10), dates }
+}
+
+router.get('/grid', isAdmin, async (req, res) => {
+  try {
+    const schoolId = req.user!.schoolId
+    const [school, classes, reminderRows] = await Promise.all([
+      prisma.school.findUnique({
+        where: { id: schoolId },
+        select: { hubSchoolId: true, timezone: true },
+      }),
+      prisma.class.findMany({
+        where: { schoolId },
+        select: { id: true, name: true, hubClassId: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.subjectReminder.findMany({
+        where: { schoolId, active: true },
+        select: { subject: true, emoji: true, reminder: true },
+      }),
+    ])
+
+    const resolver = buildReminderResolver(reminderRows)
+    const { monday, dates } = weekdayDates(todayInTimezone(school?.timezone ?? 'UTC'))
+    const hubReady = !!process.env.HUB_SERVICE_TOKEN && !!school?.hubSchoolId
+
+    const gridClasses: GridClass[] = classes.map((c) => ({
+      classId: c.id,
+      className: c.name,
+      allocations: {},
+    }))
+    let hubAvailable = false
+
+    if (hubReady) {
+      // Fetch every (class, weekday) once; the cache coalesces repeats.
+      await Promise.all(
+        classes.map(async (c, idx) => {
+          if (!c.hubClassId) return
+          await Promise.all(
+            dates.map(async ({ weekday, date }) => {
+              try {
+                const day = await getClassDayCached(school!.hubSchoolId!, c.hubClassId!, date)
+                if (!day) return
+                hubAvailable = true
+                // Dedup a subject that appears more than once in a day.
+                const seen = new Set<string>()
+                const subjects: GridSubject[] = []
+                for (const item of resolver.remindersForBlocks(day.blocks)) {
+                  const key = item.subject.toLowerCase()
+                  if (seen.has(key)) continue
+                  seen.add(key)
+                  subjects.push({ subject: item.subject, emoji: item.emoji, specialist: item.specialist })
+                }
+                if (subjects.length) gridClasses[idx].allocations[weekday] = subjects
+              } catch {
+                // A per-class/day Hub failure shouldn't sink the grid.
+              }
+            }),
+          )
+        }),
+      )
+    }
+
+    const result: TimetableGrid = { weekOf: monday, hubAvailable, classes: gridClasses }
+    res.json(result)
+  } catch (error) {
+    console.error('Error building timetable/grid:', error)
+    res.status(500).json({ error: 'Failed to load timetable grid' })
   }
 })
 

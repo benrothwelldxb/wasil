@@ -2224,8 +2224,29 @@ export interface TimetableTodayChild {
   items: TimetableReminderItem[]
 }
 
+// Admin read-only "what Hub has allocated" grid — reminder-worthy specialist
+// subjects per class per weekday for the current week. `hubAvailable:false`
+// (or a class with empty allocations) means fall back to the manual grid.
+export interface TimetableGridSubject {
+  subject: string
+  emoji: string
+  specialist: boolean
+}
+export interface TimetableGridClass {
+  classId: string
+  className: string
+  /** weekday (1=Mon … 5=Fri) → subjects allocated that day. */
+  allocations: Record<number, TimetableGridSubject[]>
+}
+export interface TimetableGrid {
+  weekOf: string
+  hubAvailable: boolean
+  classes: TimetableGridClass[]
+}
+
 export const timetable = {
   today: () => fetchApi<TimetableTodayChild[]>('/api/timetable/today'),
+  grid: () => fetchApi<TimetableGrid>('/api/timetable/grid'),
 }
 
 export default {
