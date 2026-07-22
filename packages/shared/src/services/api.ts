@@ -2231,6 +2231,10 @@ export interface TimetableGridSubject {
   subject: string
   emoji: string
   specialist: boolean
+  /** Cancelled this week by a Connect override (shown struck through). */
+  cancelled?: boolean
+  /** Added this week by a Connect override (not from Hub). */
+  added?: boolean
 }
 export interface TimetableGridClass {
   classId: string
@@ -2244,9 +2248,53 @@ export interface TimetableGrid {
   classes: TimetableGridClass[]
 }
 
+// A Connect-owned this-week override on the Hub timetable. The UI composes the
+// primitives: cancel = one CANCELLED row; move = a CANCELLED on the source date
+// + an ADDED on the target date (two rows); ad-hoc add = one ADDED row.
+export interface TimetableOverride {
+  id: string
+  classId: string
+  /** The specific day, YYYY-MM-DD. */
+  date: string
+  /** Display subject, e.g. "Swimming". */
+  subject: string
+  /** Normalised case-insensitive match key (server-derived). */
+  subjectKey: string
+  /** Optional emoji override; falls back to the reminder map / a default. */
+  emoji: string | null
+  action: 'CANCELLED' | 'ADDED'
+  note: string | null
+  createdByUserId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export const timetable = {
   today: () => fetchApi<TimetableTodayChild[]>('/api/timetable/today'),
   grid: () => fetchApi<TimetableGrid>('/api/timetable/grid'),
+  // Admin-only this-week overrides (cancel / move / ad-hoc add).
+  overrides: {
+    list: (from: string, to: string) =>
+      fetchApi<TimetableOverride[]>(
+        `/api/timetable/overrides?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      ),
+    create: (data: {
+      classId: string
+      date: string
+      subject: string
+      action: 'CANCELLED' | 'ADDED'
+      emoji?: string
+      note?: string
+    }) =>
+      fetchApi<TimetableOverride>('/api/timetable/overrides', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    remove: (id: string) =>
+      fetchApi<{ message: string }>(`/api/timetable/overrides/${id}`, {
+        method: 'DELETE',
+      }),
+  },
 }
 
 export default {

@@ -96,6 +96,7 @@ model School {
   notifications       Notification[]
   invitations         ParentInvitation[]
   subjectReminders    SubjectReminder[]
+  timetableOverrides  TimetableOverride[]
   linkCategories      LinkCategory[]
   externalLinks       ExternalLink[]
   groupCategories     GroupCategory[]
@@ -384,6 +385,7 @@ model Class {
   scheduleItems        ScheduleItem[]
   assignedStaff        StaffClassAssignment[]
   childInvitationLinks ChildInvitationLink[]
+  timetableOverrides   TimetableOverride[]
 
   @@unique([schoolId, name])
 }
@@ -604,6 +606,34 @@ model SubjectReminder {
 
   @@unique([schoolId, subjectKey])
   @@index([schoolId])
+}
+
+// This-week timetable overrides — a Connect-owned exception layer over the
+// Hub-sourced timetable. Staff can cancel or move a specialist session for a
+// specific day/week without editing Hub. Composed from two primitives:
+//   cancel  = one CANCELLED row on (class, date, subjectKey)
+//   move    = CANCELLED on the source date + ADDED on the target date
+//   ad-hoc  = one ADDED row
+// The `/api/timetable/today` and `/grid` helpers apply these on top of Hub's
+// resolved reminders (drop CANCELLED, append ADDED). `subjectKey` is the same
+// normalised match key SubjectReminder uses (subjectKeyOf).
+model TimetableOverride {
+  id              String   @id @default(cuid())
+  schoolId        String
+  school          School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId         String
+  class           Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  date            DateTime // the specific day this override applies to (UTC midnight)
+  subjectKey      String   // normalised match key (subjectKeyOf), case-insensitive
+  subject         String   // display name as entered, e.g. "Swimming"
+  emoji           String?  // optional emoji override; falls back to the reminder map / default
+  action          String   // 'CANCELLED' | 'ADDED'
+  note            String?  // optional staff note, e.g. "pool closed"
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([schoolId, classId, date])
 }
 
 // Weekly Principal Message

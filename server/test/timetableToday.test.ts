@@ -175,6 +175,7 @@ const prismaMock = {
   school: { findUnique: vi.fn() },
   class: { findMany: vi.fn() },
   subjectReminder: { findMany: vi.fn() },
+  timetableOverride: { findMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -211,6 +212,7 @@ describe('GET /api/timetable/today', () => {
       { subject: 'Swimming', emoji: '🏊', reminder: 'Remember swimwear, towel & goggles' },
       { subject: 'Library', emoji: '📚', reminder: 'Return library books' },
     ])
+    prismaMock.timetableOverride.findMany.mockResolvedValue([])
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -249,6 +251,52 @@ describe('GET /api/timetable/today', () => {
     expect(byId['st-1'].name).toBe('Amina Khan')
     expect(byId['st-1'].className).toBe('1A')
     expect(byId['st-3'].items).toEqual([]) // no published timetable → graceful []
+  })
+
+  it('drops a subject cancelled by a this-week override for the class', async () => {
+    loadUserWithRelations.mockResolvedValue({
+      studentLinks: [
+        { student: { id: 'st-1', firstName: 'Amina', lastName: 'Khan', classId: 'cc-1', class: { name: '1A' } } },
+      ],
+      children: [],
+    })
+    prismaMock.class.findMany.mockResolvedValue([{ id: 'cc-1', hubClassId: 'hc-1' }])
+    // Swimming cancelled today for 1A — Library survives.
+    prismaMock.timetableOverride.findMany.mockResolvedValue([
+      { classId: 'cc-1', subjectKey: 'swimming', subject: 'Swimming', emoji: null, action: 'CANCELLED' },
+    ])
+    vi.stubGlobal('fetch', vi.fn(async () => fetchResponse(200, sampleDay('2026-07-13'))) as unknown as typeof fetch)
+
+    const res = await request(await makeApp()).get('/api/timetable/today')
+    expect(res.status).toBe(200)
+    expect(res.body[0].items.map((i: { subject: string }) => i.subject)).toEqual(['Library'])
+  })
+
+  it('appends a subject added by a this-week override, resolving map emoji/reminder', async () => {
+    loadUserWithRelations.mockResolvedValue({
+      studentLinks: [
+        { student: { id: 'st-1', firstName: 'Amina', lastName: 'Khan', classId: 'cc-1', class: { name: '1A' } } },
+      ],
+      children: [],
+    })
+    prismaMock.class.findMany.mockResolvedValue([{ id: 'cc-1', hubClassId: 'hc-1' }])
+    // Two ADDED rows: Swimming (in the map → 🏊 + wording) and Chess (unmapped → default 📌 + fallback).
+    prismaMock.timetableOverride.findMany.mockResolvedValue([
+      { classId: 'cc-1', subjectKey: 'swimming', subject: 'Swimming', emoji: null, action: 'ADDED' },
+      { classId: 'cc-1', subjectKey: 'chess', subject: 'Chess', emoji: null, action: 'ADDED' },
+    ])
+    // A day with no reminder-worthy Hub blocks, so only the added items appear.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => fetchResponse(200, { ...sampleDay('2026-07-13'), blocks: [] })) as unknown as typeof fetch,
+    )
+
+    const res = await request(await makeApp()).get('/api/timetable/today')
+    expect(res.status).toBe(200)
+    expect(res.body[0].items).toEqual([
+      { subject: 'Swimming', specialist: false, emoji: '🏊', reminder: 'Remember swimwear, towel & goggles' },
+      { subject: 'Chess', specialist: false, emoji: '📌', reminder: "Don't forget Chess" },
+    ])
   })
 
   it('returns items:[] for a child whose class has no Hub link', async () => {
@@ -325,6 +373,7 @@ describe('GET /api/timetable/grid', () => {
       { subject: 'Swimming', emoji: '🏊', reminder: 'Remember swimwear, towel & goggles' },
       { subject: 'Library', emoji: '📚', reminder: 'Return library books' },
     ])
+    prismaMock.timetableOverride.findMany.mockResolvedValue([])
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -356,6 +405,36 @@ describe('GET /api/timetable/grid', () => {
     // 2B (no hubClassId): never fetched, empty allocations.
     expect(byId['cc-2'].allocations).toEqual({})
     expect(fetchMock.mock.calls.some((c) => (c[0] as string).includes('class_id=null'))).toBe(false)
+  })
+
+  it('reflects this-week overrides in the grid: cancelled flagged, added appended', async () => {
+    // Fix "today" to a Monday so the Mon–Fri window is deterministic.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-13T09:00:00.000Z'))
+    try {
+      prismaMock.class.findMany.mockResolvedValue([{ id: 'cc-1', name: '1A', hubClassId: 'hc-1' }])
+      // Every weekday returns Swimming + Library (reminder-worthy).
+      vi.stubGlobal('fetch', vi.fn(async () => fetchResponse(200, sampleDay('2026-07-13'))) as unknown as typeof fetch)
+      // On Monday (2026-07-13) for 1A: cancel Swimming + add Chess.
+      prismaMock.timetableOverride.findMany.mockResolvedValue([
+        { classId: 'cc-1', date: new Date('2026-07-13T00:00:00.000Z'), subjectKey: 'swimming', subject: 'Swimming', emoji: null, action: 'CANCELLED' },
+        { classId: 'cc-1', date: new Date('2026-07-13T00:00:00.000Z'), subjectKey: 'chess', subject: 'Chess', emoji: '♟️', action: 'ADDED' },
+      ])
+
+      const res = await request(await makeApp()).get('/api/timetable/grid')
+      expect(res.status).toBe(200)
+      const cls = (res.body.classes as { classId: string }[]).find((c) => c.classId === 'cc-1')!
+      // Monday: Swimming flagged cancelled, Library normal, Chess added.
+      expect((cls as any).allocations['1']).toEqual([
+        { subject: 'Swimming', emoji: '🏊', specialist: true, cancelled: true },
+        { subject: 'Library', emoji: '📚', specialist: false },
+        { subject: 'Chess', emoji: '♟️', specialist: false, added: true },
+      ])
+      // Tuesday has no override → untouched Swimming + Library.
+      expect((cls as any).allocations['2'].map((s: { subject: string }) => s.subject)).toEqual(['Swimming', 'Library'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('degrades to hubAvailable:false with empty allocations when the token is unset', async () => {
