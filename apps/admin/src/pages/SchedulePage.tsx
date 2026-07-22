@@ -1,7 +1,15 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Plus, X, Pencil, Trash2, RotateCcw, CalendarDays, Pause, Play, Grid3X3, Save, Check, Bell } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
-import type { ScheduleItem, Class, YearGroup, SubjectReminder, TimetableGrid } from '@wasil/shared'
+import type {
+  ScheduleItem,
+  Class,
+  YearGroup,
+  SubjectReminder,
+  TimetableGrid,
+  TimetableGridSubject,
+  TimetableOverride,
+} from '@wasil/shared'
 
 const DAYS_OF_WEEK = [
   { value: 1, label: 'Mon', fullLabel: 'Monday' },
@@ -53,6 +61,18 @@ type GridState = Record<string, Record<number, GridCell>>
 
 const emptyCell: GridCell = { pe: false, swimming: false, library: false }
 
+// Add `days` to a YYYY-MM-DD string without falling prey to local-timezone
+// shifting (we only ever care about the calendar date, so do the math in UTC).
+const addDaysToDateStr = (dateStr: string, days: number): string => {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1))
+  dt.setUTCDate(dt.getUTCDate() + days)
+  return dt.toISOString().split('T')[0]
+}
+
+// weekday: 1=Mon..5=Fri, relative to the Monday `weekOf` date the grid returns.
+const dateForWeekday = (weekOf: string, weekday: number): string => addDaysToDateStr(weekOf, weekday - 1)
+
 export function SchedulePage() {
   const theme = useTheme()
   const toast = useToast()
@@ -66,7 +86,16 @@ export function SchedulePage() {
   // Hub-sourced read-only timetable. When Hub has an answer for the current
   // week, the Quick Setup grid becomes a confirmation view instead of a
   // manual editor — the manual grid below remains as a fallback only.
-  const { data: hubGrid } = useApi<TimetableGrid>(() => api.timetable.grid(), [])
+  const { data: hubGrid, refetch: refetchHubGrid } = useApi<TimetableGrid>(() => api.timetable.grid(), [])
+
+  // This-week overrides (cancel/move/add) for the Hub-backed grid. Fetched for
+  // the same Mon–Fri window the grid is showing, so we can match a row back
+  // to its override id (needed for Undo/Remove) and know which weekday to
+  // stamp new overrides with.
+  const { data: timetableOverrides, refetch: refetchOverrides } = useApi<TimetableOverride[]>(() => {
+    if (!hubGrid?.weekOf) return Promise.resolve([])
+    return api.timetable.overrides.list(hubGrid.weekOf, dateForWeekday(hubGrid.weekOf, 5))
+  }, [hubGrid?.weekOf])
 
   // Editable copy of the reminder map (subject → emoji + wording for the Hub
   // "today" helper). Synced from the API; each row saves individually.
@@ -166,6 +195,18 @@ export function SchedulePage() {
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; label: string } | null>(null)
+
+  // Hub grid this-week override UI state (cancel / move / add a session).
+  // `menuTarget` addresses the "Cancel this week / Move to…" popover for a
+  // normal (non-overridden) subject chip; `addTarget` addresses the "+ Add"
+  // popover for a cell. `overrideBusy` disables the relevant control while a
+  // create/remove call for that subject is in flight.
+  const [menuTarget, setMenuTarget] = useState<{ classId: string; day: number; subjectIdx: number } | null>(null)
+  const [addTarget, setAddTarget] = useState<{ classId: string; day: number } | null>(null)
+  const [addSubjectValue, setAddSubjectValue] = useState('')
+  const [customSubject, setCustomSubject] = useState('')
+  const [customEmoji, setCustomEmoji] = useState('')
+  const [overrideBusy, setOverrideBusy] = useState<string | null>(null)
 
   // Grid state
   const [gridState, setGridState] = useState<GridState>({})
@@ -468,23 +509,327 @@ export function SchedulePage() {
     return 'bg-gray-100 text-gray-700 border-gray-300'
   }
 
+  // Subjects already known to the school (whatever the Hub grid currently
+  // shows), offered as quick picks in the "+ Add" popover. Deduped by name.
+  const knownSubjects = useMemo(() => {
+    const byKey = new Map<string, { subject: string; emoji: string }>()
+    hubGrid?.classes.forEach(c => {
+      Object.values(c.allocations).forEach(subs => {
+        subs.forEach(s => {
+          const key = s.subject.trim().toLowerCase()
+          if (!byKey.has(key)) byKey.set(key, { subject: s.subject, emoji: s.emoji })
+        })
+      })
+    })
+    return Array.from(byKey.values()).sort((a, b) => a.subject.localeCompare(b.subject))
+  }, [hubGrid])
+
+  // A grid cell only tells us a subject is cancelled/added — not the override
+  // row id we need to undo it. Match back to `timetableOverrides` by
+  // classId + this weekday's date + subject name (the same subject text we
+  // send when we create the override, so it always round-trips).
+  const findOverrideRow = (classId: string, date: string, subject: string, action: 'CANCELLED' | 'ADDED') => {
+    const norm = subject.trim().toLowerCase()
+    return timetableOverrides?.find(
+      o =>
+        o.classId === classId &&
+        o.date.slice(0, 10) === date &&
+        o.action === action &&
+        o.subject.trim().toLowerCase() === norm,
+    )
+  }
+
+  const refreshAfterOverride = async () => {
+    await Promise.all([refetchHubGrid(), refetchOverrides()])
+  }
+
+  const cancelSubject = async (classId: string, day: number, subject: TimetableGridSubject) => {
+    if (!hubGrid?.weekOf) return
+    const key = `${classId}-${day}-${subject.subject}`
+    setOverrideBusy(key)
+    try {
+      await api.timetable.overrides.create({
+        classId,
+        date: dateForWeekday(hubGrid.weekOf, day),
+        subject: subject.subject,
+        action: 'CANCELLED',
+      })
+      await refreshAfterOverride()
+      toast.success(`${subject.subject} cancelled for this week`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to cancel session')
+    } finally {
+      setOverrideBusy(null)
+      setMenuTarget(null)
+    }
+  }
+
+  const moveSubject = async (classId: string, fromDay: number, subject: TimetableGridSubject, toDay: number) => {
+    if (!hubGrid?.weekOf) return
+    const key = `${classId}-${fromDay}-${subject.subject}`
+    setOverrideBusy(key)
+    try {
+      await Promise.all([
+        api.timetable.overrides.create({
+          classId,
+          date: dateForWeekday(hubGrid.weekOf, fromDay),
+          subject: subject.subject,
+          action: 'CANCELLED',
+        }),
+        api.timetable.overrides.create({
+          classId,
+          date: dateForWeekday(hubGrid.weekOf, toDay),
+          subject: subject.subject,
+          action: 'ADDED',
+          emoji: subject.emoji,
+        }),
+      ])
+      await refreshAfterOverride()
+      toast.success(`${subject.subject} moved to ${getDayLabel(toDay)}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to move session')
+    } finally {
+      setOverrideBusy(null)
+      setMenuTarget(null)
+    }
+  }
+
+  const undoOverrideRow = async (overrideId: string, key: string) => {
+    setOverrideBusy(key)
+    try {
+      await api.timetable.overrides.remove(overrideId)
+      await refreshAfterOverride()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to undo override')
+    } finally {
+      setOverrideBusy(null)
+    }
+  }
+
+  const submitAddOverride = async (classId: string, day: number) => {
+    if (!hubGrid?.weekOf) return
+    let subject: string
+    let emoji: string
+    if (addSubjectValue === '__custom') {
+      subject = customSubject.trim()
+      emoji = customEmoji.trim()
+      if (!subject) {
+        toast.error('Enter a subject name')
+        return
+      }
+    } else {
+      const known = knownSubjects.find(k => k.subject === addSubjectValue)
+      if (!known) {
+        toast.error('Choose a subject')
+        return
+      }
+      subject = known.subject
+      emoji = known.emoji
+    }
+    const key = `${classId}-${day}-__add`
+    setOverrideBusy(key)
+    try {
+      await api.timetable.overrides.create({
+        classId,
+        date: dateForWeekday(hubGrid.weekOf, day),
+        subject,
+        action: 'ADDED',
+        ...(emoji ? { emoji } : {}),
+      })
+      await refreshAfterOverride()
+      setAddTarget(null)
+      setAddSubjectValue('')
+      setCustomSubject('')
+      setCustomEmoji('')
+      toast.success(`${subject} added for this week`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add session')
+    } finally {
+      setOverrideBusy(null)
+    }
+  }
+
   const renderHubCell = (cls: Class, day: number) => {
     const hubClass = hubGrid?.classes.find(c => c.classId === cls.id)
     const subjects = hubClass?.allocations[day] || []
-    if (subjects.length === 0) {
-      return <div className="flex justify-center text-gray-300 text-sm select-none">–</div>
-    }
+    const dateStr = hubGrid?.weekOf ? dateForWeekday(hubGrid.weekOf, day) : ''
+    const isAddOpen = addTarget?.classId === cls.id && addTarget.day === day
+    const addBusy = overrideBusy === `${cls.id}-${day}-__add`
+
     return (
-      <div className="flex flex-wrap gap-1 justify-center">
-        {subjects.map((s, i) => (
-          <span
-            key={`${s.subject}-${i}`}
-            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium ${subjectChipColor(s.subject)}`}
+      <div className="relative">
+        {(menuTarget || addTarget) && (
+          <div
+            className="fixed inset-0 z-0"
+            onClick={() => {
+              setMenuTarget(null)
+              setAddTarget(null)
+            }}
+          />
+        )}
+        <div className="flex flex-wrap gap-1 justify-center items-center">
+          {subjects.length === 0 && (
+            <div className="flex justify-center text-gray-300 text-sm select-none min-h-[1.75rem] items-center">–</div>
+          )}
+          {subjects.map((s, i) => {
+            const busyKey = `${cls.id}-${day}-${s.subject}`
+            const isBusy = overrideBusy === busyKey
+
+            if (s.cancelled) {
+              const ov = findOverrideRow(cls.id, dateStr, s.subject, 'CANCELLED')
+              return (
+                <span
+                  key={`${s.subject}-${i}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium bg-gray-50 text-gray-400 border-gray-200"
+                >
+                  <span className="opacity-60 line-through">{s.emoji}</span>
+                  <span className="line-through">{s.subject}</span>
+                  {ov && (
+                    <button
+                      onClick={() => undoOverrideRow(ov.id, busyKey)}
+                      disabled={isBusy}
+                      className="ml-1 text-[10px] font-semibold text-blue-500 hover:text-blue-700 disabled:opacity-40"
+                      title="Undo cancellation"
+                    >
+                      {isBusy ? '…' : 'Undo'}
+                    </button>
+                  )}
+                </span>
+              )
+            }
+
+            if (s.added) {
+              const ov = findOverrideRow(cls.id, dateStr, s.subject, 'ADDED')
+              return (
+                <span
+                  key={`${s.subject}-${i}`}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium ${subjectChipColor(s.subject)}`}
+                >
+                  <span>{s.emoji}</span>
+                  <span>{s.subject}</span>
+                  <span className="text-[9px] uppercase tracking-wide bg-white/60 px-1 rounded">added</span>
+                  {ov && (
+                    <button
+                      onClick={() => undoOverrideRow(ov.id, busyKey)}
+                      disabled={isBusy}
+                      className="ml-1 text-[10px] font-semibold text-red-500 hover:text-red-700 disabled:opacity-40"
+                      title="Remove this addition"
+                    >
+                      {isBusy ? '…' : 'Remove'}
+                    </button>
+                  )}
+                </span>
+              )
+            }
+
+            const isMenuOpen = menuTarget?.classId === cls.id && menuTarget.day === day && menuTarget.subjectIdx === i
+            return (
+              <span key={`${s.subject}-${i}`} className="relative z-10">
+                <button
+                  onClick={() => setMenuTarget(isMenuOpen ? null : { classId: cls.id, day, subjectIdx: i })}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium ${subjectChipColor(s.subject)} hover:ring-2 hover:ring-offset-1 hover:ring-gray-300 transition-shadow`}
+                  title="Cancel or move this session (this week only)"
+                >
+                  <span>{s.emoji}</span>
+                  <span>{s.subject}</span>
+                </button>
+                {isMenuOpen && (
+                  <div className="absolute z-20 top-full left-1/2 -translate-x-1/2 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 w-40 text-left">
+                    <button
+                      onClick={() => cancelSubject(cls.id, day, s)}
+                      disabled={isBusy}
+                      className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-red-50 text-red-600 disabled:opacity-40"
+                    >
+                      {isBusy ? 'Working…' : 'Cancel this week'}
+                    </button>
+                    <div className="mt-1 pt-1 border-t border-gray-100">
+                      <div className="px-2 py-1 text-[10px] uppercase text-gray-400 font-semibold">Move to…</div>
+                      {DAYS_OF_WEEK.filter(d => d.value !== day).map(d => (
+                        <button
+                          key={d.value}
+                          onClick={() => moveSubject(cls.id, day, s, d.value)}
+                          disabled={isBusy}
+                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-blue-50 text-gray-700 disabled:opacity-40"
+                        >
+                          {d.fullLabel}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </span>
+            )
+          })}
+
+          <button
+            onClick={() => {
+              setAddTarget(isAddOpen ? null : { classId: cls.id, day })
+              setAddSubjectValue('')
+              setCustomSubject('')
+              setCustomEmoji('')
+            }}
+            className="relative z-10 text-gray-300 hover:text-gray-500 text-xs px-1.5 py-1 rounded border border-dashed border-gray-200 hover:border-gray-400 transition-colors"
+            title="Add a session for this day"
           >
-            <span>{s.emoji}</span>
-            <span>{s.subject}</span>
-          </span>
-        ))}
+            + Add
+          </button>
+        </div>
+
+        {isAddOpen && (
+          <div className="absolute z-20 top-full left-1/2 -translate-x-1/2 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 w-48 text-left space-y-2">
+            <div className="text-[10px] uppercase text-gray-400 font-semibold px-1">Add session ({getDayLabel(day)})</div>
+            <select
+              value={addSubjectValue}
+              onChange={e => setAddSubjectValue(e.target.value)}
+              className="w-full text-xs border border-gray-200 rounded px-2 py-1"
+            >
+              <option value="">Choose subject…</option>
+              {knownSubjects.map(ks => (
+                <option key={ks.subject} value={ks.subject}>
+                  {ks.emoji} {ks.subject}
+                </option>
+              ))}
+              <option value="__custom">Custom…</option>
+            </select>
+            {addSubjectValue === '__custom' && (
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  value={customEmoji}
+                  onChange={e => setCustomEmoji(e.target.value)}
+                  placeholder="🎵"
+                  maxLength={4}
+                  className="w-10 text-center text-sm border border-gray-200 rounded px-1 py-1"
+                  aria-label="Emoji"
+                />
+                <input
+                  type="text"
+                  value={customSubject}
+                  onChange={e => setCustomSubject(e.target.value)}
+                  placeholder="Subject name"
+                  className="flex-1 text-xs border border-gray-200 rounded px-2 py-1"
+                  aria-label="Subject name"
+                />
+              </div>
+            )}
+            <div className="flex gap-1 justify-end">
+              <button
+                onClick={() => setAddTarget(null)}
+                className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => submitAddOverride(cls.id, day)}
+                disabled={addBusy || !addSubjectValue}
+                className="px-2 py-1 text-xs rounded text-white disabled:opacity-50"
+                style={{ backgroundColor: theme.colors.brandColor }}
+              >
+                {addBusy ? 'Adding…' : 'Add'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -589,6 +934,11 @@ export function SchedulePage() {
                     </>
                   )}
                 </p>
+                {hubGrid?.weekOf && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Cancel, move or add a session below — overrides apply to the week of {hubGrid.weekOf} only.
+                  </p>
+                )}
               </div>
               <div className="flex items-center space-x-2 text-sm">
                 {GRID_TYPES.filter(t => t.value).map(t => (
