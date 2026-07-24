@@ -322,3 +322,43 @@ event → POST to Hub → on approval it syncs back via Phase A (matched on the
 correlation id) and the placeholder resolves; on reject, marked with a reason.
 **Delegation**: Opus (proposal endpoint + reconciliation + tests), Sonnet (form +
 pending/approved states) — deferred until the Hub contract is confirmed.
+
+---
+
+## Stage 4 Phase B — Teacher event proposals — UNBLOCKED (building)
+
+Hub shipped the propose endpoint + `calendar:submit` scope (granted).
+
+**Hub contract:** `POST /api/v1/calendar/events/proposals` (Bearer service token,
+`calendar:submit` — propose-only, no read/publish). Body `{ school_id, title,
+starts_at, ends_at, all_day?, category?, audience?, location?, whole_school?,
+year_group_ids?[], class_ids?[], submitter_name?, submitter_email?, note? }`
+→ `202 { proposal_id, status:"PENDING" }`. Approval flows back **via the calendar
+itself**: on admin approval Hub creates a real CalendarEvent that arrives through
+the existing `calendar.updated` webhook + `/changes` feed (no rejection signal).
+
+**Decisions:** parents of the targeted cohort see the event immediately as
+**"Pending approval"**, flipping to confirmed on approval. Targeting is
+**class / year-group only** (no whole-school for teacher proposals).
+
+**Connect design — a proposal is an `Event` that transitions in place:**
+- Add to `Event`: `hubProposalId String? @unique`, `proposalStatus String?`
+  ('PENDING' | null), `submittedByUserId String?`. A proposal = an Event with
+  `proposalStatus:'PENDING'`, EventTarget rows for the chosen cohort, no
+  `hubCalendarEventId` yet. It renders to parents via the existing multi-target
+  visibility query, badged "Pending approval".
+- **Submit** (`POST /api/events/proposals`, STAFF+): map Connect class/YG →
+  Hub ids, build `starts_at/ends_at`, stamp submitter from the logged-in user,
+  call Hub, then create the local PENDING proposal-Event.
+- **Reconcile** (in `hubCalendarSync`): before a normal upsert, if a synced
+  CalendarEvent matches a PENDING proposal-Event (same school, case-insensitive
+  title, same start date, overlapping targets, `hubCalendarEventId` null), adopt
+  THAT row — set `hubCalendarEventId`, clear `proposalStatus` — instead of
+  inserting a duplicate. The badge flips to confirmed.
+- **Withdraw** (`DELETE /api/events/proposals/:id`): removes the local PENDING
+  row (Hub is propose-only, so the Hub proposal itself can't be recalled — if
+  later approved it just syncs in as a normal event). Normal event PUT/DELETE 409
+  on a PENDING proposal-Event (use withdraw).
+- **Delegation:** Opus (schema + Hub client + submit/list/withdraw + reconcile +
+  serializer + tests); then Sonnet ×2 (admin propose form + proposals list;
+  parent "Pending approval" badge).
