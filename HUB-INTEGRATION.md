@@ -311,7 +311,7 @@ and the read-only grid. No Hub dependency.
 - **Delegation**: Opus (model + migration + apply in today/grid + CRUD + tests),
   then Sonnet (grid override UI, after the contract lands).
 
-## Stage 4 Phase B — Teacher event proposals — BLOCKED on Hub
+## Stage 4 Phase B — Teacher event proposals — BUILT (see 'UNBLOCKED' section below)
 
 Connect-side design is ready, but it can't start until Hub exposes: a pending/
 approval **status** on `CalendarEvent`, a super-admin **moderation UI**,
