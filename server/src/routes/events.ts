@@ -280,6 +280,11 @@ router.get('/', isAuthenticated, async (req, res) => {
     const events = await prisma.event.findMany({
       where: {
         schoolId: user.schoolId,
+        // Teacher proposals awaiting Hub approval are NOT shown to parents — they
+        // only appear once approved (which clears proposalStatus). `NOT` is
+        // null-inclusive in Prisma, so ordinary events (proposalStatus null) are
+        // unaffected.
+        NOT: { proposalStatus: 'PENDING' },
         OR: buildVisibilityOR(allClassIds, childYearGroupIds, childGroupIds),
       },
       include: {
