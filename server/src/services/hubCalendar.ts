@@ -12,6 +12,33 @@
 
 import { HubServiceTokenMissingError, HubMisError } from './hubMis.js'
 
+// --- Proposal (write) — Stage 4 / Phase B ------------------------------------
+/** Body of POST /api/v1/calendar/events/proposals. `starts_at`/`ends_at` are
+ * UTC ISO; `year_group_ids`/`class_ids` are **Hub** ids. Scope `calendar:submit`
+ * (propose-only — no read/publish). */
+export interface CalendarProposalInput {
+  school_id: string
+  title: string
+  starts_at: string
+  ends_at: string
+  all_day?: boolean
+  category?: string
+  audience?: string
+  location?: string
+  whole_school?: boolean
+  year_group_ids?: string[]
+  class_ids?: string[]
+  submitter_name?: string
+  submitter_email?: string
+  note?: string
+}
+
+/** Hub's 202 response to a proposal submission. */
+export interface CalendarProposalResult {
+  proposal_id: string
+  status: 'PENDING'
+}
+
 // --- Config (env, resolved lazily per-call) ---------------------------------
 function misBaseUrl(): string {
   const raw = process.env.HUB_MIS_URL || process.env.HUB_URL || 'https://hub.wasil.app'
@@ -104,4 +131,36 @@ export async function getChanges(
 ): Promise<CalendarChangesResponse | null> {
   const params = new URLSearchParams({ schoolId: hubSchoolId, since: String(since) })
   return callAllowMissing<CalendarChangesResponse>(`/calendar/changes?${params.toString()}`)
+}
+
+// --- Endpoints (write / propose-only) ----------------------------------------
+/** Submit a teacher event proposal to Hub (Phase B). Propose-only: Hub stores it
+ * PENDING for super-admin approval and returns `{ proposal_id, status:'PENDING' }`;
+ * approval later arrives as a normal CalendarEvent via the read-side sync (no
+ * rejection signal, and the proposal can't be recalled — Hub is propose-only).
+ *
+ * Unlike the read side (which resolves 403/404 to `null` so the sync no-ops),
+ * this THROWS on any non-2xx (`HubMisError`) or an unset token
+ * (`HubServiceTokenMissingError`), so the caller can refuse to create the local
+ * PENDING row when the submission didn't reach Hub. */
+export async function submitProposal(
+  input: CalendarProposalInput,
+): Promise<CalendarProposalResult> {
+  const token = serviceToken()
+  if (!token) throw new HubServiceTokenMissingError()
+
+  const res = await fetch(`${misBaseUrl()}/api/v1/calendar/events/proposals`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new HubMisError(res.status, body || res.statusText)
+  }
+  return (await res.json()) as CalendarProposalResult
 }

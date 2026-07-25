@@ -205,6 +205,7 @@ model User {
   messageAcks        MessageAcknowledgment[]
   formResponses      FormResponse[]
   eventRsvps         EventRsvp[]
+  proposedEvents     Event[]           @relation("EventProposals")
   pulseResponses     PulseResponse[]
   weeklyHearts       WeeklyMessageHeart[]
   refreshTokens      RefreshToken[]
@@ -505,6 +506,19 @@ model Event {
   // mirrored (read-only) from Hub's CalendarEvent and must NOT be edited or
   // deleted in Connect — its presence is the read-only marker.
   hubCalendarEventId String? @unique
+
+  // Teacher event proposals (Stage 4 / Phase B). A proposal is an ordinary
+  // Event with `proposalStatus = 'PENDING'` and NO `hubCalendarEventId` yet —
+  // it renders to parents via the existing multi-target visibility query as
+  // "Pending approval". `hubProposalId` is Hub's proposal_id (idempotency key).
+  // When Hub approves it, the confirmed CalendarEvent syncs back and the sync
+  // *adopts* this row: sets `hubCalendarEventId`, clears `proposalStatus`.
+  hubProposalId      String? @unique
+  proposalStatus     String? // 'PENDING' while awaiting Hub approval, else null
+  // Staff member who submitted the proposal. SetNull so deleting the user keeps
+  // the (now confirmed) event on the calendar.
+  submittedByUserId  String?
+  submittedBy        User?    @relation("EventProposals", fields: [submittedByUserId], references: [id], onDelete: SetNull)
 
   parentEventId    String?
   recurrenceType   String?

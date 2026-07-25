@@ -9,7 +9,7 @@ const prismaMock = {
   school: { findUnique: vi.fn(), update: vi.fn() },
   class: { findMany: vi.fn() },
   yearGroup: { findMany: vi.fn() },
-  event: { upsert: vi.fn() },
+  event: { upsert: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   eventTarget: { deleteMany: vi.fn(), createMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
@@ -61,6 +61,10 @@ beforeEach(() => {
     id: 'ce-' + where.hubCalendarEventId,
     hubCalendarEventId: where.hubCalendarEventId,
   }))
+  // Reconciliation (Phase B): default to "no matching pending proposal" so the
+  // normal upsert path runs; adoption tests override findFirst per-case.
+  prismaMock.event.findFirst.mockResolvedValue(null)
+  prismaMock.event.update.mockImplementation(async ({ where }: any) => ({ id: where.id, hubCalendarEventId: 'hev-1' }))
   prismaMock.eventTarget.deleteMany.mockResolvedValue({ count: 0 })
   prismaMock.eventTarget.createMany.mockResolvedValue({ count: 0 })
 })
@@ -224,5 +228,46 @@ describe('syncCalendar — dormant', () => {
     expect(summary.skipped).toBe(true)
     expect(summary.reason).toBe('calendar_unavailable')
     expect(prismaMock.event.upsert).not.toHaveBeenCalled()
+  })
+})
+
+describe('syncCalendar — proposal reconciliation (Phase B)', () => {
+  it('adopts a matching PENDING proposal in place (sets hubCalendarEventId, clears proposalStatus, no new row)', async () => {
+    // A synced event with a case-differing title, same school-local start date.
+    mGetEvents.mockResolvedValue(eventsResponse([dto({ id: 'hev-appr', title: 'sports day' })]))
+    // A local pending proposal matches the case-insensitive title + start date.
+    prismaMock.event.findFirst.mockResolvedValue({ id: 'proposal-row-1' })
+
+    const summary = await syncCalendar('connect-school-1', WINDOW)
+
+    // The candidate query encodes the exact match rule.
+    const where = prismaMock.event.findFirst.mock.calls[0][0].where
+    expect(where.schoolId).toBe('connect-school-1')
+    expect(where.proposalStatus).toBe('PENDING')
+    expect(where.hubCalendarEventId).toBeNull()
+    expect(where.title).toEqual({ equals: 'sports day', mode: 'insensitive' })
+    expect(where.date).toBeInstanceOf(Date)
+    expect(prismaMock.event.findFirst.mock.calls[0][0].orderBy).toEqual({ createdAt: 'asc' })
+
+    // Adoption: update the existing row, no bare upsert insert.
+    expect(prismaMock.event.update).toHaveBeenCalledTimes(1)
+    const upd = prismaMock.event.update.mock.calls[0][0]
+    expect(upd.where).toEqual({ id: 'proposal-row-1' })
+    expect(upd.data.hubCalendarEventId).toBe('hev-appr')
+    expect(upd.data.proposalStatus).toBeNull()
+    expect(prismaMock.event.upsert).not.toHaveBeenCalled()
+    expect(summary.upserted).toBe(1)
+  })
+
+  it('inserts normally (no adoption) when no pending proposal matches', async () => {
+    mGetEvents.mockResolvedValue(eventsResponse([dto({ id: 'hev-new' })]))
+    prismaMock.event.findFirst.mockResolvedValue(null)
+
+    const summary = await syncCalendar('connect-school-1', WINDOW)
+
+    expect(prismaMock.event.update).not.toHaveBeenCalled()
+    expect(prismaMock.event.upsert).toHaveBeenCalledTimes(1)
+    expect((prismaMock.event.upsert.mock.calls[0][0] as any).where).toEqual({ hubCalendarEventId: 'hev-new' })
+    expect(summary.upserted).toBe(1)
   })
 })

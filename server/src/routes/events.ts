@@ -1,13 +1,15 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import prisma from '../services/prisma.js'
-import { isAuthenticated, isAdmin, loadUserWithRelations, type UserWithRelations } from '../middleware/auth.js'
+import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations, type UserWithRelations } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
 import { generateICS } from '../services/ics.js'
 import type { ICSEvent } from '../services/ics.js'
+import { submitProposal } from '../services/hubCalendar.js'
+import { zonedTimeToUtc } from '../services/dateTime.js'
 
 const router = Router()
 
@@ -118,6 +120,18 @@ function serializeTargets(
   targets?: { classId: string | null; yearGroupId: string | null }[] | null,
 ): { classId: string | null; yearGroupId: string | null }[] {
   return (targets ?? []).map(t => ({ classId: t.classId, yearGroupId: t.yearGroupId }))
+}
+
+// Where an event came from, for the client badge. A PENDING teacher proposal
+// (no hubCalendarEventId yet) is 'proposal'; a mirrored Hub event is 'hub';
+// everything else is a Connect-authored event.
+function deriveSource(event: {
+  proposalStatus?: string | null
+  hubCalendarEventId?: string | null
+}): 'proposal' | 'hub' | 'connect' {
+  if (event.proposalStatus === 'PENDING') return 'proposal'
+  if (event.hubCalendarEventId) return 'hub'
+  return 'connect'
 }
 
 function generateRecurringDates(startDate: string, recurrence: string, endDate: string, customDays?: number): string[] {
@@ -312,7 +326,8 @@ router.get('/', isAuthenticated, async (req, res) => {
       groupId: event.groupId,
       targets: serializeTargets(event.targets),
       hubCalendarEventId: event.hubCalendarEventId,
-      source: event.hubCalendarEventId ? 'hub' : 'connect',
+      proposalStatus: event.proposalStatus ?? null,
+      source: deriveSource(event),
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       parentEventId: event.parentEventId,
@@ -358,7 +373,9 @@ router.get('/all', isAdmin, async (req, res) => {
       groupId: event.groupId,
       targets: serializeTargets(event.targets),
       hubCalendarEventId: event.hubCalendarEventId,
-      source: event.hubCalendarEventId ? 'hub' : 'connect',
+      proposalStatus: event.proposalStatus ?? null,
+      submittedByUserId: event.submittedByUserId ?? null,
+      source: deriveSource(event),
       schoolId: event.schoolId,
       requiresRsvp: event.requiresRsvp,
       parentEventId: event.parentEventId,
@@ -377,6 +394,291 @@ router.get('/all', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error fetching all events:', error)
     res.status(500).json({ error: 'Failed to fetch events' })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Teacher event proposals (Stage 4 / Phase B)
+//
+// A STAFF member proposes an event for their class. Connect submits it to Hub
+// (propose-only, scope `calendar:submit`) and stores a local PENDING Event with
+// EventTarget rows but NO hubCalendarEventId — so it renders to parents via the
+// normal visibility query as "Pending approval". When a super-admin approves it
+// in Hub, the confirmed CalendarEvent syncs back and hubCalendarSync *adopts*
+// this row (sets hubCalendarEventId, clears proposalStatus). Hub sends no
+// rejection signal and the proposal can't be recalled once submitted.
+// ---------------------------------------------------------------------------
+
+const proposalTargetSchema = z.object({
+  classId: z.string().optional(),
+  yearGroupId: z.string().optional(),
+})
+
+const createProposalSchema = z.object({
+  title: z.string().min(1).max(500),
+  description: z.string().optional(),
+  date: z.string().min(1), // YYYY-MM-DD (school-local calendar date)
+  startTime: z.string().optional(), // HH:MM
+  endTime: z.string().optional(), // HH:MM
+  allDay: z.boolean().optional(),
+  location: z.string().optional(),
+  category: z.string().optional(),
+  note: z.string().optional(),
+  targets: z.array(proposalTargetSchema),
+})
+
+// Serialize a proposal-Event for the proposal endpoints. `state` folds the
+// lifecycle into one field the UI can badge on: 'ON_CALENDAR' once the approval
+// has synced in (hubCalendarEventId set), else the raw proposalStatus.
+function serializeProposalEvent(
+  event: {
+    id: string
+    title: string
+    description: string | null
+    date: Date
+    time: string | null
+    location: string | null
+    targetClass: string
+    classId: string | null
+    yearGroupId: string | null
+    schoolId: string
+    hubProposalId: string | null
+    proposalStatus: string | null
+    submittedByUserId: string | null
+    hubCalendarEventId: string | null
+    createdAt: Date
+  },
+  targets: { classId: string | null; yearGroupId: string | null }[],
+) {
+  return {
+    id: event.id,
+    title: event.title,
+    description: event.description,
+    date: event.date.toISOString().split('T')[0],
+    time: event.time,
+    location: event.location,
+    targetClass: event.targetClass,
+    classId: event.classId,
+    yearGroupId: event.yearGroupId,
+    targets: serializeTargets(targets),
+    schoolId: event.schoolId,
+    hubProposalId: event.hubProposalId,
+    proposalStatus: event.proposalStatus,
+    submittedByUserId: event.submittedByUserId,
+    hubCalendarEventId: event.hubCalendarEventId,
+    source: deriveSource(event),
+    state: event.hubCalendarEventId ? 'ON_CALENDAR' : (event.proposalStatus ?? null),
+    createdAt: event.createdAt.toISOString(),
+  }
+}
+
+// Build Hub UTC-ISO starts_at/ends_at from a school-local date + times.
+// An all-day (or time-less) event spans local 00:00 → next-day 00:00.
+function buildProposalBounds(
+  date: string,
+  startTime: string | undefined,
+  endTime: string | undefined,
+  allDay: boolean,
+  timezone: string,
+): { startsAt: string; endsAt: string } {
+  if (allDay) {
+    const next = new Date(`${date}T00:00:00Z`)
+    next.setUTCDate(next.getUTCDate() + 1)
+    const nextStr = next.toISOString().split('T')[0]
+    return {
+      startsAt: zonedTimeToUtc(date, '00:00', timezone).toISOString(),
+      endsAt: zonedTimeToUtc(nextStr, '00:00', timezone).toISOString(),
+    }
+  }
+  const start = zonedTimeToUtc(date, startTime!, timezone)
+  // No end time → a zero-length instant at the start (Hub still requires ends_at).
+  const end = zonedTimeToUtc(date, endTime || startTime!, timezone)
+  return { startsAt: start.toISOString(), endsAt: end.toISOString() }
+}
+
+// Submit a proposal — STAFF/ADMIN/SUPER_ADMIN (isStaff rejects PARENT).
+router.post('/proposals', isStaff, validate(createProposalSchema), async (req, res) => {
+  try {
+    const user = req.user!
+    const { title, description, date, startTime, endTime, allDay, location, category, note, targets } = req.body as {
+      title: string
+      description?: string
+      date: string
+      startTime?: string
+      endTime?: string
+      allDay?: boolean
+      location?: string
+      category?: string
+      note?: string
+      targets: { classId?: string; yearGroupId?: string }[]
+    }
+
+    // Targets must be non-empty and class/year-group only (no whole-school).
+    const rawTargets = (targets || [])
+      .map(t => ({ classId: t.classId || null, yearGroupId: t.yearGroupId || null }))
+      .filter(t => t.classId || t.yearGroupId)
+    if (rawTargets.length === 0) {
+      return res.status(422).json({ error: 'A proposal must target at least one class or year group (whole-school proposals are not allowed).' })
+    }
+
+    const classIds = rawTargets.filter(t => t.classId).map(t => t.classId!) as string[]
+    const yearGroupIds = rawTargets.filter(t => !t.classId && t.yearGroupId).map(t => t.yearGroupId!) as string[]
+
+    const [classRows, yearGroupRows, school] = await Promise.all([
+      classIds.length
+        ? prisma.class.findMany({ where: { id: { in: classIds }, schoolId: user.schoolId }, select: { id: true, name: true, hubClassId: true } })
+        : Promise.resolve([]),
+      yearGroupIds.length
+        ? prisma.yearGroup.findMany({ where: { id: { in: yearGroupIds }, schoolId: user.schoolId }, select: { id: true, name: true, hubYearGroupId: true } })
+        : Promise.resolve([]),
+      prisma.school.findUnique({ where: { id: user.schoolId }, select: { hubSchoolId: true, timezone: true } }),
+    ])
+
+    if (!school?.hubSchoolId) {
+      return res.status(422).json({ error: 'This school is not linked to Wasil Hub, so proposals cannot be submitted.' })
+    }
+
+    const classById = new Map(classRows.map(c => [c.id, c]))
+    const yearGroupById = new Map(yearGroupRows.map(y => [y.id, y]))
+
+    // Resolve each Connect target to its Hub id. Reject (422) if any target is
+    // unknown to this school or has no Hub id.
+    const hubClassIds: string[] = []
+    const hubYearGroupIds: string[] = []
+    const labels: string[] = []
+    const targetRows: { classId: string | null; yearGroupId: string | null }[] = []
+    for (const t of rawTargets) {
+      if (t.classId) {
+        const c = classById.get(t.classId)
+        if (!c) return res.status(422).json({ error: `Unknown class: ${t.classId}` })
+        if (!c.hubClassId) return res.status(422).json({ error: `Class "${c.name}" is not linked to Wasil Hub and cannot be proposed for.` })
+        hubClassIds.push(c.hubClassId)
+        labels.push(c.name)
+        targetRows.push({ classId: c.id, yearGroupId: null })
+      } else if (t.yearGroupId) {
+        const y = yearGroupById.get(t.yearGroupId)
+        if (!y) return res.status(422).json({ error: `Unknown year group: ${t.yearGroupId}` })
+        if (!y.hubYearGroupId) return res.status(422).json({ error: `Year group "${y.name}" is not linked to Wasil Hub and cannot be proposed for.` })
+        hubYearGroupIds.push(y.hubYearGroupId)
+        labels.push(y.name)
+        targetRows.push({ classId: null, yearGroupId: y.id })
+      }
+    }
+
+    const timezone = school.timezone || 'UTC'
+    const isAllDay = !!allDay || !startTime
+    const { startsAt, endsAt } = buildProposalBounds(date, startTime, endTime, isAllDay, timezone)
+
+    // Submit to Hub FIRST. If it fails, don't create the local row.
+    let proposal
+    try {
+      proposal = await submitProposal({
+        school_id: school.hubSchoolId,
+        title,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        all_day: isAllDay,
+        category: category || undefined,
+        location: location || undefined,
+        class_ids: hubClassIds.length ? hubClassIds : undefined,
+        year_group_ids: hubYearGroupIds.length ? hubYearGroupIds : undefined,
+        submitter_name: user.name,
+        submitter_email: user.email,
+        note: note || undefined,
+      })
+    } catch (error) {
+      console.error('Error submitting event proposal to Hub:', error)
+      return res.status(502).json({ error: 'Could not submit the proposal to Wasil Hub. Please try again.' })
+    }
+
+    // Single target still populates the legacy scalar columns; multi-target
+    // leaves them null and relies on EventTarget rows.
+    const single = targetRows.length === 1 ? targetRows[0] : null
+    const label = labels.join(', ') || 'Selected classes'
+
+    const event = await prisma.$transaction(async (tx) => {
+      const created = await tx.event.create({
+        data: {
+          title,
+          description: description || null,
+          date: new Date(date),
+          time: isAllDay ? null : (startTime || null),
+          location: location || null,
+          targetClass: label,
+          classId: single?.classId ?? null,
+          yearGroupId: single?.yearGroupId ?? null,
+          schoolId: user.schoolId,
+          hubProposalId: proposal.proposal_id,
+          proposalStatus: 'PENDING',
+          submittedByUserId: user.id,
+        },
+      })
+      await tx.eventTarget.createMany({ data: targetRows.map(r => ({ eventId: created.id, ...r })) })
+      return created
+    })
+
+    logAudit({ req, action: 'CREATE', resourceType: 'EVENT', resourceId: event.id, metadata: { title: event.title, proposal: true, hubProposalId: proposal.proposal_id } })
+
+    res.status(201).json(serializeProposalEvent(event, targetRows))
+  } catch (error) {
+    console.error('Error creating event proposal:', error)
+    res.status(500).json({ error: 'Failed to create event proposal' })
+  }
+})
+
+// List this school's proposals (STAFF+). Newest first. Includes proposals that
+// have already landed on the calendar (hubCalendarEventId set) so the UI can
+// show their resolved state. The UI can filter to "mine" by submittedByUserId.
+router.get('/proposals', isStaff, async (req, res) => {
+  try {
+    const user = req.user!
+    const events = await prisma.event.findMany({
+      where: {
+        schoolId: user.schoolId,
+        OR: [{ hubProposalId: { not: null } }, { proposalStatus: { not: null } }],
+      },
+      include: { targets: { select: { classId: true, yearGroupId: true } } },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    res.json(events.map(event => serializeProposalEvent(event, event.targets)))
+  } catch (error) {
+    console.error('Error listing event proposals:', error)
+    res.status(500).json({ error: 'Failed to list event proposals' })
+  }
+})
+
+// Withdraw a still-PENDING proposal (submitter or admin). Deletes the local row
+// only. Hub is propose-only, so the Hub-side proposal can't be recalled; if it's
+// later approved it simply syncs in as a normal event. A proposal that has
+// already landed on the calendar (hubCalendarEventId set / not PENDING) → 409.
+router.delete('/proposals/:id', isStaff, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const existing = await prisma.event.findFirst({ where: { id, schoolId: user.schoolId } })
+    if (!existing) {
+      return res.status(404).json({ error: 'Proposal not found' })
+    }
+    if (existing.proposalStatus !== 'PENDING') {
+      return res.status(409).json({ error: 'This proposal has already been approved and is on the calendar; it can no longer be withdrawn.' })
+    }
+
+    const isAdminRole = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
+    if (existing.submittedByUserId !== user.id && !isAdminRole) {
+      return res.status(403).json({ error: 'Only the submitter or an admin can withdraw this proposal.' })
+    }
+
+    // EventTarget rows cascade on delete (onDelete: Cascade).
+    await prisma.event.delete({ where: { id } })
+
+    logAudit({ req, action: 'DELETE', resourceType: 'EVENT', resourceId: id, metadata: { title: existing.title, proposal: true } })
+
+    res.json({ message: 'Proposal withdrawn' })
+  } catch (error) {
+    console.error('Error withdrawing event proposal:', error)
+    res.status(500).json({ error: 'Failed to withdraw event proposal' })
   }
 })
 
@@ -567,6 +869,12 @@ router.put('/:id', isAdmin, validate(updateEventSchema), async (req, res) => {
       return res.status(409).json({ error: 'This event is managed in Wasil Hub and cannot be edited in Connect. Edit it in Hub instead.' })
     }
 
+    // Pending-proposal guard: a proposal awaiting Hub approval can't be edited
+    // in place — withdraw it via DELETE /proposals/:id and submit a new one.
+    if (existing.proposalStatus === 'PENDING') {
+      return res.status(409).json({ error: 'This event is a pending proposal awaiting Hub approval. Withdraw it from the proposals list instead of editing it here.' })
+    }
+
     // Resolve multi-target rows + legacy scalars, then update + replace targets.
     const targeting = resolveTargeting({ targets, classId, yearGroupId })
 
@@ -642,6 +950,11 @@ router.delete('/:id', isAdmin, async (req, res) => {
     // Read-only guard: Hub-owned events can't be deleted in Connect.
     if (existing.hubCalendarEventId) {
       return res.status(409).json({ error: 'This event is managed in Wasil Hub and cannot be deleted in Connect. Remove it in Hub instead.' })
+    }
+
+    // Pending-proposal guard: use the proposal withdraw endpoint instead.
+    if (existing.proposalStatus === 'PENDING') {
+      return res.status(409).json({ error: 'This event is a pending proposal awaiting Hub approval. Withdraw it from the proposals list instead of deleting it here.' })
     }
 
     if (req.query.series === 'true' && existing.recurrenceType) {

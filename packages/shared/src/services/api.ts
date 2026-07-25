@@ -543,6 +543,33 @@ export const events = {
     downloadFile('/api/events/calendar.ics', 'school-events.ics'),
   exportEventCalendar: (id: string, title: string) =>
     downloadFile(`/api/events/${id}/calendar.ics`, `${title.replace(/[^a-zA-Z0-9]/g, '_')}.ics`),
+
+  // Teacher event proposals (Phase B). STAFF+ submit a class/year-group event
+  // that Hub holds PENDING for super-admin approval; on approval it syncs back
+  // as a confirmed event. Whole-school is not allowed — targets are required.
+  proposals: {
+    submit: (data: {
+      title: string
+      description?: string
+      date: string // YYYY-MM-DD
+      startTime?: string // HH:MM
+      endTime?: string // HH:MM
+      allDay?: boolean
+      location?: string
+      category?: string
+      note?: string
+      targets: { classId?: string; yearGroupId?: string }[]
+    }) =>
+      fetchApi<Event>('/api/events/proposals', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    list: () => fetchApi<Event[]>('/api/events/proposals'),
+    withdraw: (id: string) =>
+      fetchApi<{ message: string }>(`/api/events/proposals/${id}`, {
+        method: 'DELETE',
+      }),
+  },
 }
 
 // Schedule

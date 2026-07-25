@@ -314,7 +314,17 @@ export interface Event {
   // Wasil Hub calendar link. When set, the event is mirrored read-only from Hub
   // and must be edited in Hub, not Connect. `source` is the convenience flag.
   hubCalendarEventId?: string | null
-  source?: 'hub' | 'connect'
+  // Teacher event proposals (Phase B). A PENDING proposal has no
+  // hubCalendarEventId yet and shows to parents as "Pending approval"; `source`
+  // is 'proposal' while pending. Once Hub approves it and it syncs back,
+  // proposalStatus clears to null and source becomes 'hub'.
+  proposalStatus?: 'PENDING' | null
+  hubProposalId?: string | null
+  submittedByUserId?: string | null
+  // Present only on proposal-list responses: 'ON_CALENDAR' once approved+synced,
+  // else the raw proposalStatus ('PENDING').
+  state?: 'PENDING' | 'ON_CALENDAR' | null
+  source?: 'hub' | 'connect' | 'proposal'
   schoolId: string
   requiresRsvp: boolean
   parentEventId?: string | null

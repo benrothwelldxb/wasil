@@ -34,6 +34,10 @@ vi.mock('../src/middleware/auth', () => ({
     req.user = { id: 'user-1', schoolId: 'sch-1', role: 'ADMIN' }
     next()
   },
+  isStaff: (req: any, _res: any, next: any) => {
+    req.user = { id: 'user-1', schoolId: 'sch-1', role: 'ADMIN' }
+    next()
+  },
   loadUserWithRelations,
 }))
 vi.mock('../src/middleware/validate', () => ({ validate: () => (_req: any, _res: any, next: any) => next() }))
@@ -97,6 +101,26 @@ describe('GET / — multi-target visibility query', () => {
     expect(res.body[0].targets).toEqual([{ classId: 'cls-A', yearGroupId: null }])
     expect(res.body[0].source).toBe('hub')
     expect(res.body[0].hubCalendarEventId).toBe('hub-9')
+  })
+
+  it('shows a PENDING proposal targeting the child class with proposalStatus + source "proposal"', async () => {
+    // A pending proposal is an Event with proposalStatus PENDING, no
+    // hubCalendarEventId, and an EventTarget for the child's class — so it
+    // surfaces through the same visibility query.
+    prismaMock.event.findMany.mockResolvedValue([
+      {
+        id: 'ev-prop', title: 'Class Bake Sale', description: null, date: new Date('2026-09-10T00:00:00Z'),
+        time: '09:00', location: 'Hall', targetClass: '1 Blue', classId: 'cls-A', yearGroupId: null,
+        groupId: null, hubCalendarEventId: null, proposalStatus: 'PENDING', schoolId: 'sch-1',
+        requiresRsvp: false, parentEventId: null, recurrenceType: null, rsvps: [],
+        targets: [{ classId: 'cls-A', yearGroupId: null }], createdAt: new Date(),
+      },
+    ])
+
+    const res = await request(makeApp()).get('/api/events').expect(200)
+    expect(res.body[0].proposalStatus).toBe('PENDING')
+    expect(res.body[0].source).toBe('proposal')
+    expect(res.body[0].hubCalendarEventId).toBeNull()
   })
 })
 

@@ -134,11 +134,36 @@ export async function syncCalendar(
       yearGroupId: single?.yearGroupId ?? null,
     }
 
-    const event = await prisma.event.upsert({
-      where: { hubCalendarEventId: dto.id },
-      create: { ...data, hubCalendarEventId: dto.id, schoolId: school.id },
-      update: data,
+    // Reconciliation (Stage 4 / Phase B): a synced CalendarEvent may be the
+    // approval of a teacher proposal we already hold locally as PENDING. Before
+    // the normal upsert, look for a local proposal for THIS school that hasn't
+    // landed yet (hubCalendarEventId null), with a case-insensitive title match
+    // and the same school-local start date. If found (earliest createdAt wins),
+    // adopt it in place: attach hubCalendarEventId, clear proposalStatus, and
+    // refresh its fields + targets — the pending badge flips to a confirmed
+    // event, with no duplicate row.
+    const adopted = await prisma.event.findFirst({
+      where: {
+        schoolId: school.id,
+        proposalStatus: 'PENDING',
+        hubCalendarEventId: null,
+        date,
+        title: { equals: dto.title, mode: 'insensitive' },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
     })
+
+    const event = adopted
+      ? await prisma.event.update({
+          where: { id: adopted.id },
+          data: { ...data, hubCalendarEventId: dto.id, proposalStatus: null },
+        })
+      : await prisma.event.upsert({
+          where: { hubCalendarEventId: dto.id },
+          create: { ...data, hubCalendarEventId: dto.id, schoolId: school.id },
+          update: data,
+        })
     upserted++
 
     // Replace this event's targets so a Hub-side cohort change is reflected.
