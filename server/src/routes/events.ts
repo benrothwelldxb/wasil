@@ -280,11 +280,11 @@ router.get('/', isAuthenticated, async (req, res) => {
     const events = await prisma.event.findMany({
       where: {
         schoolId: user.schoolId,
-        // Teacher proposals awaiting Hub approval are NOT shown to parents — they
-        // only appear once approved (which clears proposalStatus). `NOT` is
-        // null-inclusive in Prisma, so ordinary events (proposalStatus null) are
-        // unaffected.
-        NOT: { proposalStatus: 'PENDING' },
+        // Teacher proposals are NEVER shown to parents while they carry a
+        // proposalStatus (PENDING or REJECTED). They appear only once approved,
+        // when Hub's sync clears proposalStatus (→ null). Ordinary events and
+        // approved proposals both have null, so this admits exactly them.
+        proposalStatus: null,
         OR: buildVisibilityOR(allClassIds, childYearGroupIds, childGroupIds),
       },
       include: {
@@ -449,6 +449,7 @@ function serializeProposalEvent(
     schoolId: string
     hubProposalId: string | null
     proposalStatus: string | null
+    proposalReviewNote: string | null
     submittedByUserId: string | null
     hubCalendarEventId: string | null
     createdAt: Date
@@ -469,6 +470,7 @@ function serializeProposalEvent(
     schoolId: event.schoolId,
     hubProposalId: event.hubProposalId,
     proposalStatus: event.proposalStatus,
+    proposalReviewNote: event.proposalReviewNote,
     submittedByUserId: event.submittedByUserId,
     hubCalendarEventId: event.hubCalendarEventId,
     source: deriveSource(event),
@@ -653,10 +655,11 @@ router.get('/proposals', isStaff, async (req, res) => {
   }
 })
 
-// Withdraw a still-PENDING proposal (submitter or admin). Deletes the local row
-// only. Hub is propose-only, so the Hub-side proposal can't be recalled; if it's
-// later approved it simply syncs in as a normal event. A proposal that has
-// already landed on the calendar (hubCalendarEventId set / not PENDING) → 409.
+// Withdraw/dismiss a proposal that hasn't landed on the calendar (submitter or
+// admin) — a still-PENDING one, or a REJECTED one the teacher wants to clear.
+// Deletes the local row only. Hub is propose-only, so a Hub-side proposal can't
+// be recalled; if a withdrawn-but-still-pending one is later approved it simply
+// syncs in as a normal event. An approved proposal (on the calendar) → 409.
 router.delete('/proposals/:id', isStaff, async (req, res) => {
   try {
     const user = req.user!
@@ -666,7 +669,7 @@ router.delete('/proposals/:id', isStaff, async (req, res) => {
     if (!existing) {
       return res.status(404).json({ error: 'Proposal not found' })
     }
-    if (existing.proposalStatus !== 'PENDING') {
+    if (existing.proposalStatus !== 'PENDING' && existing.proposalStatus !== 'REJECTED') {
       return res.status(409).json({ error: 'This proposal has already been approved and is on the calendar; it can no longer be withdrawn.' })
     }
 

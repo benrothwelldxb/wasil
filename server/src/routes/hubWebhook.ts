@@ -70,6 +70,39 @@ router.post('/webhook', raw({ type: '*/*' }), async (req: Request, res: Response
   }
   const event = typeof payload.event === 'string' ? payload.event : null
 
+  // A teacher proposal we submitted was reviewed in Hub (fired only to us).
+  //   APPROVE → Hub also created the real CalendarEvent + fired calendar.updated;
+  //     kick the (audience-safe) calendar resync so the pending row is adopted
+  //     and flips to confirmed. We deliberately DON'T flip it here off event_id
+  //     alone — routing approval through the sync keeps a staff-only approval
+  //     from ever reaching parents.
+  //   REJECT → mark the local proposal REJECTED + store the reason, so the
+  //     submitting teacher sees the outcome (parents never saw it — the feed
+  //     excludes any non-null proposalStatus).
+  if (event === 'calendar.proposal_reviewed') {
+    const data = (payload as { data?: Record<string, unknown> }).data ?? {}
+    const proposalId = typeof data.proposal_id === 'string' ? data.proposal_id : null
+    const status = typeof data.status === 'string' ? data.status : null
+    const reason = typeof data.reason === 'string' ? data.reason : null
+    const schools = await prisma.school.findMany({
+      where: { hubSchoolId },
+      select: { id: true },
+    })
+    if (status === 'REJECTED' && proposalId) {
+      await prisma.event.updateMany({
+        where: { hubProposalId: proposalId, schoolId: { in: schools.map((s) => s.id) } },
+        data: { proposalStatus: 'REJECTED', proposalReviewNote: reason },
+      })
+    } else if (status === 'APPROVED') {
+      for (const s of schools) {
+        resyncCalendarForSchool(s.id).catch((err) =>
+          console.error('[hubWebhook] proposal-approved resync failed', s.id, err),
+        )
+      }
+    }
+    return res.json({ ok: true })
+  }
+
   // A newly published timetable makes our cached class-days stale — drop them
   // so the next parent request re-reads Hub. This is a timetable event, not a
   // roster change, so we don't also stamp the roster-freshness flag for it.

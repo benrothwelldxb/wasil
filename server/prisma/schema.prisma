@@ -508,13 +508,16 @@ model Event {
   hubCalendarEventId String? @unique
 
   // Teacher event proposals (Stage 4 / Phase B). A proposal is an ordinary
-  // Event with `proposalStatus = 'PENDING'` and NO `hubCalendarEventId` yet —
-  // it renders to parents via the existing multi-target visibility query as
-  // "Pending approval". `hubProposalId` is Hub's proposal_id (idempotency key).
-  // When Hub approves it, the confirmed CalendarEvent syncs back and the sync
-  // *adopts* this row: sets `hubCalendarEventId`, clears `proposalStatus`.
+  // Event with a non-null `proposalStatus` and NO `hubCalendarEventId` yet.
+  // Proposals are visible only to staff/admins (the parent feed excludes any
+  // non-null proposalStatus) until Hub approves — the confirmed CalendarEvent
+  // then syncs back and the sync *adopts* this row (sets `hubCalendarEventId`,
+  // clears `proposalStatus`), and only then do parents see it. On rejection the
+  // `calendar.proposal_reviewed` webhook sets proposalStatus='REJECTED' +
+  // `proposalReviewNote` (the reason) so the teacher sees the outcome.
   hubProposalId      String? @unique
-  proposalStatus     String? // 'PENDING' while awaiting Hub approval, else null
+  proposalStatus     String? // 'PENDING' | 'REJECTED' while a proposal, else null
+  proposalReviewNote String? // Hub reviewer's reason, set on REJECTED
   // Staff member who submitted the proposal. SetNull so deleting the user keeps
   // the (now confirmed) event on the calendar.
   submittedByUserId  String?

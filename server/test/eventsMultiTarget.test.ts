@@ -103,16 +103,16 @@ describe('GET / — multi-target visibility query', () => {
     expect(res.body[0].hubCalendarEventId).toBe('hub-9')
   })
 
-  it('excludes PENDING teacher proposals from the parent feed (parents only see approved events)', async () => {
-    // A pending proposal awaiting Hub approval must NOT reach parents — the
-    // visibility query excludes proposalStatus PENDING. Once approved, Hub's
-    // sync clears proposalStatus, so it flows through normally.
+  it('excludes teacher proposals (PENDING or REJECTED) from the parent feed — only approved events show', async () => {
+    // Any proposal carrying a proposalStatus must NOT reach parents. Once Hub
+    // approves it, the sync clears proposalStatus (→ null), so it flows through.
+    // The query admits only proposalStatus null (ordinary + approved events).
     prismaMock.event.findMany.mockResolvedValue([])
 
     await request(makeApp()).get('/api/events').expect(200)
 
     const where = (prismaMock.event.findMany.mock.calls[0][0] as { where: Record<string, unknown> }).where
-    expect(where.NOT).toEqual({ proposalStatus: 'PENDING' })
+    expect(where.proposalStatus).toBeNull()
   })
 })
 

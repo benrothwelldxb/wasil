@@ -314,16 +314,17 @@ export interface Event {
   // Wasil Hub calendar link. When set, the event is mirrored read-only from Hub
   // and must be edited in Hub, not Connect. `source` is the convenience flag.
   hubCalendarEventId?: string | null
-  // Teacher event proposals (Phase B). A PENDING proposal has no
-  // hubCalendarEventId yet and shows to parents as "Pending approval"; `source`
-  // is 'proposal' while pending. Once Hub approves it and it syncs back,
-  // proposalStatus clears to null and source becomes 'hub'.
-  proposalStatus?: 'PENDING' | null
+  // Teacher event proposals (Phase B). A proposal (proposalStatus set) is visible
+  // only to staff, never to parents, until Hub approves it — then it syncs back,
+  // proposalStatus clears to null and source becomes 'hub'. On rejection Hub's
+  // webhook sets proposalStatus 'REJECTED' + proposalReviewNote (the reason).
+  proposalStatus?: 'PENDING' | 'REJECTED' | null
+  proposalReviewNote?: string | null
   hubProposalId?: string | null
   submittedByUserId?: string | null
   // Present only on proposal-list responses: 'ON_CALENDAR' once approved+synced,
-  // else the raw proposalStatus ('PENDING').
-  state?: 'PENDING' | 'ON_CALENDAR' | null
+  // else the raw proposalStatus ('PENDING' | 'REJECTED').
+  state?: 'PENDING' | 'REJECTED' | 'ON_CALENDAR' | null
   source?: 'hub' | 'connect' | 'proposal'
   schoolId: string
   requiresRsvp: boolean
