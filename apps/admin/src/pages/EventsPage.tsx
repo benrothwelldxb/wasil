@@ -83,6 +83,12 @@ function isPendingProposal(event: Event): boolean {
   return event.proposalStatus === 'PENDING' || event.source === 'proposal'
 }
 
+// A teacher proposal the Hub reviewer rejected — still visible so the
+// submitter (or an admin) can see the reason and dismiss it.
+function isRejectedProposal(event: Event): boolean {
+  return event.state === 'REJECTED' || event.proposalStatus === 'REJECTED'
+}
+
 export function EventsPage() {
   const theme = useTheme()
   const toast = useToast()
@@ -129,7 +135,8 @@ export function EventsPage() {
   }
 
   const canWithdraw = (event: Event) =>
-    event.proposalStatus === 'PENDING' && (isAdmin || event.submittedByUserId === user?.id)
+    (event.proposalStatus === 'PENDING' || isRejectedProposal(event)) &&
+    (isAdmin || event.submittedByUserId === user?.id)
 
   const visibleProposals = (proposals || []).filter((p) => {
     if (isAdmin || showAllProposals) return true
@@ -317,15 +324,16 @@ export function EventsPage() {
 
   const handleWithdrawConfirm = async () => {
     if (!withdrawTarget) return
+    const wasRejected = isRejectedProposal(withdrawTarget)
     try {
       await api.events.proposals.withdraw(withdrawTarget.id)
-      toast.success('Proposal withdrawn')
+      toast.success(wasRejected ? 'Proposal dismissed' : 'Proposal withdrawn')
       setWithdrawTarget(null)
       refetchProposals()
       if (isAdmin) refetchEvents()
     } catch (err) {
       console.error('Failed to withdraw proposal:', err)
-      toast.error('Failed to withdraw proposal')
+      toast.error(wasRejected ? 'Failed to dismiss proposal' : 'Failed to withdraw proposal')
       setWithdrawTarget(null)
     }
   }
@@ -699,7 +707,12 @@ export function EventsPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-semibold text-slate-900">{p.title}</h4>
-                    {p.state === 'ON_CALENDAR' ? (
+                    {isRejectedProposal(p) ? (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-red-50 rounded-full text-xs font-medium text-red-700">
+                        <AlertCircle className="w-3 h-3" />
+                        Rejected
+                      </span>
+                    ) : p.state === 'ON_CALENDAR' ? (
                       <span className="px-2 py-0.5 bg-green-50 rounded-full text-xs font-medium text-green-700">
                         On the calendar
                       </span>
@@ -710,6 +723,11 @@ export function EventsPage() {
                       </span>
                     )}
                   </div>
+                  {isRejectedProposal(p) && p.proposalReviewNote && (
+                    <p className="text-xs text-slate-400 italic mt-1">
+                      Reason: {p.proposalReviewNote}
+                    </p>
+                  )}
                   <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-slate-500">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" />
@@ -740,7 +758,7 @@ export function EventsPage() {
                     <button
                       onClick={() => setWithdrawTarget(p)}
                       className="flex items-center gap-1 p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                      title="Withdraw proposal"
+                      title={isRejectedProposal(p) ? 'Dismiss proposal' : 'Withdraw proposal'}
                     >
                       <Undo2 className="w-4 h-4" />
                     </button>
@@ -918,12 +936,16 @@ export function EventsPage() {
         />
       )}
 
-      {/* Withdraw Confirmation — pending proposal */}
+      {/* Withdraw/Dismiss Confirmation — pending or rejected proposal */}
       {withdrawTarget && (
         <ConfirmModal
-          title="Withdraw Proposal"
-          message={`Withdraw "${withdrawTarget.title}"? This removes it from Connect, but a Hub proposal already approved can't be recalled — if it's approved after you withdraw, it will still land on the calendar.`}
-          confirmLabel="Withdraw"
+          title={isRejectedProposal(withdrawTarget) ? 'Dismiss Proposal' : 'Withdraw Proposal'}
+          message={
+            isRejectedProposal(withdrawTarget)
+              ? `Dismiss "${withdrawTarget.title}"? This removes the rejected proposal from Connect.`
+              : `Withdraw "${withdrawTarget.title}"? This removes it from Connect, but a Hub proposal already approved can't be recalled — if it's approved after you withdraw, it will still land on the calendar.`
+          }
+          confirmLabel={isRejectedProposal(withdrawTarget) ? 'Dismiss' : 'Withdraw'}
           variant="warning"
           onConfirm={handleWithdrawConfirm}
           onCancel={() => setWithdrawTarget(null)}
