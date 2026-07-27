@@ -45,6 +45,7 @@ import analyticsRoutes from './routes/analytics.js'
 import emergencyAlertsRoutes from './routes/emergencyAlerts.js'
 import schoolServicesRoutes from './routes/schoolServices.js'
 import inboxRoutes from './routes/inbox.js'
+import partnerRoutes from './routes/partner.js'
 import searchRoutes from './routes/search.js'
 import inclusionRoutes from './routes/inclusion.js'
 import cafeteriaRoutes from './routes/cafeteria.js'
@@ -174,6 +175,9 @@ app.use('/provider/auth', providerAuthRoutes)
 app.use('/api/providers', providersRoutes)
 app.use('/api/provider-portal', providerPortalRoutes)
 app.use('/api/clubs', clubsRoutes)
+// Partner API — narrow, count-only surface for external Wasil apps (Desk),
+// authenticated by a Bearer partner token (not a Connect session / Hub JWT).
+app.use('/api/partner', partnerRoutes)
 // "Today your child has …" timetable helper, sourced from Wasil Hub.
 app.use('/api/timetable', timetableRoutes)
 // Admin-triggered Wasil Hub MIS sync (POST /api/admin/hub-sync)

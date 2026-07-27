@@ -2189,3 +2189,16 @@ model JobRun {
   @@unique([jobKey, periodKey])
   @@index([jobKey, startedAt])
 }
+
+// Partner API tokens — external Wasil apps (e.g. Desk) that call Connect's
+// narrow `/api/partner/*` surface. Same discipline as Hub's `wsk_` keys: we
+// store only the SHA-256 hash of the plaintext; the plaintext is shown once at
+// mint time (scripts/mint-partner-token.ts) and lives only in the partner's env.
+model PartnerToken {
+  id         String    @id @default(cuid())
+  name       String // e.g. "desk"
+  tokenHash  String    @unique // sha256(plaintext), hex
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+}
