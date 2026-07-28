@@ -72,6 +72,9 @@ export function ParentsPage() {
   const [selectedParentIds, setSelectedParentIds] = useState<Set<string>>(new Set())
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
   const [bulkDeleteProgress, setBulkDeleteProgress] = useState<{ current: number; total: number } | null>(null)
+  const [inviteAllConfirm, setInviteAllConfirm] = useState(false)
+  const [sendingInvites, setSendingInvites] = useState(false)
+  const [sendingInviteFor, setSendingInviteFor] = useState<string | null>(null)
 
   const { data: parentsData, refetch: refetchParents } = useApi(
     () => api.parentInvitations.listParents({ search: parentsSearch, page: parentsPage, limit: 50 }),
@@ -280,6 +283,41 @@ export function ParentsPage() {
       toast.error(`Failed to send login link: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSendingLoginLink(null)
+    }
+  }
+
+  // Passwordless "invite parents" — emails Hub-provisioned (or any) parents a
+  // welcome telling them to sign in with their email + a 6-digit code. Omitting
+  // ids invites every parent in the school with an email (re-sendable, so it's
+  // safe to re-run for parents who were already invited).
+  const handleSendAllInvites = async () => {
+    setSendingInvites(true)
+    try {
+      const result = await api.parentInvitations.sendInvites()
+      toast.success(`Invited ${result.sent} parent${result.sent !== 1 ? 's' : ''} (${result.skipped} skipped — no email)`)
+      refetchParents()
+      setInviteAllConfirm(false)
+    } catch (error) {
+      toast.error(`Failed to send invites: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setSendingInvites(false)
+    }
+  }
+
+  const handleSendInviteOne = async (id: string) => {
+    setSendingInviteFor(id)
+    try {
+      const result = await api.parentInvitations.sendInvites([id])
+      if (result.sent > 0) {
+        toast.success('Sign-in invite sent')
+      } else {
+        toast.error('Could not send invite — no email on file')
+      }
+      refetchParents()
+    } catch (error) {
+      toast.error(`Failed to send invite: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setSendingInviteFor(null)
     }
   }
 
@@ -726,6 +764,14 @@ export function ParentsPage() {
         <>
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-slate-900">Registered Parents</h2>
+            <button
+              onClick={() => setInviteAllConfirm(true)}
+              className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
+              style={{ backgroundColor: theme.colors.brandColor }}
+            >
+              <Mail className="h-4 w-4" />
+              <span>Send sign-in invites</span>
+            </button>
           </div>
 
           {/* Search */}
@@ -783,6 +829,7 @@ export function ParentsPage() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Email</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Children</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Last Login</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Invite Status</th>
                   <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">Actions</th>
                 </tr>
               </thead>
@@ -832,7 +879,26 @@ export function ParentsPage() {
                       }
                     </td>
                     <td className="px-4 py-3">
+                      {parent.welcomeSentAt ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Invited {new Date(parent.welcomeSentAt).toLocaleDateString()}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">Not invited</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center justify-end space-x-1">
+                        <button
+                          onClick={() => handleSendInviteOne(parent.id)}
+                          disabled={sendingInviteFor === parent.id}
+                          className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+                          title={parent.welcomeSentAt ? 'Resend sign-in invite' : 'Send sign-in invite'}
+                        >
+                          <Mail className="h-3 w-3" />
+                          <span>{sendingInviteFor === parent.id ? 'Sending...' : parent.welcomeSentAt ? 'Resend' : 'Send'}</span>
+                        </button>
                         <button
                           onClick={() => handleSendLoginLink(parent.id)}
                           disabled={sendingLoginLink === parent.id}
@@ -863,7 +929,7 @@ export function ParentsPage() {
                 ))}
                 {registeredParents.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
                       <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p>No registered parents found.</p>
                     </td>
@@ -1053,6 +1119,17 @@ export function ParentsPage() {
           isLoading={isDeleting}
           onConfirm={handleBulkDeleteParents}
           onCancel={() => !isDeleting && setBulkDeleteConfirm(false)}
+        />
+      )}
+
+      {inviteAllConfirm && (
+        <ConfirmModal
+          title="Send sign-in invites?"
+          message="This emails sign-in instructions to every registered parent in your school who has an email on file — parents open the app and sign in with their email + a 6-digit code. Already-invited parents get a re-send too. Parents with no email are skipped."
+          confirmLabel={sendingInvites ? 'Sending...' : 'Send invites'}
+          isLoading={sendingInvites}
+          onConfirm={handleSendAllInvites}
+          onCancel={() => setInviteAllConfirm(false)}
         />
       )}
 
