@@ -10,6 +10,11 @@ interface AuthContextType {
   twoFactorSessionToken: string | null
   login: (email: string, role?: string) => Promise<void>
   loginWithPassword: (email: string, password: string) => Promise<void>
+  // Passwordless sign-in: request a 6-digit code, then verify it. `verifyLoginCode`
+  // is 2FA-aware — on a 2FA account it sets `twoFactorPending` and returns without
+  // throwing, so the caller shows the existing 2FA form (completed via `verify2fa`).
+  requestLoginCode: (email: string) => Promise<void>
+  verifyLoginCode: (email: string, code: string) => Promise<void>
   verify2fa: (code: string) => Promise<void>
   recover2fa: (code: string) => Promise<{ recoveryCodesRemaining?: number }>
   logout: () => Promise<void>
@@ -89,6 +94,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const requestLoginCode = async (email: string) => {
+    // Enumeration-safe on the server; always resolves. Errors (rate-limit) re-throw
+    // so the UI can surface "too many requests".
+    await auth.requestCode(email)
+  }
+
+  const verifyLoginCode = async (email: string, code: string) => {
+    const result = await auth.verifyCode(email, code)
+    if (result.twoFactorRequired && result.twoFactorSessionToken) {
+      setTwoFactorPending(true)
+      setTwoFactorSessionToken(result.twoFactorSessionToken)
+      return // UI shows the 2FA form; verify2fa completes it
+    }
+    // Full session — verifyCode already stored the tokens.
+    setTwoFactorPending(false)
+    setTwoFactorSessionToken(null)
+    if (result.user) setUser(result.user)
+  }
+
   const verify2fa = async (code: string) => {
     if (!twoFactorSessionToken) throw new Error('No 2FA session')
     const userData = await auth.verify2fa(twoFactorSessionToken, code)
@@ -139,6 +163,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         twoFactorSessionToken,
         login,
         loginWithPassword,
+        requestLoginCode,
+        verifyLoginCode,
         verify2fa,
         recover2fa,
         logout,
