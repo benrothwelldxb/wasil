@@ -193,6 +193,11 @@ model User {
   // Tracking
   lastLoginAt DateTime?
 
+  // Onboarding: when an admin last sent this parent the "you've been added"
+  // welcome email (the passwordless sign-in nudge). Null = never invited.
+  // Re-sending updates it; used by admin UI to show invite status.
+  welcomeSentAt DateTime?
+
   // Parent relations
   children           Child[]
   studentLinks       ParentStudentLink[]
@@ -972,6 +977,24 @@ model MagicLinkToken {
 
   @@index([email, type])
   @@index([token])
+}
+
+// Passwordless sign-in codes (6-digit). The primary front door for parents:
+// enter email → receive a short-lived code → type it in. We store only the
+// SHA-256 hash of the code, never the plaintext. `attempts` locks the code
+// after 5 wrong guesses; `consumedAt` enforces single-use. Only the newest
+// un-consumed, un-expired row for an email is ever valid (older ones are
+// superseded on each new request).
+model LoginCode {
+  id         String    @id @default(cuid())
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, createdAt])
 }
 
 // Link Categories for organizing external links

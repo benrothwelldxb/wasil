@@ -287,9 +287,41 @@ export class TwoFactorRequiredError extends Error {
   }
 }
 
+// Shape returned by the token-issuing auth endpoints (/auth/login,
+// /auth/code/verify): either a full session, or the 2FA-pending handoff.
+export interface LoginResponse {
+  user?: User
+  accessToken?: string
+  refreshToken?: string
+  twoFactorRequired?: boolean
+  twoFactorSessionToken?: string
+}
+
 // Auth
 export const auth = {
   me: () => fetchApi<User>('/auth/me'),
+  // Passwordless sign-in, step 1: request a 6-digit code by email. Always
+  // resolves { ok: true } — the server is enumeration-safe and never reveals
+  // whether the email maps to a real account.
+  requestCode: (email: string) =>
+    fetchApi<{ ok: true }>('/auth/code/request', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  // Passwordless sign-in, step 2: verify the code. Returns the raw
+  // LoginResponse (same shape /auth/login yields, including the 2FA-pending
+  // { twoFactorRequired, twoFactorSessionToken } branch). Stores tokens when a
+  // full session is issued; leaves 2FA handling to the caller/AuthContext.
+  verifyCode: async (email: string, code: string): Promise<LoginResponse> => {
+    const result = await fetchApi<LoginResponse>('/auth/code/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    })
+    if (result.accessToken && result.refreshToken) {
+      setTokens(result.accessToken, result.refreshToken)
+    }
+    return result
+  },
   login: async (email: string, password: string) => {
     const result = await fetchApi<{ user?: User; accessToken?: string; refreshToken?: string; twoFactorRequired?: boolean; twoFactorSessionToken?: string }>('/auth/login', {
       method: 'POST',
@@ -1212,8 +1244,16 @@ export const parentInvitations = {
     if (params?.page) searchParams.append('page', params.page.toString())
     if (params?.limit) searchParams.append('limit', params.limit.toString())
     const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
-    return fetchApi<{ parents: Array<{ id: string; email: string; name: string; avatarUrl?: string; lastLoginAt?: string | null; hasPassword?: boolean; createdAt: string; children: Array<{ name: string; className: string; studentId?: string | null }> }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/api/parent-invitations/parents${query}`)
+    return fetchApi<{ parents: Array<{ id: string; email: string; name: string; avatarUrl?: string; lastLoginAt?: string | null; welcomeSentAt?: string | null; hasPassword?: boolean; createdAt: string; children: Array<{ name: string; className: string; studentId?: string | null }> }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/api/parent-invitations/parents${query}`)
   },
+  // Admin "invite parents": send the passwordless welcome email to a selection
+  // of parents (or all parents with an email when ids are omitted). Stamps
+  // welcomeSentAt server-side. Re-sendable.
+  sendInvites: (parentUserIds?: string[]) =>
+    fetchApi<{ sent: number; skipped: number }>('/api/parent-invitations/send-invites', {
+      method: 'POST',
+      body: JSON.stringify({ parentUserIds }),
+    }),
   deleteParent: (id: string) =>
     fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}`, { method: 'DELETE' }),
   resetParentPassword: (id: string) =>

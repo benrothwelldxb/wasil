@@ -9,7 +9,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { generateAccessToken, generateRefreshToken, revokeRefreshToken, rotateRefreshToken } from '../services/jwt.js'
-import { sendMagicLinkEmail, sendInvitationEmail } from '../services/email.js'
+import { sendMagicLinkEmail, sendInvitationEmail, sendLoginCodeEmail } from '../services/email.js'
 import { logAudit } from '../services/audit.js'
 import { serializeUser } from '../services/serializers.js'
 import {
@@ -50,6 +50,18 @@ const setPasswordSchema = z.object({
 
 const magicLinkRequestSchema = z.object({
   email: z.string().email(),
+})
+
+const codeRequestSchema = z.object({
+  email: z.string().email(),
+})
+
+// Kept lenient (min-1, not strictly 6 digits) so a malformed guess still runs
+// through the verify path — counting against the per-code attempt lock and
+// returning invalid_code — rather than short-circuiting at validation.
+const codeVerifySchema = z.object({
+  email: z.string().email(),
+  code: z.string().min(1).max(12),
 })
 
 const exchangeCodeSchema = z.object({
@@ -234,6 +246,27 @@ const registerPerEmailLimiter = rateLimit({
   max: 5,
   keyGenerator: (req) => req.body?.email?.toLowerCase() || 'unknown',
   message: { error: 'Too many registration attempts for this email' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+// Passwordless code request limiters. Per-email is tight (a parent needs at
+// most a couple of codes in 10 min); per-IP is looser because a whole school
+// can legitimately sit behind one NAT'd address. Both return the same generic
+// message so neither reveals whether the email exists.
+const codeRequestPerEmailLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 3,
+  keyGenerator: (req) => req.body?.email?.toLowerCase() || 'unknown',
+  message: { error: 'Too many code requests for this email, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const codeRequestIpLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 20,
+  message: { error: 'Too many code requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
 })
@@ -521,6 +554,147 @@ router.post('/login', loginLimiter, emailLoginLimiter, validate(loginSchema), as
   } catch (error) {
     console.error('Login error:', error)
     res.status(500).json({ error: 'Login failed' })
+  }
+})
+
+// --- Passwordless 6-digit sign-in code ---
+const LOGIN_CODE_EXPIRY_MINUTES = 10
+const LOGIN_CODE_MAX_ATTEMPTS = 5
+
+function hashLoginCode(code: string): string {
+  return crypto.createHash('sha256').update(code).digest('hex')
+}
+
+// POST /auth/code/request — enumeration-safe: ALWAYS 200 { ok: true }, never
+// revealing whether the email maps to a real account. If it does, mint a fresh
+// 6-digit code (crypto RNG), store only its SHA-256 hash, supersede any prior
+// codes for that email, and email the plaintext.
+router.post(
+  '/code/request',
+  codeRequestIpLimiter,
+  codeRequestPerEmailLimiter,
+  validate(codeRequestSchema),
+  async (req, res) => {
+    const email = (req.body.email as string).toLowerCase()
+
+    try {
+      const user = await prisma.user.findUnique({
+        where: { email },
+        include: { school: { select: { name: true } } },
+      })
+
+      if (user) {
+        // Supersede every prior code for this email so only the newest is valid.
+        await prisma.loginCode.deleteMany({ where: { email } })
+
+        const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0')
+        const expiresAt = new Date(Date.now() + LOGIN_CODE_EXPIRY_MINUTES * 60 * 1000)
+
+        await prisma.loginCode.create({
+          data: { email, codeHash: hashLoginCode(code), expiresAt, attempts: 0 },
+        })
+
+        await sendLoginCodeEmail({
+          to: user.email,
+          code,
+          schoolName: user.school?.name,
+          ttlMinutes: LOGIN_CODE_EXPIRY_MINUTES,
+        })
+      }
+    } catch (error) {
+      // Swallow: a failure here must not leak (via status/timing divergence)
+      // whether the account exists. Log server-side, still answer { ok: true }.
+      console.error('Code request error:', error)
+    }
+
+    return res.json({ ok: true })
+  }
+)
+
+// POST /auth/code/verify — validate the newest live code, then issue a session
+// exactly like /auth/login (2FA branch preserved).
+router.post('/code/verify', validate(codeVerifySchema), async (req, res) => {
+  const email = (req.body.email as string).toLowerCase()
+  const code = req.body.code as string
+
+  try {
+    const record = await prisma.loginCode.findFirst({
+      where: { email, consumedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    if (!record) {
+      return res.status(400).json({ error: 'invalid_or_expired_code' })
+    }
+
+    // Already exhausted — make sure it's dead and reject.
+    if (record.attempts >= LOGIN_CODE_MAX_ATTEMPTS) {
+      await prisma.loginCode.update({
+        where: { id: record.id },
+        data: { consumedAt: new Date() },
+      })
+      return res.status(429).json({ error: 'too_many_attempts' })
+    }
+
+    // Timing-safe compare of the SHA-256 hashes (equal length, so safe).
+    const submitted = Buffer.from(hashLoginCode(code), 'hex')
+    const expected = Buffer.from(record.codeHash, 'hex')
+    const match =
+      submitted.length === expected.length && crypto.timingSafeEqual(submitted, expected)
+
+    if (!match) {
+      const attempts = record.attempts + 1
+      await prisma.loginCode.update({
+        where: { id: record.id },
+        // Kill the code once it hits the attempt ceiling so a lucky later guess
+        // can't land on an already-burned code.
+        data: attempts >= LOGIN_CODE_MAX_ATTEMPTS
+          ? { attempts, consumedAt: new Date() }
+          : { attempts },
+      })
+      return res.status(401).json({ error: 'invalid_code' })
+    }
+
+    // Correct — burn the code (single-use) before issuing anything.
+    await prisma.loginCode.update({
+      where: { id: record.id },
+      data: { consumedAt: new Date() },
+    })
+
+    // From here, mirror /auth/login's success path exactly.
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        children: { include: { class: true } },
+        studentLinks: { include: { student: { include: { class: true } } } },
+        school: true,
+      },
+    })
+
+    if (!user) {
+      // Code existed but the account vanished between request and verify.
+      return res.status(400).json({ error: 'invalid_or_expired_code' })
+    }
+
+    // 2FA branch — same handoff /auth/login uses.
+    if (user.twoFactorEnabled) {
+      const sessionToken = createTwoFactorSession(user.id)
+      return res.json({ twoFactorRequired: true, twoFactorSessionToken: sessionToken })
+    }
+
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+
+    const accessToken = generateAccessToken(user)
+    const refreshToken = await generateRefreshToken(user)
+
+    return res.json({
+      user: serializeUser(user),
+      accessToken,
+      refreshToken,
+    })
+  } catch (error) {
+    console.error('Code verify error:', error)
+    return res.status(500).json({ error: 'Verification failed' })
   }
 })
 
@@ -833,18 +1007,30 @@ router.post('/magic-link/request', magicLinkLimiter, magicLinkPerEmailLimiter, v
     // Build magic link URL
     const magicLink = `${PARENT_APP_URL}/auth/magic?token=${token}`
 
-    // Get children names for email
-    const children = await prisma.child.findMany({
-      where: { parentId: user.id },
-      select: { name: true },
-    })
+    // Get children names for email. Hub-provisioned parents have no legacy
+    // `Child` rows — their children live in `ParentStudentLink → Student` — so
+    // read both and merge (legacy self-registered parents still have `Child`).
+    const [legacyChildren, studentLinks] = await Promise.all([
+      prisma.child.findMany({
+        where: { parentId: user.id },
+        select: { name: true },
+      }),
+      prisma.parentStudentLink.findMany({
+        where: { userId: user.id },
+        include: { student: { select: { firstName: true, lastName: true } } },
+      }),
+    ])
+    const childrenNames = [
+      ...legacyChildren.map(c => c.name),
+      ...studentLinks.map(l => `${l.student.firstName} ${l.student.lastName}`),
+    ]
 
     // Send email
     await sendMagicLinkEmail({
       to: email,
       magicLink,
       schoolName: user.school.name,
-      childrenNames: children.map(c => c.name),
+      childrenNames,
       isRegistration: false,
     })
 

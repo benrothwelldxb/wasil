@@ -179,6 +179,7 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
         name: p.name,
         avatarUrl: p.avatarUrl,
         lastLoginAt: p.lastLoginAt?.toISOString() || null,
+        welcomeSentAt: p.welcomeSentAt?.toISOString() || null,
         hasPassword: !!p.passwordHash,
         createdAt: p.createdAt.toISOString(),
         children: [
@@ -317,6 +318,71 @@ router.post('/parents/:id/reset-password', isAdmin, async (req: Request, res: Re
   } catch (error) {
     console.error('Error resetting parent password:', error)
     res.status(500).json({ error: 'Failed to send login link' })
+  }
+})
+
+// Send passwordless "welcome / you've been added" emails to parents. School-
+// scoped: only touches PARENT users in the caller's school. Omit parentUserIds
+// to invite every parent with an email; pass a subset to invite a selection.
+// Deliberately does NOT embed a live code (a bulk send would expire before use)
+// — the email tells them to open the app and request a code. Re-sendable:
+// stamps User.welcomeSentAt each time.
+router.post('/send-invites', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { parentUserIds } = (req.body || {}) as { parentUserIds?: string[] }
+
+    const where: Record<string, unknown> = { schoolId: user.schoolId, role: 'PARENT' }
+    if (Array.isArray(parentUserIds) && parentUserIds.length > 0) {
+      where.id = { in: parentUserIds }
+    }
+
+    const parents = await prisma.user.findMany({
+      where,
+      select: { id: true, email: true, name: true },
+    })
+
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { name: true },
+    })
+    const schoolName = school?.name || 'School'
+
+    const { sendParentWelcomeEmail } = await import('../services/email.js')
+
+    let sent = 0
+    let skipped = 0
+    const emailedIds: string[] = []
+
+    for (const p of parents) {
+      if (!p.email) {
+        skipped++
+        continue
+      }
+      await sendParentWelcomeEmail({ to: p.email, schoolName })
+      emailedIds.push(p.id)
+      sent++
+    }
+
+    if (emailedIds.length > 0) {
+      await prisma.user.updateMany({
+        where: { id: { in: emailedIds } },
+        data: { welcomeSentAt: new Date() },
+      })
+    }
+
+    logAudit({
+      req,
+      action: 'UPDATE',
+      resourceType: 'USER',
+      resourceId: 'bulk',
+      metadata: { action: 'send-invites', sent, skipped },
+    })
+
+    res.json({ sent, skipped })
+  } catch (error) {
+    console.error('Error sending parent invites:', error)
+    res.status(500).json({ error: 'Failed to send invites' })
   }
 })
 
