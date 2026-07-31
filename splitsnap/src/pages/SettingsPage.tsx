@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { useTheme, type Theme } from '@/components/theme/ThemeProvider'
+import { PeopleManager } from '@/features/people'
 
 const themeOptions: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -17,6 +18,17 @@ export function SettingsPage() {
   return (
     <div>
       <PageHeader title="Settings" description="Make SplitSnap yours." />
+
+      <Card className="mb-4">
+        <CardContent className="p-5">
+          <p className="text-sm font-medium">People</p>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Save the people you split with. Remembered on this device for
+            faster splitting.
+          </p>
+          <PeopleManager />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-5">

@@ -9,8 +9,10 @@
 export interface Person {
   id: string
   name: string
-  /** Tailwind-friendly accent colour token used for avatars/chips. */
+  /** Hex colour automatically assigned for avatars/chips. */
   color: string
+  /** When the person was first saved (used for stable ordering). */
+  createdAt: number
 }
 
 /** A single line item on a receipt. */

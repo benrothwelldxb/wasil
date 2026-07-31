@@ -1,0 +1,6 @@
+export { PeopleManager } from '@/features/people/PeopleManager'
+export { AddPersonForm } from '@/features/people/AddPersonForm'
+export { PersonAvatar } from '@/features/people/PersonAvatar'
+export { usePeople } from '@/features/people/usePeople'
+export { getInitials } from '@/features/people/initials'
+export { PERSON_COLORS, pickColor } from '@/features/people/colors'
