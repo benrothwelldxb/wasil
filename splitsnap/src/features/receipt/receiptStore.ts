@@ -16,6 +16,7 @@ export type EditableItemFields = Partial<
 
 const DEFAULT_SERVICE_CHARGE: ServiceCharge = {
   amount: 0,
+  percent: null,
   mode: 'proportional',
   assignedTo: [],
 }
@@ -63,8 +64,10 @@ interface ReceiptState {
   /** Set how many units of an item a person had (0 removes them). */
   setItemShare: (itemId: string, personId: string, count: number) => void
 
-  /** Set the service-charge amount (0 removes it). */
+  /** Set a flat service-charge amount (0 removes it); clears any percentage. */
   setServiceChargeAmount: (amount: number) => void
+  /** Set a discretionary percentage of the subtotal (null = flat/custom). */
+  setServiceChargePercent: (percent: number | null) => void
   /** Choose how the service charge is split. */
   setServiceChargeMode: (mode: ServiceChargeMode) => void
   /** Toggle a person for a manually-assigned service charge. */
@@ -196,6 +199,16 @@ export const useReceiptStore = create<ReceiptState>((set, get) => ({
       serviceCharge: {
         ...state.serviceCharge,
         amount: Math.max(0, amount) || 0,
+        percent: null,
+      },
+    })),
+
+  setServiceChargePercent: (percent) =>
+    set((state) => ({
+      serviceCharge: {
+        ...state.serviceCharge,
+        percent:
+          percent === null ? null : Math.max(0, Math.min(100, percent)),
       },
     })),
 

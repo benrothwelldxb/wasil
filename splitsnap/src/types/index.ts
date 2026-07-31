@@ -20,8 +20,16 @@ export type ServiceChargeMode = 'equal' | 'proportional' | 'manual'
 
 /** A detected/entered service charge and how to split it. */
 export interface ServiceCharge {
-  /** Amount in the receipt currency (0 = none). */
+  /**
+   * Flat amount in the receipt currency, used when `percent` is null
+   * (a detected charge or a custom amount). 0 = none.
+   */
   amount: number
+  /**
+   * Discretionary percentage of the items subtotal (e.g. 12.5). When set, the
+   * effective charge derives from the subtotal and `amount` is ignored.
+   */
+  percent: number | null
   mode: ServiceChargeMode
   /** People it's assigned to when mode is 'manual'. */
   assignedTo: string[]

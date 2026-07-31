@@ -30,7 +30,12 @@ export interface SplitResult {
 
 const itemCost = (item: ReceiptItem) => item.price * (item.quantity || 1)
 
-const NO_SERVICE: ServiceCharge = { amount: 0, mode: 'proportional', assignedTo: [] }
+const NO_SERVICE: ServiceCharge = {
+  amount: 0,
+  percent: null,
+  mode: 'proportional',
+  assignedTo: [],
+}
 
 /**
  * Split each item's cost evenly between the people assigned to it, then add
@@ -88,8 +93,12 @@ export function computeSplit(
     }
   }
 
-  // Distribute the service charge.
-  const serviceTotal = Math.max(0, service.amount) || 0
+  // Distribute the service charge. A percentage derives from the subtotal;
+  // otherwise use the flat amount.
+  const serviceTotal =
+    service.percent != null
+      ? Math.round(itemsTotal * service.percent) / 100
+      : Math.max(0, service.amount) || 0
   let serviceUnassigned = 0
 
   if (serviceTotal > 0) {

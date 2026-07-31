@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Plus, Sparkles } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
+import { formatCurrency } from '@/lib/format'
 import { currencySymbol, type CurrencyCode } from '@/lib/currency'
 import { PersonChip } from '@/features/split/PersonChip'
 import { useReceiptStore } from '@/features/receipt'
@@ -19,6 +20,9 @@ const MODES: { value: ServiceChargeMode; label: string; hint: string }[] = [
   { value: 'manual', label: 'Manually', hint: 'Only the people you pick pay it.' },
 ]
 
+/** Discretionary tip presets, as a % of the items subtotal. */
+const PRESETS = [10, 12.5, 15] as const
+
 function sanitize(value: string): string {
   const cleaned = value.replace(/[^\d.]/g, '')
   const parts = cleaned.split('.')
@@ -32,45 +36,50 @@ interface ServiceChargeCardProps {
 }
 
 /**
- * Detects (via OCR) and controls the service charge: edit the amount, choose
- * how it's split — equally, proportionally, or manually — and, for manual,
- * pick who pays. Totals recalculate instantly from the store.
+ * Detects (via OCR) and controls the service charge. Offer discretionary tip
+ * presets (10% / 12.5% / 15%) computed from the subtotal, or a custom flat
+ * amount, then choose how it's split — equally, proportionally, or manually.
+ * Totals recalculate instantly from the store.
  */
 export function ServiceChargeCard({
   people,
   currency = 'GBP',
 }: ServiceChargeCardProps) {
   const service = useReceiptStore((s) => s.serviceCharge)
+  const items = useReceiptStore((s) => s.items)
   const setAmount = useReceiptStore((s) => s.setServiceChargeAmount)
+  const setPercent = useReceiptStore((s) => s.setServiceChargePercent)
   const setMode = useReceiptStore((s) => s.setServiceChargeMode)
   const toggleAssignee = useReceiptStore((s) => s.toggleServiceChargeAssignee)
 
-  const [draft, setDraft] = useState(
-    service.amount ? service.amount.toFixed(2) : '',
+  const subtotal = items.reduce(
+    (sum, item) => sum + item.price * (item.quantity || 1),
+    0,
   )
-  const [expanded, setExpanded] = useState(service.amount > 0)
 
-  // Sync when OCR (or a rescan) sets the detected amount.
+  const [showCustom, setShowCustom] = useState(false)
+
+  const isPercent = service.percent != null
+  const isCustom = showCustom || (!isPercent && service.amount > 0)
+  const noneActive = !isPercent && !isCustom
+  const effectiveAmount = isPercent
+    ? Math.round(subtotal * (service.percent as number)) / 100
+    : service.amount
+  const hasCharge = effectiveAmount > 0
+
+  const [draft, setDraft] = useState(
+    !isPercent && service.amount > 0 ? service.amount.toFixed(2) : '',
+  )
+
+  // Keep the custom amount field in sync with OCR-detected charges.
   useEffect(() => {
-    setDraft(service.amount ? service.amount.toFixed(2) : '')
-    if (service.amount > 0) setExpanded(true)
-  }, [service.amount])
+    if (service.percent == null) {
+      setDraft(service.amount ? service.amount.toFixed(2) : '')
+    }
+  }, [service.amount, service.percent])
 
-  const hasCharge = service.amount > 0
   const activeHint = MODES.find((m) => m.value === service.mode)?.hint
-
-  if (!hasCharge && !expanded) {
-    return (
-      <button
-        type="button"
-        onClick={() => setExpanded(true)}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-border py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary"
-      >
-        <Plus className="h-4 w-4" />
-        Add a service charge
-      </button>
-    )
-  }
+  const presetActive = (p: number) => service.percent === p
 
   return (
     <div
@@ -82,32 +91,75 @@ export function ServiceChargeCard({
           <Sparkles className="h-4 w-4 text-accent-strong" />
           <p className="font-medium">Service charge</p>
         </div>
-        <div className="relative w-28">
-          <span
-            className={cn(
-              'pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm',
-              draft ? 'text-foreground' : 'text-muted-foreground',
-            )}
+        {hasCharge && (
+          <p className="text-sm font-semibold tabular-nums">
+            {formatCurrency(effectiveAmount, currency)}
+          </p>
+        )}
+      </div>
+
+      {/* Preset selector: None / 10% / 12.5% / 15% / Custom */}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <PresetChip
+          active={noneActive}
+          onClick={() => {
+            setShowCustom(false)
+            setAmount(0)
+          }}
+        >
+          None
+        </PresetChip>
+        {PRESETS.map((p) => (
+          <PresetChip
+            key={p}
+            active={presetActive(p)}
+            onClick={() => {
+              setShowCustom(false)
+              setPercent(p)
+            }}
           >
+            {p}%
+          </PresetChip>
+        ))}
+        <PresetChip
+          active={isCustom}
+          onClick={() => {
+            setShowCustom(true)
+            if (isPercent) setPercent(null)
+          }}
+        >
+          Custom
+        </PresetChip>
+      </div>
+
+      {isPercent && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {service.percent}% of {formatCurrency(subtotal, currency)} subtotal ={' '}
+          {formatCurrency(effectiveAmount, currency)}
+        </p>
+      )}
+
+      {isCustom && (
+        <div className="relative mt-3 w-32">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-foreground">
             {currencySymbol(currency)}
           </span>
           <Input
             aria-label="Service charge amount"
             inputMode="decimal"
             placeholder="0.00"
+            autoFocus
             value={draft}
             onChange={(e) => {
               const next = sanitize(e.target.value)
               setDraft(next)
               setAmount(next ? parseFloat(next) || 0 : 0)
             }}
-            onBlur={() =>
-              draft && setDraft((parseFloat(draft) || 0).toFixed(2))
-            }
+            onBlur={() => draft && setDraft((parseFloat(draft) || 0).toFixed(2))}
             className="pl-7 text-right tabular-nums"
           />
         </div>
-      </div>
+      )}
 
       <AnimatePresence initial={false}>
         {hasCharge && (
@@ -172,5 +224,31 @@ export function ServiceChargeCard({
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+function PresetChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors',
+        active
+          ? 'border-accent bg-accent text-accent-foreground shadow-soft'
+          : 'border-border text-muted-foreground hover:bg-secondary hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
   )
 }

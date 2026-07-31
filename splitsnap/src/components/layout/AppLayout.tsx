@@ -6,6 +6,7 @@ import { BottomNav } from '@/components/layout/BottomNav'
 import { DesktopSidebar } from '@/components/layout/DesktopSidebar'
 import { Header } from '@/components/layout/Header'
 import { RouteFallback } from '@/components/RouteFallback'
+import { InstallPrompt } from '@/features/pwa'
 
 /**
  * App shell: sidebar on desktop, bottom tab bar on mobile, animated page
@@ -49,6 +50,8 @@ export function AppLayout() {
 
         <BottomNav />
       </div>
+
+      <InstallPrompt />
     </div>
   )
 }
