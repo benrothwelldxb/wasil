@@ -55,6 +55,13 @@ interface ReceiptState {
   toggleAssignment: (itemId: string, personId: string) => void
   /** Replace the full set of assignees for an item (e.g. "everyone"). */
   setAssignees: (itemId: string, personIds: string[]) => void
+  /**
+   * Switch an item between equal split ('even') and per-person counts
+   * ('count'). Entering count mode seeds existing assignees at 1 each.
+   */
+  setItemSplitMode: (itemId: string, mode: 'even' | 'count') => void
+  /** Set how many units of an item a person had (0 removes them). */
+  setItemShare: (itemId: string, personId: string, count: number) => void
 
   /** Set the service-charge amount (0 removes it). */
   setServiceChargeAmount: (amount: number) => void
@@ -155,6 +162,33 @@ export const useReceiptStore = create<ReceiptState>((set, get) => ({
       items: state.items.map((item) =>
         item.id === itemId ? { ...item, assignedTo: personIds } : item,
       ),
+    })),
+
+  setItemSplitMode: (itemId, mode) =>
+    set((state) => ({
+      items: state.items.map((item) => {
+        if (item.id !== itemId) return item
+        if (mode === 'even') {
+          const { shares: _shares, ...rest } = item
+          void _shares
+          return rest
+        }
+        // Seed count mode from any existing equal-split assignees.
+        const seeded: Record<string, number> = {}
+        for (const id of item.assignedTo) seeded[id] = 1
+        return { ...item, shares: item.shares ?? seeded }
+      }),
+    })),
+
+  setItemShare: (itemId, personId, count) =>
+    set((state) => ({
+      items: state.items.map((item) => {
+        if (item.id !== itemId) return item
+        const shares = { ...(item.shares ?? {}) }
+        if (count > 0) shares[personId] = count
+        else delete shares[personId]
+        return { ...item, shares }
+      }),
     })),
 
   setServiceChargeAmount: (amount) =>

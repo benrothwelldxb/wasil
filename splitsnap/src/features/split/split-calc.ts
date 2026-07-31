@@ -59,6 +59,22 @@ export function computeSplit(
     const cost = itemCost(item)
     itemsTotal += cost
 
+    // Per-person counts: each person pays unit price × their count; any
+    // unallocated units are left unassigned.
+    if (item.shares) {
+      const unit = item.price
+      let allocatedUnits = 0
+      for (const [id, count] of Object.entries(item.shares)) {
+        if (!byId.has(id) || count <= 0) continue
+        itemsAmount.set(id, (itemsAmount.get(id) ?? 0) + unit * count)
+        counts.set(id, (counts.get(id) ?? 0) + 1)
+        allocatedUnits += count
+      }
+      const leftover = Math.max(0, (item.quantity || 1) - allocatedUnits)
+      unassignedItems += unit * leftover
+      continue
+    }
+
     const assignees = item.assignedTo.filter((id) => byId.has(id))
     if (assignees.length === 0) {
       unassignedItems += cost

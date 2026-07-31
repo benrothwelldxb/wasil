@@ -21,6 +21,8 @@ export function SplitPage() {
   const serviceCharge = useReceiptStore((s) => s.serviceCharge)
   const toggleAssignment = useReceiptStore((s) => s.toggleAssignment)
   const setAssignees = useReceiptStore((s) => s.setAssignees)
+  const setItemSplitMode = useReceiptStore((s) => s.setItemSplitMode)
+  const setItemShare = useReceiptStore((s) => s.setItemShare)
   const { currency, setCurrency } = useCurrency()
   const { people, addPerson } = usePeople()
 
@@ -92,6 +94,10 @@ export function SplitPage() {
                 roster.every((p) => item.assignedTo.includes(p.id))
               setAssignees(item.id, everyone ? [] : roster.map((p) => p.id))
             }}
+            onSetSplitMode={(mode) => setItemSplitMode(item.id, mode)}
+            onSetShare={(personId, count) =>
+              setItemShare(item.id, personId, count)
+            }
           />
         ))}
       </div>

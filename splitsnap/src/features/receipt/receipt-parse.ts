@@ -162,7 +162,11 @@ export function parseReceiptItems(text: string): ParsedItem[] {
     // Need a real name; a lone number/symbol isn't a usable item.
     if (label.replace(/[^a-zA-Z]/g, '').length < 2) continue
 
-    items.push({ label, price, quantity })
+    // The trailing amount is the line total; store the unit price so
+    // line total = price × quantity stays consistent everywhere.
+    const unitPrice = quantity > 1 ? price / quantity : price
+
+    items.push({ label, price: unitPrice, quantity })
   }
 
   return items

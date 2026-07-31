@@ -42,6 +42,7 @@ export function EditableItemsList({
               key={item.id}
               item={item}
               currencySymbol={currencySymbol(currency)}
+              currency={currency}
               autoFocus={item.id === lastAddedId.current}
               onChange={(patch) => updateItem(item.id, patch)}
               onRemove={() => removeItem(item.id)}

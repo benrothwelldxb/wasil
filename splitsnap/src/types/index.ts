@@ -31,10 +31,16 @@ export interface ServiceCharge {
 export interface ReceiptItem {
   id: string
   label: string
+  /** Unit price. Line total = price × quantity. */
   price: number
   quantity: number
-  /** Ids of the people this item is shared between. */
+  /** Ids of the people this item is shared between (equal split). */
   assignedTo: string[]
+  /**
+   * Optional per-person unit counts. When present, the line is split by these
+   * counts instead of equally (e.g. Ann ×4, Bob ×7). Absent = equal split.
+   */
+  shares?: Record<string, number>
 }
 
 /** A captured receipt photo held in application state (not yet OCR'd). */
