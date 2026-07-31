@@ -1,0 +1,5 @@
+export { PersonChip } from '@/features/split/PersonChip'
+export { ItemAssignment } from '@/features/split/ItemAssignment'
+export { SplitSummary } from '@/features/split/SplitSummary'
+export { computeSplit } from '@/features/split/split-calc'
+export type { SplitResult, PersonTotal } from '@/features/split/split-calc'

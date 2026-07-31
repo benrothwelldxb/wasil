@@ -34,6 +34,10 @@ interface ReceiptState {
   updateItem: (id: string, patch: EditableItemFields) => void
   /** Remove a single item. */
   removeItem: (id: string) => void
+  /** Toggle whether a person is assigned to an item. */
+  toggleAssignment: (itemId: string, personId: string) => void
+  /** Replace the full set of assignees for an item (e.g. "everyone"). */
+  setAssignees: (itemId: string, personIds: string[]) => void
   /** Clear the whole session (image + items). */
   reset: () => void
 }
@@ -101,6 +105,27 @@ export const useReceiptStore = create<ReceiptState>((set, get) => ({
 
   removeItem: (id) =>
     set((state) => ({ items: state.items.filter((item) => item.id !== id) })),
+
+  toggleAssignment: (itemId, personId) =>
+    set((state) => ({
+      items: state.items.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              assignedTo: item.assignedTo.includes(personId)
+                ? item.assignedTo.filter((id) => id !== personId)
+                : [...item.assignedTo, personId],
+            }
+          : item,
+      ),
+    })),
+
+  setAssignees: (itemId, personIds) =>
+    set((state) => ({
+      items: state.items.map((item) =>
+        item.id === itemId ? { ...item, assignedTo: personIds } : item,
+      ),
+    })),
 
   reset: () => {
     revoke(get().image)
