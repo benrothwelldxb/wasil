@@ -9,7 +9,7 @@ function useCurrentTitle() {
   const match = navItems.find((item) =>
     item.end ? pathname === item.to : pathname.startsWith(item.to),
   )
-  return match?.label ?? 'SplitSnap'
+  return match?.label ?? 'MyReceiptSplit'
 }
 
 /**

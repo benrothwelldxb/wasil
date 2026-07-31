@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'SplitSnap',
-        short_name: 'SplitSnap',
+        name: 'MyReceiptSplit',
+        short_name: 'MyReceiptSplit',
         description: 'Snap a receipt. Tap who had what. Done.',
         theme_color: '#0a0a0a',
         background_color: '#0a0a0a',

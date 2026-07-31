@@ -22,7 +22,7 @@ export function HomePage() {
         className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-card to-secondary/40 p-8 shadow-card"
       >
         <div className="max-w-md">
-          <p className="text-sm font-medium text-accent">SplitSnap</p>
+          <p className="text-sm font-medium text-accent">MyReceiptSplit</p>
           <h2 className="mt-2 text-3xl font-semibold leading-tight tracking-tight">
             Split any receipt in seconds.
           </h2>

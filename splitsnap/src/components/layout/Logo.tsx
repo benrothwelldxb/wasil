@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 
-/** SplitSnap wordmark with a small receipt-scan glyph. */
+/** MyReceiptSplit wordmark with a small receipt-scan glyph. */
 export function Logo({
   className,
   showText = true,
@@ -33,7 +33,7 @@ export function Logo({
       </span>
       {showText && (
         <span className="text-lg font-semibold tracking-tight">
-          Split<span className="text-accent">Snap</span>
+          MyReceipt<span className="text-accent">Split</span>
         </span>
       )}
     </div>

@@ -1,5 +1,5 @@
 /**
- * Core domain types for SplitSnap.
+ * Core domain types for MyReceiptSplit.
  *
  * The app models a single flow: a captured receipt image → parsed line items
  * → people → an assignment of items to people. Everything lives on-device.

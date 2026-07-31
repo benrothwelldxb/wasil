@@ -17,7 +17,7 @@ export function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" description="Make SplitSnap yours." />
+      <PageHeader title="Settings" description="Make MyReceiptSplit yours." />
 
       <Card className="mb-4">
         <CardContent className="p-5">
@@ -34,7 +34,7 @@ export function SettingsPage() {
         <CardContent className="p-5">
           <p className="text-sm font-medium">Appearance</p>
           <p className="mb-4 text-sm text-muted-foreground">
-            Choose how SplitSnap looks.
+            Choose how MyReceiptSplit looks.
           </p>
           <div className="grid grid-cols-3 gap-2">
             {themeOptions.map((option) => {
@@ -62,7 +62,7 @@ export function SettingsPage() {
       </Card>
 
       <p className="mt-6 text-center text-xs text-muted-foreground">
-        SplitSnap runs entirely on your device. No account, no cloud.
+        MyReceiptSplit runs entirely on your device. No account, no cloud.
       </p>
     </div>
   )

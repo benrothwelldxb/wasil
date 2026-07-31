@@ -3,7 +3,7 @@ import Dexie, { type Table } from 'dexie'
 import type { Person } from '@/types'
 
 /**
- * On-device database (IndexedDB via Dexie). Everything SplitSnap remembers
+ * On-device database (IndexedDB via Dexie). Everything MyReceiptSplit remembers
  * between sessions lives here — no backend, no cloud.
  */
 export class SplitSnapDB extends Dexie {
