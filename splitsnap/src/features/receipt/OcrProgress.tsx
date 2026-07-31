@@ -33,7 +33,7 @@ export function OcrProgress({ progress, label, imageUrl }: OcrProgressProps) {
           />
         </div>
       ) : (
-        <span className="mb-6 grid h-16 w-16 place-items-center rounded-2xl bg-accent/10 text-accent">
+        <span className="mb-6 grid h-16 w-16 place-items-center rounded-2xl bg-accent/10 text-accent-strong">
           <ScanLine className="h-8 w-8" />
         </span>
       )}

@@ -36,6 +36,7 @@ export default {
         accent: {
           DEFAULT: 'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
+          strong: 'hsl(var(--accent-strong))',
         },
         card: {
           DEFAULT: 'hsl(var(--card))',
@@ -51,6 +52,7 @@ export default {
       },
       fontFamily: {
         sans: [
+          'Inter Variable',
           'Inter',
           'ui-sans-serif',
           'system-ui',

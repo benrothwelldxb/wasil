@@ -15,14 +15,11 @@ const steps = [
 export function HomePage() {
   return (
     <div className="space-y-8">
-      <motion.section
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-card to-secondary/40 p-8 shadow-card"
-      >
+      {/* No opacity fade on the hero: it's the LCP element, so it paints
+          immediately rather than waiting for an entrance animation. */}
+      <section className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-card to-secondary/40 p-8 shadow-card">
         <div className="max-w-md">
-          <p className="text-sm font-medium text-accent">MyReceiptSplit</p>
+          <p className="text-sm font-medium text-accent-strong">MyReceiptSplit</p>
           <h2 className="mt-2 text-3xl font-semibold leading-tight tracking-tight">
             Split any receipt in seconds.
           </h2>
@@ -44,7 +41,7 @@ export function HomePage() {
             </Button>
           </div>
         </div>
-      </motion.section>
+      </section>
 
       <section className="grid gap-4 sm:grid-cols-3">
         {steps.map((step, i) => (

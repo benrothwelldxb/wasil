@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
 import { getInitials } from '@/features/people/initials'
+import { contrastText } from '@/features/people/colors'
 import type { Person } from '@/types'
 
 const sizeClasses = {
@@ -26,12 +27,12 @@ export function PersonAvatar({
   return (
     <span
       className={cn(
-        'grid shrink-0 place-items-center rounded-full font-semibold text-white select-none',
+        'grid shrink-0 place-items-center rounded-full font-semibold select-none',
         ring && 'ring-2 ring-background',
         sizeClasses[size],
         className,
       )}
-      style={{ backgroundColor: person.color }}
+      style={{ backgroundColor: person.color, color: contrastText(person.color) }}
       aria-hidden="true"
     >
       {getInitials(person.name)}

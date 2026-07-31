@@ -64,7 +64,7 @@ export function SplitPage() {
       {roster.length === 0 ? (
         <div className="space-y-3 rounded-2xl border border-dashed border-border bg-card/40 p-5">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <UserPlus className="h-4 w-4 text-accent" />
+            <UserPlus className="h-4 w-4 text-accent-strong" />
             Add people to start splitting
           </div>
           <AddPersonForm onAdd={addPerson} />

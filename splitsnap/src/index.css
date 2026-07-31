@@ -17,10 +17,13 @@
     --secondary-foreground: 240 6% 10%;
 
     --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
+    --muted-foreground: 240 4% 40%;
 
-    --accent: 158 64% 42%;
+    /* Accent (button/chip surface) is dark enough for white text (AA). */
+    --accent: 162 84% 24%;
     --accent-foreground: 0 0% 100%;
+    /* Accent used as text/icons, tuned for contrast against the page. */
+    --accent-strong: 162 84% 24%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
@@ -46,10 +49,12 @@
     --secondary-foreground: 0 0% 98%;
 
     --muted: 240 5% 13%;
-    --muted-foreground: 240 5% 65%;
+    --muted-foreground: 240 5% 68%;
 
-    --accent: 158 64% 42%;
+    --accent: 162 84% 24%;
     --accent-foreground: 0 0% 100%;
+    /* Brighter green reads clearly as text on dark surfaces. */
+    --accent-strong: 152 62% 55%;
 
     --destructive: 0 63% 45%;
     --destructive-foreground: 0 0% 98%;
@@ -65,9 +70,38 @@
     @apply border-border;
   }
 
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+
   html {
     -webkit-tap-highlight-color: transparent;
     -webkit-text-size-adjust: 100%;
+  }
+
+  /* Snappier taps: no 300ms delay, no double-tap zoom on controls. */
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+
+  /* Respect the OS "reduce motion" preference. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   body {

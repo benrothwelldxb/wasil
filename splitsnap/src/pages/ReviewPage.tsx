@@ -111,7 +111,7 @@ export function ReviewPage() {
             className="space-y-5"
           >
             {status === 'done' && foundCount !== null && (
-              <div className="flex items-center gap-2 rounded-2xl bg-accent/10 px-4 py-3 text-sm font-medium text-accent">
+              <div className="flex items-center gap-2 rounded-2xl bg-accent/10 px-4 py-3 text-sm font-medium text-accent-strong">
                 <Sparkles className="h-4 w-4" />
                 {foundCount > 0
                   ? `Found ${foundCount} ${foundCount === 1 ? 'item' : 'items'}. Tap to edit.`

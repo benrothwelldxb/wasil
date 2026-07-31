@@ -1,12 +1,16 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import cssInjectedByJs from 'vite-plugin-css-injected-by-js'
 import path from 'node:path'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    // Inline CSS into JS so there's no render-blocking stylesheet request;
+    // the app renders client-side, so styles arrive with the first paint.
+    cssInjectedByJs(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],

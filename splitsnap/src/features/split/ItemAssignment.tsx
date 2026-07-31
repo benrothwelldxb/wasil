@@ -164,7 +164,7 @@ export function ItemAssignment({
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1 text-sm font-medium transition-colors',
                     everyone
-                      ? 'border-accent bg-accent/10 text-accent'
+                      ? 'border-accent bg-accent/10 text-accent-strong'
                       : 'border-border text-muted-foreground hover:bg-secondary',
                   )}
                 >

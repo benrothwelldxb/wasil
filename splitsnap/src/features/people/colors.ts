@@ -26,3 +26,23 @@ export function pickColor(usedColors: string[]): string {
   if (unused) return unused
   return PERSON_COLORS[usedColors.length % PERSON_COLORS.length]
 }
+
+function channel(v: number): number {
+  const s = v / 255
+  return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+}
+
+/**
+ * Choose black or white text for maximum contrast on a coloured background,
+ * so initials on light hues (amber, lime) stay readable (WCAG AA).
+ */
+export function contrastText(hex: string): '#000000' | '#ffffff' {
+  const c = hex.replace('#', '')
+  const r = channel(parseInt(c.slice(0, 2), 16))
+  const g = channel(parseInt(c.slice(2, 4), 16))
+  const b = channel(parseInt(c.slice(4, 6), 16))
+  const L = 0.2126 * r + 0.7152 * g + 0.0722 * b
+  // White wins only for quite dark backgrounds; otherwise black has more
+  // contrast (comparing 1.05/(L+0.05) against (L+0.05)/0.05).
+  return L < 0.179 ? '#ffffff' : '#000000'
+}

@@ -57,7 +57,7 @@ export function ScanPage() {
             transition={{ duration: 0.2 }}
           >
             <div className="flex flex-col items-center rounded-3xl border border-dashed border-border bg-card/40 px-6 py-12 text-center">
-              <span className="mb-5 grid h-16 w-16 place-items-center rounded-2xl bg-accent/10 text-accent">
+              <span className="mb-5 grid h-16 w-16 place-items-center rounded-2xl bg-accent/10 text-accent-strong">
                 <ScanLine className="h-8 w-8" />
               </span>
               <h2 className="text-lg font-semibold">Capture your receipt</h2>

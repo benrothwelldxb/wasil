@@ -33,7 +33,7 @@ export function Logo({
       </span>
       {showText && (
         <span className="text-lg font-semibold tracking-tight">
-          MyReceipt<span className="text-accent">Split</span>
+          MyReceipt<span className="text-accent-strong">Split</span>
         </span>
       )}
     </div>

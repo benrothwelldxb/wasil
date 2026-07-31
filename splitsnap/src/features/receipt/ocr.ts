@@ -1,4 +1,4 @@
-import { createWorker, type LoggerMessage } from 'tesseract.js'
+import type { LoggerMessage } from 'tesseract.js'
 
 import type { ReceiptImage, ReceiptItem } from '@/types'
 import {
@@ -36,6 +36,9 @@ export async function runOcr(
   image: ReceiptImage,
   onProgress?: (p: OcrProgress) => void,
 ): Promise<string> {
+  // Load Tesseract on demand so it stays out of the app bundle until a scan
+  // actually runs.
+  const { createWorker } = await import('tesseract.js')
   const worker = await createWorker('eng', 1, {
     logger: (m: LoggerMessage) => {
       if (typeof m.progress === 'number') {
