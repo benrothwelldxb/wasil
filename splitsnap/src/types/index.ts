@@ -15,6 +15,18 @@ export interface Person {
   createdAt: number
 }
 
+/** How a service charge is divided between people. */
+export type ServiceChargeMode = 'equal' | 'proportional' | 'manual'
+
+/** A detected/entered service charge and how to split it. */
+export interface ServiceCharge {
+  /** Amount in the receipt currency (0 = none). */
+  amount: number
+  mode: ServiceChargeMode
+  /** People it's assigned to when mode is 'manual'. */
+  assignedTo: string[]
+}
+
 /** A single line item on a receipt. */
 export interface ReceiptItem {
   id: string

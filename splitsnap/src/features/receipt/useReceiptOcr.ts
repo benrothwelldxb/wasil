@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react'
 import { useReceiptStore } from '@/features/receipt/receiptStore'
 import {
   parseReceiptItems,
+  parseServiceCharge,
   runOcr,
   toReceiptItems,
   type OcrProgress,
@@ -34,6 +35,9 @@ export function useReceiptOcr() {
   const runningRef = useRef(false)
 
   const setItems = useReceiptStore((s) => s.setItems)
+  const setServiceChargeAmount = useReceiptStore(
+    (s) => s.setServiceChargeAmount,
+  )
 
   const run = useCallback(async () => {
     const image = useReceiptStore.getState().image
@@ -53,6 +57,8 @@ export function useReceiptOcr() {
       })
       const items = toReceiptItems(parseReceiptItems(text))
       setItems(items)
+      // Detect a service charge so the Split step can offer to divide it.
+      setServiceChargeAmount(parseServiceCharge(text) ?? 0)
       setFoundCount(items.length)
       setProgress(1)
       setStatus('done')
@@ -65,7 +71,7 @@ export function useReceiptOcr() {
     } finally {
       runningRef.current = false
     }
-  }, [setItems])
+  }, [setItems, setServiceChargeAmount])
 
   const reset = useCallback(() => {
     setStatus('idle')

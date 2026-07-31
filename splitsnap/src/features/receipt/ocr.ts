@@ -3,10 +3,11 @@ import { createWorker, type LoggerMessage } from 'tesseract.js'
 import type { ReceiptImage, ReceiptItem } from '@/types'
 import {
   parseReceiptItems,
+  parseServiceCharge,
   type ParsedItem,
 } from '@/features/receipt/receipt-parse'
 
-export { parseReceiptItems }
+export { parseReceiptItems, parseServiceCharge }
 export type { ParsedItem }
 
 export interface OcrProgress {

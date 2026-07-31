@@ -94,6 +94,29 @@ export function isIgnoredLine(line: string): boolean {
   return RECEIPT_META.test(line) && !TRAILING_PRICE.test(line)
 }
 
+/** A service-charge / gratuity line. */
+const SERVICE_CHARGE_LINE = /\bservice\s+charge\b|\bgratuity\b|\bservice\s+fee\b/i
+
+/**
+ * Detect a service-charge amount from the receipt, if present. Reads the
+ * monetary amount at the end of a "Service charge" / "Gratuity" line (a
+ * percentage on the same line, e.g. "12.5%", is ignored in favour of the
+ * actual amount). Returns null when no charge is found.
+ */
+export function parseServiceCharge(text: string): number | null {
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!SERVICE_CHARGE_LINE.test(line)) continue
+
+    const priceMatch = line.match(TRAILING_PRICE)
+    if (!priceMatch) continue
+
+    const amount = parseFloat(priceMatch[1].replace(',', '.'))
+    if (Number.isFinite(amount) && amount > 0) return amount
+  }
+  return null
+}
+
 /** Strip leading currency symbols / bullets and tidy whitespace. */
 function cleanLabel(raw: string): string {
   return raw

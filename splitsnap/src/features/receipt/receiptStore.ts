@@ -1,11 +1,22 @@
 import { create } from 'zustand'
 
-import type { ReceiptImage, ReceiptItem } from '@/types'
+import type {
+  ReceiptImage,
+  ReceiptItem,
+  ServiceCharge,
+  ServiceChargeMode,
+} from '@/types'
 
 /** Fields of an item the user can edit directly in the review step. */
 export type EditableItemFields = Partial<
   Pick<ReceiptItem, 'label' | 'price' | 'quantity'>
 >
+
+const DEFAULT_SERVICE_CHARGE: ServiceCharge = {
+  amount: 0,
+  mode: 'proportional',
+  assignedTo: [],
+}
 
 interface ReceiptState {
   /** The receipt photo currently being worked on (in-memory only). */
@@ -14,6 +25,8 @@ interface ReceiptState {
   isProcessing: boolean
   /** Parsed / manually entered line items for the current receipt. */
   items: ReceiptItem[]
+  /** Detected/entered service charge and how it's split. */
+  serviceCharge: ServiceCharge
 
   /** Set a freshly captured/uploaded image, releasing any previous one. */
   setImage: (image: ReceiptImage) => void
@@ -38,7 +51,15 @@ interface ReceiptState {
   toggleAssignment: (itemId: string, personId: string) => void
   /** Replace the full set of assignees for an item (e.g. "everyone"). */
   setAssignees: (itemId: string, personIds: string[]) => void
-  /** Clear the whole session (image + items). */
+
+  /** Set the service-charge amount (0 removes it). */
+  setServiceChargeAmount: (amount: number) => void
+  /** Choose how the service charge is split. */
+  setServiceChargeMode: (mode: ServiceChargeMode) => void
+  /** Toggle a person for a manually-assigned service charge. */
+  toggleServiceChargeAssignee: (personId: string) => void
+
+  /** Clear the whole session (image + items + service charge). */
   reset: () => void
 }
 
@@ -57,6 +78,7 @@ function createBlankItem(): ReceiptItem {
 }
 
 export const useReceiptStore = create<ReceiptState>((set, get) => ({
+  serviceCharge: { ...DEFAULT_SERVICE_CHARGE },
   image: null,
   isProcessing: false,
   items: [],
@@ -127,8 +149,38 @@ export const useReceiptStore = create<ReceiptState>((set, get) => ({
       ),
     })),
 
+  setServiceChargeAmount: (amount) =>
+    set((state) => ({
+      serviceCharge: {
+        ...state.serviceCharge,
+        amount: Math.max(0, amount) || 0,
+      },
+    })),
+
+  setServiceChargeMode: (mode) =>
+    set((state) => ({
+      serviceCharge: { ...state.serviceCharge, mode },
+    })),
+
+  toggleServiceChargeAssignee: (personId) =>
+    set((state) => {
+      const { assignedTo } = state.serviceCharge
+      return {
+        serviceCharge: {
+          ...state.serviceCharge,
+          assignedTo: assignedTo.includes(personId)
+            ? assignedTo.filter((id) => id !== personId)
+            : [...assignedTo, personId],
+        },
+      }
+    }),
+
   reset: () => {
     revoke(get().image)
-    set({ image: null, items: [] })
+    set({
+      image: null,
+      items: [],
+      serviceCharge: { ...DEFAULT_SERVICE_CHARGE },
+    })
   },
 }))

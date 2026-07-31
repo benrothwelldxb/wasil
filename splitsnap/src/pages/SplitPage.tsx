@@ -9,20 +9,22 @@ import { useReceiptStore } from '@/features/receipt'
 import { AddPersonForm, usePeople } from '@/features/people'
 import {
   ItemAssignment,
+  ServiceChargeCard,
   SplitSummary,
   computeSplit,
 } from '@/features/split'
 
 export function SplitPage() {
   const items = useReceiptStore((s) => s.items)
+  const serviceCharge = useReceiptStore((s) => s.serviceCharge)
   const toggleAssignment = useReceiptStore((s) => s.toggleAssignment)
   const setAssignees = useReceiptStore((s) => s.setAssignees)
   const { people, addPerson } = usePeople()
 
   const roster = people ?? []
   const result = useMemo(
-    () => computeSplit(items, roster),
-    [items, roster],
+    () => computeSplit(items, roster, serviceCharge),
+    [items, roster, serviceCharge],
   )
 
   if (items.length === 0) {
@@ -67,6 +69,8 @@ export function SplitPage() {
       ) : (
         <SplitSummary result={result} />
       )}
+
+      {roster.length > 0 && <ServiceChargeCard people={roster} />}
 
       <div className="space-y-3">
         {items.map((item) => (

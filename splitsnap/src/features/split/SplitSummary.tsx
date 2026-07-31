@@ -14,7 +14,7 @@ interface SplitSummaryProps {
  * the grand total. Re-renders instantly as assignments change.
  */
 export function SplitSummary({ result, currency = 'GBP' }: SplitSummaryProps) {
-  const { totals, unassigned, total } = result
+  const { totals, unassigned, serviceCharge, total } = result
 
   return (
     <div
@@ -55,12 +55,27 @@ export function SplitSummary({ result, currency = 'GBP' }: SplitSummaryProps) {
         ))}
       </ul>
 
-      {unassigned > 0.005 && (
-        <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-sm">
-          <span className="text-muted-foreground">Unassigned</span>
-          <span className="font-semibold tabular-nums text-destructive/80">
-            {formatCurrency(unassigned, currency)}
-          </span>
+      {(serviceCharge > 0.005 || unassigned > 0.005) && (
+        <div className="mt-2 space-y-1 border-t border-border pt-2 text-sm">
+          {serviceCharge > 0.005 && (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">
+                Service charge{' '}
+                <span className="text-xs">(included above)</span>
+              </span>
+              <span className="tabular-nums text-muted-foreground">
+                {formatCurrency(serviceCharge, currency)}
+              </span>
+            </div>
+          )}
+          {unassigned > 0.005 && (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Unassigned</span>
+              <span className="font-semibold tabular-nums text-destructive/80">
+                {formatCurrency(unassigned, currency)}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
