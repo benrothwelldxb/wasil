@@ -6,6 +6,8 @@ import type {
   ServiceCharge,
   ServiceChargeMode,
 } from '@/types'
+import type { CurrencyCode } from '@/lib/currency'
+import { useSettingsStore } from '@/features/settings/settingsStore'
 
 /** Fields of an item the user can edit directly in the review step. */
 export type EditableItemFields = Partial<
@@ -27,6 +29,8 @@ interface ReceiptState {
   items: ReceiptItem[]
   /** Detected/entered service charge and how it's split. */
   serviceCharge: ServiceCharge
+  /** Currency for the current receipt (detected from OCR or chosen). */
+  currency: CurrencyCode
 
   /** Set a freshly captured/uploaded image, releasing any previous one. */
   setImage: (image: ReceiptImage) => void
@@ -59,6 +63,9 @@ interface ReceiptState {
   /** Toggle a person for a manually-assigned service charge. */
   toggleServiceChargeAssignee: (personId: string) => void
 
+  /** Set the currency for the current receipt. */
+  setCurrency: (currency: CurrencyCode) => void
+
   /** Clear the whole session (image + items + service charge). */
   reset: () => void
 }
@@ -79,6 +86,7 @@ function createBlankItem(): ReceiptItem {
 
 export const useReceiptStore = create<ReceiptState>((set, get) => ({
   serviceCharge: { ...DEFAULT_SERVICE_CHARGE },
+  currency: useSettingsStore.getState().defaultCurrency,
   image: null,
   isProcessing: false,
   items: [],
@@ -175,12 +183,15 @@ export const useReceiptStore = create<ReceiptState>((set, get) => ({
       }
     }),
 
+  setCurrency: (currency) => set({ currency }),
+
   reset: () => {
     revoke(get().image)
     set({
       image: null,
       items: [],
       serviceCharge: { ...DEFAULT_SERVICE_CHARGE },
+      currency: useSettingsStore.getState().defaultCurrency,
     })
   },
 }))

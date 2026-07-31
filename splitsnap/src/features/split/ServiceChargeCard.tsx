@@ -4,7 +4,7 @@ import { Plus, Sparkles } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
-import { formatCurrency } from '@/lib/format'
+import { currencySymbol, type CurrencyCode } from '@/lib/currency'
 import { PersonChip } from '@/features/split/PersonChip'
 import { useReceiptStore } from '@/features/receipt'
 import type { Person, ServiceChargeMode } from '@/types'
@@ -28,7 +28,7 @@ function sanitize(value: string): string {
 
 interface ServiceChargeCardProps {
   people: Person[]
-  currency?: string
+  currency?: CurrencyCode
 }
 
 /**
@@ -89,7 +89,7 @@ export function ServiceChargeCard({
               draft ? 'text-foreground' : 'text-muted-foreground',
             )}
           >
-            {formatCurrency(0, currency).replace(/[\d.,\s]/g, '')}
+            {currencySymbol(currency)}
           </span>
           <Input
             aria-label="Service charge amount"

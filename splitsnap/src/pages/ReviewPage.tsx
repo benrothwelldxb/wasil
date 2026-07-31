@@ -18,12 +18,15 @@ import {
   useReceiptOcr,
   useReceiptStore,
 } from '@/features/receipt'
+import { useCurrency } from '@/features/settings'
+import { CurrencySelect } from '@/components/CurrencySelect'
 
 export function ReviewPage() {
   const navigate = useNavigate()
   const image = useReceiptStore((s) => s.image)
   const items = useReceiptStore((s) => s.items)
   const addItem = useReceiptStore((s) => s.addItem)
+  const { currency, setCurrency } = useCurrency()
   const { status, progress, label, foundCount, error, run } = useReceiptOcr()
 
   // Kick off OCR automatically the first time we land here with a fresh image.
@@ -67,15 +70,18 @@ export function ReviewPage() {
         description="Check the items and fix anything OCR got wrong."
         action={
           showEditor ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => run()}
-              className="text-muted-foreground"
-            >
-              <RefreshCw />
-              Rescan
-            </Button>
+            <div className="flex items-center gap-2">
+              <CurrencySelect value={currency} onChange={setCurrency} />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => run()}
+                className="text-muted-foreground"
+              >
+                <RefreshCw />
+                Rescan
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -120,7 +126,7 @@ export function ReviewPage() {
               </div>
             )}
 
-            <EditableItemsList />
+            <EditableItemsList currency={currency} />
 
             <Button
               size="lg"

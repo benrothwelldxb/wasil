@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/format'
+import { currencySymbol, type CurrencyCode } from '@/lib/currency'
 import { useReceiptStore } from '@/features/receipt/receiptStore'
 import { ItemRow } from '@/features/receipt/ItemRow'
 
@@ -12,7 +13,11 @@ import { ItemRow } from '@/features/receipt/ItemRow'
  * and a running items subtotal (bill totals/tax are intentionally ignored
  * for now).
  */
-export function EditableItemsList({ currency = 'GBP' }: { currency?: string }) {
+export function EditableItemsList({
+  currency = 'GBP',
+}: {
+  currency?: CurrencyCode
+}) {
   const items = useReceiptStore((s) => s.items)
   const addItem = useReceiptStore((s) => s.addItem)
   const updateItem = useReceiptStore((s) => s.updateItem)
@@ -36,7 +41,7 @@ export function EditableItemsList({ currency = 'GBP' }: { currency?: string }) {
             <ItemRow
               key={item.id}
               item={item}
-              currencySymbol={currencySymbolFor(currency)}
+              currencySymbol={currencySymbol(currency)}
               autoFocus={item.id === lastAddedId.current}
               onChange={(patch) => updateItem(item.id, patch)}
               onRemove={() => removeItem(item.id)}
@@ -69,16 +74,4 @@ export function EditableItemsList({ currency = 'GBP' }: { currency?: string }) {
       )}
     </div>
   )
-}
-
-function currencySymbolFor(currency: string): string {
-  try {
-    const parts = new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-    }).formatToParts(0)
-    return parts.find((p) => p.type === 'currency')?.value ?? '£'
-  } catch {
-    return '£'
-  }
 }

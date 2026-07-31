@@ -13,12 +13,15 @@ import {
   SplitSummary,
   computeSplit,
 } from '@/features/split'
+import { useCurrency } from '@/features/settings'
+import { CurrencySelect } from '@/components/CurrencySelect'
 
 export function SplitPage() {
   const items = useReceiptStore((s) => s.items)
   const serviceCharge = useReceiptStore((s) => s.serviceCharge)
   const toggleAssignment = useReceiptStore((s) => s.toggleAssignment)
   const setAssignees = useReceiptStore((s) => s.setAssignees)
+  const { currency, setCurrency } = useCurrency()
   const { people, addPerson } = usePeople()
 
   const roster = people ?? []
@@ -53,6 +56,7 @@ export function SplitPage() {
       <PageHeader
         title="Split"
         description="Tap the people who shared each item."
+        action={<CurrencySelect value={currency} onChange={setCurrency} />}
       />
 
       {roster.length === 0 ? (
@@ -67,10 +71,12 @@ export function SplitPage() {
           </p>
         </div>
       ) : (
-        <SplitSummary result={result} />
+        <SplitSummary result={result} currency={currency} />
       )}
 
-      {roster.length > 0 && <ServiceChargeCard people={roster} />}
+      {roster.length > 0 && (
+        <ServiceChargeCard people={roster} currency={currency} />
+      )}
 
       <div className="space-y-3">
         {items.map((item) => (
@@ -78,6 +84,7 @@ export function SplitPage() {
             key={item.id}
             item={item}
             people={roster}
+            currency={currency}
             onToggle={(personId) => toggleAssignment(item.id, personId)}
             onToggleEveryone={() => {
               const everyone =
