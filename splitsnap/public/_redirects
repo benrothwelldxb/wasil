@@ -1,0 +1,3 @@
+# Cloudflare Pages / Netlify SPA fallback: serve the app for any route so
+# client-side routing (e.g. /scan, /split) works on direct navigation.
+/*    /index.html    200

@@ -13,7 +13,7 @@ export default defineConfig({
     cssInjectedByJs(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'MyReceiptSplit',
         short_name: 'MyReceiptSplit',
