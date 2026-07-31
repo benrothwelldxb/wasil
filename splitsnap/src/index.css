@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 4%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
+
+    --primary: 240 6% 10%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 10%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+
+    --accent: 158 64% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 240 6% 10%;
+
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 8% 7%;
+    --card-foreground: 0 0% 98%;
+
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 6% 10%;
+
+    --secondary: 240 5% 13%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 5% 13%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 158 64% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 5% 16%;
+    --input: 240 5% 16%;
+    --ring: 240 5% 84%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+    font-variation-settings: 'opsz' 32;
+    /* Respect device safe areas (notches / home indicator). */
+    overscroll-behavior-y: none;
+  }
+
+  /* Momentum scrolling on iOS. */
+  #root {
+    isolation: isolate;
+  }
+}
+
+@layer utilities {
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
