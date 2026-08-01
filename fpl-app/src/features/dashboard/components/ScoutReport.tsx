@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { PlayerAvatar } from "@/features/player-explorer";
 import { ImportTeamCard } from "@/features/manager";
 import { ShareTeamButton } from "@/features/share";
+import { CaptainCompare } from "./CaptainCompare";
 import { DeadlineCountdown } from "./DeadlineCountdown";
 import { useSquadStore } from "@/features/squad-builder";
 import { ROUTES } from "@/routes/paths";
@@ -131,6 +132,9 @@ export function ScoutReport() {
           </div>
         </div>
       </div>
+
+      {/* Captain options */}
+      <CaptainCompare options={report.captainOptions} />
 
       {/* Insights */}
       {report.insights.length > 0 && (
