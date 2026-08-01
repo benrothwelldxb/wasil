@@ -8,8 +8,14 @@ export interface OptiPlayer {
   teamId: number;
   /** Cost in tenths of a million (exact integer budget arithmetic). */
   cost: number;
-  /** The value to optimise — projected points over the chosen horizon. */
+  /** Projected points over the chosen horizon — the figure reported to the user. */
   value: number;
+  /**
+   * The score to *maximise* when selecting. Defaults to `value`; when the user
+   * has preferences (club affinity, risk, etc.) this is the preference-adjusted
+   * score, so selection honours preferences while reporting stays raw points.
+   */
+  objective?: number;
   player: Player;
   prediction: PlayerPrediction;
 }
@@ -35,9 +41,12 @@ export interface BestEleven {
   formation: Formation;
   starters: OptiPlayer[];
   bench: OptiPlayer[];
-  /** Projected points of the starting XI. */
+  /** Projected points of the starting XI (raw, for reporting). */
   startingValue: number;
   benchValue: number;
+  /** Selection score of the XI (preference-adjusted, for optimisation). */
+  startingObjective: number;
+  benchObjective: number;
 }
 
 /** A per-player explanation of the selection. */

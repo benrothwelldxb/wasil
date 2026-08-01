@@ -31,15 +31,21 @@ function clubCounts(squad: OptiPlayer[]): Map<number, number> {
  * Extract the highest-scoring legal starting XI from a 15-man squad by trying
  * every formation and taking the top players per line. O(formations) — cheap.
  */
+/** Selection score: preference-adjusted objective, defaulting to raw value. */
+function scoreOf(p: OptiPlayer): number {
+  return p.objective ?? p.value;
+}
+
 export function bestEleven(
   squad: OptiPlayer[],
   forced?: Formation,
 ): BestEleven {
   const pos = byPosition(squad);
-  const gks = [...(pos.get(1) ?? [])].sort((a, b) => b.value - a.value);
-  const defs = [...(pos.get(2) ?? [])].sort((a, b) => b.value - a.value);
-  const mids = [...(pos.get(3) ?? [])].sort((a, b) => b.value - a.value);
-  const fwds = [...(pos.get(4) ?? [])].sort((a, b) => b.value - a.value);
+  // Rank by the selection score so preferences drive who starts...
+  const gks = [...(pos.get(1) ?? [])].sort((a, b) => scoreOf(b) - scoreOf(a));
+  const defs = [...(pos.get(2) ?? [])].sort((a, b) => scoreOf(b) - scoreOf(a));
+  const mids = [...(pos.get(3) ?? [])].sort((a, b) => scoreOf(b) - scoreOf(a));
+  const fwds = [...(pos.get(4) ?? [])].sort((a, b) => scoreOf(b) - scoreOf(a));
 
   const gk = gks[0];
   const formations = forced ? [forced] : FORMATIONS;
@@ -55,16 +61,19 @@ export function bestEleven(
       ...mids.slice(0, f.mid),
       ...fwds.slice(0, f.fwd),
     ];
-    const startingValue = starters.reduce((s, p) => s + p.value, 0);
-    if (!best || startingValue > best.startingValue) {
+    // ...but choose the best formation by objective, and report raw points.
+    const startingObjective = starters.reduce((s, p) => s + scoreOf(p), 0);
+    if (!best || startingObjective > best.startingObjective) {
       const starterIds = new Set(starters.map((p) => p.id));
       const bench = squad.filter((p) => !starterIds.has(p.id));
       best = {
         formation: f,
         starters,
         bench,
-        startingValue,
+        startingValue: starters.reduce((s, p) => s + p.value, 0),
         benchValue: bench.reduce((s, p) => s + p.value, 0),
+        startingObjective,
+        benchObjective: bench.reduce((s, p) => s + scoreOf(p), 0),
       };
     }
   }
@@ -77,13 +86,15 @@ export function bestEleven(
       bench: squad.slice(11),
       startingValue: 0,
       benchValue: 0,
+      startingObjective: 0,
+      benchObjective: 0,
     }
   );
 }
 
 function objective(squad: OptiPlayer[]): number {
   const xi = bestEleven(squad);
-  return xi.startingValue + SEARCH.benchWeight * xi.benchValue;
+  return xi.startingObjective + SEARCH.benchWeight * xi.benchObjective;
 }
 
 // ── Construction & search ───────────────────────────────────────────────────
@@ -107,7 +118,7 @@ function cheapestSeed(
     const band = sorted.slice(0, Math.min(sorted.length, target + jitter));
     // Shuffle the band deterministically-ish by value to vary seeds.
     band.sort((a, b) =>
-      jitter === 0 ? a.cost - b.cost : b.value - a.value + (a.id % 3) - 1,
+      jitter === 0 ? a.cost - b.cost : scoreOf(b) - scoreOf(a) + (a.id % 3) - 1,
     );
 
     let taken = 0;
@@ -233,7 +244,7 @@ export function optimiseSquad(
     candidates.set(
       id,
       [...(pools.get(id) ?? [])]
-        .sort((a, b) => b.value - a.value)
+        .sort((a, b) => scoreOf(b) - scoreOf(a))
         .slice(0, SEARCH.candidatePoolSize),
     );
   }

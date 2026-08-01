@@ -64,7 +64,10 @@ export function useScoutReport(): ScoutReport {
   const { analysis } = useFixtureAnalysis();
   const { calendar } = useGameweekCalendar();
   const squad = useSquad();
-  const optimiser = useOptimiser();
+  // Only optimise when the user has NO saved squad — otherwise the home screen
+  // pays the optimiser's synchronous cost on every visit for a result it discards.
+  const hasSavedSquad = squad.isComplete && squad.players.length === 15;
+  const optimiser = useOptimiser({ enabled: !hasSavedSquad });
   const freeTransfers = useTransferSettings((s) => s.freeTransfers);
 
   return useMemo<ScoutReport>(() => {

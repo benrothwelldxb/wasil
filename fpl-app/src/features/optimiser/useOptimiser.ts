@@ -1,10 +1,18 @@
 import { useMemo, useState } from "react";
 import { usePredictions, type PredictionWindow } from "@/features/predictions";
-import { useActivePreferences } from "@/features/preferences";
+import {
+  useActivePreferences,
+  usePreferenceService,
+} from "@/features/preferences";
 import type { ApiError } from "@/services/api";
 import { DEFAULT_RULES } from "./config";
 import { optimiseSquad } from "./engine";
 import type { Formation, OptiPlayer, OptimisedSquad } from "./types";
+
+export interface UseOptimiserOptions {
+  /** Skip the (expensive) optimisation entirely — e.g. when a squad is saved. */
+  enabled?: boolean;
+}
 
 /** Budget held back (tenths) by budget philosophy. */
 const RESERVE_BY_PHILOSOPHY: Record<string, number> = {
@@ -34,9 +42,12 @@ export interface UseOptimiserResult {
  * the optimiser automatically targets the window the user cares about. Budget
  * philosophy trims the spend cap. The optimisation is memoized on its inputs.
  */
-export function useOptimiser(): UseOptimiserResult {
+export function useOptimiser({
+  enabled = true,
+}: UseOptimiserOptions = {}): UseOptimiserResult {
   const { predictions, isLoading, isError, error, refetch } = usePredictions();
   const prefs = useActivePreferences();
+  const service = usePreferenceService();
 
   const [window, setWindow] = useState<PredictionWindow>(prefs.planningHorizon);
   const [formation, setFormation] = useState<Formation | null>(null);
@@ -45,18 +56,25 @@ export function useOptimiser(): UseOptimiserResult {
     DEFAULT_RULES.budget - (RESERVE_BY_PHILOSOPHY[prefs.budgetPhilosophy] ?? 0);
 
   const result = useMemo<OptimisedSquad | null>(() => {
-    if (predictions.length === 0) return null;
+    if (!enabled || predictions.length === 0) return null;
 
     const optiPlayers: OptiPlayer[] = predictions
-      .map((pred) => ({
-        id: pred.playerId,
-        positionId: pred.player.positionId,
-        teamId: pred.player.teamId,
-        cost: pred.player.price.nowRaw,
-        value: pred.windows[window].expectedPoints,
-        player: pred.player,
-        prediction: pred,
-      }))
+      .map((pred) => {
+        const expectedPoints = pred.windows[window].expectedPoints;
+        return {
+          id: pred.playerId,
+          positionId: pred.player.positionId,
+          teamId: pred.player.teamId,
+          cost: pred.player.price.nowRaw,
+          // Report raw points; select on the preference-adjusted score so the
+          // user's onboarding answers (club affinity, risk, style…) shape the team.
+          value: expectedPoints,
+          objective: service.adjustPlayerScore(pred.player, expectedPoints)
+            .adjustedScore,
+          player: pred.player,
+          prediction: pred,
+        };
+      })
       .filter((p) => p.cost > 0);
 
     return optimiseSquad(optiPlayers, {
@@ -64,7 +82,7 @@ export function useOptimiser(): UseOptimiserResult {
       formation: formation ?? undefined,
       window,
     });
-  }, [predictions, window, formation, budget]);
+  }, [enabled, predictions, window, formation, budget, service]);
 
   return {
     result,
