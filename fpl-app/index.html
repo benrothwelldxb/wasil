@@ -2,13 +2,27 @@
 <html lang="en" class="antialiased">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/pwa-icon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta
+      name="theme-color"
+      content="#ffffff"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#0f172a"
+      media="(prefers-color-scheme: dark)"
+    />
     <meta
       name="description"
-      content="A modern Fantasy Premier League companion app."
+      content="Statistical projections, squad optimisation, and transfer planning for Fantasy Premier League."
     />
-    <title>FPL App</title>
+    <title>FPL App — Fantasy Premier League Companion</title>
     <script>
       // Apply the persisted theme before first paint to avoid a flash of the
       // wrong color scheme (FOUC). Mirrors the logic in src/utils/theme.ts.

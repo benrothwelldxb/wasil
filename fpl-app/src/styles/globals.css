@@ -88,5 +88,45 @@
     font-feature-settings:
       "rlig" 1,
       "calt" 1;
+    /* Prevent iOS text-size adjust on orientation change. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Respect users who prefer reduced motion (WCAG 2.3.3). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Skip-to-content link: visually hidden until focused. */
+  .skip-link {
+    @apply sr-only;
+  }
+  .skip-link:focus {
+    @apply not-sr-only fixed left-4 top-4 z-50 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-lg;
+  }
+
+  /* Simple, reusable enter animation for routed content. */
+  .page-enter {
+    animation: page-fade-in 0.25s ease-out both;
+  }
+}
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

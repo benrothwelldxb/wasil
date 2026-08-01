@@ -1,0 +1,18 @@
+# Cloudflare Pages headers.
+
+# Long-cache immutable, fingerprinted build assets.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Never cache the service worker or the app shell.
+/sw.js
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Baseline security headers for all responses.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: geolocation=(), camera=(), microphone=()

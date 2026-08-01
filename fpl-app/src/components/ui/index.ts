@@ -1,5 +1,6 @@
-export { Button, buttonVariants } from "./button";
+export { Button } from "./button";
 export type { ButtonProps } from "./button";
+export { buttonVariants } from "./button-variants";
 export {
   Card,
   CardHeader,
@@ -46,8 +47,9 @@ export {
   TooltipProvider,
 } from "./tooltip";
 export { Input } from "./input";
-export { Badge, badgeVariants } from "./badge";
+export { Badge } from "./badge";
 export type { BadgeProps } from "./badge";
+export { badgeVariants } from "./badge-variants";
 export { Slider } from "./slider";
 export {
   Select,

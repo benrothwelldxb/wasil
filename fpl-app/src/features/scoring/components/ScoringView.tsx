@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { QueryBoundary } from "@/features/fpl";
 import { useActiveProfile } from "@/features/preferences";
-import { EmptyState, SectionCard } from "@/components/common";
+import { EmptyState, ListViewSkeleton, SectionCard } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -64,6 +64,7 @@ export function ScoringView() {
       isError={isError}
       error={error}
       onRetry={refetch}
+      loadingFallback={<ListViewSkeleton />}
     >
       <div className="space-y-4">
         {/* Filters */}

@@ -8,7 +8,7 @@ import {
   useTeams,
 } from "@/features/fpl";
 import { useFixtureAnalysis } from "@/features/fixtures";
-import { EmptyState } from "@/components/common";
+import { EmptyState, ListViewSkeleton } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { useMediaQuery } from "@/hooks";
 import {
@@ -73,6 +73,7 @@ export function PlayerExplorer({ renderAction }: PlayerExplorerProps = {}) {
       isEmpty={playersQuery.isSuccess && allPlayers.length === 0}
       onRetry={() => void playersQuery.refetch()}
       emptyMessage="No players were returned by the FPL API."
+      loadingFallback={<ListViewSkeleton />}
     >
       <div className="space-y-4">
         <PlayerFilters

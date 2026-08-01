@@ -10,6 +10,8 @@ interface QueryBoundaryProps {
   isEmpty?: boolean;
   onRetry?: () => void;
   emptyMessage?: string;
+  /** Custom loading UI (e.g. a skeleton). Falls back to a spinner. */
+  loadingFallback?: ReactNode;
   children: ReactNode;
 }
 
@@ -25,10 +27,13 @@ export function QueryBoundary({
   isEmpty = false,
   onRetry,
   emptyMessage = "No data returned.",
+  loadingFallback,
   children,
 }: QueryBoundaryProps) {
   if (isLoading) {
-    return <LoadingSpinner fullPage={false} className="py-8" />;
+    return (
+      loadingFallback ?? <LoadingSpinner fullPage={false} className="py-8" />
+    );
   }
 
   if (isError) {

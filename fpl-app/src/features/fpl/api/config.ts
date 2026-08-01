@@ -20,7 +20,7 @@ const retryDelay = (attempt: number) =>
 /** Bootstrap changes slowly (prices update ~once/day) — poll gently. */
 export const BOOTSTRAP_QUERY_CONFIG = {
   staleTime: 5 * 60_000, // 5 minutes
-  gcTime: 30 * 60_000, // 30 minutes
+  gcTime: 24 * 60 * 60_000, // 24 hours — kept for offline / persisted cache
   retry: 2,
   retryDelay,
   refetchInterval: 10 * 60_000, // 10 minutes
@@ -31,7 +31,7 @@ export const BOOTSTRAP_QUERY_CONFIG = {
 /** Fixtures carry live scores — poll more frequently. */
 export const FIXTURES_QUERY_CONFIG = {
   staleTime: 60_000, // 1 minute
-  gcTime: 10 * 60_000, // 10 minutes
+  gcTime: 6 * 60 * 60_000, // 6 hours — kept for offline / persisted cache
   retry: 2,
   retryDelay,
   refetchInterval: 60_000, // 1 minute

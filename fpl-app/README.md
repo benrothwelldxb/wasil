@@ -1,69 +1,147 @@
-# FPL App — Foundations
+# FPL App — Fantasy Premier League Companion
 
-Production-ready architecture and reusable framework for a modern **Fantasy
-Premier League** web application. This scaffold contains **no FPL features** —
-only the application shell, UI system, routing, state, and data layers that
-future features are built on.
+A production-ready Fantasy Premier League companion: statistical **Expected
+Points** projections, a **squad optimiser**, a **lineup & captaincy** picker,
+a **transfer planner**, and a configurable **preference engine** that
+personalises every recommendation — all driven by the public FPL API. **No AI
+or LLMs** are used; every engine is transparent and inspectable.
+
+Built as a modern, installable **PWA** with offline support.
 
 ## Tech stack
 
-- **React 19** + **TypeScript** (strict)
-- **Vite** build tooling
+- **React 19** + **TypeScript** (strict) + **Vite 6**
 - **Tailwind CSS** + **shadcn/ui** (Radix primitives)
-- **TanStack Query** — server state
-- **Zustand** — client state
-- **React Router** — routing with nested layouts
-- **React Hook Form** + **Zod** — forms & validation
-- **Axios** — HTTP client
-- `clsx`, `class-variance-authority`, `tailwind-merge`, `lucide-react`
+- **TanStack Query** (server state, persisted) + **Zustand** (client state)
+- **React Router** (nested layouts, lazy routes)
+- **React Hook Form** + **Zod** (validation)
+- **vite-plugin-pwa** (Workbox service worker) · **Vitest** (tests)
+
+## Features
+
+| Route | What it does |
+| --- | --- |
+| `/` Dashboard | Overview placeholder |
+| `/players` | Virtualised, filterable/sortable explorer for every player |
+| `/ratings` | Weighted player scoring engine, personalised, with full breakdowns |
+| `/predictions` | Statistical **xPts** for the next 1/3/5/8 GWs, fully itemised + confidence |
+| `/optimiser` | Highest projected-points **legal squad** for a budget & horizon |
+| `/lineup` | Auto best XI, bench order, captain & vice — with manual overrides |
+| `/transfers` | Best single / double / **wildcard** moves, with hits & reasoning |
+| `/squad` | Manual squad builder enforcing all FPL rules |
+| `/fixtures` | Fixture-difficulty analysis & coloured runs |
+| `/preferences` | Preference profiles + onboarding that personalise the engines |
+
+## Architecture
+
+Feature-based, one folder per vertical slice under `src/features/`, each with a
+public `index.ts` barrel. Shared UI lives in `src/components`, cross-cutting
+state in `src/store`, the API layer in `src/services`.
+
+Recommendation engines compose in a clean, one-directional graph:
+
+```
+predictions ─► optimiser ─► transfers
+     │            │            ▲
+     └──► lineup ─┴────────────┘
+preferences ─► scoring        (all consume predictions/fixtures)
+```
+
+- **`predictions`** is a standalone engine behind a `PredictionEngine`
+  interface, so a future ML model can replace it without touching consumers.
+- **`preferences`** exposes a `PreferenceService`; every recommendation engine
+  runs its scores through it for personalisation + transparency.
+- All tuning coefficients live in single config files
+  (`predictions/config.ts`, `scoring/config.ts`, `optimiser/config.ts`).
+
+```
+src/
+  app/            App root, providers, error boundary, pages
+  components/     ui/ (shadcn), common/ (PageHeader, StatCard, skeletons…)
+  features/       fpl, fixtures, player-explorer, squad-builder, preferences,
+                  scoring, predictions, optimiser, lineup, transfers
+  hooks/          useTheme, useMediaQuery, useDebouncedValue, useOnlineStatus
+  layouts/        RootLayout, AppLayout (shell), header/nav/footer
+  lib/            cn(), env, query client
+  routes/         router (lazy), paths, navigation model
+  services/api/   Axios instance, interceptors, typed helpers
+  store/          Zustand app store (theme, sidebar, loading)
+  styles/         Global CSS + theme tokens + a11y/motion
+  test/           test factories
+```
 
 ## Getting started
 
 ```bash
 npm install
-cp .env.example .env   # optional: configure VITE_API_BASE_URL
-npm run dev            # start the dev server
-npm run build          # type-check + production build
-npm run typecheck      # types only (zero errors expected)
-npm run lint           # eslint
+cp .env.example .env      # optional: set VITE_API_BASE_URL
+npm run dev               # http://localhost:5173  (proxies /api to the FPL API)
 ```
 
-## Project structure
+### Scripts
 
+| Script | Purpose |
+| --- | --- |
+| `npm run dev` | Dev server with the FPL API proxy |
+| `npm run build` | Type-check + production build (zero warnings) |
+| `npm run preview` | Preview the production build |
+| `npm run typecheck` | Types only |
+| `npm run lint` | ESLint |
+| `npm run test` | Run the Vitest suite |
+
+## API
+
+The app talks to the public FPL API through a relative `/api` base URL. In
+**development**, Vite proxies `/api/*` to `https://fantasy.premierleague.com`
+(the FPL API sends no CORS headers, so a browser can't call it directly). In
+**production** you must provide `/api/*` yourself — e.g. a Cloudflare Pages
+Function/Worker that proxies to the FPL API — or set `VITE_API_BASE_URL` to
+your own backend.
+
+## PWA & offline
+
+- Installable (web app manifest + maskable icon), auto-updating service worker.
+- **Persistent caching**: the TanStack Query cache is saved to `localStorage`,
+  so the app renders instantly from cache on reload.
+- **Offline mode**: the service worker caches the app shell, FPL API responses
+  (stale-while-revalidate), and player/club images (cache-first). An offline
+  banner appears when the network drops; cached data stays usable.
+
+## Accessibility & performance
+
+- WCAG-AA minded: skip-to-content link, semantic landmarks, `aria-current`
+  navigation, labelled controls, visible focus rings, and
+  `prefers-reduced-motion` support.
+- Route-level **code splitting** (lazy pages), vendor chunk splitting,
+  virtualised long lists, memoised engines, debounced search, lazy images with
+  graceful fallbacks, and skeleton loaders.
+
+## Testing
+
+Vitest covers the pure engine logic — squad rules, the Poisson prediction
+model (contributions sum exactly to xPts), the optimiser constraints, and the
+lineup auto-pick:
+
+```bash
+npm run test
 ```
-src/
-  app/            # App root, providers, error boundary, page placeholders
-  assets/         # Static assets
-  components/
-    ui/           # shadcn/ui primitives (button, card, sheet, …)
-    common/       # Reusable app components (PageHeader, StatCard, …)
-  features/       # Feature modules — EMPTY by design (see features/README.md)
-  hooks/          # Shared hooks (useTheme, useMediaQuery)
-  layouts/        # RootLayout, AppLayout, header/nav/footer shell
-  lib/            # cn(), env, query client
-  routes/         # Router config, paths, navigation model
-  services/
-    api/          # Axios instance, interceptors, typed helpers
-  store/          # Zustand app store (theme, sidebar, loading)
-  styles/         # Global CSS + theme tokens
-  types/          # Shared TypeScript types
-  utils/          # Framework-agnostic helpers (theme, formatting)
+
+## Deployment — Cloudflare Pages
+
+1. **Build command:** `npm run build`
+2. **Output directory:** `dist`
+3. SPA routing and caching are handled by `public/_redirects` and
+   `public/_headers` (copied into `dist` on build).
+4. Provide `/api/*` in production (Pages Function/Worker proxy to the FPL API,
+   or set `VITE_API_BASE_URL`).
+
+```bash
+# or deploy the built output directly with Wrangler:
+npx wrangler pages deploy dist
 ```
-
-## Architecture notes
-
-- **Path alias** `@/*` → `src/*` (configured in `tsconfig` and `vite.config`).
-- **Theming**: light / dark / system with `localStorage` persistence and a
-  pre-paint script in `index.html` to avoid a flash of the wrong theme.
-- **State**: cross-cutting UI state in Zustand; server state in TanStack
-  Query. No domain state is mixed into the app store.
-- **API layer**: a single Axios instance with request/response interceptors
-  and normalised errors, exposed through typed `api.get/post/...` helpers. No
-  endpoints are defined yet.
-- **Reusability**: every shared component lives in `components/` with a barrel
-  export, ready to compose in features.
 
 ## Adding a feature
 
-See [`src/features/README.md`](src/features/README.md) for the feature-module
-conventions.
+See `src/features/README.md` for the feature-module conventions. New
+recommendation surfaces should consume `usePredictions()` /
+`usePreferenceService()` rather than re-deriving values.
