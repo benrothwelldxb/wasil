@@ -11,6 +11,7 @@ import { bestSingle, useTransferSettings } from "@/features/transfers";
 import { useManagerStore } from "@/features/manager";
 import type { TeamCardData, TeamCardPlayer } from "@/features/share";
 import { generateInsights, type Insight } from "./insights";
+import { rateTeam, type TeamRating } from "./rating";
 import {
   evaluateChips,
   upcomingChipTargets,
@@ -58,6 +59,8 @@ export interface ScoutReport {
   /** £m. */
   bank: number;
   insights: Insight[];
+  /** A transparent grade for the user's own team, or null. */
+  rating: TeamRating | null;
   /** Everything the shareable team card needs, or null when there's no team. */
   card: TeamCardData | null;
   /** Chip suggestions worth surfacing this week (empty = hold your chips). */
@@ -129,6 +132,7 @@ export function useScoutReport(): ScoutReport {
       squadValue: 0,
       bank: bankTenths / 10,
       insights: [],
+      rating: null,
       card: null,
       chips: [],
       chipOutlook,
@@ -247,6 +251,35 @@ export function useScoutReport(): ScoutReport {
         };
       });
 
+    // Team rating (own team only).
+    let rating: TeamRating | null = null;
+    if (source === "yours") {
+      const byPoints = [...starters].sort((a, b) => valueOf(b) - valueOf(a));
+      const captainRank =
+        lineup.captainId !== null
+          ? byPoints.findIndex((p) => p.id === lineup.captainId) + 1
+          : 0;
+      const benchPoints = benchIds.reduce(
+        (s, id) => s + (byId.get(id)?.windows[WINDOW].expectedPoints ?? 0),
+        0,
+      );
+      const riskyCount = starters.filter((p) => {
+        const doubt =
+          p.availability === "doubtful" ||
+          p.availability === "injured" ||
+          p.availability === "suspended";
+        const rotation =
+          (byId.get(p.id)?.minutes.rotationRisk ?? 0) >= 0.5;
+        return doubt || rotation;
+      }).length;
+      rating = rateTeam({
+        captainRank: captainRank || byPoints.length,
+        benchPoints,
+        riskyCount,
+        transferGain,
+      });
+    }
+
     // Shareable team card.
     const toCardPlayer = (p: Player): TeamCardPlayer => ({
       name: p.webName,
@@ -286,6 +319,7 @@ export function useScoutReport(): ScoutReport {
       squadValue: squadValueTenths / 10,
       bank: bankTenths / 10,
       insights,
+      rating,
       card,
       chips,
       chipOutlook,
