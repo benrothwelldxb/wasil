@@ -5,6 +5,7 @@
 export const ROUTES = {
   dashboard: "/",
   players: "/players",
+  squad: "/squad",
   team: "/team",
   analyse: "/analyse",
   settings: "/settings",

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Player } from "@/features/fpl";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { PositionBadge } from "./PositionBadge";
@@ -5,6 +6,8 @@ import { TeamBadge } from "./TeamBadge";
 
 interface PlayerCardProps {
   player: Player;
+  /** Optional action control (e.g. add/remove) rendered top-right. */
+  action?: ReactNode;
 }
 
 function Stat({ label, value }: { label: string; value: string | number }) {
@@ -19,7 +22,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 }
 
 /** A single player rendered as a card (mobile / narrow layouts). */
-export function PlayerCard({ player }: PlayerCardProps) {
+export function PlayerCard({ player, action }: PlayerCardProps) {
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
       <div className="flex items-center gap-3">
@@ -46,6 +49,7 @@ export function PlayerCard({ player }: PlayerCardProps) {
             {player.selectedByPercent.toFixed(1)}% owned
           </div>
         </div>
+        {action && <div className="ml-1 shrink-0">{action}</div>}
       </div>
 
       <div className="mt-4 grid grid-cols-4 gap-3 border-t pt-3">

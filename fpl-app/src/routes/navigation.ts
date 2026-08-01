@@ -3,6 +3,7 @@ import {
   Bug,
   LayoutDashboard,
   Settings,
+  Shirt,
   Table2,
   Users,
 } from "lucide-react";
@@ -26,6 +27,12 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "Players",
     path: ROUTES.players,
     icon: Table2,
+  },
+  {
+    id: "squad",
+    label: "Squad",
+    path: ROUTES.squad,
+    icon: Shirt,
   },
   {
     id: "team",

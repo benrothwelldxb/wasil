@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { SearchX } from "lucide-react";
 import {
+  type Player,
   QueryBoundary,
   usePlayers,
   usePositions,
@@ -15,12 +16,20 @@ import { PlayerCardList } from "./PlayerCardList";
 import { PlayerFilters } from "./PlayerFilters";
 import { PlayerTable } from "./PlayerTable";
 
+interface PlayerExplorerProps {
+  /**
+   * Optional per-row action (e.g. an add/remove button). When provided it's
+   * rendered as a leading control in the table and on each card.
+   */
+  renderAction?: (player: Player) => ReactNode;
+}
+
 /**
  * The complete Player Explorer: filter toolbar plus a responsive, virtualized
  * results view (data table on desktop, cards on mobile). All players come from
  * the shared bootstrap query, so mounting this adds no extra network requests.
  */
-export function PlayerExplorer() {
+export function PlayerExplorer({ renderAction }: PlayerExplorerProps = {}) {
   const playersQuery = usePlayers();
   const teamsQuery = useTeams();
   const positionsQuery = usePositions();
@@ -71,12 +80,16 @@ export function PlayerExplorer() {
             }
           />
         ) : isMobile ? (
-          <PlayerCardList players={explorer.players} />
+          <PlayerCardList
+            players={explorer.players}
+            renderAction={renderAction}
+          />
         ) : (
           <PlayerTable
             players={explorer.players}
             sort={explorer.sort}
             onToggleSort={explorer.toggleSort}
+            renderAction={renderAction}
           />
         )}
       </div>

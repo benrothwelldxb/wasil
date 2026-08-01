@@ -8,6 +8,7 @@ import {
   PlayersPage,
   RouteErrorPage,
   SettingsPage,
+  SquadPage,
   TeamPage,
 } from "@/app/pages";
 import { ROUTES } from "./paths";
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: ROUTES.players, element: <PlayersPage /> },
+          { path: ROUTES.squad, element: <SquadPage /> },
           { path: ROUTES.team, element: <TeamPage /> },
           { path: ROUTES.analyse, element: <AnalysePage /> },
           { path: ROUTES.settings, element: <SettingsPage /> },

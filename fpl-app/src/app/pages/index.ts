@@ -6,3 +6,4 @@ export { NotFoundPage } from "./NotFoundPage";
 export { RouteErrorPage } from "./RouteErrorPage";
 export { DebugPage } from "./DebugPage";
 export { PlayersPage } from "./PlayersPage";
+export { SquadPage } from "./SquadPage";

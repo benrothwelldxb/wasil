@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import type { Player } from "@/features/fpl";
@@ -15,11 +15,13 @@ import { PositionBadge } from "./PositionBadge";
 import { TeamBadge } from "./TeamBadge";
 
 const ROW_HEIGHT = 56;
+const ACTION_WIDTH = 48;
 
 interface PlayerTableProps {
   players: Player[];
   sort: PlayerSort;
   onToggleSort: (key: PlayerSortKey) => void;
+  renderAction?: (player: Player) => ReactNode;
 }
 
 function renderCell(column: PlayerColumn, player: Player) {
@@ -57,7 +59,12 @@ function renderCell(column: PlayerColumn, player: Player) {
   }
 }
 
-export function PlayerTable({ players, sort, onToggleSort }: PlayerTableProps) {
+export function PlayerTable({
+  players,
+  sort,
+  onToggleSort,
+  renderAction,
+}: PlayerTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -67,17 +74,24 @@ export function PlayerTable({ players, sort, onToggleSort }: PlayerTableProps) {
     overscan: 12,
   });
 
+  const hasAction = Boolean(renderAction);
+  const gridTemplate = hasAction
+    ? `${ACTION_WIDTH}px ${GRID_TEMPLATE}`
+    : GRID_TEMPLATE;
+  const minWidth = TABLE_MIN_WIDTH + (hasAction ? ACTION_WIDTH : 0);
+
   return (
     <div
       ref={parentRef}
       className="relative max-h-[70vh] overflow-auto rounded-lg border bg-card"
     >
-      <div style={{ minWidth: TABLE_MIN_WIDTH }}>
+      <div style={{ minWidth }}>
         {/* Sticky header */}
         <div
           className="sticky top-0 z-10 grid border-b bg-muted/60 backdrop-blur supports-[backdrop-filter]:bg-muted/40"
-          style={{ gridTemplateColumns: GRID_TEMPLATE }}
+          style={{ gridTemplateColumns: gridTemplate }}
         >
+          {hasAction && <div aria-hidden />}
           {PLAYER_COLUMNS.map((col) => {
             const active = sort.key === col.key;
             return (
@@ -120,9 +134,14 @@ export function PlayerTable({ players, sort, onToggleSort }: PlayerTableProps) {
                 style={{
                   height: item.size,
                   transform: `translateY(${item.start}px)`,
-                  gridTemplateColumns: GRID_TEMPLATE,
+                  gridTemplateColumns: gridTemplate,
                 }}
               >
+                {renderAction && (
+                  <div className="flex items-center justify-center">
+                    {renderAction(player)}
+                  </div>
+                )}
                 {PLAYER_COLUMNS.map((col) => (
                   <div
                     key={col.key}
