@@ -5,6 +5,7 @@ import {
   DashboardPage,
   DebugPage,
   NotFoundPage,
+  PlayersPage,
   RouteErrorPage,
   SettingsPage,
   TeamPage,
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: <DashboardPage /> },
+          { path: ROUTES.players, element: <PlayersPage /> },
           { path: ROUTES.team, element: <TeamPage /> },
           { path: ROUTES.analyse, element: <AnalysePage /> },
           { path: ROUTES.settings, element: <SettingsPage /> },

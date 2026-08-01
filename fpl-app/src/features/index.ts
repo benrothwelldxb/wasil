@@ -3,6 +3,8 @@
  * public API through its own barrel.
  *
  * - `fpl` — the Fantasy Premier League data layer (models, API service, and
- *   TanStack Query hooks). No product features (e.g. squad selection) yet.
+ *   TanStack Query hooks).
+ * - `player-explorer` — browse/filter/sort every player. No squad builder yet.
  */
 export * as fpl from "./fpl";
+export * as playerExplorer from "./player-explorer";

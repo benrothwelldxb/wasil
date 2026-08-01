@@ -3,6 +3,7 @@ import {
   Bug,
   LayoutDashboard,
   Settings,
+  Table2,
   Users,
 } from "lucide-react";
 import type { NavItem } from "@/types";
@@ -19,6 +20,12 @@ export const PRIMARY_NAV: NavItem[] = [
     path: ROUTES.dashboard,
     icon: LayoutDashboard,
     end: true,
+  },
+  {
+    id: "players",
+    label: "Players",
+    path: ROUTES.players,
+    icon: Table2,
   },
   {
     id: "team",

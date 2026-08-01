@@ -128,6 +128,7 @@ export function normalizePlayer(
     fullName: `${raw.first_name} ${raw.second_name}`.trim(),
 
     teamId: raw.team,
+    teamCode: team?.code ?? raw.team_code,
     teamName: team?.name ?? "Unknown",
     teamShortName: team?.shortName ?? "UNK",
 

@@ -45,3 +45,17 @@ export {
   TooltipContent,
   TooltipProvider,
 } from "./tooltip";
+export { Input } from "./input";
+export { Badge, badgeVariants } from "./badge";
+export type { BadgeProps } from "./badge";
+export { Slider } from "./slider";
+export {
+  Select,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator,
+} from "./select";

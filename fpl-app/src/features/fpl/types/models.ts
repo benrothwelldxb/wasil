@@ -77,6 +77,7 @@ export interface Player {
   fullName: string;
 
   teamId: number;
+  teamCode: number;
   teamName: string;
   teamShortName: string;
 
