@@ -11,5 +11,6 @@ export { FixturesPage } from "./FixturesPage";
 export { ScoringPage } from "./ScoringPage";
 export { PredictionsPage } from "./PredictionsPage";
 export { OptimiserPage } from "./OptimiserPage";
+export { LineupPage } from "./LineupPage";
 export { PreferencesPage } from "./PreferencesPage";
 export { OnboardingPage } from "./OnboardingPage";

@@ -15,6 +15,8 @@
  *   selector, transfer planner, and AI manager.
  * - `optimiser` — finds the highest-scoring legal squad from projected points.
  *   No transfer logic.
+ * - `lineup` — best XI, bench order, captain & vice from a legal squad, with
+ *   manual overrides. No transfer logic.
  */
 export * as fpl from "./fpl";
 export * as fixtures from "./fixtures";
@@ -24,3 +26,4 @@ export * as preferences from "./preferences";
 export * as scoring from "./scoring";
 export * as predictions from "./predictions";
 export * as optimiser from "./optimiser";
+export * as lineup from "./lineup";

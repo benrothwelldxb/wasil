@@ -2,6 +2,7 @@ import {
   BarChart3,
   Bug,
   CalendarDays,
+  ClipboardList,
   Gauge,
   LayoutDashboard,
   LineChart,
@@ -56,6 +57,12 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "Squad",
     path: ROUTES.squad,
     icon: Shirt,
+  },
+  {
+    id: "lineup",
+    label: "Lineup",
+    path: ROUTES.lineup,
+    icon: ClipboardList,
   },
   {
     id: "fixtures",
