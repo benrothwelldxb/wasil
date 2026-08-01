@@ -50,7 +50,9 @@ export function useTransfers(): UseTransfersResult {
       });
     }
 
-    // The market: every player with a price.
+    // The market: every player with a price, excluding clubs the user avoids
+    // (a hard constraint — never suggest bringing in a rival's player).
+    const avoid = new Set(prefs.avoidClubIds);
     const market: TransferPlayer[] = predictions
       .map((pred) => ({
         id: pred.playerId,
@@ -61,7 +63,7 @@ export function useTransfers(): UseTransfersResult {
         player: pred.player,
         prediction: pred,
       }))
-      .filter((p) => p.cost > 0);
+      .filter((p) => p.cost > 0 && !avoid.has(p.teamId));
 
     return {
       currentProjected: lineupTotal(current),
@@ -72,7 +74,16 @@ export function useTransfers(): UseTransfersResult {
       double: bestDouble(current, market, bank, freeTransfers, window),
       wildcard: bestWildcard(current, market, bank, window),
     };
-  }, [squadReady, predictions, byId, squad.players, window, bank, freeTransfers]);
+  }, [
+    squadReady,
+    predictions,
+    byId,
+    squad.players,
+    window,
+    bank,
+    freeTransfers,
+    prefs.avoidClubIds,
+  ]);
 
   return {
     squadReady,

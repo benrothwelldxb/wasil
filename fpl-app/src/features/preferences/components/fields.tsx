@@ -68,6 +68,70 @@ export function FavouriteClubField({
   );
 }
 
+/** Max clubs a user may avoid (keeps the optimiser feasible). */
+const MAX_AVOID = 3;
+
+/** Multi-select of clubs the user refuses to own players from (max 3). */
+export function AvoidClubsField({
+  teams,
+  value,
+  favouriteClubId,
+  onChange,
+}: {
+  teams: Team[];
+  value: number[];
+  favouriteClubId: number | null;
+  onChange: (ids: number[]) => void;
+}) {
+  const sorted = [...teams]
+    .filter((t) => t.id !== favouriteClubId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const selected = new Set(value);
+  const atCap = value.length >= MAX_AVOID;
+
+  const toggle = (id: number) => {
+    if (selected.has(id)) {
+      onChange(value.filter((v) => v !== id));
+    } else if (!atCap) {
+      onChange([...value, id]);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {sorted.map((t) => {
+          const on = selected.has(t.id);
+          const disabled = !on && atCap;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => toggle(t.id)}
+              disabled={disabled}
+              aria-pressed={on}
+              className={cn(
+                "rounded-full border px-3 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                on
+                  ? "border-destructive bg-destructive/10 text-destructive"
+                  : "hover:bg-accent",
+                disabled && "cursor-not-allowed opacity-40",
+              )}
+            >
+              {t.shortName}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {value.length === 0
+          ? "Tap a club to never pick its players."
+          : `Avoiding ${value.length} of ${MAX_AVOID} clubs — their players are excluded from your team and transfers.`}
+      </p>
+    </div>
+  );
+}
+
 const DIFFERENTIAL_VALUES = DIFFERENTIAL_OPTIONS.map((o) => o.value);
 
 /** Five-stop differential slider (Never … Maximum). */

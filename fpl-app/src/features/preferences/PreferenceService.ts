@@ -15,6 +15,7 @@ import {
 /** Where a score adjustment originated. */
 export type AdjustmentSource =
   | "club-affinity"
+  | "club-avoid"
   | "risk"
   | "ownership"
   | "fixtures"
@@ -65,6 +66,9 @@ const AFFINITY_MAGNITUDE: Record<RecommendationStyle, number> = {
   "club-loyalist": 0.08,
   "die-hard": 0.2,
 };
+
+/** Factor applied to a player from an avoided club in ratings (−70%). */
+const AVOID_CLUB_FACTOR = 0.3;
 
 const RISK_STRENGTH: Record<RiskProfile, number> = {
   conservative: -1,
@@ -161,6 +165,24 @@ export class PreferenceService {
       factor,
       deltaPercent,
       explanation: `Club Affinity increased ${player.webName}'s rating by ${deltaPercent.toFixed(1)}%.`,
+    };
+  }
+
+  /**
+   * Strongly penalise players from a club the user refuses to own. In ratings
+   * this sinks them (with an explanation) rather than hiding them; team
+   * selection and transfers apply this as a hard filter, so this is the soft
+   * backstop for list views.
+   */
+  adjustAvoidClub(player: Player): ScoreAdjustment | null {
+    if (!this.preferences.avoidClubIds.includes(player.teamId)) return null;
+    const factor = AVOID_CLUB_FACTOR;
+    const deltaPercent = toPercent(factor);
+    return {
+      source: "club-avoid",
+      factor,
+      deltaPercent,
+      explanation: `Avoided club: eased ${player.webName} right down (${deltaPercent.toFixed(1)}%) because you never pick players from ${player.teamName}.`,
     };
   }
 
@@ -331,6 +353,7 @@ export class PreferenceService {
 
     const candidates = [
       this.adjustClubAffinity(player, signals),
+      this.adjustAvoidClub(player),
       this.adjustRisk(player, signals),
       this.adjustOwnership(player, signals),
       this.adjustFixtureWeight(player, signals),

@@ -1,6 +1,7 @@
 import type { Team } from "@/features/fpl";
 import { SegmentedField } from "./SegmentedField";
 import {
+  AvoidClubsField,
   DifferentialSlider,
   FavouriteClubField,
   FormFixturesField,
@@ -70,6 +71,20 @@ export function PreferenceControls({
             teams={teams}
             value={value.favouriteClubId}
             onChange={(favouriteClubId) => onChange({ favouriteClubId })}
+          />
+        </PreferenceSection>
+      )}
+
+      {show("club") && (
+        <PreferenceSection
+          title="Clubs to avoid"
+          description="Refuse to own players from a rival? We'll keep them out of your team and transfer suggestions (up to 3 clubs)."
+        >
+          <AvoidClubsField
+            teams={teams}
+            value={value.avoidClubIds}
+            favouriteClubId={value.favouriteClubId}
+            onChange={(avoidClubIds) => onChange({ avoidClubIds })}
           />
         </PreferenceSection>
       )}

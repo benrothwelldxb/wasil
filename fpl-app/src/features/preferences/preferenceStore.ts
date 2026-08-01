@@ -301,9 +301,16 @@ export const usePreferenceStore = create<PreferenceStore>()(
       // Reconcile persisted custom profiles with the current built-ins.
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<PreferenceStore>;
-        const customProfiles = (saved.profiles ?? []).filter(
-          (p) => !p.builtIn,
-        );
+        const customProfiles = (saved.profiles ?? [])
+          .filter((p) => !p.builtIn)
+          // Backfill fields added after a profile was first stored.
+          .map((p) => ({
+            ...p,
+            preferences: {
+              ...p.preferences,
+              avoidClubIds: p.preferences.avoidClubIds ?? [],
+            },
+          }));
         const profiles = [...BUILT_IN_PROFILES, ...customProfiles];
         const activeProfileId =
           saved.activeProfileId &&

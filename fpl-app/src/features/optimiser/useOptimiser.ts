@@ -29,6 +29,8 @@ export interface UseOptimiserResult {
   setFormation: (f: Formation | null) => void;
   /** Effective budget used (tenths), after any reserve. */
   budget: number;
+  /** True when avoided clubs had to be relaxed to build a legal squad. */
+  avoidRelaxed: boolean;
   isLoading: boolean;
   isError: boolean;
   error: ApiError | null;
@@ -55,8 +57,15 @@ export function useOptimiser({
   const budget =
     DEFAULT_RULES.budget - (RESERVE_BY_PHILOSOPHY[prefs.budgetPhilosophy] ?? 0);
 
-  const result = useMemo<OptimisedSquad | null>(() => {
-    if (!enabled || predictions.length === 0) return null;
+  const avoidClubIds = prefs.avoidClubIds;
+
+  const { result, avoidRelaxed } = useMemo<{
+    result: OptimisedSquad | null;
+    avoidRelaxed: boolean;
+  }>(() => {
+    if (!enabled || predictions.length === 0) {
+      return { result: null, avoidRelaxed: false };
+    }
 
     const optiPlayers: OptiPlayer[] = predictions
       .map((pred) => {
@@ -77,12 +86,24 @@ export function useOptimiser({
       })
       .filter((p) => p.cost > 0);
 
-    return optimiseSquad(optiPlayers, {
+    const opts = {
       rules: { ...DEFAULT_RULES, budget },
       formation: formation ?? undefined,
       window,
-    });
-  }, [enabled, predictions, window, formation, budget, service]);
+    };
+
+    // Avoided clubs are a hard constraint — filter them out first.
+    const avoid = new Set(avoidClubIds);
+    if (avoid.size > 0) {
+      const filtered = optiPlayers.filter((p) => !avoid.has(p.teamId));
+      const squad = optimiseSquad(filtered, opts);
+      if (squad) return { result: squad, avoidRelaxed: false };
+      // Infeasible with the exclusions — relax them rather than fail silently.
+      return { result: optimiseSquad(optiPlayers, opts), avoidRelaxed: true };
+    }
+
+    return { result: optimiseSquad(optiPlayers, opts), avoidRelaxed: false };
+  }, [enabled, predictions, window, formation, budget, service, avoidClubIds]);
 
   return {
     result,
@@ -91,6 +112,7 @@ export function useOptimiser({
     formation,
     setFormation,
     budget,
+    avoidRelaxed,
     isLoading,
     isError,
     error,

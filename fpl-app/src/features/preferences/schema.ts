@@ -63,6 +63,13 @@ export type PlayingStyle = z.infer<typeof playingStyleSchema>;
 export const preferencesSchema = z.object({
   /** Exactly one supported club, or `null` for none. Only ever a weighting. */
   favouriteClubId: z.number().int().nullable(),
+  /**
+   * Clubs the user refuses to own players from — a hard constraint in team
+   * selection and transfers, and a strong penalty in ratings. Capped so the
+   * optimiser stays feasible. `.default([])` keeps older stored/imported
+   * profiles valid.
+   */
+  avoidClubIds: z.array(z.number().int()).max(3).default([]),
   recommendationStyle: recommendationStyleSchema,
   riskProfile: riskProfileSchema,
   differentialPreference: differentialPreferenceSchema,

@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, Clock, Trophy } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock, Wand2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { QueryBoundary } from "@/features/fpl";
 import { WINDOWS, type PredictionWindow } from "@/features/predictions";
@@ -117,9 +117,20 @@ export function OptimiserView() {
           </div>
         </div>
 
+        {opt.avoidRelaxed && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              We couldn't build a legal squad while avoiding every club you
+              picked, so your avoid list was relaxed for this team. Try avoiding
+              fewer clubs in Preferences.
+            </span>
+          </div>
+        )}
+
         {!result ? (
           <EmptyState
-            icon={Trophy}
+            icon={Wand2}
             title="No squad produced"
             description="Not enough player data to optimise yet."
           />

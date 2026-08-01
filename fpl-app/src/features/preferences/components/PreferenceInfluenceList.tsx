@@ -1,4 +1,5 @@
 import {
+  Ban,
   Crown,
   Gauge,
   Shield,
@@ -12,6 +13,7 @@ import type { AdjustmentSource, ScoreAdjustment } from "../PreferenceService";
 
 const SOURCE_ICON: Record<AdjustmentSource, LucideIcon> = {
   "club-affinity": Crown,
+  "club-avoid": Ban,
   risk: Gauge,
   ownership: Users,
   fixtures: TrendingUp,

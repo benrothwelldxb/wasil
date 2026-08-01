@@ -3,6 +3,7 @@ import type { PreferenceProfile, Preferences } from "./schema";
 /** A neutral, zero-bias baseline used as the starting point for profiles. */
 export const NEUTRAL_PREFERENCES: Preferences = {
   favouriteClubId: null,
+  avoidClubIds: [],
   recommendationStyle: "pure-data",
   riskProfile: "balanced",
   differentialPreference: "balanced",
