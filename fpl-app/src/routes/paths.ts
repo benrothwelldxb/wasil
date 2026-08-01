@@ -11,6 +11,7 @@ export const ROUTES = {
   lineup: "/lineup",
   live: "/live",
   transfers: "/transfers",
+  prices: "/prices",
   squad: "/squad",
   fixtures: "/fixtures",
   team: "/team",

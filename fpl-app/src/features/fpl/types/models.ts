@@ -129,6 +129,10 @@ export interface Player {
   penaltiesOrder: number | null;
   cornersOrder: number | null;
   freeKicksOrder: number | null;
+
+  /** Transfers in/out this gameweek — the raw material for price changes. */
+  transfersInEvent: number;
+  transfersOutEvent: number;
 }
 
 /** A resolved fixture between two clubs. */

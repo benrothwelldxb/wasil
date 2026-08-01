@@ -59,6 +59,8 @@ export function makePlayer(overrides: Partial<Player> = {}): Player {
     penaltiesOrder: null,
     cornersOrder: null,
     freeKicksOrder: null,
+    transfersInEvent: 0,
+    transfersOutEvent: 0,
     ...overrides,
   };
 }

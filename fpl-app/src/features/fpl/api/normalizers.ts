@@ -176,6 +176,8 @@ export function normalizePlayer(
     penaltiesOrder: raw.penalties_order,
     cornersOrder: raw.corners_and_indirect_freekicks_order,
     freeKicksOrder: raw.direct_freekicks_order,
+    transfersInEvent: raw.transfers_in_event ?? 0,
+    transfersOutEvent: raw.transfers_out_event ?? 0,
   };
 }
 

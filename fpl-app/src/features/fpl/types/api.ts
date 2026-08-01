@@ -122,6 +122,10 @@ export interface FplElementRaw {
   penalties_order: number | null;
   corners_and_indirect_freekicks_order: number | null;
   direct_freekicks_order: number | null;
+
+  // Net transfers this gameweek (drive price changes).
+  transfers_in_event: number;
+  transfers_out_event: number;
 }
 
 /** `element_stats[]` — describes the stat identifiers used across the game. */

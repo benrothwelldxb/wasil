@@ -40,6 +40,9 @@ const TransfersPage = lazy(() =>
     default: m.TransfersPage,
   })),
 );
+const PricesPage = lazy(() =>
+  import("@/app/pages/PricesPage").then((m) => ({ default: m.PricesPage })),
+);
 const SquadPage = lazy(() =>
   import("@/app/pages/SquadPage").then((m) => ({ default: m.SquadPage })),
 );
@@ -89,6 +92,7 @@ export const router = createBrowserRouter([
           { path: ROUTES.lineup, element: <LineupPage /> },
           { path: ROUTES.live, element: <LivePage /> },
           { path: ROUTES.transfers, element: <TransfersPage /> },
+          { path: ROUTES.prices, element: <PricesPage /> },
           { path: ROUTES.squad, element: <SquadPage /> },
           { path: ROUTES.fixtures, element: <FixturesPage /> },
           {

@@ -1,0 +1,1 @@
+export { PriceWatchView } from "./PriceWatchView";

@@ -6,6 +6,7 @@ import {
   Gauge,
   Home,
   LineChart,
+  PoundSterling,
   Radio,
   Settings,
   Shirt,
@@ -55,6 +56,12 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "Transfers",
     path: ROUTES.transfers,
     icon: ArrowLeftRight,
+  },
+  {
+    id: "prices",
+    label: "Prices",
+    path: ROUTES.prices,
+    icon: PoundSterling,
   },
   {
     id: "players",
