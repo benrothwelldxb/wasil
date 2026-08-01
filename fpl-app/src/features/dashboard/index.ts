@@ -7,5 +7,6 @@
  * engines; adds no new modelling.
  */
 export * from "./insights";
+export * from "./chips";
 export { useScoutReport, type ScoutReport } from "./useScoutReport";
 export { ScoutReport as ScoutReportView } from "./components";

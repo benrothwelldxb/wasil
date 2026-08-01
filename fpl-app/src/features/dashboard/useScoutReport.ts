@@ -9,6 +9,7 @@ import type { OptiPlayer } from "@/features/optimiser";
 import { autoPickLineup, projectLineup } from "@/features/lineup";
 import { bestSingle, useTransferSettings } from "@/features/transfers";
 import { generateInsights, type Insight } from "./insights";
+import { evaluateChips, type ChipAdvice } from "./chips";
 
 /** "This week" — the scout report headline horizon. */
 const WINDOW = 1 as const;
@@ -36,6 +37,8 @@ export interface ScoutReport {
   /** £m. */
   bank: number;
   insights: Insight[];
+  /** Chip suggestions worth surfacing this week (empty = hold your chips). */
+  chips: ChipAdvice[];
   /** Player ids of the 15-man squad (for "use this team"). */
   teamIds: number[];
 }
@@ -86,6 +89,7 @@ export function useScoutReport(): ScoutReport {
       squadValue: 0,
       bank: bankTenths / 10,
       insights: [],
+      chips: [],
       teamIds: [],
     };
     if (team15.length !== 15) return empty;
@@ -152,6 +156,20 @@ export function useScoutReport(): ScoutReport {
       }
     }
 
+    const benchIds = [
+      ...(lineup.benchGkId !== null ? [lineup.benchGkId] : []),
+      ...lineup.benchOutfieldIds,
+    ];
+    const chips = evaluateChips({
+      squad: team15,
+      starterIds: lineup.starterIds,
+      benchIds,
+      captainId: lineup.captainId,
+      predictionById: byId,
+      window: WINDOW,
+      source,
+    });
+
     const insights = generateInsights({
       starters,
       predictionById: byId,
@@ -176,6 +194,7 @@ export function useScoutReport(): ScoutReport {
       squadValue: squadValueTenths / 10,
       bank: bankTenths / 10,
       insights,
+      chips,
       teamIds: team15.map((p) => p.id),
     };
   }, [

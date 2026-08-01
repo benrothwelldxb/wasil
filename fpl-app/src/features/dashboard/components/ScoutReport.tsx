@@ -139,6 +139,42 @@ export function ScoutReport() {
         </SectionCard>
       )}
 
+      {/* Chip Watch */}
+      <SectionCard title="Chip Watch" className="mt-4">
+        {report.chips.length > 0 ? (
+          <ul className="space-y-2.5">
+            {report.chips.map((chip) => (
+              <li key={chip.chip} className="flex items-start gap-3">
+                <span
+                  aria-hidden
+                  className="mt-0.5 shrink-0 text-xl leading-none"
+                >
+                  {chip.emoji}
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">{chip.name}</span>
+                    <Badge
+                      variant={chip.status === "play" ? "default" : "secondary"}
+                    >
+                      {chip.headline}
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {chip.reason}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            💤 No chips worth playing this week — save them for a blank or double
+            gameweek.
+          </p>
+        )}
+      </SectionCard>
+
       {/* Actions */}
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         {report.source === "yours" ? (
