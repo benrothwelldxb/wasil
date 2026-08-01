@@ -10,8 +10,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PlayerAvatar } from "@/features/player-explorer";
-import { ImportTeamCard } from "@/features/manager";
-import { ShareTeamButton } from "@/features/share";
+import { ImportTeamCard, useManagerStore } from "@/features/manager";
+import { RivalCompareButton } from "@/features/compare";
+import { ShareTeamButton, type CompareSummary } from "@/features/share";
 import { CaptainCompare } from "./CaptainCompare";
 import { DeadlineCountdown } from "./DeadlineCountdown";
 import { useSquadStore } from "@/features/squad-builder";
@@ -27,7 +28,21 @@ import { useScoutReport } from "../useScoutReport";
 export function ScoutReport() {
   const report = useScoutReport();
   const setPlayers = useSquadStore((s) => s.setPlayers);
+  const managerName = useManagerStore((s) => s.managerName);
+  const teamName = useManagerStore((s) => s.teamName);
   const navigate = useNavigate();
+
+  // The user's team as a compare summary (for head-to-head).
+  const mine: CompareSummary | null = report.card
+    ? {
+        managerName: managerName ?? "You",
+        teamName: teamName ?? "Your team",
+        projectedPoints: report.card.projectedPoints,
+        captainName: report.card.captainName,
+        formation: report.card.formation,
+        squadValue: report.card.squadValue,
+      }
+    : null;
 
   const useThisTeam = () => {
     setPlayers(report.teamIds);
@@ -233,13 +248,21 @@ export function ScoutReport() {
         )}
       </div>
 
-      {/* Share */}
-      <ShareTeamButton
-        data={report.card}
-        size="lg"
-        className="mt-2 w-full"
-        label="Share my team card"
-      />
+      {/* Share & compare */}
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+        <ShareTeamButton
+          data={report.card}
+          size="lg"
+          className="flex-1"
+          label="Share my team card"
+        />
+        <RivalCompareButton
+          mine={mine}
+          gameweek={report.gameweek}
+          size="lg"
+          className="flex-1"
+        />
+      </div>
 
       {report.source === "suggested" && (
         <Badge variant="secondary" className="mt-3">

@@ -11,6 +11,11 @@ export {
   type TeamCardPlayer,
 } from "./card";
 export {
+  buildCompareCardSvg,
+  COMPARE_SIZE,
+  type CompareSummary,
+} from "./compareCard";
+export {
   svgToDataUrl,
   svgToPngBlob,
   shareOrDownloadPng,
