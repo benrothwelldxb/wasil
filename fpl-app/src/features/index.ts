@@ -21,6 +21,7 @@
  *   reasoning. Advisory only.
  */
 export * as compare from "./compare";
+export * as differentials from "./differentials";
 export * as dashboard from "./dashboard";
 export * as live from "./live";
 export * as manager from "./manager";
