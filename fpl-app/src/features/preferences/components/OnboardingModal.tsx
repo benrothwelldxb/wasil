@@ -30,12 +30,14 @@ import { FavouriteClubField } from "./fields";
 
 type Approach = "safe" | "balanced" | "big";
 type Loyalty = "none" | "little" | "lots";
+type Focus = "attack" | "balanced" | "defence";
 
 interface Draft {
   name: string;
   managerId: number | null;
   favouriteClubId: number | null;
   approach: Approach;
+  focus: Focus;
   loyalty: Loyalty;
 }
 
@@ -44,8 +46,27 @@ const EMPTY_DRAFT: Draft = {
   managerId: null,
   favouriteClubId: null,
   approach: "balanced",
+  focus: "balanced",
   loyalty: "little",
 };
+
+const FOCUS_OPTIONS = [
+  {
+    value: "attack" as const,
+    label: "Attackers",
+    description: "Load up on goals and assists up top.",
+  },
+  {
+    value: "balanced" as const,
+    label: "Balanced",
+    description: "Spread evenly across the pitch.",
+  },
+  {
+    value: "defence" as const,
+    label: "Defence",
+    description: "Invest in clean sheets at the back.",
+  },
+];
 
 const APPROACH_OPTIONS = [
   {
@@ -101,6 +122,9 @@ function toPreferences(draft: Draft): Preferences {
           : "pure-data";
   }
 
+  // Explicit focus wins over any style implied by the approach.
+  prefs.playingStyle = draft.focus;
+
   return prefs;
 }
 
@@ -136,6 +160,7 @@ export function OnboardingModal() {
       "you",
       "club",
       "approach",
+      "focus",
       ...(draft.favouriteClubId !== null ? ["loyalty"] : []),
       "done",
     ],
@@ -361,6 +386,25 @@ export function OnboardingModal() {
                   return <Icon className="h-8 w-8" aria-hidden />;
                 })()}
               </div>
+            </div>
+          )}
+
+          {step === "focus" && (
+            <div className="space-y-4">
+              <h2 id="onboarding-title" className="text-xl font-bold">
+                Where do you want your firepower?
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                This shapes where your budget goes — more money up top, evenly
+                spread, or stacked at the back.
+              </p>
+              <SegmentedField
+                options={FOCUS_OPTIONS}
+                value={draft.focus}
+                onChange={(focus) => setDraft((d) => ({ ...d, focus }))}
+                columns={3}
+                ariaLabel="Team focus"
+              />
             </div>
           )}
 

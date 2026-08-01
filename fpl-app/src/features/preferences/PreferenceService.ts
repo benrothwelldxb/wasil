@@ -87,6 +87,18 @@ const DIFFERENTIAL_STRENGTH: Record<DifferentialPreference, number> = {
 const DIFFERENTIAL_MAGNITUDE = 0.15;
 
 const STYLE_MAGNITUDE = 0.08;
+
+/**
+ * Positional emphasis per playing style, applied on top of the per-player
+ * signal tilt so "focus on defence/attack" visibly shifts where the budget
+ * goes (and which formation the optimiser lands on). Keyed by position id
+ * (1 GK · 2 DEF · 3 MID · 4 FWD).
+ */
+const POSITION_STYLE_BIAS: Record<"attack" | "defence", Record<number, number>> =
+  {
+    attack: { 1: -0.04, 2: -0.06, 3: 0.04, 4: 0.1 },
+    defence: { 1: 0.08, 2: 0.1, 3: -0.02, 4: -0.08 },
+  };
 const ROTATION_MAGNITUDE = 0.06;
 const FIXTURE_FORM_MAGNITUDE = 0.1;
 
@@ -283,7 +295,9 @@ export class PreferenceService {
 
     const relevant =
       playingStyle === "attack" ? signals.attacking : signals.defensive;
-    const factor = 1 + STYLE_MAGNITUDE * centre(relevant);
+    const signalTilt = STYLE_MAGNITUDE * centre(relevant);
+    const posBias = POSITION_STYLE_BIAS[playingStyle][player.positionId] ?? 0;
+    const factor = 1 + signalTilt + posBias;
     const deltaPercent = toPercent(factor);
     if (Math.abs(deltaPercent) < 0.1) return null;
 

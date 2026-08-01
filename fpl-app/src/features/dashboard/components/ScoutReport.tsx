@@ -92,10 +92,13 @@ export function ScoutReport() {
           <DeadlineCountdown />
         </div>
         <p className="text-sm text-muted-foreground">
-          {report.gameweek !== null
-            ? `Gameweek ${report.gameweek} · your scout report`
-            : "Your scout report"}
-          {report.source === "suggested" && " (suggested team)"}
+          {report.source === "suggested"
+            ? report.gameweek !== null
+              ? `Gameweek ${report.gameweek} · top-rated team`
+              : "Top-rated team"
+            : report.gameweek !== null
+              ? `Gameweek ${report.gameweek} · your scout report`
+              : "Your scout report"}
         </p>
       </div>
 
@@ -265,9 +268,14 @@ export function ScoutReport() {
       </div>
 
       {report.source === "suggested" && (
-        <Badge variant="secondary" className="mt-3">
-          This is a suggested team — save it to track your own.
-        </Badge>
+        <SectionCard title="⭐ The top-rated team this week" className="mt-4">
+          <p className="mb-3 text-sm text-muted-foreground">
+            This is the highest-projected legal squad right now — a starting
+            point, tuned by your preferences. Already play FPL? Import your real
+            team and everything below becomes personal.
+          </p>
+          <ImportTeamCard />
+        </SectionCard>
       )}
     </PageContainer>
   );
