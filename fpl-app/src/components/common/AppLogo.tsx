@@ -19,10 +19,10 @@ export function AppLogo({ iconOnly = false, className }: AppLogoProps) {
       </span>
       {!iconOnly && (
         <span className="text-lg tracking-tight">
-          FPL<span className="text-muted-foreground"> App</span>
+          my<span className="text-primary">FPL</span>Scout
         </span>
       )}
-      <span className="sr-only">Fantasy Premier League App — home</span>
+      <span className="sr-only">myFPLScout — home</span>
     </span>
   );
 }

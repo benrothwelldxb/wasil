@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "robots.txt"],
       manifest: {
-        name: "FPL App — Fantasy Premier League Companion",
-        short_name: "FPL App",
+        name: "myFPLScout — Fantasy Premier League Companion",
+        short_name: "myFPLScout",
         description:
           "Statistical projections, squad optimisation, and transfer planning for Fantasy Premier League.",
         theme_color: "#0f172a",

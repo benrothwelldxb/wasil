@@ -15,6 +15,8 @@ export interface SquadStore {
   playerIds: number[];
   add: (id: number) => void;
   remove: (id: number) => void;
+  /** Replace the whole squad at once (e.g. "use this optimised team"). */
+  setPlayers: (ids: number[]) => void;
   clear: () => void;
   has: (id: number) => boolean;
 }
@@ -33,6 +35,7 @@ export const useSquadStore = create<SquadStore>()(
         set((state) => ({
           playerIds: state.playerIds.filter((x) => x !== id),
         })),
+      setPlayers: (ids) => set({ playerIds: [...ids] }),
       clear: () => set({ playerIds: [] }),
       has: (id) => get().playerIds.includes(id),
     }),

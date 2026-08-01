@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from "react-router-dom";
-import { Footer, Header, OfflineBanner } from "./components";
+import { BottomTabBar, Footer, Header, OfflineBanner } from "./components";
 
 /**
  * The main application shell: a skip link, an offline banner, a sticky header
@@ -19,13 +19,14 @@ export function AppLayout() {
       <main
         id="main-content"
         tabIndex={-1}
-        className="flex-1 outline-none"
+        className="flex-1 pb-16 outline-none md:pb-0"
       >
         <div key={location.pathname} className="page-enter">
           <Outlet />
         </div>
       </main>
       <Footer />
+      <BottomTabBar />
     </div>
   );
 }

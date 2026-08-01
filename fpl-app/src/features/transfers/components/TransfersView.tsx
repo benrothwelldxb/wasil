@@ -18,7 +18,7 @@ import { useTransfers } from "../useTransfers";
 import { TransferCard } from "./TransferCard";
 
 const WINDOW_LABEL: Record<PredictionWindow, string> = {
-  1: "Next GW",
+  1: "This week",
   3: "Next 3",
   5: "Next 5",
   8: "Next 8",
@@ -57,7 +57,7 @@ export function TransfersView() {
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
           <div className="flex items-center gap-1.5">
-            <span className="mr-1 text-xs text-muted-foreground">Horizon:</span>
+            <span className="mr-1 text-xs text-muted-foreground">Plan for:</span>
             {WINDOWS.map((w) => (
               <button
                 key={w}

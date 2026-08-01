@@ -6,7 +6,12 @@ import type {
 } from "./types";
 
 function horizonLabel(window: number): string {
-  return window === 1 ? "the next GW" : `the next ${window} GWs`;
+  return window === 1 ? "this week" : `the next ${window} weeks`;
+}
+
+/** Lower-case, friendlier phrasing for a points driver. */
+function driverPhrase(label: string): string {
+  return label.replace(/ Probability$/, "").toLowerCase();
 }
 
 /** Rank every player within its position by value (1 = best). */
@@ -56,30 +61,30 @@ export function buildReasons(
   const reasons = new Map<number, SelectionReason>();
 
   for (const p of squad) {
-    const posName = POSITION_NAME[p.positionId] ?? "player";
+    const posName = (POSITION_NAME[p.positionId] ?? "player").toLowerCase();
     const rank = ranks.get(p.id) ?? 0;
     const price = (p.cost / 10).toFixed(1);
-    const efficiency = p.cost > 0 ? (p.value / (p.cost / 10)).toFixed(2) : "0";
+    const pts = Math.round(p.value);
 
     if (starterIds.has(p.id)) {
       const driver = topContributor(p, window);
-      const rankPhrase =
-        rank > 0 ? `#${rank} ${posName} by projected points` : posName;
+      // Plain-language lead; the exact xPts number is available elsewhere.
+      const strength =
+        rank > 0 && rank <= 5
+          ? `One of the best ${posName}s`
+          : `A strong ${posName} for the price`;
       reasons.set(p.id, {
         playerId: p.id,
         role: "starter",
         reason:
-          `${rankPhrase}: ${p.value.toFixed(1)} xPts over ${horizonLabel(window)} ` +
-          `at £${price}m (${efficiency} pts/£m).` +
-          (driver ? ` Driven by ${driver}.` : ""),
+          `${strength} — about ${pts} pts ${horizonLabel(window)} (£${price}m).` +
+          (driver ? ` Best for ${driverPhrase(driver)}.` : ""),
       });
     } else {
       reasons.set(p.id, {
         playerId: p.id,
         role: "bench",
-        reason:
-          `Bench ${posName.toLowerCase()} at £${price}m — ` +
-          `frees budget for the strongest possible starting XI.`,
+        reason: `Cheap bench pick (£${price}m) — saves money for your best XI.`,
       });
     }
   }

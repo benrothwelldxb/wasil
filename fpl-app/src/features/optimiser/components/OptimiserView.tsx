@@ -1,8 +1,11 @@
-import { CheckCircle2, Clock, Trophy } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock, Trophy } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { QueryBoundary } from "@/features/fpl";
 import { WINDOWS, type PredictionWindow } from "@/features/predictions";
+import { useSquadStore } from "@/features/squad-builder";
 import { EmptyState, SectionCard } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -11,13 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { ROUTES } from "@/routes/paths";
 import { FORMATIONS } from "../config";
 import { useOptimiser } from "../useOptimiser";
 import type { Formation, OptiPlayer } from "../types";
 import { PositionGroup } from "./PlayerLine";
 
 const WINDOW_LABEL: Record<PredictionWindow, string> = {
-  1: "Next GW",
+  1: "This week",
   3: "Next 3",
   5: "Next 5",
   8: "Next 8",
@@ -33,6 +37,21 @@ function byPos(players: OptiPlayer[], id: number): OptiPlayer[] {
 export function OptimiserView() {
   const opt = useOptimiser();
   const { result } = opt;
+  const navigate = useNavigate();
+  const setPlayers = useSquadStore((s) => s.setPlayers);
+  const currentSquadSize = useSquadStore((s) => s.playerIds.length);
+
+  const useThisTeam = () => {
+    if (!result) return;
+    if (
+      currentSquadSize > 0 &&
+      !window.confirm("Replace your saved squad with this team?")
+    ) {
+      return;
+    }
+    setPlayers(result.squad.map((p) => p.id));
+    navigate(ROUTES.lineup);
+  };
 
   return (
     <QueryBoundary
@@ -47,7 +66,7 @@ export function OptimiserView() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5">
               <span className="mr-1 text-xs text-muted-foreground">
-                Horizon:
+                Plan for:
               </span>
               {WINDOWS.map((w) => (
                 <button
@@ -149,6 +168,12 @@ export function OptimiserView() {
                 </div>
               </div>
             </div>
+
+            {/* Primary action: adopt this team */}
+            <Button size="lg" className="w-full sm:w-auto" onClick={useThisTeam}>
+              Use this team
+              <ArrowRight className="h-4 w-4" />
+            </Button>
 
             {/* Starting XI + bench */}
             <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
