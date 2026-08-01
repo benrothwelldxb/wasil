@@ -17,11 +17,7 @@ export function AppLayout() {
       </a>
       <OfflineBanner />
       <Header />
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="flex-1 pb-16 outline-none md:pb-0"
-      >
+      <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
         <div key={location.pathname} className="page-enter">
           <Outlet />
         </div>

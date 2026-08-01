@@ -1,0 +1,1 @@
+export { ScoutReport } from "./ScoutReport";

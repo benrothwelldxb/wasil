@@ -20,6 +20,7 @@
  * - `transfers` — best single/double/wildcard recommendations with hits and
  *   reasoning. Advisory only.
  */
+export * as dashboard from "./dashboard";
 export * as fpl from "./fpl";
 export * as fixtures from "./fixtures";
 export * as playerExplorer from "./player-explorer";
