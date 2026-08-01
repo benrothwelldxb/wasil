@@ -1,4 +1,5 @@
 import { Outlet, useLocation } from "react-router-dom";
+import { OnboardingModal } from "@/features/preferences/components/OnboardingModal";
 import { BottomTabBar, Footer, Header, OfflineBanner } from "./components";
 
 /**
@@ -27,6 +28,7 @@ export function AppLayout() {
       </main>
       <Footer />
       <BottomTabBar />
+      <OnboardingModal />
     </div>
   );
 }
