@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { OnboardingModal } from "@/features/preferences/components/OnboardingModal";
 import { InstallPrompt } from "@/features/pwa";
+import { useManagerTeam } from "@/features/manager";
 import { BottomTabBar, Footer, Header, OfflineBanner } from "./components";
 
 /**
@@ -10,6 +11,8 @@ import { BottomTabBar, Footer, Header, OfflineBanner } from "./components";
  */
 export function AppLayout() {
   const location = useLocation();
+  // Keep the saved squad in sync with the connected FPL team (no-op if none).
+  useManagerTeam();
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">

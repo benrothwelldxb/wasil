@@ -10,6 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PlayerAvatar } from "@/features/player-explorer";
+import { ImportTeamCard } from "@/features/manager";
 import { ShareTeamButton } from "@/features/share";
 import { useSquadStore } from "@/features/squad-builder";
 import { ROUTES } from "@/routes/paths";
@@ -48,14 +49,17 @@ export function ScoutReport() {
       <PageContainer>
         <EmptyState
           icon={Sparkles}
-          title="Let's build your team"
-          description="We'll create a full squad for you in seconds."
+          title="Let's get your team in"
+          description="Connect your real FPL team, or let us build one for you in seconds."
           action={
             <Button asChild>
               <Link to={ROUTES.optimiser}>Pick my team</Link>
             </Button>
           }
         />
+        <SectionCard title="Already play FPL?" className="mt-4">
+          <ImportTeamCard />
+        </SectionCard>
       </PageContainer>
     );
   }

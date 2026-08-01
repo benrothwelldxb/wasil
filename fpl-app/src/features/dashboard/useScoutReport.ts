@@ -8,6 +8,7 @@ import { useOptimiser } from "@/features/optimiser";
 import type { OptiPlayer } from "@/features/optimiser";
 import { autoPickLineup, projectLineup } from "@/features/lineup";
 import { bestSingle, useTransferSettings } from "@/features/transfers";
+import { useManagerStore } from "@/features/manager";
 import type { TeamCardData, TeamCardPlayer } from "@/features/share";
 import { generateInsights, type Insight } from "./insights";
 import {
@@ -63,6 +64,7 @@ export function useScoutReport(): ScoutReport {
   const bootstrap = useBootstrap();
   const { analysis } = useFixtureAnalysis();
   const { calendar } = useGameweekCalendar();
+  const managerName = useManagerStore((s) => s.managerName);
   const squad = useSquad();
   // Only optimise when the user has NO saved squad — otherwise the home screen
   // pays the optimiser's synchronous cost on every visit for a result it discards.
@@ -71,7 +73,9 @@ export function useScoutReport(): ScoutReport {
   const freeTransfers = useTransferSettings((s) => s.freeTransfers);
 
   return useMemo<ScoutReport>(() => {
-    const greeting = greetingFor(new Date().getHours());
+    const firstName = managerName?.trim().split(/\s+/)[0] ?? "";
+    const greeting =
+      greetingFor(new Date().getHours()) + (firstName ? `, ${firstName}` : "");
     const gameweek =
       bootstrap.data?.nextEventId ?? bootstrap.data?.currentEventId ?? null;
 
@@ -256,5 +260,6 @@ export function useScoutReport(): ScoutReport {
     optimiser.result,
     freeTransfers,
     isLoading,
+    managerName,
   ]);
 }

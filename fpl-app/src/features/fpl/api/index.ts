@@ -1,4 +1,5 @@
 export { FPL_ENDPOINTS, fetchBootstrap, fetchFixtures } from "./endpoints";
+export { fetchManagerTeam, type ManagerTeam } from "./manager";
 export { fplKeys } from "./queryKeys";
 export type { FplQueryKey } from "./queryKeys";
 export {
