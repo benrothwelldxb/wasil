@@ -78,8 +78,16 @@ function playerChip(
   const r = 34 * scale;
   const color = POSITION_COLOR[p.positionId] ?? "#94a3b8";
   const nameSize = 26 * scale;
-  const name = escapeXml(p.name);
-  const plateW = Math.max(70, name.length * nameSize * 0.62 + 24);
+  // Truncate long names (measure the RAW name, then escape) and cap the plate
+  // to the row slot so neighbours never overlap — e.g. a 5-man defence.
+  const maxChars = Math.round(12 * scale);
+  const displayName =
+    p.name.length > maxChars ? `${p.name.slice(0, maxChars - 1)}…` : p.name;
+  const name = escapeXml(displayName);
+  const plateW = Math.min(
+    150 * scale,
+    Math.max(64 * scale, displayName.length * nameSize * 0.6 + 20),
+  );
   const plateY = cy + r + 8 * scale;
   const nameY = plateY + 25 * scale;
 

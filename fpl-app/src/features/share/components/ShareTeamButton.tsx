@@ -25,7 +25,8 @@ export function ShareTeamButton({
   label = "Share team",
 }: ShareTeamButtonProps) {
   const [open, setOpen] = useState(false);
-  if (!data) return null;
+  // Hide until there's a real projection — a 0.0 preseason card looks broken.
+  if (!data || data.projectedPoints <= 0) return null;
 
   return (
     <>

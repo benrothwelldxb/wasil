@@ -49,15 +49,27 @@ describe("buildTeamCardSvg", () => {
   });
 
   it("escapes XML-special characters in player names", () => {
+    // Short enough not to truncate, so the escaping is what's under test.
     const svg = buildTeamCardSvg({
       ...base,
       starters: base.starters.map((p, i) =>
-        i === 0 ? { ...p, name: "O'Brien & <Co>" } : p,
+        i === 0 ? { ...p, name: "A&B <O'N>" } : p,
       ),
     });
-    expect(svg).toContain("O&apos;Brien &amp; &lt;Co&gt;");
+    expect(svg).toContain("A&amp;B &lt;O&apos;N&gt;");
     // The raw, unescaped form must never appear (it would break parsing).
-    expect(svg).not.toContain("O'Brien & <Co>");
+    expect(svg).not.toContain("A&B <O'N>");
+  });
+
+  it("truncates over-long names so pitch rows don't overlap", () => {
+    const svg = buildTeamCardSvg({
+      ...base,
+      starters: base.starters.map((p, i) =>
+        i === 1 ? { ...p, name: "Alexander-Arnold" } : p,
+      ),
+    });
+    expect(svg).toContain("…");
+    expect(svg).not.toContain("Alexander-Arnold");
   });
 
   it("labels a suggested team and omits it for the user's own", () => {
