@@ -177,7 +177,7 @@ export function OnboardingModal() {
                 Pick a great FPL team in 3 minutes
               </h2>
               <p className="text-muted-foreground">
-                myFPLScout does the hard maths for you. Answer a couple of quick
+                MyFPLScout does the hard maths for you. Answer a couple of quick
                 questions and we'll build a full team — then you can tweak it,
                 choose a captain, and plan transfers.
               </p>

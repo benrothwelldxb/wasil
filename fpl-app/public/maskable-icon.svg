@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-    <rect width="512" height="512" rx="112" fill="#14245c"/>
+    <rect width="512" height="512" fill="#14245c"/>
+    <rect width="512" height="512" fill="#0f1c48" opacity="0"/>
     
     <defs>
       <radialGradient id="glow" cx="50%" cy="50%" r="50%">

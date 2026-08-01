@@ -1,5 +1,5 @@
-import { Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "./BrandMark";
 
 export interface AppLogoProps {
   /** Hide the wordmark and render the mark only (e.g. collapsed nav). */
@@ -8,21 +8,20 @@ export interface AppLogoProps {
 }
 
 /**
- * The application logo: an icon mark plus optional wordmark. Reused in the
- * header and mobile navigation so branding stays consistent.
+ * The application logo: the MyFPLScout mark plus optional wordmark
+ * ("MyFPL" in brand ink, "Scout" in brand green). Reused across the header and
+ * navigation so branding stays consistent.
  */
 export function AppLogo({ iconOnly = false, className }: AppLogoProps) {
   return (
     <span className={cn("flex items-center gap-2 font-semibold", className)}>
-      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-        <Trophy className="h-5 w-5" aria-hidden />
-      </span>
+      <BrandMark className="h-8 w-8" />
       {!iconOnly && (
-        <span className="text-lg tracking-tight">
-          my<span className="text-primary">FPL</span>Scout
+        <span className="text-lg tracking-tight text-[hsl(var(--brand-ink))]">
+          MyFPL<span className="text-[hsl(var(--brand-green))]">Scout</span>
         </span>
       )}
-      <span className="sr-only">myFPLScout — home</span>
+      <span className="sr-only">MyFPLScout — home</span>
     </span>
   );
 }

@@ -9,28 +9,52 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "robots.txt"],
+      includeAssets: [
+        "favicon.svg",
+        "favicon-32.png",
+        "favicon-16.png",
+        "apple-touch-icon.png",
+        "robots.txt",
+      ],
       manifest: {
-        name: "myFPLScout — Fantasy Premier League Companion",
-        short_name: "myFPLScout",
+        name: "MyFPLScout — Fantasy Premier League Companion",
+        short_name: "MyFPLScout",
         description:
           "Statistical projections, squad optimisation, and transfer planning for Fantasy Premier League.",
-        theme_color: "#0f172a",
-        background_color: "#0f172a",
+        theme_color: "#14245c",
+        background_color: "#14245c",
         display: "standalone",
         start_url: "/",
         scope: "/",
         icons: [
           {
+            src: "/icons/pwa-192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/icons/pwa-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/icons/pwa-maskable-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+          {
             src: "/pwa-icon.svg",
             sizes: "any",
             type: "image/svg+xml",
-            purpose: "any maskable",
+            purpose: "any",
           },
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,woff2}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
         // Serve the SPA shell for client-side routes when offline.
         navigateFallback: "/index.html",
         runtimeCaching: [

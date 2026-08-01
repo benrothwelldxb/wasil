@@ -1,5 +1,7 @@
 export { AppLogo } from "./AppLogo";
 export type { AppLogoProps } from "./AppLogo";
+export { BrandMark } from "./BrandMark";
+export type { BrandMarkProps } from "./BrandMark";
 export { NavigationItem } from "./NavigationItem";
 export type { NavigationItemProps } from "./NavigationItem";
 export { ThemeToggle } from "./ThemeToggle";

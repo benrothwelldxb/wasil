@@ -3,11 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/pwa-icon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
+    <!-- iOS "Add to Home Screen" — standalone launch + branded title. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="MyFPLScout" />
     <meta
       name="theme-color"
       content="#ffffff"
@@ -15,14 +25,14 @@
     />
     <meta
       name="theme-color"
-      content="#0f172a"
+      content="#0f1c48"
       media="(prefers-color-scheme: dark)"
     />
     <meta
       name="description"
       content="Statistical projections, squad optimisation, and transfer planning for Fantasy Premier League."
     />
-    <title>myFPLScout — Fantasy Premier League Companion</title>
+    <title>MyFPLScout — Fantasy Premier League Companion</title>
     <script>
       // Apply the persisted theme before first paint to avoid a flash of the
       // wrong color scheme (FOUC). Mirrors the logic in src/utils/theme.ts.

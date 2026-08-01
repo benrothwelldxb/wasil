@@ -21,6 +21,7 @@
  *   reasoning. Advisory only.
  */
 export * as dashboard from "./dashboard";
+export * as pwa from "./pwa";
 export * as fpl from "./fpl";
 export * as fixtures from "./fixtures";
 export * as playerExplorer from "./player-explorer";
