@@ -173,6 +173,24 @@ export function ScoutReport() {
             gameweek.
           </p>
         )}
+
+        {report.chipOutlook.length > 0 && (
+          <div className="mt-4 border-t pt-3">
+            <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Looking ahead
+            </div>
+            <ul className="space-y-2">
+              {report.chipOutlook.map((o) => (
+                <li key={o.event} className="flex items-start gap-2.5 text-sm">
+                  <span aria-hidden className="shrink-0 leading-tight">
+                    {o.emoji}
+                  </span>
+                  <span className="text-muted-foreground">{o.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </SectionCard>
 
       {/* Actions */}

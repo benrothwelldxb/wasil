@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { GameweekOutlook } from "@/features/fixtures";
 import type { PlayerPrediction } from "@/features/predictions";
 import { makePlayer } from "@/test/factories";
-import { evaluateChips, type ChipInput } from "./chips";
+import {
+  evaluateChips,
+  upcomingChipTargets,
+  type ChipInput,
+} from "./chips";
 
 /**
  * Minimal prediction stub: chip logic only reads `windows[1].expectedPoints`
@@ -97,5 +102,47 @@ describe("evaluateChips", () => {
     const advice = evaluateChips(input);
     expect(advice.find((a) => a.chip === "triple-captain")).toBeDefined();
     expect(advice.find((a) => a.chip === "wildcard")).toBeUndefined();
+  });
+});
+
+function gw(
+  event: number,
+  blankTeams: number,
+  doubleTeams: number,
+): GameweekOutlook {
+  return { event, blankTeams, doubleTeams, playingTeams: 20 - blankTeams };
+}
+
+describe("upcomingChipTargets", () => {
+  it("flags the biggest upcoming double gameweek", () => {
+    const calendar = [gw(28, 0, 5), gw(30, 0, 8), gw(32, 0, 6)];
+    const out = upcomingChipTargets(calendar, 27);
+    const dbl = out.find((o) => o.chips.includes("triple-captain"));
+    expect(dbl?.event).toBe(30); // 8 doubles beats 5 and 6
+    expect(dbl?.text).toMatch(/8 clubs play twice/);
+  });
+
+  it("flags the biggest upcoming blank gameweek", () => {
+    const calendar = [gw(29, 9, 0), gw(33, 4, 0)];
+    const out = upcomingChipTargets(calendar, 27);
+    const blank = out.find((o) => o.chips.includes("free-hit"));
+    expect(blank?.event).toBe(29);
+    expect(blank?.text).toMatch(/9 clubs blank/);
+  });
+
+  it("ignores gameweeks at or before the current one", () => {
+    const calendar = [gw(20, 8, 8), gw(21, 8, 8)];
+    // Current GW is 21, so only later GWs count → nothing ahead.
+    expect(upcomingChipTargets(calendar, 21)).toHaveLength(0);
+  });
+
+  it("ignores gameweeks beyond the planning horizon", () => {
+    const calendar = [gw(40, 10, 10)]; // 13 GWs away, horizon is 8
+    expect(upcomingChipTargets(calendar, 27)).toHaveLength(0);
+  });
+
+  it("ignores minor blanks/doubles below the notable threshold", () => {
+    const calendar = [gw(29, 2, 3)]; // below notable (4)
+    expect(upcomingChipTargets(calendar, 27)).toHaveLength(0);
   });
 });

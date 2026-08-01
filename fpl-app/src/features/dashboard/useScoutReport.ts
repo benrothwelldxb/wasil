@@ -2,14 +2,19 @@ import { useMemo } from "react";
 import type { Player } from "@/features/fpl";
 import { useBootstrap } from "@/features/fpl";
 import { usePredictions } from "@/features/predictions";
-import { useFixtureAnalysis } from "@/features/fixtures";
+import { useFixtureAnalysis, useGameweekCalendar } from "@/features/fixtures";
 import { useSquad } from "@/features/squad-builder";
 import { useOptimiser } from "@/features/optimiser";
 import type { OptiPlayer } from "@/features/optimiser";
 import { autoPickLineup, projectLineup } from "@/features/lineup";
 import { bestSingle, useTransferSettings } from "@/features/transfers";
 import { generateInsights, type Insight } from "./insights";
-import { evaluateChips, type ChipAdvice } from "./chips";
+import {
+  evaluateChips,
+  upcomingChipTargets,
+  type ChipAdvice,
+  type ChipOutlook,
+} from "./chips";
 
 /** "This week" — the scout report headline horizon. */
 const WINDOW = 1 as const;
@@ -39,6 +44,8 @@ export interface ScoutReport {
   insights: Insight[];
   /** Chip suggestions worth surfacing this week (empty = hold your chips). */
   chips: ChipAdvice[];
+  /** Forward-looking heads-up about upcoming blank/double gameweeks. */
+  chipOutlook: ChipOutlook[];
   /** Player ids of the 15-man squad (for "use this team"). */
   teamIds: number[];
 }
@@ -52,6 +59,7 @@ export function useScoutReport(): ScoutReport {
   const { predictions, byId, isLoading } = usePredictions();
   const bootstrap = useBootstrap();
   const { analysis } = useFixtureAnalysis();
+  const { calendar } = useGameweekCalendar();
   const squad = useSquad();
   const optimiser = useOptimiser();
   const freeTransfers = useTransferSettings((s) => s.freeTransfers);
@@ -60,6 +68,10 @@ export function useScoutReport(): ScoutReport {
     const greeting = greetingFor(new Date().getHours());
     const gameweek =
       bootstrap.data?.nextEventId ?? bootstrap.data?.currentEventId ?? null;
+
+    // Forward-looking chip planning is calendar-only — available even without
+    // a team yet, so plan for upcoming blank/double gameweeks regardless.
+    const chipOutlook = upcomingChipTargets(calendar, gameweek);
 
     // Decide which team to report on: the saved squad, else a suggestion.
     let team15: Player[] = [];
@@ -90,6 +102,7 @@ export function useScoutReport(): ScoutReport {
       bank: bankTenths / 10,
       insights: [],
       chips: [],
+      chipOutlook,
       teamIds: [],
     };
     if (team15.length !== 15) return empty;
@@ -195,6 +208,7 @@ export function useScoutReport(): ScoutReport {
       bank: bankTenths / 10,
       insights,
       chips,
+      chipOutlook,
       teamIds: team15.map((p) => p.id),
     };
   }, [
@@ -202,6 +216,7 @@ export function useScoutReport(): ScoutReport {
     byId,
     bootstrap.data,
     analysis,
+    calendar,
     squad.isComplete,
     squad.players,
     squad.remainingTenths,

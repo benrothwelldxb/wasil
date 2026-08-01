@@ -14,6 +14,15 @@ export {
   buildFixtureAnalysisMap,
 } from "./analysis";
 export {
+  buildGameweekCalendar,
+  type GameweekOutlook,
+  type GameweekCalendar,
+} from "./calendar";
+export {
+  useGameweekCalendar,
+  type UseGameweekCalendarResult,
+} from "./useGameweekCalendar";
+export {
   difficultyClasses,
   ratingTextClass,
   ratingBgClass,

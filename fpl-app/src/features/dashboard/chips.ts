@@ -1,4 +1,5 @@
 import type { Player } from "@/features/fpl";
+import type { GameweekOutlook } from "@/features/fixtures";
 import type { PlayerPrediction, PredictionWindow } from "@/features/predictions";
 
 /** The four FPL chips this app can advise on. */
@@ -46,7 +47,12 @@ export const CHIP_THRESHOLDS = {
   freeHit: { play: 8, consider: 4 },
   /** Number of your 15 who are injured/suspended (need a lasting fix). */
   wildcard: { consider: 4 },
+  /** A future gameweek is "notable" once this many clubs blank / double. */
+  calendar: { notableBlank: 4, notableDouble: 4 },
 } as const;
+
+/** How many gameweeks ahead the planner looks for blank/double targets. */
+export const CALENDAR_HORIZON = 8;
 
 export interface ChipInput {
   /** The full 15-man squad. */
@@ -199,4 +205,78 @@ export function evaluateChips(input: ChipInput): ChipAdvice[] {
   const rank = (a: ChipAdvice) =>
     (a.status === "play" ? 100 : 0) + (a.extraPoints ?? 0);
   return deduped.sort((x, y) => rank(y) - rank(x));
+}
+
+/** A forward-looking heads-up about a notable upcoming gameweek. */
+export interface ChipOutlook {
+  /** Chips this gameweek is a target for. */
+  chips: ChipKey[];
+  emoji: string;
+  event: number;
+  text: string;
+}
+
+/**
+ * Scan the upcoming gameweek calendar for the biggest blank and double
+ * gameweeks within the planning horizon and turn them into chip heads-ups —
+ * e.g. "GW29: 8 clubs blank — line up your Free Hit". Only looks *ahead* of the
+ * current gameweek, so it never duplicates this week's advice.
+ *
+ * @param calendar   upcoming gameweeks (ascending), from `buildGameweekCalendar`
+ * @param afterEvent the current headline gameweek; only later ones are planned
+ */
+export function upcomingChipTargets(
+  calendar: readonly GameweekOutlook[],
+  afterEvent: number | null,
+): ChipOutlook[] {
+  const from = afterEvent ?? 0;
+  const horizon = calendar.filter(
+    (g) => g.event > from && g.event <= from + CALENDAR_HORIZON,
+  );
+  const t = CHIP_THRESHOLDS.calendar;
+  const outlook: ChipOutlook[] = [];
+
+  // The biggest upcoming double gameweek — a Triple Captain / Bench Boost week.
+  const doubles = horizon.filter((g) => g.doubleTeams >= t.notableDouble);
+  const bestDouble = pickBiggest(doubles, (g) => g.doubleTeams);
+  if (bestDouble) {
+    outlook.push({
+      chips: ["triple-captain", "bench-boost"],
+      emoji: "📅",
+      event: bestDouble.event,
+      text: `GW${bestDouble.event}: ${bestDouble.doubleTeams} clubs play twice — a prime week to save your Triple Captain or Bench Boost for.`,
+    });
+  }
+
+  // The biggest upcoming blank gameweek — a Free Hit (or Wildcard) week.
+  const blanks = horizon.filter((g) => g.blankTeams >= t.notableBlank);
+  const bestBlank = pickBiggest(blanks, (g) => g.blankTeams);
+  if (bestBlank) {
+    outlook.push({
+      chips: ["free-hit", "wildcard"],
+      emoji: "📅",
+      event: bestBlank.event,
+      text: `GW${bestBlank.event}: ${bestBlank.blankTeams} clubs blank — line up your Free Hit (or a Wildcard) for it.`,
+    });
+  }
+
+  return outlook.sort((a, b) => a.event - b.event);
+}
+
+/** The item with the highest score; ties broken by the soonest gameweek. */
+function pickBiggest(
+  items: readonly GameweekOutlook[],
+  score: (g: GameweekOutlook) => number,
+): GameweekOutlook | null {
+  let best: GameweekOutlook | null = null;
+  for (const item of items) {
+    if (
+      !best ||
+      score(item) > score(best) ||
+      (score(item) === score(best) && item.event < best.event)
+    ) {
+      best = item;
+    }
+  }
+  return best;
 }
