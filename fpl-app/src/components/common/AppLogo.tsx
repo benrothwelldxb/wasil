@@ -15,7 +15,7 @@ export interface AppLogoProps {
 export function AppLogo({ iconOnly = false, className }: AppLogoProps) {
   return (
     <span className={cn("flex items-center gap-2 font-semibold", className)}>
-      <BrandMark className="h-8 w-8" />
+      <BrandMark className="h-8 w-8" decorative />
       {!iconOnly && (
         <span className="text-lg tracking-tight text-[hsl(var(--brand-ink))]">
           MyFPL<span className="text-[hsl(var(--brand-green))]">Scout</span>

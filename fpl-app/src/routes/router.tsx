@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppLayout, RootLayout } from "@/layouts";
 import { RouteErrorPage } from "@/app/pages";
 import { ROUTES } from "./paths";
@@ -42,12 +42,6 @@ const SquadPage = lazy(() =>
 );
 const FixturesPage = lazy(() =>
   import("@/app/pages/FixturesPage").then((m) => ({ default: m.FixturesPage })),
-);
-const TeamPage = lazy(() =>
-  import("@/app/pages/TeamPage").then((m) => ({ default: m.TeamPage })),
-);
-const AnalysePage = lazy(() =>
-  import("@/app/pages/AnalysePage").then((m) => ({ default: m.AnalysePage })),
 );
 const PreferencesPage = lazy(() =>
   import("@/app/pages/PreferencesPage").then((m) => ({
@@ -93,8 +87,14 @@ export const router = createBrowserRouter([
           { path: ROUTES.transfers, element: <TransfersPage /> },
           { path: ROUTES.squad, element: <SquadPage /> },
           { path: ROUTES.fixtures, element: <FixturesPage /> },
-          { path: ROUTES.team, element: <TeamPage /> },
-          { path: ROUTES.analyse, element: <AnalysePage /> },
+          {
+            path: ROUTES.team,
+            element: <Navigate to={ROUTES.lineup} replace />,
+          },
+          {
+            path: ROUTES.analyse,
+            element: <Navigate to={ROUTES.ratings} replace />,
+          },
           { path: ROUTES.preferences, element: <PreferencesPage /> },
           { path: ROUTES.onboarding, element: <OnboardingPage /> },
           { path: ROUTES.settings, element: <SettingsPage /> },

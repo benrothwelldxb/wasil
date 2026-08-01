@@ -127,7 +127,6 @@ async function main() {
   // Source SVGs (SVG-capable browsers use these directly).
   await writeFile(resolve(pub, "favicon.svg"), rounded);
   await writeFile(resolve(pub, "pwa-icon.svg"), rounded);
-  await writeFile(resolve(pub, "maskable-icon.svg"), square);
 
   // Favicons.
   await png(rounded, 32, resolve(pub, "favicon-32.png"));

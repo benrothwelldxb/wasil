@@ -2,6 +2,8 @@ import { cn } from "@/lib/utils";
 
 export interface BrandMarkProps {
   className?: string;
+  /** When true, hide from assistive tech (a nearby label already names it). */
+  decorative?: boolean;
 }
 
 /**
@@ -12,13 +14,14 @@ export interface BrandMarkProps {
  * Kept in sync with `scripts/generate-icons.mjs`, which renders the PWA/favicon
  * PNGs from the same artwork.
  */
-export function BrandMark({ className }: BrandMarkProps) {
+export function BrandMark({ className, decorative = false }: BrandMarkProps) {
   return (
     <svg
       viewBox="0 0 512 512"
       className={cn("h-8 w-8", className)}
-      role="img"
-      aria-label="MyFPLScout"
+      role={decorative ? undefined : "img"}
+      aria-hidden={decorative || undefined}
+      aria-label={decorative ? undefined : "MyFPLScout"}
     >
       <rect width="512" height="512" rx="112" fill="#14245c" />
       <defs>

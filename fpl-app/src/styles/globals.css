@@ -38,9 +38,10 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
 
-    /* MyFPLScout brand: navy ink + green accent (the wordmark). */
+    /* MyFPLScout brand: navy ink + green accent (the wordmark).
+       Light-mode green is darkened to clear WCAG AA (~4.5:1) as text. */
     --brand-ink: 226 64% 22%;
-    --brand-green: 134 60% 42%;
+    --brand-green: 134 68% 30%;
 
     --radius: 0.5rem;
   }

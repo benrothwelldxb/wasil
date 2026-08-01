@@ -1,4 +1,4 @@
-# myFPLScout — Fantasy Premier League Companion
+# MyFPLScout — Fantasy Premier League Companion
 
 A production-ready Fantasy Premier League companion: statistical **Expected
 Points** projections, a **squad optimiser**, a **lineup & captaincy** picker,
