@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { PlayerAvatar } from "@/features/player-explorer";
 import { ImportTeamCard } from "@/features/manager";
 import { ShareTeamButton } from "@/features/share";
+import { DeadlineCountdown } from "./DeadlineCountdown";
 import { useSquadStore } from "@/features/squad-builder";
 import { ROUTES } from "@/routes/paths";
 import { INSIGHT_EMOJI } from "../insights";
@@ -68,9 +69,12 @@ export function ScoutReport() {
     <PageContainer>
       {/* Greeting */}
       <div className="mb-5">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-          {report.greeting}
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+            {report.greeting}
+          </h1>
+          <DeadlineCountdown />
+        </div>
         <p className="text-sm text-muted-foreground">
           {report.gameweek !== null
             ? `Gameweek ${report.gameweek} · your scout report`

@@ -199,6 +199,7 @@ export function normalizeBootstrap(raw: FplBootstrapRaw): FplBootstrap {
     totalPlayers: raw.total_players,
     currentEventId: currentEvent?.id ?? null,
     nextEventId: nextEvent?.id ?? null,
+    nextDeadline: nextEvent?.deadline_time ?? null,
   };
 }
 

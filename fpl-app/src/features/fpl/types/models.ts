@@ -169,4 +169,6 @@ export interface FplBootstrap {
   currentEventId: number | null;
   /** The next gameweek id, if known. */
   nextEventId: number | null;
+  /** ISO deadline for the next gameweek, if known (transfers lock here). */
+  nextDeadline: string | null;
 }
