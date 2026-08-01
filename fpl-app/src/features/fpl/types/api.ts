@@ -117,6 +117,11 @@ export interface FplElementRaw {
   expected_assists: string;
   expected_goal_involvements: string;
   expected_goals_conceded: string;
+
+  // Set-piece duty order (1 = first choice); null when not on duty.
+  penalties_order: number | null;
+  corners_and_indirect_freekicks_order: number | null;
+  direct_freekicks_order: number | null;
 }
 
 /** `element_stats[]` — describes the stat identifiers used across the game. */

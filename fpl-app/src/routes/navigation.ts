@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Gauge,
   LayoutDashboard,
+  LineChart,
   Settings,
   Shirt,
   SlidersHorizontal,
@@ -36,6 +37,12 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "Ratings",
     path: ROUTES.ratings,
     icon: Gauge,
+  },
+  {
+    id: "predictions",
+    label: "xPts",
+    path: ROUTES.predictions,
+    icon: LineChart,
   },
   {
     id: "squad",

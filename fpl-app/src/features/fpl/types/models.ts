@@ -124,6 +124,11 @@ export interface Player {
   expectedAssists: number;
   expectedGoalInvolvements: number;
   expectedGoalsConceded: number;
+
+  /** Set-piece duty order (1 = first choice), or `null` when not on duty. */
+  penaltiesOrder: number | null;
+  cornersOrder: number | null;
+  freeKicksOrder: number | null;
 }
 
 /** A resolved fixture between two clubs. */

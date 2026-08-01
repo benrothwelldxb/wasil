@@ -6,6 +6,7 @@ export const ROUTES = {
   dashboard: "/",
   players: "/players",
   ratings: "/ratings",
+  predictions: "/predictions",
   squad: "/squad",
   fixtures: "/fixtures",
   team: "/team",

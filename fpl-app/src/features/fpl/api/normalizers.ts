@@ -172,6 +172,10 @@ export function normalizePlayer(
     expectedAssists: toNumber(raw.expected_assists),
     expectedGoalInvolvements: toNumber(raw.expected_goal_involvements),
     expectedGoalsConceded: toNumber(raw.expected_goals_conceded),
+
+    penaltiesOrder: raw.penalties_order,
+    cornersOrder: raw.corners_and_indirect_freekicks_order,
+    freeKicksOrder: raw.direct_freekicks_order,
   };
 }
 

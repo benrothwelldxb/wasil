@@ -10,6 +10,9 @@
  *   every future recommendation engine. No optimisation logic.
  * - `scoring` — deterministic (no-AI) player scoring engine that consumes the
  *   PreferenceService to personalise ratings.
+ * - `predictions` — statistical (no-AI) Expected Points engine (GW 1/3/5/8),
+ *   behind a swappable interface for future ML. Consumed by optimiser, captain
+ *   selector, transfer planner, and AI manager.
  */
 export * as fpl from "./fpl";
 export * as fixtures from "./fixtures";
@@ -17,3 +20,4 @@ export * as playerExplorer from "./player-explorer";
 export * as squadBuilder from "./squad-builder";
 export * as preferences from "./preferences";
 export * as scoring from "./scoring";
+export * as predictions from "./predictions";

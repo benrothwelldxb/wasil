@@ -19,6 +19,11 @@ const PlayersPage = lazy(() =>
 const ScoringPage = lazy(() =>
   import("@/app/pages/ScoringPage").then((m) => ({ default: m.ScoringPage })),
 );
+const PredictionsPage = lazy(() =>
+  import("@/app/pages/PredictionsPage").then((m) => ({
+    default: m.PredictionsPage,
+  })),
+);
 const SquadPage = lazy(() =>
   import("@/app/pages/SquadPage").then((m) => ({ default: m.SquadPage })),
 );
@@ -69,6 +74,7 @@ export const router = createBrowserRouter([
           { index: true, element: <DashboardPage /> },
           { path: ROUTES.players, element: <PlayersPage /> },
           { path: ROUTES.ratings, element: <ScoringPage /> },
+          { path: ROUTES.predictions, element: <PredictionsPage /> },
           { path: ROUTES.squad, element: <SquadPage /> },
           { path: ROUTES.fixtures, element: <FixturesPage /> },
           { path: ROUTES.team, element: <TeamPage /> },
