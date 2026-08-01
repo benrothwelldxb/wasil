@@ -94,9 +94,10 @@ npm run dev               # http://localhost:5173  (proxies /api to the FPL API)
 The app talks to the public FPL API through a relative `/api` base URL. In
 **development**, Vite proxies `/api/*` to `https://fantasy.premierleague.com`
 (the FPL API sends no CORS headers, so a browser can't call it directly). In
-**production** you must provide `/api/*` yourself — e.g. a Cloudflare Pages
-Function/Worker that proxies to the FPL API — or set `VITE_API_BASE_URL` to
-your own backend.
+**production**, the included Cloudflare Pages Function at
+`functions/api/[[path]].ts` proxies `/api/*` to the FPL API on the deployed
+origin — no extra setup on Cloudflare Pages. To use a different backend
+instead, set `VITE_API_BASE_URL`.
 
 ## PWA & offline
 
@@ -132,8 +133,8 @@ npm run test
 2. **Output directory:** `dist`
 3. SPA routing and caching are handled by `public/_redirects` and
    `public/_headers` (copied into `dist` on build).
-4. Provide `/api/*` in production (Pages Function/Worker proxy to the FPL API,
-   or set `VITE_API_BASE_URL`).
+4. `/api/*` is proxied to the FPL API in production by the included Pages
+   Function (`functions/api/[[path]].ts`) — nothing else to configure.
 
 ```bash
 # or deploy the built output directly with Wrangler:
