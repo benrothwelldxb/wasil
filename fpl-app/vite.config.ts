@@ -16,7 +16,9 @@ export default defineConfig({
         // Split heavy vendor libraries into their own cacheable chunks.
         manualChunks: {
           "react-vendor": ["react", "react-dom", "react-router-dom"],
-          "query-vendor": ["@tanstack/react-query"],
+          "query-vendor": ["@tanstack/react-query", "@tanstack/react-virtual"],
+          "form-vendor": ["zod", "react-hook-form"],
+          "icons-vendor": ["lucide-react"],
         },
       },
     },

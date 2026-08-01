@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Settings,
   Shirt,
+  SlidersHorizontal,
   Table2,
   Users,
 } from "lucide-react";
@@ -45,6 +46,12 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "Analyse",
     path: ROUTES.analyse,
     icon: BarChart3,
+  },
+  {
+    id: "preferences",
+    label: "Preferences",
+    path: ROUTES.preferences,
+    icon: SlidersHorizontal,
   },
   {
     id: "settings",

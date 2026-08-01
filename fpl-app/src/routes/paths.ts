@@ -8,6 +8,8 @@ export const ROUTES = {
   squad: "/squad",
   team: "/team",
   analyse: "/analyse",
+  preferences: "/preferences",
+  onboarding: "/onboarding",
   settings: "/settings",
   debug: "/debug",
 } as const;
