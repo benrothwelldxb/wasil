@@ -4,6 +4,7 @@ import type { Player } from "@/features/fpl";
 import type { FixtureAnalysisMap } from "@/features/fixtures";
 import { FIXTURE_COLUMNS, PLAYER_COLUMNS } from "./columns";
 import { filterPlayers, sortPlayers } from "./filtering";
+import { useWatchlistStore } from "./watchlistStore";
 import type {
   PlayerFilterState,
   PlayerSort,
@@ -16,6 +17,7 @@ const DEFAULT_FILTERS: PlayerFilterState = {
   positionId: null,
   priceRange: null,
   minOwnership: 0,
+  watchlistOnly: false,
 };
 
 const DEFAULT_SORT: PlayerSort = { key: "totalPoints", direction: "desc" };
@@ -43,6 +45,7 @@ export interface UsePlayerExplorerResult {
   setPositionId: (positionId: number | null) => void;
   setPriceRange: (range: [number, number] | null) => void;
   setMinOwnership: (min: number) => void;
+  setWatchlistOnly: (on: boolean) => void;
   /** Toggle sort on a column (flips direction if already active). */
   toggleSort: (key: PlayerSortKey) => void;
   /** Set sort explicitly (used by the sort dropdown). */
@@ -64,6 +67,7 @@ export function usePlayerExplorer(
 ): UsePlayerExplorerResult {
   const [filters, setFilters] = useState<PlayerFilterState>(DEFAULT_FILTERS);
   const [sort, setSort] = useState<PlayerSort>(DEFAULT_SORT);
+  const watchedIds = useWatchlistStore((s) => s.ids);
 
   const debouncedSearch = useDebouncedValue(filters.search, 250);
 
@@ -78,16 +82,24 @@ export function usePlayerExplorer(
       priceRange:
         priceMin !== null && priceMax !== null ? [priceMin, priceMax] : null,
       minOwnership: filters.minOwnership,
+      watchlistOnly: filters.watchlistOnly,
     };
-    return sortPlayers(filterPlayers(allPlayers, effective), sort, {
+    let list = sortPlayers(filterPlayers(allPlayers, effective), sort, {
       fixtures: fixtureAnalysis,
     });
+    if (filters.watchlistOnly) {
+      const watched = new Set(watchedIds);
+      list = list.filter((p) => watched.has(p.id));
+    }
+    return list;
   }, [
     allPlayers,
     debouncedSearch,
     filters.teamId,
     filters.positionId,
     filters.minOwnership,
+    filters.watchlistOnly,
+    watchedIds,
     priceMin,
     priceMax,
     sort,
@@ -115,6 +127,10 @@ export function usePlayerExplorer(
     (minOwnership: number) => setFilters((f) => ({ ...f, minOwnership })),
     [],
   );
+  const setWatchlistOnly = useCallback(
+    (watchlistOnly: boolean) => setFilters((f) => ({ ...f, watchlistOnly })),
+    [],
+  );
 
   const toggleSort = useCallback((key: PlayerSortKey) => {
     setSort((prev) =>
@@ -134,7 +150,8 @@ export function usePlayerExplorer(
     filters.teamId !== null ||
     filters.positionId !== null ||
     filters.priceRange !== null ||
-    filters.minOwnership !== 0;
+    filters.minOwnership !== 0 ||
+    filters.watchlistOnly;
 
   return {
     filters,
@@ -146,6 +163,7 @@ export function usePlayerExplorer(
     setPositionId,
     setPriceRange,
     setMinOwnership,
+    setWatchlistOnly,
     toggleSort,
     setSort,
     reset,

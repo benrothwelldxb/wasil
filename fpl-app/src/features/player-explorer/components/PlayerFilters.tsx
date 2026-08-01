@@ -1,6 +1,13 @@
 import type { ReactNode } from "react";
-import { ArrowDownWideNarrow, ArrowUpWideNarrow, Search, X } from "lucide-react";
+import {
+  ArrowDownWideNarrow,
+  ArrowUpWideNarrow,
+  Search,
+  Star,
+  X,
+} from "lucide-react";
 import type { Position, Team } from "@/features/fpl";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,6 +94,22 @@ export function PlayerFilters({
           <Badge variant="secondary" className="whitespace-nowrap">
             {resultCount.toLocaleString()} of {totalCount.toLocaleString()}
           </Badge>
+          <Button
+            variant={explorer.filters.watchlistOnly ? "default" : "outline"}
+            size="sm"
+            aria-pressed={explorer.filters.watchlistOnly}
+            onClick={() =>
+              explorer.setWatchlistOnly(!explorer.filters.watchlistOnly)
+            }
+          >
+            <Star
+              className={cn(
+                "h-4 w-4",
+                explorer.filters.watchlistOnly && "fill-current",
+              )}
+            />
+            Watchlist
+          </Button>
           {explorer.isFiltered && (
             <Button variant="ghost" size="sm" onClick={explorer.reset}>
               <X className="h-4 w-4" />

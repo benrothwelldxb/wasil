@@ -42,6 +42,8 @@ export interface PlayerFilterState {
   priceRange: [number, number] | null;
   /** Minimum ownership (selected-by) percentage. */
   minOwnership: number;
+  /** Show only players on the user's watchlist. */
+  watchlistOnly: boolean;
 }
 
 /** Metadata describing a single table column. */

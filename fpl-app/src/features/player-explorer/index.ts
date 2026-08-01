@@ -6,6 +6,7 @@
  */
 export * from "./components";
 export { usePlayerExplorer } from "./usePlayerExplorer";
+export { useWatchlistStore } from "./watchlistStore";
 export type { UsePlayerExplorerResult } from "./usePlayerExplorer";
 export {
   filterPlayers,

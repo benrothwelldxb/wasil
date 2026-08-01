@@ -3,7 +3,9 @@ import type { Player } from "@/features/fpl";
 import { FixtureRun, type TeamFixtureAnalysis } from "@/features/fixtures";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { PositionBadge } from "./PositionBadge";
+import { SetPieceBadge } from "./SetPieceBadge";
 import { TeamBadge } from "./TeamBadge";
+import { WatchlistStar } from "./WatchlistStar";
 
 interface PlayerCardProps {
   player: Player;
@@ -38,6 +40,7 @@ export function PlayerCard({
           <div className="flex items-center gap-2">
             <span className="truncate font-semibold">{player.webName}</span>
             <PositionBadge shortName={player.positionShortName} />
+            <SetPieceBadge player={player} />
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
             <TeamBadge
@@ -56,6 +59,7 @@ export function PlayerCard({
             {player.selectedByPercent.toFixed(1)}% owned
           </div>
         </div>
+        <WatchlistStar playerId={player.id} />
         {action && <div className="ml-1 shrink-0">{action}</div>}
       </div>
 
