@@ -18,6 +18,20 @@ export interface GameweekOutlook {
 /** Upcoming gameweeks in ascending order, each with its blank/double counts. */
 export type GameweekCalendar = GameweekOutlook[];
 
+/** A gameweek is a "notable" blank/double once this many clubs are affected. */
+export const NOTABLE_BLANK = 4;
+export const NOTABLE_DOUBLE = 4;
+
+/** Classify a gameweek for planning: a double, a blank, or a normal week. */
+export type GameweekKind = "double" | "blank" | "minor-blank" | "normal";
+
+export function classifyGameweek(g: GameweekOutlook): GameweekKind {
+  if (g.doubleTeams >= NOTABLE_DOUBLE) return "double";
+  if (g.blankTeams >= NOTABLE_BLANK) return "blank";
+  if (g.blankTeams > 0) return "minor-blank";
+  return "normal";
+}
+
 /**
  * Build the forward-looking gameweek calendar from the raw season fixtures.
  *

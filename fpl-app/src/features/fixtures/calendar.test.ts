@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Fixture } from "@/features/fpl";
-import { buildGameweekCalendar } from "./calendar";
+import { buildGameweekCalendar, classifyGameweek } from "./calendar";
 
 /** Minimal fixture stub: the calendar only reads event, teams, finished. */
 function fx(
@@ -73,5 +73,25 @@ describe("buildGameweekCalendar", () => {
       teamIds,
     );
     expect(cal.map((g) => g.event)).toEqual([18, 19, 20]);
+  });
+});
+
+describe("classifyGameweek", () => {
+  const g = (blankTeams: number, doubleTeams: number) => ({
+    event: 1,
+    playingTeams: 20 - blankTeams,
+    blankTeams,
+    doubleTeams,
+  });
+
+  it("classifies notable doubles, blanks, minor blanks, and normal weeks", () => {
+    expect(classifyGameweek(g(0, 6))).toBe("double");
+    expect(classifyGameweek(g(8, 0))).toBe("blank");
+    expect(classifyGameweek(g(2, 0))).toBe("minor-blank");
+    expect(classifyGameweek(g(0, 0))).toBe("normal");
+  });
+
+  it("prioritises a double over a co-occurring blank", () => {
+    expect(classifyGameweek(g(6, 6))).toBe("double");
   });
 });

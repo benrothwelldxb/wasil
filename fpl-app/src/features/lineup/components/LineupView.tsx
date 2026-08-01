@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
-import { QueryBoundary } from "@/features/fpl";
-import { WINDOWS, type PredictionWindow } from "@/features/predictions";
+import { QueryBoundary, useBootstrap } from "@/features/fpl";
+import {
+  usePredictions,
+  WINDOWS,
+  type PredictionWindow,
+} from "@/features/predictions";
+import { useSquad } from "@/features/squad-builder";
+import { ShareTeamButton, type TeamCardData } from "@/features/share";
 import { EmptyState, SectionCard } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +16,9 @@ import { cn } from "@/lib/utils";
 import { ROUTES } from "@/routes/paths";
 import { useLineup, type LineupPlayer } from "../useLineup";
 import { PlayerTile } from "./PlayerTile";
+
+/** The horizon the shareable card reports on — always "this gameweek". */
+const CARD_WINDOW = 1 as const;
 
 const WINDOW_LABEL: Record<PredictionWindow, string> = {
   1: "This week",
@@ -27,7 +36,53 @@ const POSITION_TITLE: Record<number, string> = {
 
 export function LineupView() {
   const lu = useLineup();
+  const { byId } = usePredictions();
+  const squad = useSquad();
+  const bootstrap = useBootstrap();
   const [selected, setSelected] = useState<number | null>(null);
+
+  // A shareable "this gameweek" card reflecting the current (possibly edited)
+  // lineup, captain, and formation.
+  const cardData = useMemo<TeamCardData | null>(() => {
+    if (!lu.squadReady) return null;
+    const pts = (id: number) =>
+      byId.get(id)?.windows[CARD_WINDOW].expectedPoints ?? 0;
+    const toCard = (lp: LineupPlayer) => ({
+      name: lp.player.webName,
+      positionId: lp.positionId,
+      points: pts(lp.id),
+      isCaptain: lp.id === lu.lineup.captainId,
+      isVice: lp.id === lu.lineup.viceId,
+    });
+    const starterPlayers = lu.lineup.starterIds
+      .map((id) => lu.playersById.get(id))
+      .filter((p): p is LineupPlayer => p !== undefined);
+    const benchPlayers = [lu.lineup.benchGkId, ...lu.lineup.benchOutfieldIds]
+      .filter((id): id is number => id !== null)
+      .map((id) => lu.playersById.get(id))
+      .filter((p): p is LineupPlayer => p !== undefined);
+
+    const startersPts = starterPlayers.reduce((s, lp) => s + pts(lp.id), 0);
+    const captainPts =
+      lu.lineup.captainId !== null ? pts(lu.lineup.captainId) : 0;
+    const f = lu.projection.formation;
+    const captainName =
+      lu.lineup.captainId !== null
+        ? (lu.playersById.get(lu.lineup.captainId)?.player.webName ?? null)
+        : null;
+
+    return {
+      gameweek: bootstrap.data?.nextEventId ?? bootstrap.data?.currentEventId ?? null,
+      projectedPoints: startersPts + captainPts,
+      formation: `${f.def}-${f.mid}-${f.fwd}`,
+      starters: starterPlayers.map(toCard),
+      bench: benchPlayers.map(toCard),
+      captainName,
+      squadValue: squad.players.reduce((s, p) => s + p.price.nowRaw, 0) / 10,
+      bank: squad.remainingTenths / 10,
+      source: "yours",
+    };
+  }, [lu.squadReady, lu.lineup, lu.playersById, lu.projection.formation, byId, squad.players, squad.remainingTenths, bootstrap.data]);
 
   const isStarter = (id: number) => lu.lineup.starterIds.includes(id);
 
@@ -128,16 +183,18 @@ export function LineupView() {
           {lu.isEdited && (
             <Badge variant="secondary">Manually edited</Badge>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={lu.reset}
-            disabled={!lu.isEdited}
-            className="ml-auto"
-          >
-            <RotateCcw className="h-4 w-4" />
-            Auto-pick
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={lu.reset}
+              disabled={!lu.isEdited}
+            >
+              <RotateCcw className="h-4 w-4" />
+              Auto-pick
+            </Button>
+            <ShareTeamButton data={cardData} size="sm" label="Share" />
+          </div>
         </div>
 
         {/* Projected score */}

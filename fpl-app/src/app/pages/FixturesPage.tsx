@@ -1,18 +1,22 @@
 import { PageContainer, PageHeader } from "@/components/common";
-import { FixturesOverview } from "@/features/fixtures";
+import { FixturesOverview, GameweekPlanner } from "@/features/fixtures";
 
 /**
- * Fixtures route: every club's upcoming run with difficulty-coloured tickers
- * and ease ratings out of 100, sortable by the next 1/3/5 fixtures.
+ * Fixtures & Chip Planner route: a forward-looking blank/double gameweek
+ * planner plus every club's upcoming run with difficulty-coloured tickers and
+ * ease ratings. Updates automatically as gameweeks are played.
  */
 export function FixturesPage() {
   return (
     <PageContainer size="wide">
       <PageHeader
-        title="Fixtures"
-        description="Upcoming fixture difficulty and ease ratings for every club. Updates automatically as gameweeks are played."
+        title="Fixtures & Chip Planner"
+        description="Spot blank and double gameweeks ahead, then plan your chips. Plus every club's upcoming fixture difficulty and ease ratings."
       />
-      <FixturesOverview />
+      <div className="space-y-6">
+        <GameweekPlanner />
+        <FixturesOverview />
+      </div>
     </PageContainer>
   );
 }

@@ -15,8 +15,12 @@ export {
 } from "./analysis";
 export {
   buildGameweekCalendar,
+  classifyGameweek,
+  NOTABLE_BLANK,
+  NOTABLE_DOUBLE,
   type GameweekOutlook,
   type GameweekCalendar,
+  type GameweekKind,
 } from "./calendar";
 export {
   useGameweekCalendar,
