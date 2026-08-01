@@ -12,5 +12,6 @@ export { ScoringPage } from "./ScoringPage";
 export { PredictionsPage } from "./PredictionsPage";
 export { OptimiserPage } from "./OptimiserPage";
 export { LineupPage } from "./LineupPage";
+export { TransfersPage } from "./TransfersPage";
 export { PreferencesPage } from "./PreferencesPage";
 export { OnboardingPage } from "./OnboardingPage";

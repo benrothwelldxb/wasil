@@ -9,6 +9,7 @@ export const ROUTES = {
   predictions: "/predictions",
   optimiser: "/optimiser",
   lineup: "/lineup",
+  transfers: "/transfers",
   squad: "/squad",
   fixtures: "/fixtures",
   team: "/team",

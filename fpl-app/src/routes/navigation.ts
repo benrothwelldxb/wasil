@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   BarChart3,
   Bug,
   CalendarDays,
@@ -63,6 +64,12 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "Lineup",
     path: ROUTES.lineup,
     icon: ClipboardList,
+  },
+  {
+    id: "transfers",
+    label: "Transfers",
+    path: ROUTES.transfers,
+    icon: ArrowLeftRight,
   },
   {
     id: "fixtures",
