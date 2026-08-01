@@ -10,6 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PlayerAvatar } from "@/features/player-explorer";
+import { ShareTeamButton } from "@/features/share";
 import { useSquadStore } from "@/features/squad-builder";
 import { ROUTES } from "@/routes/paths";
 import { INSIGHT_EMOJI } from "../insights";
@@ -219,6 +220,14 @@ export function ScoutReport() {
           </>
         )}
       </div>
+
+      {/* Share */}
+      <ShareTeamButton
+        data={report.card}
+        size="lg"
+        className="mt-2 w-full"
+        label="Share my team card"
+      />
 
       {report.source === "suggested" && (
         <Badge variant="secondary" className="mt-3">

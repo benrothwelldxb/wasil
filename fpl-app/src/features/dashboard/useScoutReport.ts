@@ -8,6 +8,7 @@ import { useOptimiser } from "@/features/optimiser";
 import type { OptiPlayer } from "@/features/optimiser";
 import { autoPickLineup, projectLineup } from "@/features/lineup";
 import { bestSingle, useTransferSettings } from "@/features/transfers";
+import type { TeamCardData, TeamCardPlayer } from "@/features/share";
 import { generateInsights, type Insight } from "./insights";
 import {
   evaluateChips,
@@ -42,6 +43,8 @@ export interface ScoutReport {
   /** £m. */
   bank: number;
   insights: Insight[];
+  /** Everything the shareable team card needs, or null when there's no team. */
+  card: TeamCardData | null;
   /** Chip suggestions worth surfacing this week (empty = hold your chips). */
   chips: ChipAdvice[];
   /** Forward-looking heads-up about upcoming blank/double gameweeks. */
@@ -101,6 +104,7 @@ export function useScoutReport(): ScoutReport {
       squadValue: 0,
       bank: bankTenths / 10,
       insights: [],
+      card: null,
       chips: [],
       chipOutlook,
       teamIds: [],
@@ -194,6 +198,31 @@ export function useScoutReport(): ScoutReport {
       source,
     });
 
+    // Shareable team card.
+    const toCardPlayer = (p: Player): TeamCardPlayer => ({
+      name: p.webName,
+      positionId: p.positionId,
+      points: valueOf(p),
+      isCaptain: p.id === lineup.captainId,
+      isVice: p.id === lineup.viceId,
+    });
+    const countPos = (pid: number) =>
+      starters.filter((p) => p.positionId === pid).length;
+    const benchPlayers = benchIds
+      .map((id) => teamById.get(id))
+      .filter((p): p is Player => p !== undefined);
+    const card: TeamCardData = {
+      gameweek,
+      projectedPoints,
+      formation: `${countPos(2)}-${countPos(3)}-${countPos(4)}`,
+      starters: starters.map(toCardPlayer),
+      bench: benchPlayers.map(toCardPlayer),
+      captainName: captain?.webName ?? null,
+      squadValue: squadValueTenths / 10,
+      bank: bankTenths / 10,
+      source,
+    };
+
     return {
       isLoading,
       hasTeam: true,
@@ -207,6 +236,7 @@ export function useScoutReport(): ScoutReport {
       squadValue: squadValueTenths / 10,
       bank: bankTenths / 10,
       insights,
+      card,
       chips,
       chipOutlook,
       teamIds: team15.map((p) => p.id),
