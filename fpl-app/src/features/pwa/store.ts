@@ -8,6 +8,9 @@ interface PwaState {
   /** Epoch ms the install banner was last dismissed, or null. */
   bannerDismissedAt: number | null;
   dismissBanner: () => void;
+  /** Whether the user opted into a pre-deadline reminder notification. */
+  reminderEnabled: boolean;
+  setReminderEnabled: (on: boolean) => void;
 }
 
 export const usePwaStore = create<PwaState>()(
@@ -15,6 +18,8 @@ export const usePwaStore = create<PwaState>()(
     (set) => ({
       bannerDismissedAt: null,
       dismissBanner: () => set({ bannerDismissedAt: Date.now() }),
+      reminderEnabled: false,
+      setReminderEnabled: (reminderEnabled) => set({ reminderEnabled }),
     }),
     {
       name: "fpl-pwa-storage",

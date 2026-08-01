@@ -6,7 +6,7 @@ import {
   ThemeToggle,
 } from "@/components/common";
 import { Button } from "@/components/ui/button";
-import { InstallButton } from "@/features/pwa";
+import { DeadlineReminderToggle, InstallButton } from "@/features/pwa";
 import { ImportTeamCard } from "@/features/manager";
 import { usePreferenceStore } from "@/features/preferences";
 
@@ -52,6 +52,13 @@ export function SettingsPage() {
             <RotateCcw className="h-4 w-4" />
             Replay setup guide
           </Button>
+        </SectionCard>
+
+        <SectionCard
+          title="Deadline reminder"
+          description="Get a nudge before each gameweek locks."
+        >
+          <DeadlineReminderToggle />
         </SectionCard>
 
         <SectionCard

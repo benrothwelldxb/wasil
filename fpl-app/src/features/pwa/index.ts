@@ -11,4 +11,8 @@ export {
   type UseInstallPromptResult,
 } from "./useInstallPrompt";
 export { usePwaStore, isBannerSnoozed } from "./store";
+export {
+  useDeadlineReminder,
+  type UseDeadlineReminderResult,
+} from "./useDeadlineReminder";
 export * from "./components";
