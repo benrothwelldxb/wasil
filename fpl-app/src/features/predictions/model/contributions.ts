@@ -22,8 +22,13 @@ const LABELS: Record<string, string> = {
   discipline: "Discipline",
 };
 
+/** Sanitise to a finite number so the UI never renders NaN/Infinity. */
+function safe(value: number): number {
+  return Number.isFinite(value) ? value : 0;
+}
+
 function contributor(key: string, points: number): Contributor {
-  return { key, label: LABELS[key] ?? key, points };
+  return { key, label: LABELS[key] ?? key, points: safe(points) };
 }
 
 /**
@@ -116,6 +121,8 @@ export function fixtureContributions(
     contributor("discipline", disciplinePoints),
   ];
 
-  const expectedPoints = contributors.reduce((sum, c) => sum + c.points, 0);
+  const expectedPoints = safe(
+    contributors.reduce((sum, c) => sum + c.points, 0),
+  );
   return { contributors, expectedPoints };
 }

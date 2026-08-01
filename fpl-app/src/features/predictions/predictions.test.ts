@@ -38,6 +38,36 @@ describe("fixtureContributions", () => {
     expect(expectedPoints).toBeGreaterThan(0);
   });
 
+  it("stays finite when team strengths are zero (preseason data)", () => {
+    const player = makePlayer({ positionId: 3, minutes: 1800, starts: 20 });
+    // Degenerate strengths (e.g. preseason) must not produce NaN/Infinity.
+    const league = computeLeagueAverages([
+      makeTeam({
+        strengthAttackHome: 0,
+        strengthAttackAway: 0,
+        strengthDefenceHome: 0,
+        strengthDefenceAway: 0,
+      }),
+    ]);
+    const env = computeFixtureEnv(
+      { attack: 0, defence: 0 },
+      { attack: 0, defence: 0 },
+      league,
+    );
+    expect(Number.isFinite(env.lambdaFor)).toBe(true);
+    expect(Number.isFinite(env.attackEnv)).toBe(true);
+    expect(Number.isFinite(env.cleanSheetProb)).toBe(true);
+
+    const mins = computeMinutes(player, 20);
+    const { contributors, expectedPoints } = fixtureContributions(
+      player,
+      env,
+      mins,
+    );
+    expect(Number.isFinite(expectedPoints)).toBe(true);
+    expect(contributors.every((c) => Number.isFinite(c.points))).toBe(true);
+  });
+
   it("returns ~0 expected points for an injured player", () => {
     const injured = makePlayer({
       availability: "injured",
