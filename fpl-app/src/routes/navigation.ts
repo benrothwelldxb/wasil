@@ -6,6 +6,7 @@ import {
   Gauge,
   Home,
   LineChart,
+  Radio,
   Settings,
   Shirt,
   Wand2,
@@ -30,6 +31,12 @@ export const PRIMARY_NAV: NavItem[] = [
     path: ROUTES.dashboard,
     icon: Home,
     end: true,
+  },
+  {
+    id: "live",
+    label: "Live",
+    path: ROUTES.live,
+    icon: Radio,
   },
   {
     id: "optimiser",

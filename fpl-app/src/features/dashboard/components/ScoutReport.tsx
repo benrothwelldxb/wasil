@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { PlayerAvatar } from "@/features/player-explorer";
 import { ImportTeamCard, useManagerStore } from "@/features/manager";
 import { RivalCompareButton } from "@/features/compare";
+import { LiveScoreCard } from "@/features/live";
 import { ShareTeamButton, type CompareSummary } from "@/features/share";
 import { CaptainCompare } from "./CaptainCompare";
 import { DeadlineCountdown } from "./DeadlineCountdown";
@@ -101,6 +102,9 @@ export function ScoutReport() {
               : "Your scout report"}
         </p>
       </div>
+
+      {/* Live score (only during a live gameweek for a connected team) */}
+      <LiveScoreCard />
 
       {/* Headline card */}
       <div className="rounded-2xl border bg-card p-5 shadow-sm">

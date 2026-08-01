@@ -26,6 +26,7 @@ interface FplPickRaw {
 interface FplPicksRaw {
   picks: FplPickRaw[];
   entry_history?: { bank: number; value: number };
+  active_chip?: string | null;
 }
 
 /** A manager's real, last-saved FPL team, normalised for the app. */
@@ -39,6 +40,10 @@ export interface ManagerTeam {
   captainId: number | null;
   viceId: number | null;
   benchIds: number[];
+  /** Player id → scoring multiplier (1 starter, 2 captain, 3 triple, 0 bench). */
+  multipliers: Record<number, number>;
+  /** Active chip this gameweek (e.g. "3xc", "bboost", "freehit"), or null. */
+  activeChip: string | null;
   /** Money in the bank, in tenths of a million. */
   bankTenths: number;
   /** Squad value, in tenths of a million. */
@@ -69,6 +74,9 @@ export async function fetchManagerTeam(
   const picks = await api.get<FplPicksRaw>(picksPath(entryId, gw), { signal });
   const sorted = [...picks.picks].sort((a, b) => a.position - b.position);
 
+  const multipliers: Record<number, number> = {};
+  for (const p of sorted) multipliers[p.element] = p.multiplier;
+
   return {
     entryId,
     managerName:
@@ -80,6 +88,8 @@ export async function fetchManagerTeam(
     captainId: sorted.find((p) => p.is_captain)?.element ?? null,
     viceId: sorted.find((p) => p.is_vice_captain)?.element ?? null,
     benchIds: sorted.filter((p) => p.position >= 12).map((p) => p.element),
+    multipliers,
+    activeChip: picks.active_chip ?? null,
     bankTenths: picks.entry_history?.bank ?? entry.last_deadline_bank ?? 0,
     valueTenths: picks.entry_history?.value ?? entry.last_deadline_value ?? 0,
     overallRank: entry.summary_overall_rank ?? null,

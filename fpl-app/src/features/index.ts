@@ -22,6 +22,7 @@
  */
 export * as compare from "./compare";
 export * as dashboard from "./dashboard";
+export * as live from "./live";
 export * as manager from "./manager";
 export * as pwa from "./pwa";
 export * as share from "./share";
