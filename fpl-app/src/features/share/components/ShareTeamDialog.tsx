@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { Download, Loader2, Share2, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Download, Loader2, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   buildTeamCardSvg,
   CARD_HEIGHT,
@@ -25,22 +31,6 @@ export function ShareTeamDialog({ open, onClose, data }: ShareTeamDialogProps) {
   const previewUrl = useMemo(() => svgToDataUrl(svg), [svg]);
   const [busy, setBusy] = useState<"share" | "download" | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-
-  if (!open) return null;
 
   const gw = data.gameweek !== null ? `Gameweek ${data.gameweek}` : "this week";
   const shareText = `${data.source === "yours" ? "My" : "A"} ${gw} FPL team — projected ${data.projectedPoints.toFixed(1)} pts. Built with MyFPLScout · myfplscout.app`;
@@ -76,43 +66,25 @@ export function ShareTeamDialog({ open, onClose, data }: ShareTeamDialogProps) {
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Share your team card"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-background/85 p-3 backdrop-blur animate-in fade-in sm:items-center"
-      onClick={onClose}
-    >
-      <div
-        className="flex w-full max-w-sm flex-col rounded-2xl border bg-card p-4 shadow-xl animate-in slide-in-from-bottom-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold">Share your team</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Share your team</DialogTitle>
+        </DialogHeader>
 
         <div className="overflow-hidden rounded-xl border">
           <img
             src={previewUrl}
-            alt="Your team card"
+            alt={`Team card — ${gw}, projected ${data.projectedPoints.toFixed(1)} points${data.captainName ? `, captain ${data.captainName}` : ""}`}
             width={CARD_WIDTH}
             height={CARD_HEIGHT}
             className="block h-auto w-full"
           />
         </div>
 
-        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <div className="mt-4 flex gap-2">
+        <div className="flex gap-2">
           <Button
             className="flex-1"
             onClick={() => run("share")}
@@ -139,7 +111,7 @@ export function ShareTeamDialog({ open, onClose, data }: ShareTeamDialogProps) {
             Save image
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

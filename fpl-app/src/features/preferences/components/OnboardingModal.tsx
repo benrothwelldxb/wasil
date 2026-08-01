@@ -10,6 +10,11 @@ import {
 } from "lucide-react";
 import { useTeams } from "@/features/fpl";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { ROUTES } from "@/routes/paths";
 import { NEUTRAL_PREFERENCES } from "../profiles";
@@ -131,18 +136,6 @@ export function OnboardingModal() {
     }
   }, [onboardingComplete]);
 
-  // Lock body scroll while the overlay is open.
-  useEffect(() => {
-    if (onboardingComplete) return;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = original;
-    };
-  }, [onboardingComplete]);
-
-  if (onboardingComplete) return null;
-
   const next = () => setIndex((i) => Math.min(i + 1, steps.length - 1));
   const back = () => setIndex((i) => Math.max(i - 1, 0));
 
@@ -159,13 +152,19 @@ export function OnboardingModal() {
       : "your club";
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="onboarding-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 p-4 backdrop-blur animate-in fade-in"
+    <Dialog
+      open={!onboardingComplete}
+      onOpenChange={(o) => {
+        if (!o) skip();
+      }}
     >
-      <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card shadow-xl">
+      <DialogContent
+        bare
+        hideClose
+        className="flex max-h-[92dvh] max-w-lg flex-col overflow-hidden"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        <DialogTitle className="sr-only">Set up MyFPLScout</DialogTitle>
         {/* Progress */}
         <div className="flex items-center gap-1.5 p-4 pb-0">
           {steps.map((s, i) => (
@@ -324,7 +323,7 @@ export function OnboardingModal() {
             </Button>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

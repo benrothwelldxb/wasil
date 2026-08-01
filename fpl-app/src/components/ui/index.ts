@@ -12,6 +12,17 @@ export {
 export { Skeleton } from "./skeleton";
 export { Separator } from "./separator";
 export {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "./dialog";
+export {
   Sheet,
   SheetPortal,
   SheetOverlay,

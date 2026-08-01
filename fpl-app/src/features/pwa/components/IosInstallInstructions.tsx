@@ -1,6 +1,11 @@
-import { useEffect } from "react";
-import { Plus, Share, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Plus, Share } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { BrandMark } from "@/components/common";
 
 export interface IosInstallInstructionsProps {
@@ -9,14 +14,8 @@ export interface IosInstallInstructionsProps {
 }
 
 const STEPS = [
-  {
-    icon: Share,
-    text: "Tap the Share button in Safari's toolbar.",
-  },
-  {
-    icon: Plus,
-    text: 'Scroll down and tap "Add to Home Screen".',
-  },
+  { icon: Share, text: "Tap the Share button in Safari's toolbar." },
+  { icon: Plus, text: 'Scroll down and tap "Add to Home Screen".' },
   {
     icon: null,
     text: 'Tap "Add" — MyFPLScout appears on your home screen.',
@@ -25,61 +24,28 @@ const STEPS = [
 
 /**
  * Step-by-step "Add to Home Screen" guide for iOS Safari, which has no install
- * prompt API. A lightweight bottom sheet consistent with the app's overlays.
+ * prompt API. Built on the accessible Radix Dialog (focus trap, Escape, inert).
  */
 export function IosInstallInstructions({
   open,
   onClose,
 }: IosInstallInstructionsProps) {
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Install MyFPLScout on iPhone or iPad"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-background/80 p-3 backdrop-blur animate-in fade-in sm:items-center"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl border bg-card p-5 shadow-xl animate-in slide-in-from-bottom-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
           <div className="flex items-center gap-3">
-            <BrandMark className="h-10 w-10" />
+            <BrandMark className="h-10 w-10" decorative />
             <div>
-              <h2 className="text-base font-semibold">Install MyFPLScout</h2>
-              <p className="text-xs text-muted-foreground">
+              <DialogTitle>Install MyFPLScout</DialogTitle>
+              <DialogDescription>
                 Add it to your home screen — three quick taps.
-              </p>
+              </DialogDescription>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        </DialogHeader>
 
-        <ol className="mt-4 space-y-3">
+        <ol className="space-y-3">
           {STEPS.map((step, i) => {
             const Icon = step.icon;
             return (
@@ -101,11 +67,11 @@ export function IosInstallInstructions({
           })}
         </ol>
 
-        <p className="mt-4 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Not seeing the option? Make sure you're using Safari — other iPhone
           browsers can't add to the home screen.
         </p>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
