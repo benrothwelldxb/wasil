@@ -3,13 +3,18 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
+  CheckCircle2,
+  Loader2,
   Rocket,
   Scale,
   Shield,
   Sparkles,
 } from "lucide-react";
-import { useTeams } from "@/features/fpl";
+import { fetchManagerTeam, useTeams } from "@/features/fpl";
+import { useManagerStore } from "@/features/manager";
+import { useSquadStore } from "@/features/squad-builder";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -27,10 +32,20 @@ type Approach = "safe" | "balanced" | "big";
 type Loyalty = "none" | "little" | "lots";
 
 interface Draft {
+  name: string;
+  managerId: number | null;
   favouriteClubId: number | null;
   approach: Approach;
   loyalty: Loyalty;
 }
+
+const EMPTY_DRAFT: Draft = {
+  name: "",
+  managerId: null,
+  favouriteClubId: null,
+  approach: "balanced",
+  loyalty: "little",
+};
 
 const APPROACH_OPTIONS = [
   {
@@ -91,8 +106,9 @@ function toPreferences(draft: Draft): Preferences {
 
 /**
  * First-run onboarding overlay. Explains the 3-minute path and collects the
- * essentials (club, approach, club loyalty) in plain language, then builds a
- * profile and drops the user on their team. Self-gates on `onboardingComplete`.
+ * essentials (name, optional real-team import, club, approach, club loyalty) in
+ * plain language, then builds a profile and drops the user on their team.
+ * Self-gates on `onboardingComplete`.
  */
 export function OnboardingModal() {
   const onboardingComplete = usePreferenceStore((s) => s.onboardingComplete);
@@ -101,19 +117,23 @@ export function OnboardingModal() {
     (s) => s.setOnboardingComplete,
   );
   const { data: teams } = useTeams();
+  const setDisplayName = useManagerStore((s) => s.setDisplayName);
+  const connect = useManagerStore((s) => s.connect);
+  const setPlayers = useSquadStore((s) => s.setPlayers);
   const navigate = useNavigate();
 
-  const [draft, setDraft] = useState<Draft>({
-    favouriteClubId: null,
-    approach: "balanced",
-    loyalty: "little",
-  });
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [index, setIndex] = useState(0);
+  const [idInput, setIdInput] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importedTeam, setImportedTeam] = useState<string | null>(null);
 
   // Steps are dynamic: the club-loyalty step only appears if a club is chosen.
   const steps = useMemo<string[]>(
     () => [
       "welcome",
+      "you",
       "club",
       "approach",
       ...(draft.favouriteClubId !== null ? ["loyalty"] : []),
@@ -128,11 +148,10 @@ export function OnboardingModal() {
   useEffect(() => {
     if (!onboardingComplete) {
       setIndex(0);
-      setDraft({
-        favouriteClubId: null,
-        approach: "balanced",
-        loyalty: "little",
-      });
+      setDraft(EMPTY_DRAFT);
+      setIdInput("");
+      setImportError(null);
+      setImportedTeam(null);
     }
   }, [onboardingComplete]);
 
@@ -141,7 +160,38 @@ export function OnboardingModal() {
 
   const skip = () => setOnboardingComplete(true);
 
+  const importTeam = async () => {
+    const id = Number(idInput.trim());
+    if (!Number.isInteger(id) || id <= 0) {
+      setImportError("Enter your numeric Manager ID (digits only).");
+      return;
+    }
+    setImporting(true);
+    setImportError(null);
+    try {
+      const team = await fetchManagerTeam(id);
+      setPlayers(team.playerIds);
+      connect(team.entryId, team.managerName, team.teamName);
+      setImportedTeam(team.teamName);
+      setDraft((d) => ({
+        ...d,
+        managerId: team.entryId,
+        // Pre-fill the name from their account if they haven't typed one.
+        name: d.name || team.managerName.split(/\s+/)[0] || "",
+      }));
+    } catch (err) {
+      setImportError(
+        err instanceof Error && err.message.includes("saved a team")
+          ? err.message
+          : "Couldn't find that team. Double-check your Manager ID.",
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const finish = () => {
+    if (draft.name.trim()) setDisplayName(draft.name);
     applyOnboarding("My Team", toPreferences(draft));
     navigate(ROUTES.dashboard);
   };
@@ -192,6 +242,80 @@ export function OnboardingModal() {
                 questions and we'll build a full team — then you can tweak it,
                 choose a captain, and plan transfers.
               </p>
+            </div>
+          )}
+
+          {step === "you" && (
+            <div className="space-y-5">
+              <div>
+                <h2 id="onboarding-title" className="text-xl font-bold">
+                  Let's set you up
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Both optional — you can skip and add them later in Settings.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="ob-name" className="text-sm font-medium">
+                  What should we call you?
+                </label>
+                <Input
+                  id="ob-name"
+                  value={draft.name}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, name: e.target.value }))
+                  }
+                  placeholder="Your name"
+                  maxLength={40}
+                  autoComplete="given-name"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="ob-id" className="text-sm font-medium">
+                  Already play FPL?
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Paste your <strong>Manager ID</strong> to load your real team.
+                  Find it in your team's URL:{" "}
+                  <code className="rounded bg-muted px-1 py-0.5">
+                    /entry/<b>1234567</b>/event/1
+                  </code>
+                </p>
+                {importedTeam ? (
+                  <p className="flex items-center gap-2 text-sm text-[hsl(var(--brand-green))]">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Loaded {importedTeam} — your real team's in.
+                  </p>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      id="ob-id"
+                      value={idInput}
+                      onChange={(e) => setIdInput(e.target.value)}
+                      inputMode="numeric"
+                      placeholder="e.g. 1234567"
+                      aria-label="FPL Manager ID"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={importTeam}
+                      disabled={importing || idInput.trim() === ""}
+                    >
+                      {importing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Import"
+                      )}
+                    </Button>
+                  </div>
+                )}
+                {importError && (
+                  <p className="text-sm text-destructive">{importError}</p>
+                )}
+              </div>
             </div>
           )}
 

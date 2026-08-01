@@ -79,6 +79,7 @@ export function useScoutReport(): ScoutReport {
   const { analysis } = useFixtureAnalysis();
   const { calendar } = useGameweekCalendar();
   const managerName = useManagerStore((s) => s.managerName);
+  const displayName = useManagerStore((s) => s.displayName);
   const squad = useSquad();
   // Only optimise when the user has NO saved squad — otherwise the home screen
   // pays the optimiser's synchronous cost on every visit for a result it discards.
@@ -87,7 +88,9 @@ export function useScoutReport(): ScoutReport {
   const freeTransfers = useTransferSettings((s) => s.freeTransfers);
 
   return useMemo<ScoutReport>(() => {
-    const firstName = managerName?.trim().split(/\s+/)[0] ?? "";
+    // A name the user typed wins; otherwise fall back to the imported name.
+    const firstName =
+      (displayName ?? managerName)?.trim().split(/\s+/)[0] ?? "";
     const greeting =
       greetingFor(new Date().getHours()) + (firstName ? `, ${firstName}` : "");
     const gameweek =
@@ -301,5 +304,6 @@ export function useScoutReport(): ScoutReport {
     freeTransfers,
     isLoading,
     managerName,
+    displayName,
   ]);
 }
