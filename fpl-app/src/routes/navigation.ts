@@ -2,6 +2,7 @@ import {
   BarChart3,
   Bug,
   CalendarDays,
+  Gauge,
   LayoutDashboard,
   Settings,
   Shirt,
@@ -29,6 +30,12 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "Players",
     path: ROUTES.players,
     icon: Table2,
+  },
+  {
+    id: "ratings",
+    label: "Ratings",
+    path: ROUTES.ratings,
+    icon: Gauge,
   },
   {
     id: "squad",

@@ -8,5 +8,6 @@ export { DebugPage } from "./DebugPage";
 export { PlayersPage } from "./PlayersPage";
 export { SquadPage } from "./SquadPage";
 export { FixturesPage } from "./FixturesPage";
+export { ScoringPage } from "./ScoringPage";
 export { PreferencesPage } from "./PreferencesPage";
 export { OnboardingPage } from "./OnboardingPage";

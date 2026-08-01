@@ -8,9 +8,12 @@
  * - `squad-builder` — assemble a rules-valid 15-player squad. No optimiser yet.
  * - `preferences` — the user-preference engine + PreferenceService consumed by
  *   every future recommendation engine. No optimisation logic.
+ * - `scoring` — deterministic (no-AI) player scoring engine that consumes the
+ *   PreferenceService to personalise ratings.
  */
 export * as fpl from "./fpl";
 export * as fixtures from "./fixtures";
 export * as playerExplorer from "./player-explorer";
 export * as squadBuilder from "./squad-builder";
 export * as preferences from "./preferences";
+export * as scoring from "./scoring";
