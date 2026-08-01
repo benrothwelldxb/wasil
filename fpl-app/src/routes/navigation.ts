@@ -7,6 +7,7 @@ import {
   LineChart,
   Settings,
   Shirt,
+  Wand2,
   SlidersHorizontal,
   Table2,
   Users,
@@ -43,6 +44,12 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "xPts",
     path: ROUTES.predictions,
     icon: LineChart,
+  },
+  {
+    id: "optimiser",
+    label: "Optimiser",
+    path: ROUTES.optimiser,
+    icon: Wand2,
   },
   {
     id: "squad",
