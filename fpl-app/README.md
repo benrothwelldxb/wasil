@@ -131,8 +131,11 @@ npm run test
 
 1. **Build command:** `npm run build`
 2. **Output directory:** `dist`
-3. SPA routing and caching are handled by `public/_redirects` and
-   `public/_headers` (copied into `dist` on build).
+3. SPA deep-link fallback uses a generated `dist/404.html` (a copy of the app
+   shell created by the `postbuild` step — this avoids Cloudflare's
+   `_redirects` "infinite loop" validation for `/* → /index.html`). After the
+   service worker registers, its `navigateFallback` serves `index.html` (200)
+   on refresh. Caching and security headers come from `public/_headers`.
 4. `/api/*` is proxied to the FPL API in production by the included Pages
    Function (`functions/api/[[path]].ts`) — nothing else to configure.
 
