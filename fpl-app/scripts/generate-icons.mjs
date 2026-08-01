@@ -75,6 +75,45 @@ function roundedSvg() {
   </svg>`;
 }
 
+const FONT = "DejaVu Sans, Liberation Sans, Arial, sans-serif";
+
+/**
+ * The 1200×630 social share card (Open Graph / Twitter): brand mark + wordmark
+ * on a navy field with the scouting tagline. This is the image that previews
+ * when a MyFPLScout link is shared.
+ */
+function ogSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#18295f"/>
+        <stop offset="100%" stop-color="#0d1838"/>
+      </linearGradient>
+      <radialGradient id="accent" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="${GREEN}" stop-opacity="0.28"/>
+        <stop offset="100%" stop-color="${GREEN}" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect width="1200" height="630" fill="url(#bg)"/>
+    <circle cx="1010" cy="150" r="320" fill="url(#accent)"/>
+
+    <svg x="90" y="118" width="188" height="188" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="112" fill="${NAVY}"/>
+      ${artwork()}
+    </svg>
+
+    <text x="300" y="242" font-family="${FONT}" font-size="92" font-weight="bold" letter-spacing="-1">
+      <tspan fill="#eef2ff">MyFPL</tspan><tspan fill="#39d15a">Scout</tspan>
+    </text>
+
+    <text x="92" y="410" font-family="${FONT}" font-size="42" font-weight="bold" fill="#eef2ff">Your personal Fantasy Premier League scout.</text>
+    <text x="92" y="470" font-family="${FONT}" font-size="30" fill="#9fb0dd">Projections · squad optimisation · transfers · chip planning</text>
+
+    <text x="92" y="566" font-family="${FONT}" font-size="28" font-weight="bold" fill="#39d15a">myfplscout.app</text>
+    <text x="1108" y="566" text-anchor="end" font-family="${FONT}" font-size="24" fill="#6c7cae">Independent · not affiliated with the Premier League</text>
+  </svg>`;
+}
+
 async function png(svg, size, outPath) {
   await sharp(Buffer.from(svg)).resize(size, size).png().toFile(outPath);
   console.log(`[icons] ${outPath.replace(root + "/", "")} (${size}px)`);
@@ -101,6 +140,13 @@ async function main() {
   await png(rounded, 192, resolve(iconsDir, "pwa-192.png"));
   await png(rounded, 512, resolve(iconsDir, "pwa-512.png"));
   await png(square, 512, resolve(iconsDir, "pwa-maskable-512.png"));
+
+  // Social share card (Open Graph / Twitter) — 1200×630.
+  await sharp(Buffer.from(ogSvg()))
+    .resize(1200, 630)
+    .png()
+    .toFile(resolve(pub, "og-image.png"));
+  console.log("[icons] public/og-image.png (1200×630)");
 
   console.log("[icons] done");
 }

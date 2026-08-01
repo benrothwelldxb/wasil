@@ -118,6 +118,19 @@ export function OnboardingModal() {
   );
   const step = steps[Math.min(index, steps.length - 1)] ?? "welcome";
 
+  // Start the flow from the top whenever it (re)opens — e.g. when replayed
+  // from Settings — so a returning user doesn't land on the final step.
+  useEffect(() => {
+    if (!onboardingComplete) {
+      setIndex(0);
+      setDraft({
+        favouriteClubId: null,
+        approach: "balanced",
+        loyalty: "little",
+      });
+    }
+  }, [onboardingComplete]);
+
   // Lock body scroll while the overlay is open.
   useEffect(() => {
     if (onboardingComplete) return;
