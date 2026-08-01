@@ -57,7 +57,15 @@ export interface PreferenceStore {
   importProfile: (json: string) => ImportResult;
 
   // Onboarding
+  /** The profile the onboarding flow created, so replaying updates it in place. */
+  onboardingProfileId: string | null;
   setOnboardingComplete: (complete: boolean) => void;
+  /**
+   * Apply onboarding answers: update the profile a previous onboarding created
+   * (so replays don't stack duplicates), or create it the first time. Activates
+   * the profile and marks onboarding complete.
+   */
+  applyOnboarding: (name: string, preferences: Preferences) => void;
 }
 
 function findProfile(
@@ -73,6 +81,7 @@ export const usePreferenceStore = create<PreferenceStore>()(
       profiles: BUILT_IN_PROFILES,
       activeProfileId: DEFAULT_PROFILE_ID,
       onboardingComplete: false,
+      onboardingProfileId: null,
 
       setActiveProfile: (id) => {
         if (findProfile(get().profiles, id)) set({ activeProfileId: id });
@@ -246,6 +255,37 @@ export const usePreferenceStore = create<PreferenceStore>()(
 
       setOnboardingComplete: (onboardingComplete) =>
         set({ onboardingComplete }),
+
+      applyOnboarding: (name, preferences) => {
+        const { onboardingProfileId, profiles } = get();
+        const existing = onboardingProfileId
+          ? findProfile(profiles, onboardingProfileId)
+          : undefined;
+
+        if (existing && !existing.builtIn) {
+          // Replay: overwrite the profile onboarding created last time.
+          const now = Date.now();
+          set((s) => ({
+            profiles: s.profiles.map((p) =>
+              p.id === existing.id
+                ? {
+                    ...p,
+                    name: name.trim() || p.name,
+                    preferences,
+                    updatedAt: now,
+                  }
+                : p,
+            ),
+            activeProfileId: existing.id,
+            onboardingComplete: true,
+          }));
+          return;
+        }
+
+        // First run: create the profile and remember it for future replays.
+        const id = get().createProfile(name, preferences);
+        set({ onboardingProfileId: id, onboardingComplete: true });
+      },
     }),
     {
       name: "fpl-preferences-storage",
@@ -256,6 +296,7 @@ export const usePreferenceStore = create<PreferenceStore>()(
         profiles: state.profiles.filter((p) => !p.builtIn),
         activeProfileId: state.activeProfileId,
         onboardingComplete: state.onboardingComplete,
+        onboardingProfileId: state.onboardingProfileId,
       }),
       // Reconcile persisted custom profiles with the current built-ins.
       merge: (persisted, current) => {
@@ -274,6 +315,7 @@ export const usePreferenceStore = create<PreferenceStore>()(
           profiles,
           activeProfileId,
           onboardingComplete: saved.onboardingComplete ?? false,
+          onboardingProfileId: saved.onboardingProfileId ?? null,
         };
       },
     },

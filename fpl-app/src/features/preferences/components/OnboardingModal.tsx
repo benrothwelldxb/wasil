@@ -91,7 +91,7 @@ function toPreferences(draft: Draft): Preferences {
  */
 export function OnboardingModal() {
   const onboardingComplete = usePreferenceStore((s) => s.onboardingComplete);
-  const createProfile = usePreferenceStore((s) => s.createProfile);
+  const applyOnboarding = usePreferenceStore((s) => s.applyOnboarding);
   const setOnboardingComplete = usePreferenceStore(
     (s) => s.setOnboardingComplete,
   );
@@ -149,8 +149,7 @@ export function OnboardingModal() {
   const skip = () => setOnboardingComplete(true);
 
   const finish = () => {
-    createProfile("My Team", toPreferences(draft));
-    setOnboardingComplete(true);
+    applyOnboarding("My Team", toPreferences(draft));
     navigate(ROUTES.dashboard);
   };
 
