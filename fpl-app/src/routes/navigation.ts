@@ -1,4 +1,10 @@
-import { BarChart3, LayoutDashboard, Settings, Users } from "lucide-react";
+import {
+  BarChart3,
+  Bug,
+  LayoutDashboard,
+  Settings,
+  Users,
+} from "lucide-react";
 import type { NavItem } from "@/types";
 import { ROUTES } from "./paths";
 
@@ -31,5 +37,11 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "Settings",
     path: ROUTES.settings,
     icon: Settings,
+  },
+  {
+    id: "debug",
+    label: "Debug",
+    path: ROUTES.debug,
+    icon: Bug,
   },
 ];

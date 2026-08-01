@@ -1,9 +1,8 @@
 /**
- * Feature modules live here, one folder per feature (e.g. `features/team/`,
- * `features/leagues/`). Each feature should be self-contained — its own
- * components, hooks, services, and types — and expose a public API via an
- * `index.ts` barrel.
+ * Feature modules. Each feature is a self-contained vertical slice exposing a
+ * public API through its own barrel.
  *
- * Intentionally empty: no FPL features are implemented in the foundations.
+ * - `fpl` — the Fantasy Premier League data layer (models, API service, and
+ *   TanStack Query hooks). No product features (e.g. squad selection) yet.
  */
-export {};
+export * as fpl from "./fpl";

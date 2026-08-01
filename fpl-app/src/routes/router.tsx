@@ -3,6 +3,7 @@ import { AppLayout, RootLayout } from "@/layouts";
 import {
   AnalysePage,
   DashboardPage,
+  DebugPage,
   NotFoundPage,
   RouteErrorPage,
   SettingsPage,
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
           { path: ROUTES.team, element: <TeamPage /> },
           { path: ROUTES.analyse, element: <AnalysePage /> },
           { path: ROUTES.settings, element: <SettingsPage /> },
+          { path: ROUTES.debug, element: <DebugPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

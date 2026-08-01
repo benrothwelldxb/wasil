@@ -7,6 +7,7 @@ export const ROUTES = {
   team: "/team",
   analyse: "/analyse",
   settings: "/settings",
+  debug: "/debug",
 } as const;
 
 export type RoutePath = (typeof ROUTES)[keyof typeof ROUTES];

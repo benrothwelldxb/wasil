@@ -4,3 +4,4 @@ export { AnalysePage } from "./AnalysePage";
 export { SettingsPage } from "./SettingsPage";
 export { NotFoundPage } from "./NotFoundPage";
 export { RouteErrorPage } from "./RouteErrorPage";
+export { DebugPage } from "./DebugPage";
