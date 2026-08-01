@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Bug,
+  CalendarDays,
   LayoutDashboard,
   Settings,
   Shirt,
@@ -34,6 +35,12 @@ export const PRIMARY_NAV: NavItem[] = [
     label: "Squad",
     path: ROUTES.squad,
     icon: Shirt,
+  },
+  {
+    id: "fixtures",
+    label: "Fixtures",
+    path: ROUTES.fixtures,
+    icon: CalendarDays,
   },
   {
     id: "team",

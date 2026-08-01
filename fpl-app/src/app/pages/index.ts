@@ -7,5 +7,6 @@ export { RouteErrorPage } from "./RouteErrorPage";
 export { DebugPage } from "./DebugPage";
 export { PlayersPage } from "./PlayersPage";
 export { SquadPage } from "./SquadPage";
+export { FixturesPage } from "./FixturesPage";
 export { PreferencesPage } from "./PreferencesPage";
 export { OnboardingPage } from "./OnboardingPage";

@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { useDebouncedValue } from "@/hooks";
 import type { Player } from "@/features/fpl";
-import { PLAYER_COLUMNS } from "./columns";
+import type { FixtureAnalysisMap } from "@/features/fixtures";
+import { FIXTURE_COLUMNS, PLAYER_COLUMNS } from "./columns";
 import { filterPlayers, sortPlayers } from "./filtering";
 import type {
   PlayerFilterState,
@@ -20,7 +21,9 @@ const DEFAULT_FILTERS: PlayerFilterState = {
 const DEFAULT_SORT: PlayerSort = { key: "totalPoints", direction: "desc" };
 
 const NUMERIC_KEYS = new Set<PlayerSortKey>(
-  PLAYER_COLUMNS.filter((c) => c.numeric).map((c) => c.key),
+  [...PLAYER_COLUMNS, ...FIXTURE_COLUMNS]
+    .filter((c) => c.numeric)
+    .map((c) => c.key),
 );
 
 /** Default sort direction when first sorting by a column. */
@@ -57,6 +60,7 @@ export interface UsePlayerExplorerResult {
  */
 export function usePlayerExplorer(
   allPlayers: Player[],
+  fixtureAnalysis?: FixtureAnalysisMap,
 ): UsePlayerExplorerResult {
   const [filters, setFilters] = useState<PlayerFilterState>(DEFAULT_FILTERS);
   const [sort, setSort] = useState<PlayerSort>(DEFAULT_SORT);
@@ -75,7 +79,9 @@ export function usePlayerExplorer(
         priceMin !== null && priceMax !== null ? [priceMin, priceMax] : null,
       minOwnership: filters.minOwnership,
     };
-    return sortPlayers(filterPlayers(allPlayers, effective), sort);
+    return sortPlayers(filterPlayers(allPlayers, effective), sort, {
+      fixtures: fixtureAnalysis,
+    });
   }, [
     allPlayers,
     debouncedSearch,
@@ -85,6 +91,7 @@ export function usePlayerExplorer(
     priceMin,
     priceMax,
     sort,
+    fixtureAnalysis,
   ]);
 
   const setSearch = useCallback(

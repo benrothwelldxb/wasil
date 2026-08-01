@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { usePlayers } from "@/features/fpl";
+import { useFixtureAnalysis } from "@/features/fixtures";
 import { SectionCard } from "@/components/common";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlayerAvatar } from "@/features/player-explorer";
@@ -18,6 +19,7 @@ const SAMPLE_SIZE = 6;
  */
 export function PreferencePreview() {
   const { data: players, isLoading } = usePlayers();
+  const { analysis } = useFixtureAnalysis();
   const service = usePreferenceService();
 
   const previews = useMemo(() => {
@@ -25,10 +27,17 @@ export function PreferencePreview() {
     const top = [...players]
       .sort((a, b) => b.totalPoints - a.totalPoints)
       .slice(0, SAMPLE_SIZE);
-    return top.map((player) =>
-      service.adjustPlayerScore(player, player.totalPoints || 1),
-    );
-  }, [players, service]);
+    return top.map((player) => {
+      // Supply a real fixture signal so fixture-led preferences engage —
+      // exactly how a future optimiser feeds projections to the service.
+      const window = analysis.get(player.teamId)?.next5;
+      const fixture =
+        window && window.games > 0 ? window.rating / 100 : null;
+      return service.adjustPlayerScore(player, player.totalPoints || 1, {
+        signals: { fixture },
+      });
+    });
+  }, [players, analysis, service]);
 
   return (
     <SectionCard

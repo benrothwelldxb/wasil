@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { Player } from "@/features/fpl";
+import { FixtureRun, type TeamFixtureAnalysis } from "@/features/fixtures";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { PositionBadge } from "./PositionBadge";
 import { TeamBadge } from "./TeamBadge";
@@ -8,6 +9,8 @@ interface PlayerCardProps {
   player: Player;
   /** Optional action control (e.g. add/remove) rendered top-right. */
   action?: ReactNode;
+  /** Optional fixture analysis for this player's club. */
+  fixtureAnalysis?: TeamFixtureAnalysis;
 }
 
 function Stat({ label, value }: { label: string; value: string | number }) {
@@ -22,7 +25,11 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 }
 
 /** A single player rendered as a card (mobile / narrow layouts). */
-export function PlayerCard({ player, action }: PlayerCardProps) {
+export function PlayerCard({
+  player,
+  action,
+  fixtureAnalysis,
+}: PlayerCardProps) {
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
       <div className="flex items-center gap-3">
@@ -60,6 +67,15 @@ export function PlayerCard({ player, action }: PlayerCardProps) {
         <Stat label="Assists" value={player.assists} />
         <Stat label="Clean sheets" value={player.cleanSheets} />
       </div>
+
+      {fixtureAnalysis && (
+        <div className="mt-3 border-t pt-3">
+          <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+            Next fixtures
+          </div>
+          <FixtureRun analysis={fixtureAnalysis} count={5} />
+        </div>
+      )}
     </div>
   );
 }

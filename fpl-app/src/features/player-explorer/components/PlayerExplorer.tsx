@@ -7,9 +7,15 @@ import {
   usePositions,
   useTeams,
 } from "@/features/fpl";
+import { useFixtureAnalysis } from "@/features/fixtures";
 import { EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { useMediaQuery } from "@/hooks";
+import {
+  FIXTURE_SORT_OPTIONS,
+  SORT_OPTIONS,
+  getPlayerColumns,
+} from "../columns";
 import { getPriceBounds } from "../filtering";
 import { usePlayerExplorer } from "../usePlayerExplorer";
 import { PlayerCardList } from "./PlayerCardList";
@@ -33,6 +39,7 @@ export function PlayerExplorer({ renderAction }: PlayerExplorerProps = {}) {
   const playersQuery = usePlayers();
   const teamsQuery = useTeams();
   const positionsQuery = usePositions();
+  const { analysis: fixtureAnalysis } = useFixtureAnalysis();
 
   const allPlayers = useMemo(
     () => playersQuery.data ?? [],
@@ -46,8 +53,17 @@ export function PlayerExplorer({ renderAction }: PlayerExplorerProps = {}) {
     [allPlayers],
   );
 
-  const explorer = usePlayerExplorer(allPlayers);
+  const explorer = usePlayerExplorer(allPlayers, fixtureAnalysis);
   const isMobile = useMediaQuery("(max-width: 767px)");
+
+  const hasFixtures = fixtureAnalysis.size > 0;
+  const columns = useMemo(
+    () => getPlayerColumns(hasFixtures),
+    [hasFixtures],
+  );
+  const sortOptions = hasFixtures
+    ? [...SORT_OPTIONS, ...FIXTURE_SORT_OPTIONS]
+    : SORT_OPTIONS;
 
   return (
     <QueryBoundary
@@ -66,6 +82,7 @@ export function PlayerExplorer({ renderAction }: PlayerExplorerProps = {}) {
           priceBounds={priceBounds}
           resultCount={explorer.players.length}
           totalCount={allPlayers.length}
+          sortOptions={sortOptions}
         />
 
         {explorer.players.length === 0 ? (
@@ -82,13 +99,16 @@ export function PlayerExplorer({ renderAction }: PlayerExplorerProps = {}) {
         ) : isMobile ? (
           <PlayerCardList
             players={explorer.players}
+            fixtures={fixtureAnalysis}
             renderAction={renderAction}
           />
         ) : (
           <PlayerTable
             players={explorer.players}
+            columns={columns}
             sort={explorer.sort}
             onToggleSort={explorer.toggleSort}
+            fixtures={fixtureAnalysis}
             renderAction={renderAction}
           />
         )}

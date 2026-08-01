@@ -10,6 +10,7 @@
  *   every future recommendation engine. No optimisation logic.
  */
 export * as fpl from "./fpl";
+export * as fixtures from "./fixtures";
 export * as playerExplorer from "./player-explorer";
 export * as squadBuilder from "./squad-builder";
 export * as preferences from "./preferences";

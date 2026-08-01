@@ -98,14 +98,61 @@ export const PLAYER_COLUMNS: PlayerColumn[] = [
   },
 ];
 
-/** Total intrinsic width of the table (used as the horizontal-scroll min). */
-export const TABLE_MIN_WIDTH = PLAYER_COLUMNS.reduce(
-  (sum, c) => sum + c.width,
-  0,
-);
+/**
+ * Fixture-derived columns, appended only when fixture analysis is supplied.
+ * `getSortValue` reads the rating from the context's analysis map (–1 when a
+ * team has no upcoming games so they sort last on "easiest first").
+ */
+export const FIXTURE_COLUMNS: PlayerColumn[] = [
+  {
+    key: "fixtureNext3",
+    label: "FDR3",
+    width: 70,
+    align: "right",
+    numeric: true,
+    getSortValue: (p, ctx) => {
+      const w = ctx.fixtures?.get(p.teamId)?.next3;
+      return w && w.games > 0 ? w.rating : -1;
+    },
+  },
+  {
+    key: "fixtureNext5",
+    label: "FDR5",
+    width: 70,
+    align: "right",
+    numeric: true,
+    getSortValue: (p, ctx) => {
+      const w = ctx.fixtures?.get(p.teamId)?.next5;
+      return w && w.games > 0 ? w.rating : -1;
+    },
+  },
+  {
+    key: "fixtureRun",
+    label: "Fixtures",
+    width: 200,
+    align: "left",
+    numeric: false,
+    getSortValue: (p, ctx) => {
+      const w = ctx.fixtures?.get(p.teamId)?.next5;
+      return w && w.games > 0 ? w.rating : -1;
+    },
+  },
+];
 
-/** CSS `grid-template-columns` string shared by header and rows. */
-export const GRID_TEMPLATE = PLAYER_COLUMNS.map((c) => `${c.width}px`).join(" ");
+/** The columns to render, with fixture columns included on demand. */
+export function getPlayerColumns(hasFixtures: boolean): PlayerColumn[] {
+  return hasFixtures ? [...PLAYER_COLUMNS, ...FIXTURE_COLUMNS] : PLAYER_COLUMNS;
+}
+
+/** Total intrinsic width for a set of columns (horizontal-scroll min). */
+export function tableMinWidth(columns: PlayerColumn[]): number {
+  return columns.reduce((sum, c) => sum + c.width, 0);
+}
+
+/** CSS `grid-template-columns` string for a set of columns. */
+export function gridTemplate(columns: PlayerColumn[]): string {
+  return columns.map((c) => `${c.width}px`).join(" ");
+}
 
 /** Format a numeric column's value for display. */
 export function formatColumnValue(player: Player, key: PlayerSortKey): string {
@@ -154,4 +201,10 @@ export const SORT_OPTIONS: { key: PlayerSortKey; label: string }[] = [
   { key: "goalsScored", label: "Goals" },
   { key: "assists", label: "Assists" },
   { key: "cleanSheets", label: "Clean sheets" },
+];
+
+/** Extra sort options shown when fixture analysis is available. */
+export const FIXTURE_SORT_OPTIONS: { key: PlayerSortKey; label: string }[] = [
+  { key: "fixtureNext3", label: "Next 3 fixtures" },
+  { key: "fixtureNext5", label: "Next 5 fixtures" },
 ];

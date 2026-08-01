@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { OWNERSHIP_OPTIONS, SORT_OPTIONS } from "../columns";
+import type { PlayerSortKey } from "../types";
 import type { UsePlayerExplorerResult } from "../usePlayerExplorer";
 
 const ALL = "all";
@@ -24,6 +25,8 @@ interface PlayerFiltersProps {
   priceBounds: [number, number];
   resultCount: number;
   totalCount: number;
+  /** Sort options for the dropdown (defaults to the base columns). */
+  sortOptions?: { key: PlayerSortKey; label: string }[];
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -48,6 +51,7 @@ export function PlayerFilters({
   priceBounds,
   resultCount,
   totalCount,
+  sortOptions = SORT_OPTIONS,
 }: PlayerFiltersProps) {
   const { filters, sort } = explorer;
   const priceValue = filters.priceRange ?? priceBounds;
@@ -159,7 +163,7 @@ export function PlayerFilters({
             <Select
               value={sort.key}
               onValueChange={(v) => {
-                const key = v as (typeof SORT_OPTIONS)[number]["key"];
+                const key = v as PlayerSortKey;
                 if (key !== sort.key) explorer.toggleSort(key);
               }}
             >
@@ -167,7 +171,7 @@ export function PlayerFilters({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {SORT_OPTIONS.map((o) => (
+                {sortOptions.map((o) => (
                   <SelectItem key={o.key} value={o.key}>
                     {o.label}
                   </SelectItem>

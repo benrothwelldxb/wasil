@@ -1,4 +1,5 @@
 import type { Player } from "@/features/fpl";
+import type { FixtureAnalysisMap } from "@/features/fixtures";
 
 export type SortDirection = "asc" | "desc";
 
@@ -14,7 +15,16 @@ export type PlayerSortKey =
   | "minutes"
   | "goalsScored"
   | "assists"
-  | "cleanSheets";
+  | "cleanSheets"
+  // Fixture-derived (only present when fixture analysis is supplied)
+  | "fixtureRun"
+  | "fixtureNext3"
+  | "fixtureNext5";
+
+/** Extra context available to column sort accessors. */
+export interface SortContext {
+  fixtures?: FixtureAnalysisMap;
+}
 
 export interface PlayerSort {
   key: PlayerSortKey;
@@ -44,5 +54,5 @@ export interface PlayerColumn {
   /** Numeric columns default to descending sort and right alignment. */
   numeric: boolean;
   /** Value used when sorting by this column. */
-  getSortValue: (player: Player) => number | string;
+  getSortValue: (player: Player, ctx: SortContext) => number | string;
 }

@@ -2,13 +2,13 @@ import { useRef, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import type { Player } from "@/features/fpl";
-import { cn } from "@/lib/utils";
 import {
-  GRID_TEMPLATE,
-  PLAYER_COLUMNS,
-  TABLE_MIN_WIDTH,
-  formatColumnValue,
-} from "../columns";
+  FixtureRatingBadge,
+  FixtureRun,
+  type FixtureAnalysisMap,
+} from "@/features/fixtures";
+import { cn } from "@/lib/utils";
+import { formatColumnValue, gridTemplate, tableMinWidth } from "../columns";
 import type { PlayerColumn, PlayerSort, PlayerSortKey } from "../types";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { PositionBadge } from "./PositionBadge";
@@ -19,12 +19,18 @@ const ACTION_WIDTH = 48;
 
 interface PlayerTableProps {
   players: Player[];
+  columns: PlayerColumn[];
   sort: PlayerSort;
   onToggleSort: (key: PlayerSortKey) => void;
+  fixtures?: FixtureAnalysisMap;
   renderAction?: (player: Player) => ReactNode;
 }
 
-function renderCell(column: PlayerColumn, player: Player) {
+function renderCell(
+  column: PlayerColumn,
+  player: Player,
+  fixtures?: FixtureAnalysisMap,
+): ReactNode {
   switch (column.key) {
     case "name":
       return (
@@ -50,6 +56,16 @@ function renderCell(column: PlayerColumn, player: Player) {
       );
     case "position":
       return <PositionBadge shortName={player.positionShortName} />;
+    case "fixtureRun":
+      return <FixtureRun analysis={fixtures?.get(player.teamId)} count={5} />;
+    case "fixtureNext3": {
+      const w = fixtures?.get(player.teamId)?.next3;
+      return w ? <FixtureRatingBadge window={w} /> : null;
+    }
+    case "fixtureNext5": {
+      const w = fixtures?.get(player.teamId)?.next5;
+      return w ? <FixtureRatingBadge window={w} /> : null;
+    }
     default:
       return (
         <span className="tabular-nums">
@@ -61,8 +77,10 @@ function renderCell(column: PlayerColumn, player: Player) {
 
 export function PlayerTable({
   players,
+  columns,
   sort,
   onToggleSort,
+  fixtures,
   renderAction,
 }: PlayerTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -75,10 +93,10 @@ export function PlayerTable({
   });
 
   const hasAction = Boolean(renderAction);
-  const gridTemplate = hasAction
-    ? `${ACTION_WIDTH}px ${GRID_TEMPLATE}`
-    : GRID_TEMPLATE;
-  const minWidth = TABLE_MIN_WIDTH + (hasAction ? ACTION_WIDTH : 0);
+  const template = hasAction
+    ? `${ACTION_WIDTH}px ${gridTemplate(columns)}`
+    : gridTemplate(columns);
+  const minWidth = tableMinWidth(columns) + (hasAction ? ACTION_WIDTH : 0);
 
   return (
     <div
@@ -89,10 +107,10 @@ export function PlayerTable({
         {/* Sticky header */}
         <div
           className="sticky top-0 z-10 grid border-b bg-muted/60 backdrop-blur supports-[backdrop-filter]:bg-muted/40"
-          style={{ gridTemplateColumns: gridTemplate }}
+          style={{ gridTemplateColumns: template }}
         >
           {hasAction && <div aria-hidden />}
-          {PLAYER_COLUMNS.map((col) => {
+          {columns.map((col) => {
             const active = sort.key === col.key;
             return (
               <button
@@ -134,7 +152,7 @@ export function PlayerTable({
                 style={{
                   height: item.size,
                   transform: `translateY(${item.start}px)`,
-                  gridTemplateColumns: gridTemplate,
+                  gridTemplateColumns: template,
                 }}
               >
                 {renderAction && (
@@ -142,7 +160,7 @@ export function PlayerTable({
                     {renderAction(player)}
                   </div>
                 )}
-                {PLAYER_COLUMNS.map((col) => (
+                {columns.map((col) => (
                   <div
                     key={col.key}
                     className={cn(
@@ -150,7 +168,7 @@ export function PlayerTable({
                       col.align === "right" && "text-right",
                     )}
                   >
-                    {renderCell(col, player)}
+                    {renderCell(col, player, fixtures)}
                   </div>
                 ))}
               </div>

@@ -1,6 +1,6 @@
 import type { Player } from "@/features/fpl";
-import { PLAYER_COLUMNS } from "./columns";
-import type { PlayerFilterState, PlayerSort } from "./types";
+import { FIXTURE_COLUMNS, PLAYER_COLUMNS } from "./columns";
+import type { PlayerFilterState, PlayerSort, SortContext } from "./types";
 
 /** Compute the [min, max] price bounds (£m) across a player list. */
 export function getPriceBounds(players: Player[]): [number, number] {
@@ -44,22 +44,29 @@ export function filterPlayers(
 }
 
 const SORT_ACCESSORS = new Map(
-  PLAYER_COLUMNS.map((c) => [c.key, c.getSortValue]),
+  [...PLAYER_COLUMNS, ...FIXTURE_COLUMNS].map((c) => [c.key, c.getSortValue]),
 );
+
+const EMPTY_CONTEXT: SortContext = {};
 
 /**
  * Return a new, sorted array. Numeric and string values are compared
  * appropriately; ties fall back to total points then name for stability.
+ * `ctx` provides fixture analysis for fixture-derived columns.
  */
-export function sortPlayers(players: Player[], sort: PlayerSort): Player[] {
+export function sortPlayers(
+  players: Player[],
+  sort: PlayerSort,
+  ctx: SortContext = EMPTY_CONTEXT,
+): Player[] {
   const accessor = SORT_ACCESSORS.get(sort.key);
   if (!accessor) return players;
 
   const factor = sort.direction === "asc" ? 1 : -1;
 
   return [...players].sort((a, b) => {
-    const va = accessor(a);
-    const vb = accessor(b);
+    const va = accessor(a, ctx);
+    const vb = accessor(b, ctx);
 
     let cmp: number;
     if (typeof va === "number" && typeof vb === "number") {
