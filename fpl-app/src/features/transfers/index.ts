@@ -19,4 +19,5 @@ export {
   TRANSFER_HIT_COST,
 } from "./store";
 export { useTransfers, type UseTransfersResult } from "./useTransfers";
+export { useHorizonPlan, type UseHorizonPlanResult } from "./useHorizonPlan";
 export * from "./components";

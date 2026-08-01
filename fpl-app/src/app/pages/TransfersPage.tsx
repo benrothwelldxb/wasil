@@ -1,5 +1,5 @@
 import { PageContainer, PageHeader } from "@/components/common";
-import { TransfersView } from "@/features/transfers";
+import { HorizonPlan, TransfersView } from "@/features/transfers";
 
 /**
  * Transfer Planner route: best single / double / wildcard recommendations for
@@ -13,6 +13,7 @@ export function TransfersPage() {
         description="The best single, double, and wildcard moves for your saved squad — with hits, money, and reasoning."
       />
       <TransfersView />
+      <HorizonPlan />
     </PageContainer>
   );
 }
