@@ -127,22 +127,34 @@ lineup auto-pick:
 npm run test
 ```
 
-## Deployment — Cloudflare Pages
+## Deployment
 
-1. **Build command:** `npm run build`
-2. **Output directory:** `dist`
-3. SPA deep-link fallback uses a generated `dist/404.html` (a copy of the app
-   shell created by the `postbuild` step — this avoids Cloudflare's
-   `_redirects` "infinite loop" validation for `/* → /index.html`). After the
-   service worker registers, its `navigateFallback` serves `index.html` (200)
-   on refresh. Caching and security headers come from `public/_headers`.
-4. `/api/*` is proxied to the FPL API in production by the included Pages
-   Function (`functions/api/[[path]].ts`) — nothing else to configure.
+Config for **both** Cloudflare styles is included — use whichever you deploy
+with. Neither requires buying a domain: a free `*.workers.dev` /
+`*.pages.dev` subdomain is provided (a custom domain can be attached later at
+no cost).
+
+### Cloudflare Workers (`*.workers.dev`)
+
+`wrangler.jsonc` + `worker/index.ts` serve the built SPA and proxy `/api/*`.
 
 ```bash
-# or deploy the built output directly with Wrangler:
-npx wrangler pages deploy dist
+npm run build
+npx wrangler deploy
 ```
+
+- SPA routing: `assets.not_found_handling: "single-page-application"`.
+- `/api/*`: proxied by `worker/index.ts` (`assets.run_worker_first: true`
+  lets the Worker run before asset fallback).
+
+### Cloudflare Pages (`*.pages.dev`)
+
+- **Build command:** `npm run build` · **Output directory:** `dist`
+- `/api/*`: proxied by the Pages Function `functions/api/[[path]].ts`.
+- SPA deep-link fallback: generated `dist/404.html` (the `postbuild` step —
+  avoids Cloudflare's `_redirects` "infinite loop" validation); the service
+  worker then serves `index.html` (200) on refresh.
+- `public/_headers`: caching + security headers.
 
 ## Adding a feature
 

@@ -1,0 +1,15 @@
+{
+  // Cloudflare Workers config for the Workers Static Assets deploy.
+  // Build first (`npm run build`), then `npx wrangler deploy`.
+  "name": "fplpicker",
+  "compatibility_date": "2025-01-01",
+  "main": "worker/index.ts",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // Serve index.html (200) for unknown client-side routes.
+    "not_found_handling": "single-page-application",
+    // Run the Worker first so it can proxy /api/* before asset fallback.
+    "run_worker_first": true
+  }
+}

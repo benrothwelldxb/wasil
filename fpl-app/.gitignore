@@ -30,3 +30,6 @@ dist-ssr
 
 # Type check cache
 *.tsbuildinfo
+
+# Cloudflare Wrangler
+.wrangler
