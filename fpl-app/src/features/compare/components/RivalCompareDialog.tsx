@@ -77,7 +77,7 @@ export function RivalCompareDialog({
       );
     } catch (err) {
       setError(
-        err instanceof Error && err.message.includes("saved a team")
+        err instanceof Error && err.message.includes("saved team")
           ? err.message
           : "Couldn't find that team. Check the Manager ID and try again.",
       );

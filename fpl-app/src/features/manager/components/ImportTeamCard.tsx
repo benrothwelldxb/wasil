@@ -42,7 +42,7 @@ export function ImportTeamCard() {
       setInput("");
     } catch (err) {
       setError(
-        err instanceof Error && err.message.includes("saved a team")
+        err instanceof Error && err.message.includes("saved team")
           ? err.message
           : "Couldn't find that team. Double-check your Manager ID and try again.",
       );
@@ -78,12 +78,26 @@ export function ImportTeamCard() {
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Find your <strong>Manager ID</strong> in your team's URL on the FPL site:{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">
-          fantasy.premierleague.com/entry/<b>1234567</b>/event/1
-        </code>
-      </p>
+      <div className="space-y-1.5 text-sm text-muted-foreground">
+        <p>
+          Find your <strong>Manager ID</strong> on the FPL website (in a browser
+          — the official app hides it):
+        </p>
+        <ol className="ml-4 list-decimal space-y-0.5 text-xs">
+          <li>
+            Log in, then open the <strong>Points</strong> or{" "}
+            <strong>Gameweek History</strong> tab.
+          </li>
+          <li>
+            The number after <code className="rounded bg-muted px-1">/entry/</code>{" "}
+            in the address bar is your ID.
+          </li>
+        </ol>
+        <p className="text-xs">
+          This needs a team saved for a gameweek, so it works once the season
+          (GW1) is underway.
+        </p>
+      </div>
       <div className="flex gap-2">
         <Input
           value={input}

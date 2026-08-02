@@ -208,7 +208,7 @@ export function OnboardingModal() {
       }));
     } catch (err) {
       setImportError(
-        err instanceof Error && err.message.includes("saved a team")
+        err instanceof Error && err.message.includes("saved team")
           ? err.message
           : "Couldn't find that team. Double-check your Manager ID.",
       );
@@ -306,10 +306,9 @@ export function OnboardingModal() {
                 </label>
                 <p className="text-xs text-muted-foreground">
                   Paste your <strong>Manager ID</strong> to load your real team.
-                  Find it in your team's URL:{" "}
-                  <code className="rounded bg-muted px-1 py-0.5">
-                    /entry/<b>1234567</b>/event/1
-                  </code>
+                  On the FPL website, open <strong>Points</strong> — the number
+                  after <code className="rounded bg-muted px-1">/entry/</code> in
+                  the address bar is your ID. (Works once GW1 is underway.)
                 </p>
                 {importedTeam ? (
                   <p className="flex items-center gap-2 text-sm text-[hsl(var(--brand-green))]">

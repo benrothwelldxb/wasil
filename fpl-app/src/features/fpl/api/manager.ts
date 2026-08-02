@@ -68,7 +68,9 @@ export async function fetchManagerTeam(
   const entry = await api.get<FplEntryRaw>(entryPath(entryId), { signal });
   const gw = entry.current_event;
   if (gw == null) {
-    throw new Error("This manager hasn't saved a team yet this season.");
+    throw new Error(
+      "No saved team found yet — importing works once the season (GW1) is underway.",
+    );
   }
 
   const picks = await api.get<FplPicksRaw>(picksPath(entryId, gw), { signal });
