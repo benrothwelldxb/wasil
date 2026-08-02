@@ -14,6 +14,14 @@ export interface UseOptimiserOptions {
   enabled?: boolean;
 }
 
+/** Statuses that keep a player out of suggestions entirely. */
+const UNAVAILABLE = new Set([
+  "injured",
+  "suspended",
+  "unavailable",
+  "not-in-squad",
+]);
+
 /** Budget held back (tenths) by budget philosophy. */
 const RESERVE_BY_PHILOSOPHY: Record<string, number> = {
   "spend-every-penny": 0,
@@ -31,6 +39,8 @@ export interface UseOptimiserResult {
   budget: number;
   /** True when avoided clubs had to be relaxed to build a legal squad. */
   avoidRelaxed: boolean;
+  /** True before any games are played — picks lean on FPL's own projections. */
+  earlySeason: boolean;
   isLoading: boolean;
   isError: boolean;
   error: ApiError | null;
@@ -59,6 +69,13 @@ export function useOptimiser({
 
   const avoidClubIds = prefs.avoidClubIds;
 
+  const earlySeason = useMemo(
+    () =>
+      predictions.length > 0 &&
+      predictions.every((p) => p.minutes.baselineMinsPerGame === 0),
+    [predictions],
+  );
+
   const { result, avoidRelaxed } = useMemo<{
     result: OptimisedSquad | null;
     avoidRelaxed: boolean;
@@ -84,7 +101,9 @@ export function useOptimiser({
           prediction: pred,
         };
       })
-      .filter((p) => p.cost > 0);
+      // Never suggest a player who's flagged out. Doubtful players stay (the
+      // model already downweights them by their chance of playing).
+      .filter((p) => p.cost > 0 && !UNAVAILABLE.has(p.player.availability));
 
     const opts = {
       rules: { ...DEFAULT_RULES, budget },
@@ -113,6 +132,7 @@ export function useOptimiser({
     setFormation,
     budget,
     avoidRelaxed,
+    earlySeason,
     isLoading,
     isError,
     error,

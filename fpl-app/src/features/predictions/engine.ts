@@ -178,6 +178,26 @@ export class StatisticalPredictionEngine implements PredictionEngine {
       );
     }
 
+    // Early-season fallback: with no minutes played yet (preseason / GW1) the
+    // stats model has no signal, so lean on FPL's own next-GW expected points
+    // (which already reflect their injury/availability knowledge), still scaled
+    // by our availability factor so flagged-out players stay at zero.
+    if (mins.baselineMinsPerGame === 0 && player.epNext && player.epNext > 0) {
+      for (const window of WINDOWS) {
+        const w = windows[window];
+        const games = w.fixtureCount > 0 ? w.fixtureCount : window;
+        const value = player.epNext * games * mins.availability;
+        windows[window] = {
+          ...w,
+          expectedPoints: value,
+          contributors: [
+            { key: "fpl-ep", label: "FPL early-season projection", points: value },
+          ],
+          confidence: 30,
+        };
+      }
+    }
+
     return { playerId: player.id, player, minutes: mins, fixtures, windows };
   }
 

@@ -133,6 +133,9 @@ export interface Player {
   /** Transfers in/out this gameweek — the raw material for price changes. */
   transfersInEvent: number;
   transfersOutEvent: number;
+
+  /** FPL's own expected points for the next gameweek (early-season fallback). */
+  epNext: number | null;
 }
 
 /** A resolved fixture between two clubs. */

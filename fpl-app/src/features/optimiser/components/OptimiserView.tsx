@@ -117,6 +117,18 @@ export function OptimiserView() {
           </div>
         </div>
 
+        {opt.earlySeason && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              Early season: with no games played yet, these picks lean on FPL's
+              own projections and can't see rotation or unflagged knocks. Always
+              sanity-check that your XI is actually starting — the model sharpens
+              once matches are played.
+            </span>
+          </div>
+        )}
+
         {opt.avoidRelaxed && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />

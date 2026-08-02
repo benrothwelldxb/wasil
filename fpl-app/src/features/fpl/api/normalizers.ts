@@ -178,6 +178,7 @@ export function normalizePlayer(
     freeKicksOrder: raw.direct_freekicks_order,
     transfersInEvent: raw.transfers_in_event ?? 0,
     transfersOutEvent: raw.transfers_out_event ?? 0,
+    epNext: raw.ep_next !== null ? toNumber(raw.ep_next) : null,
   };
 }
 

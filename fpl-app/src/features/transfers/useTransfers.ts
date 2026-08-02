@@ -19,6 +19,14 @@ export interface UseTransfersResult {
   isError: boolean;
 }
 
+/** Statuses that keep a player out of transfer suggestions. */
+const UNAVAILABLE = new Set([
+  "injured",
+  "suspended",
+  "unavailable",
+  "not-in-squad",
+]);
+
 export function useTransfers(): UseTransfersResult {
   const squad = useSquad();
   const { predictions, byId, isLoading, isError } = usePredictions();
@@ -50,8 +58,8 @@ export function useTransfers(): UseTransfersResult {
       });
     }
 
-    // The market: every player with a price, excluding clubs the user avoids
-    // (a hard constraint — never suggest bringing in a rival's player).
+    // The market: every player with a price, excluding avoided clubs (a hard
+    // constraint) and players flagged out (injured/suspended/unavailable).
     const avoid = new Set(prefs.avoidClubIds);
     const market: TransferPlayer[] = predictions
       .map((pred) => ({
@@ -63,7 +71,12 @@ export function useTransfers(): UseTransfersResult {
         player: pred.player,
         prediction: pred,
       }))
-      .filter((p) => p.cost > 0 && !avoid.has(p.teamId));
+      .filter(
+        (p) =>
+          p.cost > 0 &&
+          !avoid.has(p.teamId) &&
+          !UNAVAILABLE.has(p.player.availability),
+      );
 
     return {
       currentProjected: lineupTotal(current),
