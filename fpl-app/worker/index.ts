@@ -15,6 +15,26 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/122.0 Safari/537.36";
 
+/**
+ * Only the FPL endpoints this app actually uses may be proxied. Without this,
+ * `/api/*` is an open proxy anyone could abuse to hammer the FPL API through
+ * our domain (and our account). Paths are matched after the `/api/` prefix,
+ * without the query string.
+ */
+const ALLOWED_FPL_PATHS: RegExp[] = [
+  /^bootstrap-static\/?$/,
+  /^fixtures\/?$/,
+  /^element-summary\/\d+\/?$/,
+  /^entry\/\d+\/?$/,
+  /^entry\/\d+\/event\/\d+\/picks\/?$/,
+  /^entry\/\d+\/history\/?$/,
+  /^event\/\d+\/live\/?$/,
+];
+
+function isAllowedFplPath(path: string): boolean {
+  return ALLOWED_FPL_PATHS.some((re) => re.test(path));
+}
+
 interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
 }
@@ -25,6 +45,12 @@ export default {
 
     if (url.pathname.startsWith("/api/")) {
       const path = url.pathname.slice("/api/".length);
+      if (request.method !== "GET") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+      if (!isAllowedFplPath(path)) {
+        return new Response("Not Found", { status: 404 });
+      }
       const upstream = await fetch(`${FPL_API}/${path}${url.search}`, {
         headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
       });

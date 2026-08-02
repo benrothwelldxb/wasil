@@ -15,6 +15,24 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/122.0 Safari/537.36";
 
+/**
+ * Only the FPL endpoints this app uses may be proxied — otherwise `/api/*` is
+ * an open proxy anyone could abuse to hammer the FPL API through our domain.
+ */
+const ALLOWED_FPL_PATHS: RegExp[] = [
+  /^bootstrap-static\/?$/,
+  /^fixtures\/?$/,
+  /^element-summary\/\d+\/?$/,
+  /^entry\/\d+\/?$/,
+  /^entry\/\d+\/event\/\d+\/picks\/?$/,
+  /^entry\/\d+\/history\/?$/,
+  /^event\/\d+\/live\/?$/,
+];
+
+function isAllowedFplPath(path: string): boolean {
+  return ALLOWED_FPL_PATHS.some((re) => re.test(path));
+}
+
 interface Context {
   request: Request;
   params: { path?: string | string[] };
@@ -26,6 +44,10 @@ export async function onRequestGet(context: Context): Promise<Response> {
     ? params.path.join("/")
     : (params.path ?? "");
   const search = new URL(request.url).search;
+
+  if (!isAllowedFplPath(path)) {
+    return new Response("Not Found", { status: 404 });
+  }
 
   const upstream = await fetch(`${FPL_API}/${path}${search}`, {
     headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
