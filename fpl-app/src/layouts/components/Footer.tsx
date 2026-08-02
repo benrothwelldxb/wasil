@@ -12,6 +12,10 @@ export function Footer() {
           affiliated with, endorsed by, or associated with the Premier League
           or Fantasy Premier League.
         </p>
+        <p className="text-xs leading-relaxed">
+          No account needed — your team and settings stay on your device. We use
+          privacy-first, cookieless analytics; no personal data is collected.
+        </p>
         <p className="text-xs">&copy; {year} MyFPLScout</p>
       </div>
     </footer>

@@ -13,6 +13,7 @@ import {
   CARD_WIDTH,
   type TeamCardData,
 } from "../card";
+import { track } from "@/lib/analytics";
 import { shareOrDownloadPng, svgToDataUrl, svgToPngBlob } from "../image";
 
 export interface ShareTeamDialogProps {
@@ -46,6 +47,7 @@ export function ShareTeamDialog({ open, onClose, data }: ShareTeamDialogProps) {
           title: "My FPL team",
           text: shareText,
         });
+        track("team_shared");
       } else {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");

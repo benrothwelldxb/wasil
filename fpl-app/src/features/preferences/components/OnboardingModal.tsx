@@ -13,6 +13,7 @@ import {
 import { fetchManagerTeam, useTeams } from "@/features/fpl";
 import { useManagerStore } from "@/features/manager";
 import { useSquadStore } from "@/features/squad-builder";
+import { track } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -197,6 +198,7 @@ export function OnboardingModal() {
       const team = await fetchManagerTeam(id);
       setPlayers(team.playerIds);
       connect(team.entryId, team.managerName, team.teamName);
+      track("team_imported", { source: "onboarding" });
       setImportedTeam(team.teamName);
       setDraft((d) => ({
         ...d,
@@ -218,6 +220,7 @@ export function OnboardingModal() {
   const finish = () => {
     if (draft.name.trim()) setDisplayName(draft.name);
     applyOnboarding("My Team", toPreferences(draft));
+    track("onboarding_complete", { imported: draft.managerId !== null });
     navigate(ROUTES.dashboard);
   };
 

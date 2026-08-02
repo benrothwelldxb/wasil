@@ -78,6 +78,7 @@ export function useInstallPrompt(): UseInstallPromptResult {
     const onInstalled = () => {
       setDeferred(null);
       setIsStandalone(true);
+      void import("@/lib/analytics").then((m) => m.track("app_installed"));
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstall);

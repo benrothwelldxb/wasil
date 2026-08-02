@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CheckCircle2, Loader2, Search } from "lucide-react";
 import { fetchManagerTeam } from "@/features/fpl";
 import { useSquadStore } from "@/features/squad-builder";
+import { track } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useManagerStore } from "../store";
@@ -37,6 +38,7 @@ export function ImportTeamCard() {
       const team = await fetchManagerTeam(id);
       setPlayers(team.playerIds);
       connect(team.entryId, team.managerName, team.teamName);
+      track("team_imported", { source: "settings" });
       setInput("");
     } catch (err) {
       setError(
