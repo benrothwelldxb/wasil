@@ -1,13 +1,17 @@
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { ArrowRight, Clock, Wallet } from 'lucide-react';
-import type { Journey } from '@/domain/types';
-import { formatDuration, formatMoney, formatPercent, formatTime } from '@/domain/format';
+import { motion, useReducedMotion } from 'framer-motion';
+import { ArrowRight, BedDouble, MoonStar, Sparkles, Star, Wallet, Zap } from 'lucide-react';
+import type { HotelTier, Journey } from '@/domain/types';
+import { formatDuration, formatMoney } from '@/domain/format';
 import { criteriaToJourneyPath } from '@/domain/url';
 import { track } from '@/lib/analytics';
+import { getCityWeather } from '@/data/hotels';
 import { Card } from '@/components/ui/card';
 import { ExperienceRing } from '@/components/shared/ExperienceRing';
-import { RouteGlyph } from './RouteGlyph';
+import { RouteMap } from './RouteMap';
+import { WeatherBadge } from './WeatherBadge';
+import { CabinPill, DurationPill, SavingsPill } from './JourneyStatPills';
+import { JourneyMiniTimeline } from './JourneyMiniTimeline';
 import { BadgeChip } from './journey-badges';
 
 const cardVariants = {
@@ -15,10 +19,56 @@ const cardVariants = {
   visible: { opacity: 1, y: 0 },
 };
 
+const HOTEL_TIER_LABEL: Record<HotelTier, string> = {
+  budget: 'Budget',
+  midscale: 'Midscale',
+  upscale: 'Upscale',
+};
+
+interface FeaturedCity {
+  iata: string;
+  cityName: string;
+  countryCode: string;
+}
+
+let regionNames: Intl.DisplayNames | undefined;
+function countryName(code: string): string {
+  regionNames ??= new Intl.DisplayNames(['en'], { type: 'region' });
+  try {
+    return regionNames.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** 'YYYY-MM-DD' → 0–11 (JS `Date#getMonth` convention), parsed without a timezone. */
+function monthFromISODate(iso: string): number | undefined {
+  const month = Number(iso.slice(5, 7));
+  return Number.isFinite(month) && month >= 1 && month <= 12 ? month - 1 : undefined;
+}
+
+/**
+ * Immersive, Airbnb-listing-style journey card: a photo-like route map hero
+ * with the featured city + weather overlaid, then a body with the journey
+ * score, savings, hotel, a compact timeline, and highlights.
+ */
 export function JourneyCard({ journey, rank }: { journey: Journey; rank?: number }) {
+  const reduceMotion = useReducedMotion();
   const firstLeg = journey.legs[0];
   const lastLeg = journey.legs[journey.legs.length - 1];
-  const headroomPct = Math.round(journey.cost.headroomPct * 100);
+  const stopover = journey.stopovers[0];
+
+  const featuredCity: FeaturedCity = stopover
+    ? { iata: stopover.airport.iata, cityName: stopover.cityName, countryCode: stopover.countryCode }
+    : { iata: lastLeg.to.iata, cityName: lastLeg.to.cityName, countryCode: lastLeg.to.countryCode };
+
+  const weather = getCityWeather(featuredCity.iata, monthFromISODate(journey.criteria.departureDate));
+
+  const routeIatas = stopover
+    ? [firstLeg.from.iata, featuredCity.iata, lastLeg.to.iata]
+    : [firstLeg.from.iata, lastLeg.to.iata];
+
+  const highlights = stopover?.highlights.slice(0, 3) ?? [];
 
   const handleSelect = () => {
     track({
@@ -32,64 +82,123 @@ export function JourneyCard({ journey, rank }: { journey: Journey; rank?: number
   };
 
   return (
-    <motion.div variants={cardVariants} layout>
+    <motion.div
+      variants={cardVariants}
+      layout
+      whileHover={reduceMotion ? undefined : { y: -3, scale: 1.01 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+    >
       <Link
         to={criteriaToJourneyPath(journey.id, journey.criteria)}
         onClick={handleSelect}
-        className="group block focus-visible:outline-none"
+        className="group block rounded-xl focus-visible:outline-none"
       >
-        <Card className="overflow-hidden p-5 transition-all group-hover:border-primary/40 group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-ring">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1 space-y-3">
-              {journey.badges.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {journey.badges.map((b) => (
-                    <BadgeChip key={b} badge={b} />
-                  ))}
-                </div>
-              )}
+        <Card className="overflow-hidden p-0 transition-all duration-200 group-hover:border-primary/40 group-hover:shadow-lg group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2">
+          <div className="relative">
+            <RouteMap journey={journey} />
 
-              <RouteGlyph journey={journey} />
+            <div
+              className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/5 to-black/20"
+              aria-hidden="true"
+            />
 
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5" />
-                  {formatDuration(journey.totalTravelTimeMinutes)} flying
-                </span>
-                <span>
-                  {formatTime(firstLeg.departure)} → {formatTime(lastLeg.arrival)}
-                </span>
-                <span className="truncate">{firstLeg.airline.name}</span>
+            <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 sm:p-4">
+              <div className="flex flex-wrap gap-1.5">
+                {journey.badges.map((b) => (
+                  <BadgeChip key={b} badge={b} />
+                ))}
               </div>
-
-              <p className="text-sm text-foreground/80">{journey.score.narrative}</p>
+              {weather && <WeatherBadge weather={weather} />}
             </div>
 
-            <div className="flex flex-col items-end gap-2">
-              <ExperienceRing score={journey.score.total} />
+            <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
+              <p className="text-lg font-bold leading-tight text-white drop-shadow-sm sm:text-xl">
+                {featuredCity.cityName}
+              </p>
+              <p className="text-xs font-medium text-white/85 drop-shadow-sm sm:text-sm">
+                {countryName(featuredCity.countryCode)}
+              </p>
             </div>
           </div>
 
-          <div className="mt-4 flex items-end justify-between gap-4 border-t pt-4">
-            <div>
-              <div className="text-2xl font-bold">{formatMoney(journey.cost.total)}</div>
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Wallet className="h-3 w-3" />
-                {formatMoney(journey.cost.headroom)} under budget ({formatPercent(
-                  journey.cost.headroomPct,
-                )})
-              </div>
-              <div className="mt-1.5 h-1.5 w-40 max-w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${100 - headroomPct}%` }}
-                />
-              </div>
+          <div className="space-y-4 p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <p className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 font-mono text-xs font-semibold tracking-wide text-muted-foreground sm:text-sm">
+                {routeIatas.map((iata, i) => (
+                  <span key={`${iata}-${i}`} className="inline-flex items-center gap-1">
+                    {i > 0 && <ArrowRight className="h-3 w-3 shrink-0" aria-hidden="true" />}
+                    {iata}
+                  </span>
+                ))}
+              </p>
+              <ExperienceRing score={journey.score.total} size={56} strokeWidth={5} className="shrink-0" />
             </div>
-            <span className="inline-flex items-center gap-1 text-sm font-medium text-primary">
-              View journey
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-            </span>
+
+            <div className="flex flex-wrap gap-2">
+              <SavingsPill headroom={journey.cost.headroom} />
+              <CabinPill cabin={firstLeg.cabin} />
+              <DurationPill minutes={journey.totalTravelTimeMinutes} />
+            </div>
+
+            {stopover ? (
+              <div className="flex items-center gap-2.5 rounded-lg border bg-muted/30 p-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <BedDouble className="h-4 w-4" aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1 text-sm">
+                  <p className="truncate font-medium">{stopover.hotel.name}</p>
+                  <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-0.5">
+                      <Star className="h-3 w-3 fill-current text-amber-500" aria-hidden="true" />
+                      {stopover.hotel.starRating}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>{formatMoney(stopover.hotel.pricePerNight)}/night</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{HOTEL_TIER_LABEL[stopover.hotel.tier]}</span>
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="flex items-center gap-1.5 rounded-lg border bg-muted/30 p-2.5 text-sm text-muted-foreground">
+                <MoonStar className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Direct — no overnight stay
+              </p>
+            )}
+
+            <JourneyMiniTimeline journey={journey} />
+
+            {stopover ? (
+              highlights.length > 0 && (
+                <ul className="space-y-1 text-sm text-foreground/80">
+                  {highlights.map((highlight, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
+                      <span>{highlight}</span>
+                    </li>
+                  ))}
+                </ul>
+              )
+            ) : (
+              <p className="flex items-center gap-1.5 text-sm text-foreground/80">
+                <Zap className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                Straight there — {formatDuration(journey.totalTravelTimeMinutes)} in the air
+              </p>
+            )}
+
+            <div className="flex items-end justify-between gap-4 border-t pt-4">
+              <div>
+                <div className="text-xl font-bold sm:text-2xl">{formatMoney(journey.cost.total)}</div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Wallet className="h-3 w-3" aria-hidden="true" />
+                  {formatMoney(journey.cost.headroom)} under budget
+                </div>
+              </div>
+              <span className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary">
+                View journey
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+              </span>
+            </div>
           </div>
         </Card>
       </Link>
