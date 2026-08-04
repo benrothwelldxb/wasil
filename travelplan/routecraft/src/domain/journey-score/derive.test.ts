@@ -302,6 +302,40 @@ describe('deriveJourneyScoreFactors', () => {
     expect(factors.transfers).toBeLessThanOrEqual(100);
   });
 
+  it('jet lag wraps across the date line to the shorter direction (SYD/JFK ~9h, not 15h)', () => {
+    const journey = makeJourney(
+      'tz-wrap',
+      [
+        makeLeg(AIRPORTS.DXB, AIRPORTS.MAN, {
+          depart: '2026-09-15T09:00:00Z',
+          arrive: '2026-09-15T15:00:00Z',
+          price: 500,
+        }),
+      ],
+      [],
+    );
+    const eastbound: JourneyScoreSignals = {
+      origin: { tzOffsetHours: 10 }, // SYD
+      destination: { tzOffsetHours: -5 }, // JFK
+      stopovers: [],
+    };
+    const westbound: JourneyScoreSignals = {
+      origin: { tzOffsetHours: -5 }, // JFK
+      destination: { tzOffsetHours: 10 }, // SYD
+      stopovers: [],
+    };
+
+    const east = deriveJourneyScoreFactors(journey, eastbound).jetLag;
+    const west = deriveJourneyScoreFactors(journey, westbound).jetLag;
+
+    expect(east).not.toBeNull();
+    expect(west).not.toBeNull();
+    // Wrapped to a 9h shift: westbound (gentler) beats eastbound, and it is
+    // non-zero — the un-wrapped Δ=15 would have zeroed both, erasing asymmetry.
+    expect(west as number).toBeGreaterThan(east as number);
+    expect(west as number).toBeGreaterThan(0);
+  });
+
   it('stopover journey: touristAppeal reflects stopover signals when present', () => {
     const journey = makeJourney('stop-appeal', [
       makeLeg(AIRPORTS.DXB, AIRPORTS.IST, {

@@ -63,11 +63,13 @@ destination signal, else null.
    `100 · clamp01(referenceDurationMinutes / totalTravelTimeMinutes)^1.2`.
    Uses the injected reference (NOT the result-set minimum) so the score is
    stable and per-journey cacheable. Missing reference → null.
-7. **jetLag** — from the net UTC-offset shift origin→destination:
-   `Δ = |tz(dest) − tz(origin)|` hours; eastward travel (`tz(dest) > tz(origin)`)
-   is harder, factor `1.3`, westward `1.0`. `raw = Δ · 9 · dirFactor`. An
-   overnight stopover aids adjustment: subtract `min(stopoverNights,2) · 8` from
-   `raw`. `jetLag = clamp(100 − max(0, raw))`. Missing tz → null.
+7. **jetLag** — from the net UTC-offset shift origin→destination, **wrapped
+   across the date line** to the shorter way round: `signedΔ = tz(dest) − tz(origin)`
+   normalised into `(−12, 12]`, `Δ = |signedΔ|`. Eastward travel (`signedΔ > 0`
+   after wrapping) is harder, factor `1.3`, westward `1.0`. `raw = Δ · 9 · dirFactor`.
+   An overnight stopover aids adjustment: subtract `min(stopoverNights,2) · 8`.
+   `jetLag = clamp(100 − max(0, raw))`. Missing tz → null. (Wrapping keeps
+   SYD +10 → JFK −5 a 9h eastward shift, not a spurious 15h.)
 8. **airportQuality** — mean of the airport-quality signals for every airport
    touched (origin, each stopover, destination). Absent → null.
 9. **touristAppeal** — stopover-or-dest `touristAppeal`. Absent → null.

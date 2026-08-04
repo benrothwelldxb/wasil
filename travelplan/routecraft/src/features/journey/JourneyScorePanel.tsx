@@ -142,18 +142,22 @@ export function JourneyScorePanel({ journey }: { journey: Journey }) {
             <ul className="space-y-4">
               {JOURNEY_SCORE_FACTORS.map((factor) => {
                 const label = JOURNEY_SCORE_FACTOR_LABELS[factor];
+                // Defensive default: a persisted state from an older schema (or a
+                // future 13th factor) may lack a key; `normalizeWeights` copes, so
+                // the slider should too rather than throwing.
+                const importance = importances[factor] ?? 0;
                 return (
                   <li key={factor} className="space-y-1.5">
                     <div className="flex items-center justify-between text-sm">
                       <span>{label}</span>
                       <span className="tabular-nums text-xs text-muted-foreground">
-                        {importances[factor].toFixed(2)}
+                        {importance.toFixed(2)}
                       </span>
                     </div>
                     <WeightSlider
                       factor={factor}
                       label={label}
-                      value={importances[factor]}
+                      value={importance}
                       onValueChange={(value) => setImportance(factor, value)}
                     />
                   </li>

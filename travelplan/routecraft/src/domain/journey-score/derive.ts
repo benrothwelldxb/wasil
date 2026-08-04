@@ -96,9 +96,16 @@ function deriveJetLag(journey: Journey, signals: JourneyScoreSignals): number | 
   const destTz = signals.destination.tzOffsetHours;
   if (typeof originTz !== 'number' || typeof destTz !== 'number') return null;
 
-  const delta = Math.abs(destTz - originTz);
-  const dirFactor = destTz > originTz ? 1.3 : 1.0;
-  let raw = delta * 9 * dirFactor;
+  // Wrap the offset difference across the date line to the shorter way round:
+  // the circadian shift SYD(+10)→JFK(−5) is 9h eastward, not 15h. `signedDelta`
+  // in (−12, 12]; its sign gives the effective travel direction after wrapping.
+  let signedDelta = destTz - originTz;
+  while (signedDelta > 12) signedDelta -= 24;
+  while (signedDelta <= -12) signedDelta += 24;
+
+  const magnitude = Math.abs(signedDelta);
+  const dirFactor = signedDelta > 0 ? 1.3 : 1.0; // eastward shifts are harder
+  let raw = magnitude * 9 * dirFactor;
 
   const totalStopoverNights = journey.stopovers.reduce((sum, s) => sum + s.nights, 0);
   raw -= Math.min(totalStopoverNights, 2) * 8;
