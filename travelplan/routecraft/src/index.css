@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 33% 98%;
+    --foreground: 200 18% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 200 18% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 18% 12%;
+    --primary: 175 77% 26%;
+    --primary-foreground: 160 60% 97%;
+    --secondary: 190 20% 94%;
+    --secondary-foreground: 200 18% 20%;
+    --muted: 190 16% 94%;
+    --muted-foreground: 200 10% 42%;
+    --accent: 32 95% 44%;
+    --accent-foreground: 40 60% 98%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 200 14% 88%;
+    --input: 200 14% 86%;
+    --ring: 175 77% 30%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 200 30% 7%;
+    --foreground: 180 20% 92%;
+    --card: 200 28% 10%;
+    --card-foreground: 180 20% 92%;
+    --popover: 200 28% 10%;
+    --popover-foreground: 180 20% 92%;
+    --primary: 172 66% 45%;
+    --primary-foreground: 200 30% 8%;
+    --secondary: 200 20% 16%;
+    --secondary-foreground: 180 20% 90%;
+    --muted: 200 20% 15%;
+    --muted-foreground: 190 12% 62%;
+    --accent: 32 92% 52%;
+    --accent-foreground: 200 30% 8%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 200 18% 20%;
+    --input: 200 18% 22%;
+    --ring: 172 66% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
