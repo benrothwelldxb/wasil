@@ -25,6 +25,7 @@ import { BadgeChip } from '@/features/results/journey-badges';
 import { RouteGlyph } from '@/features/results/RouteGlyph';
 import { ItineraryTimeline } from './ItineraryTimeline';
 import { StopoverStory } from './StopoverStory';
+import { StopoverInsights } from './StopoverInsights';
 import { CostBreakdownPanel } from './CostBreakdownPanel';
 import { ScoreExplainer } from './ScoreExplainer';
 
@@ -130,12 +131,19 @@ export function JourneyDetailPage() {
             <ItineraryTimeline journey={journey} />
           </Card>
 
-          {journey.stopovers.map((stopover) => (
-            <StopoverStory
-              key={stopover.airport.iata}
-              stopover={stopover}
-              onHotelChange={handleHotelChange}
-            />
+          {journey.stopovers.map((stopover, i) => (
+            <div key={stopover.airport.iata} className="space-y-6">
+              <StopoverStory stopover={stopover} onHotelChange={handleHotelChange} />
+              <StopoverInsights
+                cityIata={stopover.airport.iata}
+                cityName={stopover.cityName}
+                nights={stopover.nights}
+                pax={journey.criteria.pax}
+                // Check-in date at this stopover = arrival of the leg into it,
+                // so seasonal weather reflects the actual stay, not departure day.
+                date={journey.legs[i]?.arrival.slice(0, 10) ?? journey.criteria.departureDate}
+              />
+            </div>
           ))}
         </div>
 
