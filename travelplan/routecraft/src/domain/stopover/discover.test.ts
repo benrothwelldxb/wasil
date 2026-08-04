@@ -313,3 +313,80 @@ describe('discoverStopoverJourneys', () => {
     expect(a).toEqual(b);
   });
 });
+
+describe('discoverStopoverJourneys — connecting-leg selection', () => {
+  // Colinear AAA(0,0) → XXX(0,10) → BBB(0,20): XXX is exactly on-path.
+  const AAA: CandidateCity = {
+    iata: 'AAA', cityName: 'Aaa', countryCode: 'XX', lat: 0, lon: 0,
+    hubStrength: 5, appealScore: 60, tags: [], hotelBaseNightly: money(100),
+    headline: 'origin', highlights: [],
+  };
+  const XXX: CandidateCity = {
+    iata: 'XXX', cityName: 'Xxx', countryCode: 'XX', lat: 0, lon: 10,
+    hubStrength: 4, appealScore: 85, tags: [], hotelBaseNightly: money(90),
+    headline: 'stop', highlights: ['a'],
+  };
+  const BBB: CandidateCity = {
+    iata: 'BBB', cityName: 'Bbb', countryCode: 'XX', lat: 0, lon: 20,
+    hubStrength: 3, appealScore: 50, tags: [], hotelBaseNightly: money(100),
+    headline: 'dest', highlights: [],
+  };
+
+  const flightSearch: FlightSearchPort = {
+    async search(req: FlightSearchRequest): Promise<Leg[]> {
+      const key = `${req.from}-${req.to}`;
+      if (key === 'AAA-XXX') {
+        // Red-eye inbound: departs 22:00, +600 min → arrives 08:00 the next day.
+        return [makeLeg(req, { price: 200, duration: 600, depHour: 22 })];
+      }
+      if (key === 'XXX-BBB') {
+        // Cheapest departs 01:00 (BEFORE the 08:00 inbound arrival → cannot
+        // connect); a viable, pricier leg departs 14:00.
+        return [
+          makeLeg(req, { price: 100, duration: 300, depHour: 1 }),
+          makeLeg(req, { price: 300, duration: 300, depHour: 14 }),
+        ];
+      }
+      if (key === 'AAA-BBB') {
+        return [makeLeg(req, { price: 700, duration: 700, depHour: 9 })];
+      }
+      return [];
+    },
+  };
+
+  const hotelEstimator: HotelEstimatorPort = {
+    async estimate(req: HotelEstimateRequest) {
+      const hotel = makeHotel('h', req.city.iata, { perNight: 90, tier: 'midscale' }, req.rooms, req.nights);
+      return {
+        hotel,
+        alternativeHotels: [],
+        transfers: { arrival: makeTransfer('t-arr'), departure: makeTransfer('t-dep') },
+      };
+    },
+  };
+
+  const deps: DiscoveryDeps = {
+    recommender: heuristicRecommender,
+    cityPool: [AAA, XXX, BBB],
+    flightSearch,
+    hotelEstimator,
+  };
+
+  const request: DiscoveryRequest = {
+    origin: 'AAA', destination: 'BBB', maxStopovers: 1, maxStopoverNights: 1,
+    budget: money(4000), departureDate: '2026-09-15', pax: { adults: 1, children: 0 },
+    cabin: 'economy', preferences: [],
+  };
+
+  it('chooses a connecting outbound over a cheaper one that departs before the inbound lands', async () => {
+    const result = await discoverStopoverJourneys(request, deps);
+    const stop = result.journeys.find((j) => j.id.startsWith('stopover-XXX'));
+
+    // The candidate survives (was NOT silently dropped as infeasible)...
+    expect(stop).toBeDefined();
+    // ...because the 14:00 leg (price 300) was chosen over the un-connectable
+    // 01:00 leg (price 100).
+    expect(stop!.legs[1].pricePerPax.amount).toBe(300);
+    expect(journeySchema.safeParse(stop).success).toBe(true);
+  });
+});

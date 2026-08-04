@@ -117,8 +117,6 @@ export interface DiscoveryDeps {
   cityPool: readonly CandidateCity[];
   flightSearch: FlightSearchPort;
   hotelEstimator: HotelEstimatorPort;
-  /** Clock for `generatedAt` only; defaults to a fixed epoch for determinism. */
-  now?: () => number;
 }
 
 export interface DiscoveryDiagnostics {

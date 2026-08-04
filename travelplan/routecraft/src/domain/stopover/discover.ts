@@ -16,8 +16,16 @@ import type {
   SearchCriteria,
   StopoverCity,
 } from '@/domain/types';
-import { applyBudgetConstraint, computeCostBreakdown, isFeasible, rankJourneys, totalHeads } from '@/domain/scoring';
-import type { CandidateCity, DiscoveryDeps, DiscoveryRequest, DiscoveryResult, StopoverRecommendation } from './types';
+import {
+  applyBudgetConstraint,
+  computeCostBreakdown,
+  isFeasible,
+  MIN_CONNECTION_MINUTES,
+  rankJourneys,
+  totalHeads,
+} from '@/domain/scoring';
+import type { CandidateCity, DiscoveryDeps, DiscoveryRequest, DiscoveryResult } from './types';
+import { RECOMMEND_LIMIT } from './types';
 
 const MS_PER_DAY = 86_400_000;
 const MS_PER_MIN = 60_000;
@@ -36,6 +44,19 @@ function minutesBetween(fromIso: ISODateTimeString, toIso: ISODateTimeString): n
 /** Cheapest leg by per-pax price; the engine — not the port — picks the fare. */
 function cheapestLeg(legs: readonly Leg[]): Leg {
   return legs.reduce((min, leg) => (leg.pricePerPax.amount < min.pricePerPax.amount ? leg : min));
+}
+
+/**
+ * Cheapest outbound leg that can actually connect — departing no earlier than
+ * the inbound arrival plus the minimum connection buffer. Without this, the
+ * cheapest fare (often a red-eye) can depart before the inbound lands, and the
+ * whole candidate is then silently discarded by `isFeasible`. Falls back to the
+ * plain cheapest only when nothing connects (which `isFeasible` then drops, as
+ * before) so behaviour never regresses.
+ */
+function cheapestConnectingLeg(legs: readonly Leg[], earliestDepartureMs: number): Leg {
+  const connecting = legs.filter((leg) => Date.parse(leg.departure) >= earliestDepartureMs);
+  return cheapestLeg(connecting.length > 0 ? connecting : legs);
 }
 
 const ZERO_FACTORS: ExperienceFactors = {
@@ -76,14 +97,14 @@ function buildCriteria(request: DiscoveryRequest): SearchCriteria {
 
 function buildStopoverCity(
   city: CandidateCity,
-  rec: StopoverRecommendation,
+  nights: number,
   hotelResult: Awaited<ReturnType<DiscoveryDeps['hotelEstimator']['estimate']>>,
 ): StopoverCity {
   return {
     airport: { iata: city.iata, cityName: city.cityName, countryCode: city.countryCode },
     cityName: city.cityName,
     countryCode: city.countryCode,
-    nights: rec.nights,
+    nights,
     appealScore: city.appealScore,
     tags: city.tags,
     headline: city.headline,
@@ -118,8 +139,16 @@ export async function discoverStopoverJourneys(
 
   const stopoverJourneys: Journey[] = [];
 
-  for (const rec of recs) {
+  // Defensive bound: a well-behaved recommender already shortlists to
+  // RECOMMEND_LIMIT, but a future AI recommender might return more — never pay
+  // for unbounded full construction.
+  const boundedRecs = recs.slice(0, RECOMMEND_LIMIT);
+
+  for (const rec of boundedRecs) {
     const city = rec.city;
+    // Clamp nights to the traveller's allowed range — the heuristic already
+    // respects it; this guards an AI recommender proposing out-of-range nights.
+    const nights = Math.min(request.maxStopoverNights, Math.max(1, Math.round(rec.nights)));
 
     const inboundLegs = await deps.flightSearch.search(
       { from: request.origin, to: city.iata, date: request.departureDate, cabin: request.cabin, pax: request.pax },
@@ -128,27 +157,28 @@ export async function discoverStopoverJourneys(
     if (inboundLegs.length === 0) continue;
     const inbound = cheapestLeg(inboundLegs);
 
-    const outboundDate = addDays(request.departureDate, rec.nights);
+    const outboundDate = addDays(request.departureDate, nights);
     const outboundLegs = await deps.flightSearch.search(
       { from: city.iata, to: request.destination, date: outboundDate, cabin: request.cabin, pax: request.pax },
       opts,
     );
     if (outboundLegs.length === 0) continue;
-    const outbound = cheapestLeg(outboundLegs);
+    const earliestOutboundMs = Date.parse(inbound.arrival) + MIN_CONNECTION_MINUTES * MS_PER_MIN;
+    const outbound = cheapestConnectingLeg(outboundLegs, earliestOutboundMs);
 
     const hotelResult = await deps.hotelEstimator.estimate(
-      { city, nights: rec.nights, rooms, date: request.departureDate },
+      { city, nights, rooms, date: request.departureDate },
       opts,
     );
 
-    const stopover = buildStopoverCity(city, rec, hotelResult);
+    const stopover = buildStopoverCity(city, nights, hotelResult);
     const legs = [inbound, outbound];
     // Wire/estimate totals are never trusted — cost is recomputed from the
     // constructed legs and hotel, per ALGORITHM.md §3.
     const cost = computeCostBreakdown({ legs, stopovers: [stopover], pax: request.pax, budget: request.budget });
 
     const journey: Journey = {
-      id: `stopover-${city.iata}-${rec.nights}`,
+      id: `stopover-${city.iata}-${nights}`,
       kind: 'stopover',
       criteria,
       legs,

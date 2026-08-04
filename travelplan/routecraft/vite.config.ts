@@ -24,6 +24,7 @@ const test: InlineConfig = {
       'src/lib/**',
       'src/config/**',
       'src/stores/**',
+      'src/hooks/**',
     ],
     thresholds: {
       lines: 80,
