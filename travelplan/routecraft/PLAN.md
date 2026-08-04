@@ -22,6 +22,13 @@ exceeding budget.
 
 ## Experience scoring model (`domain/scoring/`)
 
+> **Note (superseded scope):** the six-factor model below remains the engine
+> that *ranks and sorts* the results grid. A second, complementary score shipped
+> later: the proprietary **12-factor Journey Score** (`domain/journey-score/`,
+> with its own `ALGORITHM.md`) powers the explainable, user-reweightable panel
+> on the journey detail page. See the README "scoring" section for how the two
+> relate.
+
 1. **Hard constraint:** `cost.total ≤ budget` (else discarded pre-scoring);
    connection buffer ≥ 75 min; ≤ 4 legs. Budget is never a soft factor.
 2. **Six factors, each normalised 0–100:** stopoverAppeal, comfort,

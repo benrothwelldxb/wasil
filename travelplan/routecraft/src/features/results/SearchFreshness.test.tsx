@@ -1,9 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@/test/render';
 import { expectNoA11yViolations } from '@/test/a11y';
 import { SearchFreshness } from './SearchFreshness';
 
+// Freeze the clock so "Updated just now" is deterministic rather than relying
+// on the wall clock being within ~1s of the fixture's timestamp.
+const NOW = new Date('2026-08-04T12:00:00Z').getTime();
+
 describe('SearchFreshness', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows a refreshing label while fetching with no failures', () => {
     render(
       <SearchFreshness isFetching isError={false} failureCount={0} dataUpdatedAt={0} />,
@@ -26,11 +39,14 @@ describe('SearchFreshness', () => {
         isFetching={false}
         isError={false}
         failureCount={0}
-        dataUpdatedAt={Date.now()}
+        dataUpdatedAt={NOW}
       />,
     );
 
     expect(screen.getByRole('status')).toHaveTextContent('Updated just now');
+    // axe-core drives its own timers/promises; restore real timers before
+    // running it or it never settles under the frozen clock.
+    vi.useRealTimers();
     await expectNoA11yViolations(container);
   });
 
@@ -57,7 +73,7 @@ describe('SearchFreshness', () => {
         isFetching={false}
         isError={false}
         failureCount={0}
-        dataUpdatedAt={Date.now()}
+        dataUpdatedAt={NOW}
       />,
     );
 

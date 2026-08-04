@@ -46,7 +46,7 @@ export function CostBreakdownPanel({ cost }: { cost: CostBreakdown }) {
       </dl>
 
       <div className="mt-4 space-y-2">
-        <Progress value={usedPct} />
+        <Progress value={usedPct} aria-label={`Budget used: ${usedPct}%`} />
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">
             {usedPct}% of {formatMoney(cost.budget)} budget

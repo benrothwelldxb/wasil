@@ -28,6 +28,7 @@ export function AirportCombobox({
   const [activeIndex, setActiveIndex] = useState(0);
 
   const listboxId = useId();
+  const triggerId = useId();
 
   const selected = useMemo(() => CITIES.find((c) => c.iata === value), [value]);
 
@@ -89,14 +90,15 @@ export function AirportCombobox({
 
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <Label htmlFor={triggerId}>{label}</Label>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
+            id={triggerId}
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            aria-controls={listboxId}
+            aria-controls={open ? listboxId : undefined}
             className="w-full justify-between font-normal"
           >
             <span className="inline-flex items-center gap-2 truncate">

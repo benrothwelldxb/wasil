@@ -61,13 +61,16 @@ framer-motion. Add new global shims there, not per test.
 ## Coverage
 
 Thresholds (80% lines/functions/statements, 70% branches) are enforced on the
-logic + platform layers: `src/domain`, `src/data/synthetic`, `src/lib`,
-`src/config`, `src/stores`. Every new module in those directories ships tests
-meeting the thresholds.
+logic + platform layers. The authoritative list is `coverage.include` in
+`vite.config.ts`; it currently covers `src/domain`, all of
+`src/data/{synthetic,adapters,cache,engine,hotels,journey-score,normalise,stopover}`,
+`src/lib`, `src/config`, `src/stores`, and `src/hooks`. Every new module in those
+directories ships tests meeting the thresholds.
 
 Presentational code (`features/*`, `components/shared/*`, `components/ui/*`) gets
-behaviour + a11y tests (see `AppShell`, `button`, `dialog`, `loading`,
-`ErrorBoundary`) but is not held to a line-coverage percentage. Broadening UI and
-hook coverage is a **Phase Two** item.
+behaviour + a11y tests (via `vitest-axe`) rather than a line-coverage
+percentage — this now includes page-level integration tests for the three
+routes (`LandingPage`, `ResultsPage`, `JourneyDetailPage`), each asserting
+their loading/empty/error states and running axe on the loaded view.
 
 Run: `npm run test:ci` (`vitest run --coverage`).

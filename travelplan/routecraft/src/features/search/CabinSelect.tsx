@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { CabinClass } from '@/domain/types';
 import { Label } from '@/components/ui/label';
 import {
@@ -21,11 +22,12 @@ export function CabinSelect({
   value: CabinClass;
   onChange: (value: CabinClass) => void;
 }) {
+  const id = useId();
   return (
     <div className="space-y-2">
-      <Label>Cabin</Label>
+      <Label htmlFor={id}>Cabin</Label>
       <Select value={value} onValueChange={(v) => onChange(v as CabinClass)}>
-        <SelectTrigger>
+        <SelectTrigger id={id}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
