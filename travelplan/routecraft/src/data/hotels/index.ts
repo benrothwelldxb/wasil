@@ -7,5 +7,6 @@
  */
 export { getHotelProvider, getStopoverAccommodation, resetHotelProviderForTests } from './hotel-provider-registry';
 export { syntheticHotelProvider } from './SyntheticHotelProvider';
-export { getCitySignals } from './city-signals';
+export { getCitySignals, getCityWeather } from './city-signals';
 export type { CitySignals } from './city-signals';
+export type { WeatherSummary } from '@/domain/hotels/types';

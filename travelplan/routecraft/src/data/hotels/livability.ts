@@ -525,3 +525,8 @@ function fallbackLivability(appealScore: number): CityLivability {
 export function getLivability(iata: string, appealScore: number): CityLivability {
   return CITY_LIVABILITY[iata] ?? fallbackLivability(appealScore);
 }
+
+/** Whether `iata` has explicitly curated livability/climate data (vs. the generic fallback). */
+export function hasCuratedCity(iata: string): boolean {
+  return iata in CITY_LIVABILITY;
+}

@@ -1,12 +1,13 @@
 /**
- * Generic per-city signal accessor for the Journey Score domain layer.
- * Reuses the internal livability + climate model (`./livability`) but returns
- * only the generic 0–100 shape the domain expects — never the curated
- * `CityLivability`/`CityClimateProfile` internals, which stay private to
- * `src/data/hotels/**`.
+ * Generic per-city signal accessors for the Journey Score domain layer and
+ * for presentational UI. Reuses the internal livability + climate model
+ * (`./livability`) but returns only generic domain shapes — never the
+ * curated `CityLivability`/`CityClimateProfile` internals, which stay
+ * private to `src/data/hotels/**`.
  */
 import { weatherComfortScore } from '@/domain/journey-score';
-import { getLivability, weatherForMonth } from './livability';
+import type { WeatherSummary } from '@/domain/hotels/types';
+import { getLivability, hasCuratedCity, weatherForMonth } from './livability';
 
 /**
  * No specific stay date is known at the journey-score layer (unlike the
@@ -36,4 +37,21 @@ export function getCitySignals(iata: string, appealScore = 50): CitySignals {
     neighbourhoodQuality: Math.min(100, Math.max(0, livability.neighbourhoodRating * 20)),
     weather: weatherComfortScore(weather),
   };
+}
+
+/**
+ * Synchronous, generic weather summary for a city, for presentational use
+ * (e.g. a card's weather chip). `month` is 0–11 (JS `Date#getMonth`
+ * convention) and defaults to `REPRESENTATIVE_MONTH` — a neutral,
+ * deterministic stand-in for "typical" seasonal weather when no specific
+ * date is known. Returns `undefined` for any city without curated
+ * livability/climate data, rather than silently falling back to a generic
+ * estimate — weather is presentational and shouldn't imply false precision
+ * for an unmodelled city.
+ */
+export function getCityWeather(iata: string, month?: number): WeatherSummary | undefined {
+  if (!hasCuratedCity(iata)) return undefined;
+  const requestMonth = month === undefined ? REPRESENTATIVE_MONTH : (((month % 12) + 12) % 12) + 1;
+  const livability = getLivability(iata, 50);
+  return weatherForMonth(livability.climate, requestMonth);
 }
