@@ -5,6 +5,7 @@ import { ArrowLeft, Clock, Route } from 'lucide-react';
 import { applyHotelChoice } from '@/domain/scoring';
 import type { Journey } from '@/domain/types';
 import { formatMoney, formatSpan } from '@/domain/format';
+import { track } from '@/lib/analytics';
 import { useCriteriaFromParams } from '@/hooks/use-criteria-from-params';
 import { useJourney } from '@/hooks/use-journey';
 import { Button } from '@/components/ui/button';
@@ -35,7 +36,15 @@ export function JourneyDetailPage() {
 
   const [journey, setJourney] = useState<Journey | null>(null);
   useEffect(() => {
-    if (query.data) setJourney(query.data);
+    if (query.data) {
+      setJourney(query.data);
+      track({
+        name: 'journey_viewed',
+        journeyId: query.data.id,
+        kind: query.data.kind,
+        score: query.data.score.total,
+      });
+    }
   }, [query.data]);
 
   if (query.isLoading) {
@@ -59,6 +68,12 @@ export function JourneyDetailPage() {
   if (!journey) return null;
 
   const handleHotelChange = (hotelId: string) => {
+    const swappedCity = journey.stopovers.find(
+      (s) => s.hotel.id === hotelId || s.alternativeHotels.some((h) => h.id === hotelId),
+    );
+    if (swappedCity) {
+      track({ name: 'hotel_swapped', journeyId: journey.id, cityIata: swappedCity.airport.iata });
+    }
     setJourney((current) => (current ? applyHotelChoice(current, hotelId) : current));
   };
 
@@ -132,7 +147,18 @@ export function JourneyDetailPage() {
             </Card>
             <Dialog>
               <DialogTrigger asChild>
-                <Button size="lg" className="w-full">
+                <Button
+                  size="lg"
+                  className="w-full"
+                  onClick={() =>
+                    track({
+                      name: 'booking_intent',
+                      journeyId: journey.id,
+                      kind: journey.kind,
+                      totalUsd: journey.cost.total.amount,
+                    })
+                  }
+                >
                   Book this journey
                 </Button>
               </DialogTrigger>

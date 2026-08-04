@@ -15,6 +15,7 @@ convention that drifts from the code is a bug.
 | [testing.md](./testing.md) | Testing framework | `renderWithProviders`, msw, vitest-axe, coverage thresholds. |
 | [components.md](./components.md) | Component library | `ui/` shadcn primitives vs `shared/` composites vs `features/`. |
 | [state.md](./state.md) | State management | Query owns server data; Zustand owns view state; URL owns search criteria. |
+| [analytics.md](./analytics.md) | Analytics / events | Typed engagement events through a pluggable sink; the learning-flywheel foundation. |
 
 Quality gates for every change (run from `travelplan/routecraft/`):
 

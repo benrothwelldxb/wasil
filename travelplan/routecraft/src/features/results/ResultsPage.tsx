@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Pencil, PlaneTakeoff } from 'lucide-react';
 import { applyView } from '@/domain/view';
 import { formatMoney } from '@/domain/format';
+import { track } from '@/lib/analytics';
 import { useCriteriaFromParams } from '@/hooks/use-criteria-from-params';
 import { useJourneySearch } from '@/hooks/use-journey-search';
 import { useSearchStore } from '@/stores/search-store';
@@ -32,6 +33,18 @@ export function ResultsPage() {
   useEffect(() => {
     if (criteria) loadFromCriteria(criteria);
   }, [criteria, loadFromCriteria]);
+
+  useEffect(() => {
+    if (!query.data) return;
+    const { journeys, providerId } = query.data;
+    track({
+      name: 'search_completed',
+      providerId,
+      journeyCount: journeys.length,
+      hasStopover: journeys.some((j) => j.stopovers.length > 0),
+      topScore: journeys[0]?.score.total ?? null,
+    });
+  }, [query.data]);
 
   const visible = useMemo(
     () => (query.data ? applyView(query.data.journeys, filters, sort) : []),
@@ -129,8 +142,8 @@ export function ResultsPage() {
               className="space-y-4"
             >
               <AnimatePresence mode="popLayout">
-                {visible.map((journey) => (
-                  <JourneyCard key={journey.id} journey={journey} />
+                {visible.map((journey, index) => (
+                  <JourneyCard key={journey.id} journey={journey} rank={index} />
                 ))}
               </AnimatePresence>
             </motion.div>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeftRight, Search } from 'lucide-react';
 import { searchCriteriaSchema } from '@/domain/schemas';
 import { criteriaToResultsPath } from '@/domain/url';
+import { track } from '@/lib/analytics';
 import { draftToCriteria, useSearchStore } from '@/stores/search-store';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -42,8 +43,20 @@ export function SearchForm({ onSubmitted }: { onSubmitted?: () => void }) {
       return;
     }
     setErrors({});
+    const c = result.data;
+    track({
+      name: 'search_submitted',
+      origin: c.origin,
+      destination: c.destination,
+      maxStopovers: c.maxStopovers,
+      maxStopoverNights: c.maxStopoverNights,
+      budgetUsd: c.budget.amount,
+      travellers: c.pax.adults + c.pax.children,
+      cabin: c.cabin,
+      preferences: c.preferences,
+    });
     onSubmitted?.();
-    navigate(criteriaToResultsPath(result.data));
+    navigate(criteriaToResultsPath(c));
   };
 
   return (

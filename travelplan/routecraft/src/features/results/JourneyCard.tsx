@@ -4,6 +4,7 @@ import { ArrowRight, Clock, Wallet } from 'lucide-react';
 import type { Journey } from '@/domain/types';
 import { formatDuration, formatMoney, formatPercent, formatTime } from '@/domain/format';
 import { criteriaToJourneyPath } from '@/domain/url';
+import { track } from '@/lib/analytics';
 import { Card } from '@/components/ui/card';
 import { ExperienceRing } from '@/components/shared/ExperienceRing';
 import { RouteGlyph } from './RouteGlyph';
@@ -14,15 +15,27 @@ const cardVariants = {
   visible: { opacity: 1, y: 0 },
 };
 
-export function JourneyCard({ journey }: { journey: Journey }) {
+export function JourneyCard({ journey, rank }: { journey: Journey; rank?: number }) {
   const firstLeg = journey.legs[0];
   const lastLeg = journey.legs[journey.legs.length - 1];
   const headroomPct = Math.round(journey.cost.headroomPct * 100);
+
+  const handleSelect = () => {
+    track({
+      name: 'journey_selected',
+      journeyId: journey.id,
+      rank: rank ?? -1,
+      kind: journey.kind,
+      score: journey.score.total,
+      badges: journey.badges,
+    });
+  };
 
   return (
     <motion.div variants={cardVariants} layout>
       <Link
         to={criteriaToJourneyPath(journey.id, journey.criteria)}
+        onClick={handleSelect}
         className="group block focus-visible:outline-none"
       >
         <Card className="overflow-hidden p-5 transition-all group-hover:border-primary/40 group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-ring">
