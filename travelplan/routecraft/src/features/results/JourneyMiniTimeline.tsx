@@ -1,13 +1,10 @@
 import { Fragment } from 'react';
-import { Moon, Plane } from 'lucide-react';
+import { Plane } from 'lucide-react';
 import type { Journey } from '@/domain/types';
+import { routeNodes, type RouteNode } from '@/domain/journey';
 import { formatTime } from '@/domain/format';
 import { cn } from '@/lib/utils';
-
-interface RouteNode {
-  iata: string;
-  nights?: number;
-}
+import { NightsChip } from './NightsChip';
 
 function describeRouting(nodes: RouteNode[]): string {
   const parts = nodes.map((n) => (n.nights ? `${n.iata} (${n.nights} night stopover)` : n.iata));
@@ -28,11 +25,7 @@ export function JourneyMiniTimeline({
 }) {
   const firstLeg = journey.legs[0];
   const lastLeg = journey.legs[journey.legs.length - 1];
-  const nodes: RouteNode[] = [
-    { iata: firstLeg.from.iata },
-    ...journey.stopovers.map((s) => ({ iata: s.airport.iata, nights: s.nights })),
-    { iata: lastLeg.to.iata },
-  ];
+  const nodes = routeNodes(journey);
 
   return (
     <div
@@ -53,12 +46,7 @@ export function JourneyMiniTimeline({
             )}
             <span className="inline-flex items-center gap-1">
               <span className="font-mono text-xs font-semibold tracking-wide">{node.iata}</span>
-              {node.nights ? (
-                <span className="inline-flex items-center gap-0.5 rounded bg-accent/15 px-1 py-0.5 text-[10px] font-medium text-accent">
-                  <Moon className="h-2.5 w-2.5" aria-hidden="true" />
-                  {node.nights}
-                </span>
-              ) : null}
+              {node.nights ? <NightsChip nights={node.nights} size="xs" /> : null}
             </span>
           </Fragment>
         ))}

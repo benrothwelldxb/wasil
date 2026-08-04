@@ -1,9 +1,11 @@
 import { useId, useMemo } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { m, useReducedMotion } from 'framer-motion';
 import { Plane } from 'lucide-react';
 import type { Journey } from '@/domain/types';
+import { routeNodes } from '@/domain/journey';
 import { getCity } from '@/data/datasets/cities';
 import { cn } from '@/lib/utils';
+import { MOTION } from '@/lib/motion';
 
 const VIEW_W = 320;
 const VIEW_H = 180;
@@ -37,14 +39,8 @@ function projectUnit(lat: number, lon: number): { x: number; y: number } {
 
 /** Ordered origin → stopovers → destination airports, resolved against the city dataset. */
 function resolvePoints(journey: Journey): UnplottedPoint[] {
-  const codes: { iata: string; kind: RoutePointKind }[] = [
-    { iata: journey.legs[0].from.iata, kind: 'origin' },
-    ...journey.stopovers.map((s) => ({ iata: s.airport.iata, kind: 'stopover' as const })),
-    { iata: journey.legs[journey.legs.length - 1].to.iata, kind: 'destination' },
-  ];
-
   const resolved: UnplottedPoint[] = [];
-  for (const { iata, kind } of codes) {
+  for (const { iata, kind } of routeNodes(journey)) {
     const city = getCity(iata);
     if (!city) continue; // unresolved airports are skipped; the rest still renders
     resolved.push({ iata, kind, lat: city.lat, lon: city.lon });
@@ -161,7 +157,7 @@ export function RouteMap({ journey, className }: { journey: Journey; className?:
         </g>
 
         {pathD && (
-          <motion.path
+          <m.path
             d={pathD}
             fill="none"
             stroke="hsl(var(--primary))"
@@ -170,18 +166,18 @@ export function RouteMap({ journey, className }: { journey: Journey; className?:
             strokeDasharray="5 4"
             initial={reduce ? false : { pathLength: 0 }}
             animate={{ pathLength: 1 }}
-            transition={{ duration: reduce ? 0 : 0.6, ease: 'easeOut' }}
+            transition={{ duration: reduce ? 0 : MOTION.slow, ease: MOTION.ease }}
           />
         )}
 
         {points.map((p, i) => (
-          <motion.g
+          <m.g
             key={`${p.iata}-${i}`}
             initial={reduce ? false : { opacity: 0, scale: 0.4 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{
               duration: reduce ? 0 : 0.5,
-              ease: 'easeOut',
+              ease: MOTION.ease,
               delay: reduce ? 0 : 0.15 + i * 0.08,
             }}
             style={{ transformOrigin: `${p.x}px ${p.y}px` }}
@@ -211,7 +207,7 @@ export function RouteMap({ journey, className }: { journey: Journey; className?:
                 {p.iata}
               </text>
             )}
-          </motion.g>
+          </m.g>
         ))}
 
         {destination && beforeDestination && (

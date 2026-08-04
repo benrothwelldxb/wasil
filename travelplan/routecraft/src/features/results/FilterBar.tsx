@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import type { Money } from '@/domain/types';
 import { formatMoney } from '@/domain/format';
@@ -15,6 +16,23 @@ export function FilterBar({ budget }: { budget: Money }) {
   const resetFilters = useUiStore((s) => s.resetFilters);
 
   const ceiling = filters.priceCeiling ?? budget.amount;
+
+  // `onValueChange` fires on every pointer-move during a drag; committing it
+  // straight to the store re-renders `ResultsPage`'s `aria-live="polite"`
+  // result count on every one of those, which is dozens of announcements per
+  // drag. Mirror `BudgetSlider`: track the live value locally for the
+  // visible label, and only push to the store (and so to the live region)
+  // on release.
+  const [liveMinScore, setLiveMinScore] = useState(filters.minScore);
+  const [liveCeiling, setLiveCeiling] = useState(ceiling);
+
+  useEffect(() => {
+    setLiveMinScore(filters.minScore);
+  }, [filters.minScore]);
+
+  useEffect(() => {
+    setLiveCeiling(ceiling);
+  }, [ceiling]);
 
   return (
     <div className="space-y-6 rounded-xl border bg-card p-5">
@@ -47,14 +65,16 @@ export function FilterBar({ budget }: { budget: Money }) {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <Label>Minimum experience score</Label>
-          <span className="text-sm font-medium tabular-nums">{filters.minScore}</span>
+          <span className="text-sm font-medium tabular-nums">{liveMinScore}</span>
         </div>
         <Slider
-          value={[filters.minScore]}
+          value={[liveMinScore]}
           min={0}
           max={100}
           step={5}
-          onValueChange={([v]) => setFilters({ minScore: v })}
+          onValueChange={([v]) => setLiveMinScore(v)}
+          onValueCommit={([v]) => setFilters({ minScore: v })}
+          thumbLabel="Minimum journey score"
         />
       </div>
 
@@ -62,17 +82,17 @@ export function FilterBar({ budget }: { budget: Money }) {
         <div className="flex items-center justify-between">
           <Label>Price ceiling</Label>
           <span className="text-sm font-medium tabular-nums">
-            {formatMoney({ amount: ceiling, currency: budget.currency })}
+            {formatMoney({ amount: liveCeiling, currency: budget.currency })}
           </span>
         </div>
         <Slider
-          value={[ceiling]}
+          value={[liveCeiling]}
           min={Math.max(100, Math.round(budget.amount * 0.2))}
           max={budget.amount}
           step={50}
-          onValueChange={([v]) =>
-            setFilters({ priceCeiling: v >= budget.amount ? null : v })
-          }
+          onValueChange={([v]) => setLiveCeiling(v)}
+          onValueCommit={([v]) => setFilters({ priceCeiling: v >= budget.amount ? null : v })}
+          thumbLabel="Maximum price"
         />
       </div>
 

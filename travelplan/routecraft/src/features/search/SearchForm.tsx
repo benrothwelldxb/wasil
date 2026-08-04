@@ -69,7 +69,7 @@ export function SearchForm({ onSubmitted }: { onSubmitted?: () => void }) {
             excludeIata={draft.destination}
             onChange={(iata) => setDraft({ origin: iata })}
           />
-          {errors.origin && <p className="mt-1 text-xs text-destructive">{errors.origin}</p>}
+          {errors.origin && <p className="mt-1 text-xs text-destructive-strong">{errors.origin}</p>}
         </div>
         <Button
           type="button"
@@ -89,7 +89,7 @@ export function SearchForm({ onSubmitted }: { onSubmitted?: () => void }) {
             onChange={(iata) => setDraft({ destination: iata })}
           />
           {errors.destination && (
-            <p className="mt-1 text-xs text-destructive">{errors.destination}</p>
+            <p className="mt-1 text-xs text-destructive-strong">{errors.destination}</p>
           )}
         </div>
       </div>
@@ -105,7 +105,7 @@ export function SearchForm({ onSubmitted }: { onSubmitted?: () => void }) {
             onChange={(e) => setDraft({ departureDate: e.target.value })}
           />
           {errors.departureDate && (
-            <p className="text-xs text-destructive">{errors.departureDate}</p>
+            <p className="text-xs text-destructive-strong">{errors.departureDate}</p>
           )}
         </div>
         <div className="space-y-2">
@@ -117,7 +117,7 @@ export function SearchForm({ onSubmitted }: { onSubmitted?: () => void }) {
             value={draft.returnDate ?? ''}
             onChange={(e) => setDraft({ returnDate: e.target.value || undefined })}
           />
-          {errors.returnDate && <p className="text-xs text-destructive">{errors.returnDate}</p>}
+          {errors.returnDate && <p className="text-xs text-destructive-strong">{errors.returnDate}</p>}
         </div>
         <PaxPicker
           adults={draft.adults}
@@ -128,7 +128,7 @@ export function SearchForm({ onSubmitted }: { onSubmitted?: () => void }) {
       </div>
 
       <BudgetSlider value={draft.budget} onCommit={(budget) => setDraft({ budget })} />
-      {errors.budget && <p className="text-xs text-destructive">{errors.budget}</p>}
+      {errors.budget && <p className="text-xs text-destructive-strong">{errors.budget}</p>}
 
       <div className="space-y-2">
         <Label>What makes a great trip for you?</Label>

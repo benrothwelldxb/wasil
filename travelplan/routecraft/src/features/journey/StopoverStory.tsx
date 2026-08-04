@@ -50,7 +50,7 @@ export function StopoverStory({
 
   return (
     <Card className="p-5">
-      <div className="flex items-center gap-2 text-sm font-medium text-accent">
+      <div className="flex items-center gap-2 text-sm font-medium text-accent-strong">
         <Sparkles className="h-4 w-4" />
         {stopover.nights}-night stopover
       </div>

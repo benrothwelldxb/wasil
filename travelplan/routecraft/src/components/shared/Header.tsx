@@ -26,6 +26,7 @@ export function Header() {
             className="hidden rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:inline"
           >
             How it works
+            <span className="sr-only"> (opens in a new tab)</span>
           </a>
           <Button
             variant="ghost"

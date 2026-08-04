@@ -24,7 +24,7 @@ export const BADGE_META: Record<
   'hidden-gem': {
     label: 'Hidden gem',
     icon: Gem,
-    className: 'bg-accent/15 text-accent border-accent/30',
+    className: 'bg-accent/15 text-accent-strong border-accent/30',
   },
 };
 

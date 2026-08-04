@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
 import { Compass, Sparkles } from 'lucide-react';
 import { criteriaToResultsPath } from '@/domain/url';
 import { useSearchStore } from '@/stores/search-store';
 import { Card } from '@/components/ui/card';
+import { MOTION } from '@/lib/motion';
 import { SearchForm } from './SearchForm';
 import { EXAMPLE_SEARCHES } from './examples';
 
@@ -13,10 +14,10 @@ export function LandingPage() {
 
   return (
     <div className="container py-10 lg:py-16">
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
+        transition={{ duration: MOTION.base, ease: MOTION.ease }}
         className="mx-auto max-w-3xl text-center"
       >
         <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
@@ -31,18 +32,18 @@ export function LandingPage() {
           RouteCraft discovers stopover cities, adds hotels and transfers, and ranks whole
           journeys by experience — not just the cheapest flight.
         </p>
-      </motion.div>
+      </m.div>
 
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
+        transition={{ duration: MOTION.base, ease: MOTION.ease, delay: 0.1 }}
         className="mx-auto mt-10 max-w-4xl"
       >
         <Card className="p-6 shadow-lg sm:p-8">
           <SearchForm />
         </Card>
-      </motion.div>
+      </m.div>
 
       <div className="mx-auto mt-8 max-w-4xl">
         <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
 import { ArrowLeft, Clock, Route } from 'lucide-react';
 import { applyHotelChoice } from '@/domain/scoring';
 import type { Journey } from '@/domain/types';
 import { formatMoney, formatSpan } from '@/domain/format';
 import { track } from '@/lib/analytics';
+import { MOTION } from '@/lib/motion';
 import { useCriteriaFromParams } from '@/hooks/use-criteria-from-params';
 import { useJourney } from '@/hooks/use-journey';
 import { Button } from '@/components/ui/button';
@@ -86,13 +87,18 @@ export function JourneyDetailPage() {
         Back to results
       </Button>
 
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
+        transition={{ duration: MOTION.base, ease: MOTION.ease }}
       >
         <Card className="p-6">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+          {/* Page-level heading — the detail page previously started at h2
+              ("Your itinerary"), leaving no h1 for the route. */}
+          <h1 className="text-2xl font-bold sm:text-3xl">
+            {journey.legs[0].from.cityName} → {journey.legs[journey.legs.length - 1].to.cityName}
+          </h1>
+          <div className="mt-4 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-3">
               {journey.badges.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -123,7 +129,7 @@ export function JourneyDetailPage() {
             </div>
           </div>
         </Card>
-      </motion.div>
+      </m.div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">

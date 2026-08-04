@@ -42,7 +42,9 @@ function Stepper({
         >
           <Minus className="h-4 w-4" />
         </Button>
-        <span className="w-6 text-center tabular-nums">{value}</span>
+        <span className="w-6 text-center tabular-nums" aria-live="polite">
+          {value}
+        </span>
         <Button
           type="button"
           variant="outline"

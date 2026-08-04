@@ -1,18 +1,19 @@
 import { Fragment } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { m, useReducedMotion } from 'framer-motion';
 import { Bed, Moon, Plane } from 'lucide-react';
 import type { Journey, Leg, StopoverCity } from '@/domain/types';
 import { formatDuration, formatMoney, formatTime } from '@/domain/format';
+import { MOTION } from '@/lib/motion';
 
 function Node({ children, icon }: { children: React.ReactNode; icon: React.ReactNode }) {
   const reduce = useReducedMotion();
   return (
-    <motion.li
+    <m.li
       className="relative flex gap-4 pb-6 last:pb-0"
       initial={reduce ? false : { opacity: 0, x: -12 }}
       whileInView={{ opacity: 1, x: 0 }}
       viewport={{ once: true, margin: '-40px' }}
-      transition={{ duration: 0.35 }}
+      transition={{ duration: MOTION.base, ease: MOTION.ease }}
     >
       <div className="relative flex flex-col items-center">
         <div className="z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-card">
@@ -21,7 +22,7 @@ function Node({ children, icon }: { children: React.ReactNode; icon: React.React
         <div className="absolute top-9 h-full w-px bg-border" aria-hidden="true" />
       </div>
       <div className="flex-1 pt-1">{children}</div>
-    </motion.li>
+    </m.li>
   );
 }
 

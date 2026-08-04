@@ -5,7 +5,7 @@
  * domain functions in `@/domain/journey-score`; the raw slider values persist
  * in `useJourneyScoreStore`.
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import {
   computeJourneyScore,
   deriveJourneyScoreFactors,
@@ -39,32 +39,16 @@ interface WeightSliderProps {
   onValueChange: (value: number) => void;
 }
 
-/**
- * The `Slider` primitive's Radix `Thumb` only picks up an `aria-label` passed
- * directly to itself — a prop `components/ui/slider` doesn't expose — so an
- * `aria-label` given to `<Slider>` lands on the (non-interactive) root
- * instead of the focusable `role="slider"` thumb. Rather than edit the
- * read-only primitive, the accessible name is set imperatively on the
- * rendered thumb, which is a legitimate DOM node reachable from this
- * component's own ref.
- */
 function WeightSlider({ factor, label, value, onValueChange }: WeightSliderProps) {
-  const containerRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const thumb = containerRef.current?.querySelector('[role="slider"]');
-    thumb?.setAttribute('aria-label', `${label} importance`);
-  });
-
   return (
     <Slider
-      ref={containerRef}
       data-testid={`weight-slider-${factor}`}
       min={IMPORTANCE_MIN}
       max={IMPORTANCE_MAX}
       step={IMPORTANCE_STEP}
       value={[value]}
       onValueChange={([next]) => onValueChange(next ?? 0)}
+      thumbLabel={`${label} importance`}
     />
   );
 }

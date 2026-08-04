@@ -44,7 +44,7 @@ export function BudgetSlider({
         step={step}
         onValueChange={([v]) => setLive(v)}
         onValueCommit={([v]) => onCommit(v)}
-        aria-label="Total trip budget"
+        thumbLabel="Total trip budget"
       />
       <p className="text-xs text-muted-foreground">
         A hard cap for the whole trip — flights, hotels and transfers combined.

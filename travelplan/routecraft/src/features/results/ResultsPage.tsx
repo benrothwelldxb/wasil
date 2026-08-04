@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import { Pencil, PlaneTakeoff } from 'lucide-react';
 import { applyView } from '@/domain/view';
 import { formatMoney } from '@/domain/format';
@@ -21,6 +21,17 @@ const listContainer = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.06 } },
 };
+
+/**
+ * `layout` + `AnimatePresence popLayout` on every card is cheap at today's
+ * synthetic-provider cap (~14 results), but a future live provider could
+ * return far more — animating layout reflow across hundreds of cards would
+ * be a real jank/INP risk. Cap how many rendered cards opt into entrance +
+ * layout animation; anything beyond that renders as a plain (still fully
+ * functional) card. Keeps the stagger feel for the visible "above the fold"
+ * set without an unbounded animation cost.
+ */
+const ANIMATED_CARD_LIMIT = 24;
 
 export function ResultsPage() {
   const { criteria, error } = useCriteriaFromParams();
@@ -135,7 +146,7 @@ export function ResultsPage() {
           )}
 
           {query.isSuccess && visible.length > 0 && (
-            <motion.div
+            <m.div
               variants={listContainer}
               initial="hidden"
               animate="visible"
@@ -143,10 +154,15 @@ export function ResultsPage() {
             >
               <AnimatePresence mode="popLayout">
                 {visible.map((journey, index) => (
-                  <JourneyCard key={journey.id} journey={journey} rank={index} />
+                  <JourneyCard
+                    key={journey.id}
+                    journey={journey}
+                    rank={index}
+                    animated={index < ANIMATED_CARD_LIMIT}
+                  />
                 ))}
               </AnimatePresence>
-            </motion.div>
+            </m.div>
           )}
         </section>
       </div>
