@@ -16,6 +16,10 @@ const test: InlineConfig = {
     include: [
       'src/domain/**',
       'src/data/synthetic/**',
+      'src/data/adapters/**',
+      'src/data/cache/**',
+      'src/data/engine/**',
+      'src/data/normalise/**',
       'src/lib/**',
       'src/config/**',
       'src/stores/**',
