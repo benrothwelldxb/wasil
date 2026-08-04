@@ -86,6 +86,7 @@ function baseRequest(overrides: Partial<DiscoveryRequest> = {}): DiscoveryReques
   return {
     origin: 'DXB',
     destination: 'LHR',
+    maxStopovers: 2,
     maxStopoverNights: 2,
     budget: { amount: 2500, currency: 'USD' },
     departureDate: '2026-09-15',

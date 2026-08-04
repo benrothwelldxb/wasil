@@ -68,7 +68,7 @@ function buildCriteria(request: DiscoveryRequest): SearchCriteria {
     budget: request.budget,
     cabin: request.cabin,
     preferences: request.preferences,
-    maxStopovers: 1,
+    maxStopovers: request.maxStopovers,
     minStopoverNights: 1,
     maxStopoverNights: request.maxStopoverNights,
   };
@@ -109,7 +109,10 @@ export async function discoverStopoverJourneys(
   deps: DiscoveryDeps,
   opts?: DiscoveryOpts,
 ): Promise<DiscoveryResult> {
-  const recs = await deps.recommender.recommend(request, deps.cityPool);
+  // maxStopovers === 0 means "direct only": skip candidate discovery entirely
+  // and return just the direct baseline built below.
+  const recs =
+    request.maxStopovers === 0 ? [] : await deps.recommender.recommend(request, deps.cityPool);
   const criteria = buildCriteria(request);
   const rooms = Math.ceil(totalHeads(request.pax) / 2);
 

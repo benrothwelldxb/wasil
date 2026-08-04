@@ -75,6 +75,7 @@ describe('criteriaToDiscoveryRequest', () => {
     expect(request).toEqual({
       origin: criteria.origin,
       destination: criteria.destination,
+      maxStopovers: criteria.maxStopovers,
       maxStopoverNights: 3,
       budget: criteria.budget,
       departureDate: criteria.departureDate,

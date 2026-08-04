@@ -20,6 +20,7 @@ export function criteriaToDiscoveryRequest(criteria: SearchCriteria): DiscoveryR
   return {
     origin: criteria.origin,
     destination: criteria.destination,
+    maxStopovers: criteria.maxStopovers,
     maxStopoverNights: criteria.maxStopoverNights,
     budget: criteria.budget,
     departureDate: criteria.departureDate,

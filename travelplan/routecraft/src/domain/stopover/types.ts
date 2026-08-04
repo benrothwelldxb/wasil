@@ -23,6 +23,8 @@ import type {
 export interface DiscoveryRequest {
   origin: IATACode;
   destination: IATACode;
+  /** 0 = direct only (skip candidate discovery); 1–2 = allow stopovers. */
+  maxStopovers: 0 | 1 | 2;
   maxStopoverNights: 1 | 2 | 3;
   budget: Money;
   departureDate: ISODateString;

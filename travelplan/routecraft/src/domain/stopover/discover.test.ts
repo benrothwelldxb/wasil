@@ -210,16 +210,18 @@ const CITY_POOL: CandidateCity[] = [DXB, MAN, IST, DOH, CAI];
 const PAX: Pax = { adults: 1, children: 0 };
 const CABIN: CabinClass = 'economy';
 
-function baseRequest(): DiscoveryRequest {
+function baseRequest(overrides: Partial<DiscoveryRequest> = {}): DiscoveryRequest {
   return {
     origin: 'DXB',
     destination: 'MAN',
+    maxStopovers: 2,
     maxStopoverNights: 2,
     budget: money(1800),
     departureDate: '2026-09-15',
     pax: PAX,
     cabin: CABIN,
     preferences: [],
+    ...overrides,
   };
 }
 
@@ -247,6 +249,17 @@ describe('discoverStopoverJourneys', () => {
       const parsed = journeySchema.safeParse(journey);
       expect(parsed.success).toBe(true);
     }
+  });
+
+  it('honours "direct only" (maxStopovers=0): no stopover journeys, no candidate discovery', async () => {
+    const result = await discoverStopoverJourneys(baseRequest({ maxStopovers: 0 }), buildDeps());
+
+    expect(result.journeys.length).toBeGreaterThan(0);
+    expect(result.journeys.every((j) => j.kind === 'direct')).toBe(true);
+    expect(result.journeys.some((j) => j.stopovers.length > 0)).toBe(false);
+    // Candidate discovery was skipped entirely.
+    expect(result.diagnostics.shortlisted).toBe(0);
+    expect(result.journeys.every((j) => j.criteria.maxStopovers === 0)).toBe(true);
   });
 
   it('drops the over-budget DOH stopover (real cost far exceeds the cheap estimate)', async () => {
