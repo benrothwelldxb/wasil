@@ -9,7 +9,7 @@
 import type { SearchCriteria } from '@/domain/types';
 import type { RawPayload } from '@/data/normalise';
 
-export type AdapterId = 'synthetic-v1' | 'http-v1';
+export type AdapterId = 'synthetic-v1' | 'http-v1' | 'stopover-v1';
 
 export interface FlightAdapter<TRaw extends RawPayload = RawPayload> {
   readonly id: AdapterId;

@@ -146,7 +146,10 @@ export class FlightEngine implements JourneyProvider {
 /** Builds a `FlightEngine` with production defaults, shallow-merged with `overrides`. */
 export function createFlightEngine(overrides: Partial<FlightEngineDeps> = {}): FlightEngine {
   const deps: FlightEngineDeps = {
-    adapters: selectAdapters({ httpProvider: isEnabled('httpProvider') }),
+    adapters: selectAdapters({
+      httpProvider: isEnabled('httpProvider'),
+      stopoverDiscovery: isEnabled('stopoverDiscovery'),
+    }),
     cache: createTtlCache<SearchResult>({ ttlMs: 300_000, maxEntries: 50 }),
     normalise: defaultNormalise,
     logger: log.child('flight-engine'),

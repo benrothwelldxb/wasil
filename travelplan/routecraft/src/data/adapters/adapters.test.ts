@@ -39,14 +39,24 @@ beforeEach(() => {
 });
 
 describe('selectAdapters', () => {
-  it('returns only the synthetic adapter when httpProvider is disabled', () => {
-    const adapters = selectAdapters({ httpProvider: false });
+  it('returns only the synthetic adapter when both flags are disabled', () => {
+    const adapters = selectAdapters({ httpProvider: false, stopoverDiscovery: false });
     expect(adapters.map((a) => a.id)).toEqual(['synthetic-v1']);
   });
 
+  it('returns stopover first, synthetic second when stopoverDiscovery is enabled', () => {
+    const adapters = selectAdapters({ httpProvider: false, stopoverDiscovery: true });
+    expect(adapters.map((a) => a.id)).toEqual(['stopover-v1', 'synthetic-v1']);
+  });
+
   it('returns HTTP first, synthetic second (silent fallback) when httpProvider is enabled', () => {
-    const adapters = selectAdapters({ httpProvider: true });
+    const adapters = selectAdapters({ httpProvider: true, stopoverDiscovery: false });
     expect(adapters.map((a) => a.id)).toEqual(['http-v1', 'synthetic-v1']);
+  });
+
+  it('returns stopover, http, synthetic in order when both flags are enabled', () => {
+    const adapters = selectAdapters({ httpProvider: true, stopoverDiscovery: true });
+    expect(adapters.map((a) => a.id)).toEqual(['stopover-v1', 'http-v1', 'synthetic-v1']);
   });
 });
 

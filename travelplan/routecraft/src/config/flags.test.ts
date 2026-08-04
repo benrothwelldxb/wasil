@@ -34,6 +34,7 @@ describe('resolveFlags', () => {
         debugPanel: false,
         syntheticLatency: true,
         httpProvider: false,
+        stopoverDiscovery: true,
       });
     });
 
@@ -50,6 +51,7 @@ describe('resolveFlags', () => {
         debugPanel: false,
         syntheticLatency: true,
         httpProvider: false,
+        stopoverDiscovery: true,
       });
     });
 
@@ -66,6 +68,7 @@ describe('resolveFlags', () => {
         debugPanel: false,
         syntheticLatency: false,
         httpProvider: false,
+        stopoverDiscovery: false,
       });
     });
   });
@@ -121,6 +124,7 @@ describe('resolveFlags', () => {
         debugPanel: false,
         syntheticLatency: true,
         httpProvider: false,
+        stopoverDiscovery: true,
       });
     });
   });
@@ -150,6 +154,7 @@ describe('resolveFlags', () => {
         debugPanel: false,
         syntheticLatency: true,
         httpProvider: false,
+        stopoverDiscovery: true,
       });
     });
 

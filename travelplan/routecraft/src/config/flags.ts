@@ -32,6 +32,10 @@ export const FLAG_REGISTRY = {
     default: { development: false, staging: false, production: false },
     description: 'Use the HTTP journey provider (Phase Two)',
   },
+  stopoverDiscovery: {
+    default: { development: true, staging: true, production: false },
+    description: 'Use the stopover discovery engine as the primary flight adapter',
+  },
 } as const;
 
 export type FlagName = keyof typeof FLAG_REGISTRY;

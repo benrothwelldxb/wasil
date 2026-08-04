@@ -6,17 +6,23 @@
 import type { FlightAdapter } from './FlightAdapter';
 import { httpFlightAdapter } from './HttpFlightAdapter';
 import { syntheticFlightAdapter } from './SyntheticFlightAdapter';
+import { stopoverDiscoveryAdapter } from '@/data/stopover/StopoverDiscoveryAdapter';
 
 export interface AdapterSelectionFlags {
   httpProvider: boolean;
+  stopoverDiscovery: boolean;
 }
 
 /**
- * `httpProvider: false` → synthetic only.
- * `httpProvider: true` → HTTP first, synthetic second as a silent fallback.
+ * Synthetic is always present, last, as the ultimate silent fallback.
+ * `stopoverDiscovery: true` puts the stopover engine first (primary).
+ * `httpProvider: true` puts HTTP next. Composed order when both are on:
+ * stopover, http, synthetic.
  */
 export function selectAdapters(flags: AdapterSelectionFlags): readonly FlightAdapter[] {
-  return flags.httpProvider
-    ? [httpFlightAdapter, syntheticFlightAdapter]
-    : [syntheticFlightAdapter];
+  const adapters: FlightAdapter[] = [];
+  if (flags.stopoverDiscovery) adapters.push(stopoverDiscoveryAdapter);
+  if (flags.httpProvider) adapters.push(httpFlightAdapter);
+  adapters.push(syntheticFlightAdapter);
+  return adapters;
 }
