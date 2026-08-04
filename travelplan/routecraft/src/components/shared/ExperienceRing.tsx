@@ -10,12 +10,12 @@ interface ExperienceRingProps {
 }
 
 function bandColor(score: number): string {
-  if (score >= 80) return 'hsl(160 70% 45%)';
-  if (score >= 60) return 'hsl(32 92% 50%)';
-  return 'hsl(200 10% 55%)';
+  if (score >= 80) return 'hsl(var(--score-high))';
+  if (score >= 60) return 'hsl(var(--score-mid))';
+  return 'hsl(var(--score-low))';
 }
 
-/** Animated circular experience score with a count-up centre label. */
+/** Animated circular Journey Score dial with a count-up centre label. */
 export function ExperienceRing({
   score,
   size = 68,
@@ -54,7 +54,7 @@ export function ExperienceRing({
       className={cn('relative inline-flex items-center justify-center', className)}
       style={{ width: size, height: size }}
       role="img"
-      aria-label={`Experience score ${clamped} out of 100`}
+      aria-label={`Journey score ${clamped} out of 100`}
     >
       <svg width={size} height={size} className="-rotate-90">
         <circle
@@ -83,7 +83,7 @@ export function ExperienceRing({
         <span className="text-lg font-semibold tabular-nums" style={{ color }}>
           {display}
         </span>
-        <span className="text-[9px] uppercase tracking-wide text-muted-foreground">exp</span>
+        <span className="text-[9px] uppercase tracking-wide text-muted-foreground">score</span>
       </div>
     </div>
   );

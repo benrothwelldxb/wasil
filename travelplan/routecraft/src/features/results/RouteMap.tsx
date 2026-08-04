@@ -204,7 +204,9 @@ export function RouteMap({ journey, className }: { journey: Journey; className?:
                 textAnchor="middle"
                 fontSize={8}
                 fontWeight={600}
-                className="fill-foreground/80"
+                className="fill-foreground/80 [stroke:hsl(var(--background))]"
+                strokeWidth={2.5}
+                style={{ paintOrder: 'stroke' }}
               >
                 {p.iata}
               </text>

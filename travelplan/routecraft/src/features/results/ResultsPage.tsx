@@ -139,7 +139,7 @@ export function ResultsPage() {
               variants={listContainer}
               initial="hidden"
               animate="visible"
-              className="space-y-4"
+              className="grid gap-6 md:grid-cols-2 2xl:grid-cols-3"
             >
               <AnimatePresence mode="popLayout">
                 {visible.map((journey, index) => (

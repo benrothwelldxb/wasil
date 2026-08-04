@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, BedDouble, MoonStar, Sparkles, Star, Wallet, Zap } from 'lucide-react';
 import type { HotelTier, Journey } from '@/domain/types';
-import { formatDuration, formatMoney } from '@/domain/format';
+import { formatMoney } from '@/domain/format';
 import { criteriaToJourneyPath } from '@/domain/url';
 import { track } from '@/lib/analytics';
 import { getCityWeather } from '@/data/hotels';
@@ -47,6 +47,13 @@ function monthFromISODate(iso: string): number | undefined {
   return Number.isFinite(month) && month >= 1 && month <= 12 ? month - 1 : undefined;
 }
 
+/** One-word verdict for the score dial — mirrors ExperienceRing's colour bands. */
+function scoreBand(score: number): string {
+  if (score >= 80) return 'Exceptional';
+  if (score >= 60) return 'Great value';
+  return 'Fair';
+}
+
 /**
  * Immersive, Airbnb-listing-style journey card: a photo-like route map hero
  * with the featured city + weather overlaid, then a body with the journey
@@ -64,11 +71,12 @@ export function JourneyCard({ journey, rank }: { journey: Journey; rank?: number
 
   const weather = getCityWeather(featuredCity.iata, monthFromISODate(journey.criteria.departureDate));
 
-  const routeIatas = stopover
-    ? [firstLeg.from.iata, featuredCity.iata, lastLeg.to.iata]
-    : [firstLeg.from.iata, lastLeg.to.iata];
-
   const highlights = stopover?.highlights.slice(0, 3) ?? [];
+
+  // A single, concise accessible name for the whole card link — otherwise a
+  // screen reader concatenates every labelled child (map, weather, ring, all
+  // the text) into one unwieldy link name.
+  const linkLabel = `${featuredCity.cityName}, ${countryName(featuredCity.countryCode)} — journey score ${journey.score.total}, ${formatMoney(journey.cost.total)}`;
 
   const handleSelect = () => {
     track({
@@ -91,6 +99,7 @@ export function JourneyCard({ journey, rank }: { journey: Journey; rank?: number
       <Link
         to={criteriaToJourneyPath(journey.id, journey.criteria)}
         onClick={handleSelect}
+        aria-label={linkLabel}
         className="group block rounded-xl focus-visible:outline-none"
       >
         <Card className="overflow-hidden p-0 transition-all duration-200 group-hover:border-primary/40 group-hover:shadow-lg group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2">
@@ -105,16 +114,16 @@ export function JourneyCard({ journey, rank }: { journey: Journey; rank?: number
             <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 sm:p-4">
               <div className="flex flex-wrap gap-1.5">
                 {journey.badges.map((b) => (
-                  <BadgeChip key={b} badge={b} />
+                  <BadgeChip key={b} badge={b} onImage />
                 ))}
               </div>
               {weather && <WeatherBadge weather={weather} />}
             </div>
 
             <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
-              <p className="text-lg font-bold leading-tight text-white drop-shadow-sm sm:text-xl">
+              <h3 className="text-lg font-bold leading-tight text-white drop-shadow-sm sm:text-xl">
                 {featuredCity.cityName}
-              </p>
+              </h3>
               <p className="text-xs font-medium text-white/85 drop-shadow-sm sm:text-sm">
                 {countryName(featuredCity.countryCode)}
               </p>
@@ -122,15 +131,13 @@ export function JourneyCard({ journey, rank }: { journey: Journey; rank?: number
           </div>
 
           <div className="space-y-4 p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-3">
-              <p className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 font-mono text-xs font-semibold tracking-wide text-muted-foreground sm:text-sm">
-                {routeIatas.map((iata, i) => (
-                  <span key={`${iata}-${i}`} className="inline-flex items-center gap-1">
-                    {i > 0 && <ArrowRight className="h-3 w-3 shrink-0" aria-hidden="true" />}
-                    {iata}
-                  </span>
-                ))}
-              </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Journey score
+                </p>
+                <p className="text-sm font-medium text-foreground/80">{scoreBand(journey.score.total)}</p>
+              </div>
               <ExperienceRing score={journey.score.total} size={56} strokeWidth={5} className="shrink-0" />
             </div>
 
@@ -182,7 +189,7 @@ export function JourneyCard({ journey, rank }: { journey: Journey; rank?: number
             ) : (
               <p className="flex items-center gap-1.5 text-sm text-foreground/80">
                 <Zap className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-                Straight there — {formatDuration(journey.totalTravelTimeMinutes)} in the air
+                Straight there — no stops, no waiting.
               </p>
             )}
 
@@ -191,7 +198,7 @@ export function JourneyCard({ journey, rank }: { journey: Journey; rank?: number
                 <div className="text-xl font-bold sm:text-2xl">{formatMoney(journey.cost.total)}</div>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Wallet className="h-3 w-3" aria-hidden="true" />
-                  {formatMoney(journey.cost.headroom)} under budget
+                  Total trip cost
                 </div>
               </div>
               <span className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary">

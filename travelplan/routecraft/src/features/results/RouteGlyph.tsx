@@ -16,12 +16,14 @@ export function RouteGlyph({ journey, className }: { journey: Journey; className
     <div className={cn('flex flex-wrap items-center gap-1.5 text-sm font-medium', className)}>
       {codes.map((node, i) => (
         <Fragment key={`${node.iata}-${i}`}>
-          {i > 0 && <Plane className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+          {i > 0 && (
+            <Plane className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          )}
           <span className="inline-flex items-center gap-1">
             <span className="tracking-wide">{node.iata}</span>
             {node.nights ? (
               <span className="inline-flex items-center gap-0.5 rounded bg-accent/15 px-1 text-xs text-accent">
-                <Moon className="h-3 w-3" />
+                <Moon className="h-3 w-3" aria-hidden="true" />
                 {node.nights}
               </span>
             ) : null}

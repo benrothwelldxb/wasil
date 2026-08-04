@@ -30,7 +30,7 @@ export function WeatherBadge({
       role="img"
       aria-label={`Weather: ${meta.label.toLowerCase()}, ${avgTemp}°`}
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border border-white/20 bg-background/70 px-2 py-0.5',
+        'inline-flex items-center gap-1 rounded-full border border-black/10 bg-background/70 px-2 py-0.5 dark:border-white/15',
         'text-xs font-medium text-foreground shadow-sm backdrop-blur-sm',
         'supports-[backdrop-filter]:bg-background/50',
         className,

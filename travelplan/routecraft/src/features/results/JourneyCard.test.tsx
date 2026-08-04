@@ -174,7 +174,7 @@ describe('JourneyCard', () => {
 
     it('renders the experience score ring', () => {
       renderWithProviders(<JourneyCard journey={journey} rank={0} />);
-      expect(screen.getByRole('img', { name: 'Experience score 80 out of 100' })).toBeInTheDocument();
+      expect(screen.getByRole('img', { name: 'Journey score 80 out of 100' })).toBeInTheDocument();
     });
 
     it('renders the stat pills', () => {

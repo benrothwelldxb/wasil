@@ -24,6 +24,10 @@
     --input: 200 14% 86%;
     --ring: 175 77% 30%;
     --radius: 0.75rem;
+    /* Journey Score band colours (green = strong, amber = fair, grey = weak). */
+    --score-high: 160 70% 38%;
+    --score-mid: 32 92% 44%;
+    --score-low: 200 10% 48%;
   }
 
   .dark {
@@ -46,6 +50,9 @@
     --border: 200 18% 20%;
     --input: 200 18% 22%;
     --ring: 172 66% 45%;
+    --score-high: 160 60% 50%;
+    --score-mid: 32 90% 56%;
+    --score-low: 200 10% 60%;
   }
 }
 

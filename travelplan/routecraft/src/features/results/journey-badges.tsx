@@ -28,7 +28,12 @@ export const BADGE_META: Record<
   },
 };
 
-export function BadgeChip({ badge }: { badge: JourneyBadge }) {
+/**
+ * A journey badge. `onImage` swaps the translucent tint fill for a frosted
+ * glass background (matching `WeatherBadge`) so the label stays legible when
+ * the chip sits over the route-map hero — the tinted text/border are kept.
+ */
+export function BadgeChip({ badge, onImage }: { badge: JourneyBadge; onImage?: boolean }) {
   const meta = BADGE_META[badge];
   const Icon = meta.icon;
   return (
@@ -36,9 +41,11 @@ export function BadgeChip({ badge }: { badge: JourneyBadge }) {
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
         meta.className,
+        onImage &&
+          'border-white/20 bg-background/70 shadow-sm backdrop-blur-sm supports-[backdrop-filter]:bg-background/55',
       )}
     >
-      <Icon className="h-3 w-3" />
+      <Icon className="h-3 w-3" aria-hidden="true" />
       {meta.label}
     </span>
   );
