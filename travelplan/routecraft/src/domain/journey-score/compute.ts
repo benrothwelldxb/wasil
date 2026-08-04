@@ -10,8 +10,7 @@ import type {
   JourneyScoreFactors,
   JourneyScoreWeights,
 } from './types';
-
-const clamp = (n: number, min = 0, max = 100): number => Math.min(max, Math.max(min, n));
+import { clamp } from '@/domain/math';
 
 /** Restrict + renormalise `weights` to the factors that are actually present. */
 function computeEffectiveWeights(

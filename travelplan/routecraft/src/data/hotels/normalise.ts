@@ -12,8 +12,7 @@ import type { StopoverAccommodation } from '@/domain/hotels/types';
 import { money } from '@/domain/scoring';
 import { ProviderError } from '@/data/provider/errors';
 import { parseRawHotelQuote, type RawHotelQuote } from './raw';
-
-const clamp = (n: number, min: number, max: number): number => Math.min(max, Math.max(min, n));
+import { clamp } from '@/domain/math';
 
 export function normaliseRawHotelQuote(
   raw: RawHotelQuote,

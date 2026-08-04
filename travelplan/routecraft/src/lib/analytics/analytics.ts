@@ -88,8 +88,21 @@ function currentSessionId(): string {
   return sessionId;
 }
 
-/** Emit an analytics event through the active sink. Never throws. */
+/**
+ * True when the browser has Do-Not-Track enabled (`navigator.doNotTrack ===
+ * '1'`). Guarded for non-browser/SSR contexts where `navigator` is undefined.
+ */
+function isDoNotTrackEnabled(): boolean {
+  return typeof navigator !== 'undefined' && navigator.doNotTrack === '1';
+}
+
+/**
+ * Emit an analytics event through the active sink. Never throws. Respects
+ * Do-Not-Track: short-circuits before reaching the sink when the browser
+ * signals `navigator.doNotTrack === '1'`.
+ */
 export function track(event: AnalyticsEvent): void {
+  if (isDoNotTrackEnabled()) return;
   try {
     activeSink.capture({
       event,

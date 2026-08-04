@@ -3,9 +3,9 @@
  * Pure and deterministic; no set-level state except where explicitly passed in.
  */
 import type { ExperienceFactors, Journey, SearchCriteria, TravelPreference } from '../types';
+import { clamp, mean } from '../math';
 
-export const clamp = (n: number, min = 0, max = 100): number =>
-  Math.min(max, Math.max(min, n));
+export { clamp };
 
 const DIRECT_APPEAL_BASELINE = 35;
 const NIGHTS_FACTOR: Record<number, number> = { 1: 0.85, 2: 1.0, 3: 0.95 };
@@ -33,13 +33,15 @@ export function stopoverAppeal(journey: Journey, preferences: TravelPreference[]
     return clamp(s.appealScore * nightsFactor * prefMatch);
   });
 
-  const mean = perCity.reduce((a, b) => a + b, 0) / perCity.length;
+  // Non-empty by construction (guarded above), so the shared `mean` never
+  // returns null here; `?? 0` only satisfies the type checker.
+  const perCityMean = mean(perCity) ?? 0;
 
   // Variety bonus: multi-country stopovers broaden the experience.
   const countries = new Set(journey.stopovers.map((s) => s.countryCode));
   const varietyBonus = countries.size > 1 ? 5 : 0;
 
-  return clamp(mean + varietyBonus);
+  return clamp(perCityMean + varietyBonus);
 }
 
 const RED_EYE_PENALTY = 12;

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createMemorySink,
   resetAnalyticsForTests,
@@ -72,6 +72,42 @@ describe('track', () => {
     expect(a.events).toHaveLength(1);
     expect(b.events).toHaveLength(1);
     expect(b.events[0].event.name).toBe('booking_intent');
+  });
+});
+
+describe('track — Do-Not-Track', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('short-circuits and never reaches the sink when navigator.doNotTrack is "1"', () => {
+    vi.stubGlobal('navigator', { ...globalThis.navigator, doNotTrack: '1' });
+    const sink = createMemorySink();
+    setAnalyticsSink(sink);
+
+    track(searchEvent);
+
+    expect(sink.events).toHaveLength(0);
+  });
+
+  it('tracks normally when navigator.doNotTrack is not "1"', () => {
+    vi.stubGlobal('navigator', { ...globalThis.navigator, doNotTrack: '0' });
+    const sink = createMemorySink();
+    setAnalyticsSink(sink);
+
+    track(searchEvent);
+
+    expect(sink.events).toHaveLength(1);
+  });
+
+  it('tracks normally when navigator.doNotTrack is unset', () => {
+    vi.stubGlobal('navigator', { ...globalThis.navigator, doNotTrack: undefined });
+    const sink = createMemorySink();
+    setAnalyticsSink(sink);
+
+    track(searchEvent);
+
+    expect(sink.events).toHaveLength(1);
   });
 });
 

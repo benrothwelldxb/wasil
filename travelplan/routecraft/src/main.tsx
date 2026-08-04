@@ -1,4 +1,14 @@
 import './index.css';
+import { registerSW } from 'virtual:pwa-register';
+
+// CSP-safe service-worker registration: `virtual:pwa-register` is bundled
+// in-module (same-origin), not an injected inline <script>, so it works
+// under a strict `script-src 'self'` CSP with no unsafe-inline/hash needed.
+// `immediate: true` registers on load rather than waiting for a `load`
+// event handoff. The app's journey engine is fully client-side/deterministic,
+// so precaching the shell (see vite.config.ts workbox config) makes deep
+// links usable offline.
+registerSW({ immediate: true });
 
 const rootEl = document.getElementById('root');
 
@@ -17,26 +27,30 @@ function renderBootError(): void {
 async function boot(): Promise<void> {
   if (!rootEl) return;
 
-  // Validate environment first — an invalid VITE_* value fails fast with a
-  // designed message rather than a blank screen. The dynamic import keeps the
-  // env module's load-time validation inside this try/catch.
+  // Fetch all boot chunks in parallel (one round-trip, not a serialized
+  // chain) — env validation, App, and the React runtime. `env.ts` validates
+  // at MODULE LOAD (`export const env = parseEnv(...)` throws on bad
+  // config), so importing it inside this try/catch keeps the fail-fast
+  // EnvError path intact: the throw happens during the `import()` itself and
+  // is caught below, before anything renders.
   try {
-    const { assertEnv } = await import('@/config/env');
+    const [{ assertEnv }, { default: App }, React, ReactDOM] = await Promise.all([
+      import('@/config/env'),
+      import('./App'),
+      import('react'),
+      import('react-dom/client'),
+    ]);
+
+    // env module is already loaded (import above resolved) — this is a sync
+    // re-check, not a second async hop.
     assertEnv();
+
+    ReactDOM.createRoot(rootEl).render(
+      React.createElement(React.StrictMode, null, React.createElement(App)),
+    );
   } catch {
     renderBootError();
-    return;
   }
-
-  const [{ default: App }, React, ReactDOM] = await Promise.all([
-    import('./App'),
-    import('react'),
-    import('react-dom/client'),
-  ]);
-
-  ReactDOM.createRoot(rootEl).render(
-    React.createElement(React.StrictMode, null, React.createElement(App)),
-  );
 }
 
 void boot();

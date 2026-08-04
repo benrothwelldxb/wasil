@@ -4,12 +4,7 @@
  */
 import type { Journey, StopoverCity } from '@/domain/types';
 import type { CityScoreSignals, JourneyScoreFactors, JourneyScoreSignals } from './types';
-
-const clamp = (n: number, min = 0, max = 100): number => Math.min(max, Math.max(min, n));
-const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
-
-const mean = (values: number[]): number | null =>
-  values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length;
+import { clamp, clamp01, mean } from '@/domain/math';
 
 const CABIN_BASE: Record<Journey['legs'][number]['cabin'], number> = {
   economy: 50,

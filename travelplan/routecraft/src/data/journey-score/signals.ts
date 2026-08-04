@@ -13,8 +13,7 @@ import { getCitySignals } from '@/data/hotels';
 import { getUtcOffsetHours } from './timezones';
 import type { CityScoreSignals, JourneyScoreSignals } from '@/domain/journey-score';
 import type { Journey } from '@/domain/types';
-
-const clamp = (n: number, min = 0, max = 100): number => Math.min(max, Math.max(min, n));
+import { clamp } from '@/domain/math';
 
 /** Bonus applied when a city's editorial tags call out food or nightlife. */
 const FOOD_TAG_BONUS = 15;

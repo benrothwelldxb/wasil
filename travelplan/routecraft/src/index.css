@@ -18,16 +18,48 @@
     --muted-foreground: 200 10% 42%;
     --accent: 32 95% 44%;
     --accent-foreground: 40 60% 98%;
+    /*
+     * AA-compliant text variant of --accent. Plain --accent is only ~3.0:1 as
+     * text on --background/--card in this theme (fails WCAG AA 4.5:1) — it
+     * stays reserved for FILLS (bg-accent + accent-foreground). Use
+     * --accent-strong for anything rendered as readable TEXT (e.g. the nights
+     * chip label, "hidden gem" badge copy). See contrast math in the PR/report:
+     * 4.90:1 on --background, 5.09:1 on --card.
+     */
+    --accent-strong: 32 90% 34%;
     --destructive: 0 72% 48%;
     --destructive-foreground: 0 0% 98%;
+    /*
+     * Text variant of --destructive. In this theme --destructive is already
+     * AA as text (5.04:1 on --background, 5.24:1 on --card), so
+     * --destructive-strong is identical here — it only diverges in dark mode,
+     * where plain --destructive is too light as text. Keeping both tokens
+     * defined in every theme means call sites can always reach for
+     * --destructive-strong for text and --destructive for fills, with no
+     * per-theme special-casing.
+     */
+    --destructive-strong: 0 72% 48%;
     --border: 200 14% 88%;
     --input: 200 14% 86%;
     --ring: 175 77% 30%;
     --radius: 0.75rem;
-    /* Journey Score band colours (green = strong, amber = fair, grey = weak). */
+    /* Journey Score band colours (green = strong, amber = fair, grey = weak).
+     * These are for the ExperienceRing STROKE (a graphical element — 3:1 is
+     * an acceptable WCAG non-text contrast minimum) and must stay as-is. */
     --score-high: 160 70% 38%;
     --score-mid: 32 92% 44%;
     --score-low: 200 10% 48%;
+    /*
+     * AA-compliant TEXT variants of the score bands, for the ExperienceRing's
+     * centre number (and anywhere else a score band colour labels text).
+     * Verified ≥4.5:1 on both --background and --card in this theme:
+     *   score-high-text 5.15:1 (bg) / 5.35:1 (card)
+     *   score-mid-text  4.85:1 (bg) / 5.04:1 (card)
+     *   score-low-text  5.03:1 (bg) / 5.22:1 (card)
+     */
+    --score-high-text: 160 70% 28%;
+    --score-mid-text: 32 92% 34%;
+    --score-low-text: 200 10% 42%;
   }
 
   .dark {
@@ -45,14 +77,40 @@
     --muted-foreground: 190 12% 62%;
     --accent: 32 92% 52%;
     --accent-foreground: 200 30% 8%;
+    /*
+     * Dark theme is forgiving here: --accent is already ≥4.5:1 as text
+     * (7.69:1 on --background, 7.14:1 on --card), so --accent-strong reuses
+     * the same vivid value — no separate darkening needed in dark mode.
+     */
+    --accent-strong: 32 92% 52%;
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 98%;
+    /*
+     * --destructive as TEXT is only ~3.4-3.65:1 here (fails AA). Bumping
+     * --destructive itself would drop bg-destructive/destructive-foreground
+     * legibility below AA (destructive-foreground on a lighter destructive
+     * fill falls under 4.5:1), so this is a dedicated text-only token instead:
+     * 5.25:1 on --background, 4.87:1 on --card. Keep bg-destructive paired
+     * with destructive-foreground (unchanged, 4.89:1) for fills.
+     */
+    --destructive-strong: 0 62% 62%;
     --border: 200 18% 20%;
     --input: 200 18% 22%;
     --ring: 172 66% 45%;
+    /* Ring stroke colours (graphical, 3:1 minimum applies) — unchanged. */
     --score-high: 160 60% 50%;
     --score-mid: 32 90% 56%;
     --score-low: 200 10% 60%;
+    /*
+     * Dark theme is forgiving: the existing score band values already clear
+     * 4.5:1 as text (score-high 9.09:1 bg / 8.44:1 card, score-mid 8.17:1 bg
+     * / 7.59:1 card, score-low 6.64:1 bg / 6.16:1 card), so the -text variants
+     * reuse the same values — kept as distinct tokens for API parity with the
+     * light theme and so call sites never special-case by theme.
+     */
+    --score-high-text: 160 60% 50%;
+    --score-mid-text: 32 90% 56%;
+    --score-low-text: 200 10% 60%;
   }
 }
 

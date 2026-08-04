@@ -3,41 +3,47 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="canonical" href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
       content="RouteCraft — discover the best overall travel experience within your budget, not just the cheapest flight."
     />
-    <meta name="theme-color" content="#0f172a" />
+
+    <!-- Theme color: light/dark variants match the app's --background token
+         (light 40 33% 98% ≈ #fbfaf8, dark 200 30% 7% ≈ #0d1417). -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfaf8" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1417" />
+
     <title>RouteCraft — Craft the journey, not just the flight</title>
-    <script>
-      // No-FOUC theme bootstrap: applies the persisted (or system-preferred)
-      // theme class before first paint, ahead of the app bundle loading.
-      // Mirrors the shape zustand's `persist` middleware writes to
-      // localStorage: { state: { theme }, version }. See src/stores/ui-store.ts.
-      (function () {
-        try {
-          var STORAGE_KEY = 'routecraft-ui';
-          var theme = null;
-          var raw = window.localStorage.getItem(STORAGE_KEY);
-          if (raw) {
-            var parsed = JSON.parse(raw);
-            if (parsed && parsed.state && (parsed.state.theme === 'dark' || parsed.state.theme === 'light')) {
-              theme = parsed.state.theme;
-            }
-          }
-          if (!theme) {
-            theme =
-              window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-                ? 'dark'
-                : 'light';
-          }
-          document.documentElement.classList.add(theme);
-        } catch (e) {
-          document.documentElement.classList.add('dark');
-        }
-      })();
-    </script>
+
+    <!-- Open Graph / Twitter card: static site-level fallback tags. Per-route
+         dynamic tags (results, journey detail) are owned elsewhere. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="RouteCraft — Craft the journey, not just the flight" />
+    <meta
+      property="og:description"
+      content="RouteCraft — discover the best overall travel experience within your budget, not just the cheapest flight."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:url" content="/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="RouteCraft — Craft the journey, not just the flight" />
+    <meta
+      name="twitter:description"
+      content="RouteCraft — discover the best overall travel experience within your budget, not just the cheapest flight."
+    />
+    <meta name="twitter:image" content="/og-image.png" />
+
+    <!-- vite-plugin-pwa injects <link rel="manifest"> automatically at build
+         time (see vite.config.ts VitePWA manifest config) — not hand-authored
+         here to avoid drifting out of sync with the generated filename. -->
+
+    <!-- No-FOUC theme bootstrap, loaded as an external same-origin script
+         (not inlined) so the page can ship a strict `script-src 'self'`
+         CSP. Render-blocking (no defer) so it still runs pre-paint. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

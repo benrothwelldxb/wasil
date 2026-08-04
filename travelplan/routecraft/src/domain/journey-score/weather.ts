@@ -6,8 +6,7 @@
  * §"Weather sub-model".
  */
 import type { WeatherSummary } from '@/domain/hotels/types';
-
-const clamp = (n: number, min = 0, max = 100): number => Math.min(max, Math.max(min, n));
+import { clamp } from '@/domain/math';
 
 const BASE_BY_CONDITION: Record<WeatherSummary['condition'], number> = {
   sunny: 92,
