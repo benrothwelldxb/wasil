@@ -14,6 +14,7 @@ import { JourneyCard } from './JourneyCard';
 import { FilterBar } from './FilterBar';
 import { SortMenu } from './SortMenu';
 import { ResultsSkeleton } from './ResultsSkeleton';
+import { SearchFreshness } from './SearchFreshness';
 
 const listContainer = {
   hidden: {},
@@ -75,11 +76,19 @@ export function ResultsPage() {
 
         <section>
           <div className="mb-4 flex items-center justify-between">
-            <p className="text-sm text-muted-foreground" aria-live="polite">
-              {query.isLoading
-                ? 'Crafting journeys…'
-                : `${visible.length} journe${visible.length === 1 ? 'y' : 'ys'} within budget`}
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground" aria-live="polite">
+                {query.isLoading
+                  ? 'Crafting journeys…'
+                  : `${visible.length} journe${visible.length === 1 ? 'y' : 'ys'} within budget`}
+              </p>
+              <SearchFreshness
+                isFetching={query.isFetching}
+                isError={query.isError}
+                failureCount={query.failureCount}
+                dataUpdatedAt={query.dataUpdatedAt}
+              />
+            </div>
             <SortMenu />
           </div>
 
