@@ -27,13 +27,22 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
-      'no-console': ['error', { allow: ['warn', 'error'] }],
+      'no-console': 'error',
     },
   },
   {
     files: ['**/*.test.{ts,tsx}', 'src/test/**'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  {
+    // The single sanctioned `console.*` call site in the app — see
+    // docs/conventions/logging.md. Config-level override only; no inline
+    // eslint-disable comments anywhere in the codebase.
+    files: ['src/lib/logger.ts'],
+    rules: {
+      'no-console': 'off',
     },
   },
   {
@@ -44,6 +53,7 @@ export default tseslint.config(
       'src/components/ui/**/*.tsx',
       'src/app/router.tsx',
       'src/features/results/journey-badges.tsx',
+      'src/test/**',
     ],
     rules: {
       'react-refresh/only-export-components': 'off',

@@ -2,9 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { getJourneyProvider } from '@/data/provider/provider-registry';
 import { journeySchema, searchResultSchema } from '@/domain/schemas';
 import { criteriaKey } from '@/domain/url';
+import { log } from '@/lib/logger';
 import type { SearchCriteria, SearchResult } from '@/domain/types';
 
 const THIRTY_MIN = 30 * 60 * 1000;
+const logger = log.child('journey-search');
 
 /**
  * Runs a journey search through the provider. Cache key is the canonical
@@ -25,12 +27,10 @@ export function useJourneySearch(criteria: SearchCriteria | null) {
       const parsed = searchResultSchema.safeParse(result);
       if (parsed.success) return parsed.data;
 
-      if (import.meta.env.DEV) {
-        throw new Error(`Provider output failed validation: ${parsed.error.message}`);
-      }
-      // Production: drop individually-invalid journeys rather than failing hard.
+      // Drop individually-invalid journeys rather than failing hard.
       const journeys = result.journeys.filter((j) => journeySchema.safeParse(j).success);
-      console.warn('RouteCraft: dropped invalid journeys from provider output');
+      const count = result.journeys.length - journeys.length;
+      logger.warn('dropped invalid journeys from provider output', { count });
       return { ...result, journeys };
     },
   });

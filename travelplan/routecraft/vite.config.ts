@@ -9,11 +9,22 @@ const test: InlineConfig = {
   setupFiles: ['./src/test/setup.ts'],
   coverage: {
     provider: 'v8',
-    include: ['src/domain/**', 'src/data/synthetic/**'],
+    // Logic + platform layers held to coverage thresholds. Presentational
+    // components (features/*, components/shared/*, components/ui/*) get
+    // behaviour + a11y tests but are not held to a line-coverage %; broader UI
+    // coverage is a Phase Two item (see docs/conventions/testing.md).
+    include: [
+      'src/domain/**',
+      'src/data/synthetic/**',
+      'src/lib/**',
+      'src/config/**',
+      'src/stores/**',
+    ],
     thresholds: {
       lines: 80,
       functions: 80,
       statements: 80,
+      branches: 70,
     },
   },
 };
