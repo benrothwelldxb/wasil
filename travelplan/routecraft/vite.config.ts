@@ -19,6 +19,7 @@ const test: InlineConfig = {
       'src/data/adapters/**',
       'src/data/cache/**',
       'src/data/engine/**',
+      'src/data/hotels/**',
       'src/data/normalise/**',
       'src/data/stopover/**',
       'src/lib/**',
