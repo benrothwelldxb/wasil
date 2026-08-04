@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { animate, m, useReducedMotion } from 'framer-motion';
+import { clamp } from '@/domain/math';
 import { cn } from '@/lib/utils';
 import { MOTION } from '@/lib/motion';
 
@@ -38,7 +39,7 @@ export function ExperienceRing({
   className,
 }: ExperienceRingProps) {
   const reduce = useReducedMotion();
-  const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  const clamped = clamp(Math.round(score));
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - clamped / 100);

@@ -107,10 +107,14 @@ Alternatively, via the Cloudflare dashboard (Git-connected build):
 
 - `_redirects` (`/* /index.html 200`) — SPA fallback so `/results` and
   `/journeys/:id` deep links resolve.
-- `_headers` — immutable caching on hashed `/assets/*`, plus a strict
-  **Content-Security-Policy** (`script-src`/`style-src 'self'`, no inline —
-  the no-FOUC theme boot lives in `/theme-init.js`, not an inline script) and
-  `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+- `_headers` — immutable caching on hashed `/assets/*`, plus a
+  **Content-Security-Policy** with a strict `script-src 'self'` (no inline — the
+  no-FOUC theme boot lives in `/theme-init.js`, and the service-worker
+  registration is in-bundle). `style-src` allows `'unsafe-inline'` because
+  Radix's scroll-lock (`react-remove-scroll`) injects a runtime `<style>` and a
+  static host can't mint per-request style nonces; `script-src` — the
+  XSS-relevant directive — stays strict, and the app renders no user content.
+  Also sets `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
   `Permissions-Policy`, and HSTS.
 - `robots.txt` + `sitemap.xml`, plus OG/Twitter tags and a dual light/dark
   `theme-color` in `index.html` for shareable-link previews.
