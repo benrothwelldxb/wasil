@@ -23,6 +23,22 @@ export const DEFAULT_FILTERS: ResultFilters = {
   excludeRedEye: false,
 };
 
+/**
+ * The initial theme when nothing has been persisted yet: honours the OS-level
+ * `prefers-color-scheme` when it's readable, falling back to 'dark' in SSR/
+ * jsdom contexts (or any environment without `matchMedia`).
+ */
+function getInitialTheme(): Theme {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return 'dark';
+}
+
+interface PersistedUiState {
+  theme: Theme;
+}
+
 interface UiState {
   theme: Theme;
   sort: SortMode;
@@ -37,7 +53,7 @@ interface UiState {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      theme: 'dark',
+      theme: getInitialTheme(),
       sort: 'experience',
       filters: DEFAULT_FILTERS,
       toggleTheme: () =>
@@ -49,7 +65,9 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: 'routecraft-ui',
+      version: 1,
       partialize: (s) => ({ theme: s.theme }),
+      migrate: (persistedState) => persistedState as PersistedUiState,
     },
   ),
 );

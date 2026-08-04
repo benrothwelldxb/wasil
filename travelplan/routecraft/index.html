@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -8,7 +8,36 @@
       name="description"
       content="RouteCraft — discover the best overall travel experience within your budget, not just the cheapest flight."
     />
+    <meta name="theme-color" content="#0f172a" />
     <title>RouteCraft — Craft the journey, not just the flight</title>
+    <script>
+      // No-FOUC theme bootstrap: applies the persisted (or system-preferred)
+      // theme class before first paint, ahead of the app bundle loading.
+      // Mirrors the shape zustand's `persist` middleware writes to
+      // localStorage: { state: { theme }, version }. See src/stores/ui-store.ts.
+      (function () {
+        try {
+          var STORAGE_KEY = 'routecraft-ui';
+          var theme = null;
+          var raw = window.localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed && parsed.state && (parsed.state.theme === 'dark' || parsed.state.theme === 'light')) {
+              theme = parsed.state.theme;
+            }
+          }
+          if (!theme) {
+            theme =
+              window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          }
+          document.documentElement.classList.add(theme);
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
