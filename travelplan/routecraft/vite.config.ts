@@ -20,6 +20,7 @@ const test: InlineConfig = {
       'src/data/cache/**',
       'src/data/engine/**',
       'src/data/hotels/**',
+      'src/data/journey-score/**',
       'src/data/normalise/**',
       'src/data/stopover/**',
       'src/lib/**',

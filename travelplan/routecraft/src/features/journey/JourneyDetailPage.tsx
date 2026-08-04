@@ -28,6 +28,7 @@ import { StopoverStory } from './StopoverStory';
 import { StopoverInsights } from './StopoverInsights';
 import { CostBreakdownPanel } from './CostBreakdownPanel';
 import { ScoreExplainer } from './ScoreExplainer';
+import { JourneyScorePanel } from './JourneyScorePanel';
 
 export function JourneyDetailPage() {
   const { journeyId = '' } = useParams();
@@ -153,6 +154,7 @@ export function JourneyDetailPage() {
             <Card className="p-5">
               <ScoreExplainer score={journey.score} />
             </Card>
+            <JourneyScorePanel journey={journey} />
             <Dialog>
               <DialogTrigger asChild>
                 <Button
