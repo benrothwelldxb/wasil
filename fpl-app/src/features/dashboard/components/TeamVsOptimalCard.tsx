@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Loader2, Scale } from "lucide-react";
 import { usePredictions } from "@/features/predictions";
 import { useSquad } from "@/features/squad-builder";
 import { useOptimiser } from "@/features/optimiser";
+import { useImportFlash } from "@/features/manager";
 import { autoPickLineup, projectLineup } from "@/features/lineup";
 import { PlayerAvatar } from "@/features/player-explorer";
 import { SectionCard } from "@/components/common";
@@ -20,8 +21,21 @@ import { ROUTES } from "@/routes/paths";
 export function TeamVsOptimalCard() {
   const squad = useSquad();
   const { byId } = usePredictions();
+  const justImported = useImportFlash((s) => s.justImported);
+  const clearFlash = useImportFlash((s) => s.clear);
   const [compare, setCompare] = useState(false);
+  const [fresh, setFresh] = useState(false);
   const optimiser = useOptimiser({ enabled: compare });
+
+  // Reveal the comparison automatically the moment a team is imported, so the
+  // payoff lands immediately — but only once, not on every future visit.
+  useEffect(() => {
+    if (justImported) {
+      setCompare(true);
+      setFresh(true);
+      clearFlash();
+    }
+  }, [justImported, clearFlash]);
 
   const complete = squad.isComplete && squad.players.length === 15;
   const w = optimiser.window;
@@ -75,6 +89,11 @@ export function TeamVsOptimalCard() {
         </div>
       ) : (
         <>
+          {fresh && (
+            <p className="mb-3 text-sm font-medium">
+              Team loaded 🎉 Here's how it compares to the optimal squad:
+            </p>
+          )}
           <div className="flex items-stretch gap-3">
             <div className="flex-1 rounded-lg border bg-card p-3 text-center">
               <div className="text-xs text-muted-foreground">Your XI</div>

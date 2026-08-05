@@ -6,6 +6,7 @@ import { track } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useManagerStore } from "../store";
+import { useImportFlash } from "../flash";
 
 /**
  * Connect a real FPL team by Manager ID. Validates the id against the live FPL
@@ -20,6 +21,7 @@ export function ImportTeamCard() {
   const disconnect = useManagerStore((s) => s.disconnect);
   const setPlayers = useSquadStore((s) => s.setPlayers);
   const clearSquad = useSquadStore((s) => s.clear);
+  const flagImported = useImportFlash((s) => s.flagImported);
 
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,6 +40,7 @@ export function ImportTeamCard() {
       const team = await fetchManagerTeam(id);
       setPlayers(team.playerIds);
       connect(team.entryId, team.managerName, team.teamName);
+      flagImported();
       track("team_imported", { source: "settings" });
       setInput("");
     } catch (err) {

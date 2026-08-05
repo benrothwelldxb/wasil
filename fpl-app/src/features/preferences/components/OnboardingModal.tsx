@@ -11,7 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { fetchManagerTeam, useTeams } from "@/features/fpl";
-import { useManagerStore } from "@/features/manager";
+import { useImportFlash, useManagerStore } from "@/features/manager";
 import { useSquadStore } from "@/features/squad-builder";
 import { track } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
@@ -144,6 +144,7 @@ export function OnboardingModal() {
   const { data: teams } = useTeams();
   const setDisplayName = useManagerStore((s) => s.setDisplayName);
   const connect = useManagerStore((s) => s.connect);
+  const flagImported = useImportFlash((s) => s.flagImported);
   const setPlayers = useSquadStore((s) => s.setPlayers);
   const navigate = useNavigate();
 
@@ -198,6 +199,7 @@ export function OnboardingModal() {
       const team = await fetchManagerTeam(id);
       setPlayers(team.playerIds);
       connect(team.entryId, team.managerName, team.teamName);
+      flagImported();
       track("team_imported", { source: "onboarding" });
       setImportedTeam(team.teamName);
       setDraft((d) => ({
