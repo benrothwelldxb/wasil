@@ -277,14 +277,67 @@ export function OnboardingModal() {
             <div className="space-y-5">
               <div>
                 <h2 id="onboarding-title" className="text-xl font-bold">
-                  Let's set you up
+                  Already play FPL?
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Both optional — you can skip and add them later in Settings.
+                  Connect your real team and we'll instantly show how it stacks
+                  up against the optimal squad — plus your captain, chips, and
+                  transfers, all personalised.
                 </p>
               </div>
 
-              <div className="space-y-1.5">
+              {/* Primary action: connect your team. */}
+              <div className="rounded-xl border bg-muted/40 p-3">
+                {importedTeam ? (
+                  <p className="flex items-center gap-2 text-sm font-medium text-[hsl(var(--brand-green))]">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Loaded {importedTeam} — your real team's in.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <label htmlFor="ob-id" className="text-sm font-semibold">
+                      Connect your team
+                    </label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="ob-id"
+                        value={idInput}
+                        onChange={(e) => setIdInput(e.target.value)}
+                        inputMode="numeric"
+                        placeholder="Manager ID, e.g. 1234567"
+                        aria-label="FPL Manager ID"
+                      />
+                      <Button
+                        type="button"
+                        onClick={importTeam}
+                        disabled={importing || idInput.trim() === ""}
+                      >
+                        {importing ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Import"
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      On the FPL website, open <strong>Points</strong> — the
+                      number after{" "}
+                      <code className="rounded bg-muted px-1">/entry/</code> in
+                      the address bar is your ID. (Works once GW1 is underway.)
+                    </p>
+                    {importError && (
+                      <p className="text-sm text-destructive">{importError}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <p className="text-center text-xs text-muted-foreground">
+                No worries if not — tap <strong>Next</strong> and we'll build you
+                a team instead.
+              </p>
+
+              <div className="space-y-1.5 border-t pt-4">
                 <label htmlFor="ob-name" className="text-sm font-medium">
                   What should we call you?
                 </label>
@@ -294,54 +347,10 @@ export function OnboardingModal() {
                   onChange={(e) =>
                     setDraft((d) => ({ ...d, name: e.target.value }))
                   }
-                  placeholder="Your name"
+                  placeholder="Your name (optional)"
                   maxLength={40}
                   autoComplete="given-name"
                 />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="ob-id" className="text-sm font-medium">
-                  Already play FPL?
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Paste your <strong>Manager ID</strong> to load your real team.
-                  On the FPL website, open <strong>Points</strong> — the number
-                  after <code className="rounded bg-muted px-1">/entry/</code> in
-                  the address bar is your ID. (Works once GW1 is underway.)
-                </p>
-                {importedTeam ? (
-                  <p className="flex items-center gap-2 text-sm text-[hsl(var(--brand-green))]">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Loaded {importedTeam} — your real team's in.
-                  </p>
-                ) : (
-                  <div className="flex gap-2">
-                    <Input
-                      id="ob-id"
-                      value={idInput}
-                      onChange={(e) => setIdInput(e.target.value)}
-                      inputMode="numeric"
-                      placeholder="e.g. 1234567"
-                      aria-label="FPL Manager ID"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={importTeam}
-                      disabled={importing || idInput.trim() === ""}
-                    >
-                      {importing ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "Import"
-                      )}
-                    </Button>
-                  </div>
-                )}
-                {importError && (
-                  <p className="text-sm text-destructive">{importError}</p>
-                )}
               </div>
             </div>
           )}

@@ -18,6 +18,7 @@ import { ShareTeamButton, type CompareSummary } from "@/features/share";
 import { CaptainCompare } from "./CaptainCompare";
 import { DeadlineCountdown } from "./DeadlineCountdown";
 import { RateMyTeamCard } from "./RateMyTeamCard";
+import { TeamVsOptimalCard } from "./TeamVsOptimalCard";
 import { useSquadStore } from "@/features/squad-builder";
 import { ROUTES } from "@/routes/paths";
 import { INSIGHT_EMOJI } from "../insights";
@@ -159,6 +160,9 @@ export function ScoutReport() {
 
       {/* Team rating (own team) */}
       {report.rating && <RateMyTeamCard rating={report.rating} />}
+
+      {/* Your team vs the optimal squad (own team) */}
+      {report.source === "yours" && <TeamVsOptimalCard />}
 
       {/* Captain options */}
       <CaptainCompare options={report.captainOptions} />
