@@ -92,10 +92,21 @@ function make(
 
 // --- change / improvement (sustained) --------------------------------------
 
+/** Normalise a window of values to 0–1 for a sparkline (works for any units). */
+function normSpark(days: { value: number }[]): number[] {
+  const vals = days.map((d) => d.value);
+  const mn = Math.min(...vals);
+  const range = Math.max(...vals) - mn || 1;
+  return vals.map((v) => (v - mn) / range);
+}
+
 function changeInsights(measures: MeasureAnalysis[], learnSlugFor?: (k: string) => string | undefined): Insight[] {
   const out: Insight[] = [];
   for (const m of measures) {
     if (m.baseline.n < INSIGHTS.MIN_LOGGED_DAYS) continue;
+    // Passive activity is only used for the positive activity↔mood association,
+    // never as a "you moved less" change insight (elowa is not a fitness app).
+    if (m.kind === 'activity') continue;
     const cp = detectChange(m);
     if (cp.direction === 'none') continue;
 
@@ -103,7 +114,9 @@ function changeInsights(measures: MeasureAnalysis[], learnSlugFor?: (k: string) 
     const adverse = m.kind === 'sleep' ? cp.direction === 'down' : cp.direction === 'up';
     const evidence = cp.agreeingDays;
     const effect = clamp(Math.abs(cp.deviation) / 2, 0, 1);
-    const spark = lastN(m.days, 10).map((d) => d.value / 4);
+    const window = lastN(m.days, 10);
+    // Symptoms are on the 0–4 scale; passive sleep needs range-normalisation.
+    const spark = m.kind === 'symptom' ? window.map((d) => d.value / 4) : normSpark(window);
     const learnSlug = learnSlugFor?.(m.key);
 
     if (m.kind === 'sleep') {

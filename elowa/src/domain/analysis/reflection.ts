@@ -29,6 +29,8 @@ export interface ReflectionInputs {
   treatments: readonly TreatmentEvent[];
   periods: readonly PeriodEntry[];
   healthSamples?: readonly HealthDaySample[];
+  /** Measure keys hidden from the home surface (also kept out of the reflection). */
+  excludeKeys?: ReadonlySet<string>;
 }
 
 function inMonth(date: IsoDate, month: string): boolean {
@@ -70,7 +72,11 @@ export function buildMonthlyReflection(inputs: ReflectionInputs): MonthlyReflect
     periods: inputs.periods,
     ...(inputs.healthSamples ? { healthSamples: inputs.healthSamples } : {}),
   });
-  const patterns = insights.filter((i) => i.kind === 'cooccurrence' || i.kind === 'lagged' || i.kind === 'activity').slice(0, 2).map((i) => i.title);
+  const patterns = insights
+    .filter((i) => i.kind === 'cooccurrence' || i.kind === 'lagged' || i.kind === 'activity')
+    .filter((i) => !(i.relatedMeasureKeys ?? []).some((k) => inputs.excludeKeys?.has(k)))
+    .slice(0, 2)
+    .map((i) => i.title);
 
   const treatmentNotes = inputs.treatments
     .filter((t) => inMonth(t.date, inputs.month))

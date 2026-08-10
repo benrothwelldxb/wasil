@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildSinceComparison } from './since';
+import { findUnsafeLanguage } from '@/domain/safety/language';
 import { makeRun } from '@/test/factories';
 
 const SLEEP = 'sym_sleep';
@@ -21,6 +22,9 @@ describe('buildSinceComparison', () => {
     expect(sleepChange?.direction).toBe('less');
     expect(cmp.dataQuality).toBe('good');
     expect(cmp.caveat.toLowerCase()).toContain('cannot determine');
+    // The caveat must itself pass the health-language safety filter.
+    expect(findUnsafeLanguage(cmp.caveat)).toEqual([]);
+    for (const c of cmp.changes) expect(findUnsafeLanguage(c.description)).toEqual([]);
   });
 
   it('flags limited data quality with short windows', () => {

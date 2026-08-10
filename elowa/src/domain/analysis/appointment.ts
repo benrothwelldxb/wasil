@@ -120,7 +120,7 @@ export function buildAppointmentSummary(inputs: AppointmentInputs): AppointmentS
     labelOf: inputs.labelOf,
     treatments: inputs.treatments,
     periods: inputs.periods,
-  });
+  }).filter((i) => !(i.relatedMeasureKeys ?? []).some((k) => excluded.has(k)));
 
   const notes = checkIns
     .filter((c) => c.note && c.note.trim().length > 0)

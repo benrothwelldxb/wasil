@@ -254,6 +254,7 @@ export const reflectionService = {
       treatments: treatmentRepository.list(),
       periods: cycleRepository.listPeriods(),
       healthSamples: healthRepository.listSamples(),
+      excludeKeys: privacyRepository.excludedFromHome(),
     });
   },
 };

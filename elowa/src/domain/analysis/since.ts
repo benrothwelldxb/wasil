@@ -88,6 +88,6 @@ export function buildSinceComparison(inputs: SinceInputs): SinceComparison {
     changes,
     unchanged,
     caveat:
-      'These changes occurred during the same period. elowa cannot determine whether the event caused them.',
+      'These changes occurred during the same period. elowa cannot determine whether the event led to them.',
   };
 }

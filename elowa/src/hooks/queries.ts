@@ -110,6 +110,7 @@ function useInvalidateData() {
     queryClient.invalidateQueries({ queryKey: ['since'] });
     queryClient.invalidateQueries({ queryKey: ['reflection'] });
     queryClient.invalidateQueries({ queryKey: ['symptomPrivacy'] });
+    queryClient.invalidateQueries({ queryKey: ['aiSummary'] });
   };
 }
 

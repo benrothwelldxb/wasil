@@ -7,8 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Icon } from '@/components/ui/icon';
 import { usePinnedSymptoms } from '@/hooks/usePinnedSymptoms';
 import { useSymptomPrivacyMap, useSetSymptomPrivacy } from '@/hooks/queries';
-import { privacyRepository } from '@/services/repositories';
-import type { Relevance } from '@/domain/models';
+import type { Relevance, SymptomPrivacy } from '@/domain/models';
 import { downloadExport } from '@/services/dataManagement';
 import { cn } from '@/lib/utils';
 
@@ -51,7 +50,8 @@ export function PrivacyScreen() {
   const { data: privacyMap } = useSymptomPrivacyMap();
   const setPrivacy = useSetSymptomPrivacy();
 
-  const privacyFor = (id: string) => ({ ...privacyRepository.getFor(id), ...privacyMap?.[id] });
+  const defaults: SymptomPrivacy = { relevance: 'neutral', excludeFromHome: false, excludeFromAI: false, excludeFromReport: false };
+  const privacyFor = (id: string): SymptomPrivacy => ({ ...defaults, ...privacyMap?.[id] });
 
   return (
     <>
