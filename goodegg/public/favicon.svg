@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="115" fill="#F7C948"/>
+  <!-- sparkle -->
+  <g stroke="#F0674F" stroke-width="14" stroke-linecap="round">
+    <line x1="150" y1="150" x2="120" y2="120"/>
+    <line x1="128" y1="182" x2="92" y2="170"/>
+    <line x1="170" y1="128" x2="160" y2="92"/>
+  </g>
+  <!-- envelope -->
+  <g transform="rotate(-16 150 320)">
+    <rect x="96" y="286" width="118" height="86" rx="14" fill="#FCFAF4" stroke="#1B1915" stroke-width="12"/>
+    <path d="M100 296 L155 336 L210 296" fill="none" stroke="#1B1915" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M155 322c-6-7-17-3.6-17 4.4 0 6 9 11.6 17 17 8-5.4 17-11 17-17 0-8-11-11.4-17-4.4Z" fill="#F0674F"/>
+  </g>
+  <!-- ground shadow -->
+  <ellipse cx="300" cy="430" rx="118" ry="20" fill="#1B1915" opacity="0.12"/>
+  <!-- egg -->
+  <path d="M300 78 C214 78 156 214 156 300 C156 380 220 438 300 438 C380 438 444 380 444 300 C444 214 386 78 300 78 Z"
+        fill="#FCFAF4" stroke="#1B1915" stroke-width="15"/>
+  <ellipse cx="270" cy="268" rx="17" ry="22" fill="#1B1915"/>
+  <ellipse cx="330" cy="268" rx="17" ry="22" fill="#1B1915"/>
+  <circle cx="275" cy="259" r="5" fill="#fff"/>
+  <circle cx="335" cy="259" r="5" fill="#fff"/>
+  <!-- cheek heart -->
+  <path d="M370 330c-9-11-26-5.5-26 6.6 0 9 13.5 17.5 26 25.6 12.5-8.1 26-16.6 26-25.6 0-12.1-17-17.6-26-6.6Z" fill="#F0674F"/>
+</svg>
