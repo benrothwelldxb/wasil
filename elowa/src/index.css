@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /**
- * Bloom design tokens (single source of truth).
+ * elowa design tokens (single source of truth).
  *
  * Colours are stored as HSL channels so they can be composed with opacity via
  * Tailwind's `hsl(var(--token) / <alpha>)`. The palette is warm and muted:

@@ -47,7 +47,7 @@ export function OnboardingScreen() {
 
       {stage === 'welcome' ? (
         <div className="flex flex-1 flex-col items-center justify-center text-center">
-          <Wordmark className="scale-125" showTagline />
+          <Wordmark size="lg" showTagline className="items-center" />
           <h1 className="mt-8 text-3xl font-semibold text-foreground">
             A calmer way to understand your change
           </h1>

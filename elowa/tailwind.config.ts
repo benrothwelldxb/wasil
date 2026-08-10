@@ -2,7 +2,7 @@ import type { Config } from 'tailwindcss';
 import animate from 'tailwindcss-animate';
 
 /**
- * Bloom design tokens.
+ * elowa design tokens.
  *
  * All colours are declared as CSS custom properties in `src/index.css` using
  * HSL channel triplets (e.g. `158 30% 30%`) and consumed here via `hsl(var(--x))`.

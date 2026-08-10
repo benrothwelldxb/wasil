@@ -1,6 +1,6 @@
 # Architecture overview
 
-Bloom Phase 0 is a single-page React app. The guiding principle is that **a backend can be
+elowa Phase 0 is a single-page React app. The guiding principle is that **a backend can be
 introduced later without significant refactoring**. This is achieved with a clear, one-directional
 dependency flow and a hard boundary at the service layer.
 
@@ -25,7 +25,7 @@ hooks (TanStack Query)  ──►  services  ──►  data (mock today, API la
 ## Folder structure
 
 ```
-bloom/
+elowa/
 ├─ public/                     Static assets (favicon)
 ├─ docs/                       This documentation
 ├─ index.html                  Entry HTML + font links

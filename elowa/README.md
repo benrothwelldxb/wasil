@@ -1,6 +1,7 @@
-# Bloom — Perimenopause tracking (Phase 0)
+# elowa — Perimenopause tracking (Phase 0)
 
-> **Bloom** is a temporary working name. See [Replacing the brand name](#replacing-the-brand-name).
+> **elowa** — _Understand what’s changing._ The name is centralised so it stays easy to
+> adjust later; see [The brand name](#the-brand-name).
 
 A calm, intelligent, mobile-first web app that helps people **track**, **understand** and
 **act** on the changes of perimenopause. Phase 0 delivers a production-quality **product
@@ -22,7 +23,7 @@ The product proposition: **Track → Understand → Act.**
 ## Quick start
 
 ```bash
-cd bloom
+cd elowa
 npm install
 npm run dev        # start the dev server (http://localhost:5173)
 ```
@@ -81,17 +82,17 @@ React Router · Zustand · TanStack Query · lucide-react icons.
 
 ---
 
-## Replacing the brand name
+## The brand name
 
-"Bloom" is a placeholder. It is centralised in **`src/config/brand.ts`** and rendered through
-the `Wordmark` component (`src/components/brand/Wordmark.tsx`). To rename the product, change
-`BRAND.name` (and optionally the mark). The public favicon lives at `public/bloom-mark.svg`.
+The product name and tagline are centralised in **`src/config/brand.ts`** and rendered through
+the `Wordmark` component (`src/components/brand/Wordmark.tsx`). To adjust the name or tagline,
+change `BRAND.name` / `BRAND.tagline`. The public favicon lives at `public/elowa-mark.svg`.
 
 ---
 
 ## A note on safety & privacy
 
-Bloom records and helps you understand patterns in your wellbeing. **It does not diagnose
+elowa records and helps you understand patterns in your wellbeing. **It does not diagnose
 medical conditions or replace advice from a healthcare professional.** All insight language is
 deliberately cautious and association-based — never causal. Privacy messaging is a visible part
 of the product, and the architecture is built so that data export and deletion are

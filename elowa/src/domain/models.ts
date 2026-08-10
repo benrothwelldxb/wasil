@@ -1,5 +1,5 @@
 /**
- * Bloom domain models.
+ * elowa domain models.
  *
  * These interfaces describe the product's data shapes independently of any
  * storage or transport. They are intentionally backend-agnostic: IDs are

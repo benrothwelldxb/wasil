@@ -1,6 +1,6 @@
 # Design tokens
 
-Bloom's visual language is defined **once** and consumed everywhere. There are two coordinated
+elowa's visual language is defined **once** and consumed everywhere. There are two coordinated
 files:
 
 - **`src/index.css`** — the source of truth for token *values*, declared as CSS custom

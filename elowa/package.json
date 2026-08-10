@@ -1,9 +1,9 @@
 {
-  "name": "bloom",
+  "name": "elowa",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Bloom — a calm, mobile-first perimenopause tracking app (Phase 0 product shell).",
+  "description": "elowa — a calm, mobile-first perimenopause tracking app (Phase 0 product shell).",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
