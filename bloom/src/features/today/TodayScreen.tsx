@@ -11,10 +11,12 @@ import { Wordmark } from '@/components/brand/Wordmark';
 import { WellbeingSelector } from '@/components/product/WellbeingSelector';
 import { SymptomRow, SeverityIndicator } from '@/components/product/SymptomRow';
 import { ContextTagChip } from '@/components/product/ContextTagChip';
+import { IconBadge } from '@/components/common/IconBadge';
 import { Icon } from '@/components/ui/icon';
 import { useCurrentUser, useCheckIns } from '@/hooks/queries';
+import { usePinnedSymptoms } from '@/hooks/usePinnedSymptoms';
 import { useCheckInDraft } from '@/store/checkInDraftStore';
-import { findSymptom, CONTEXT_TAGS, TODAY_CONTEXT_TAG_IDS } from '@/data/catalog';
+import { CONTEXT_TAGS, TODAY_CONTEXT_TAG_IDS } from '@/data/catalog';
 import { greetingForHour } from '@/lib/date';
 import type { DailyCheckIn, Severity } from '@/domain/models';
 
@@ -47,9 +49,7 @@ export function TodayScreen() {
     month: 'long',
   });
 
-  const pinnedSymptoms = (user?.pinnedSymptomIds ?? [])
-    .map((id) => findSymptom(id))
-    .filter((s): s is NonNullable<typeof s> => Boolean(s));
+  const pinnedSymptoms = usePinnedSymptoms();
 
   const todayTags = TODAY_CONTEXT_TAG_IDS.map((id) =>
     CONTEXT_TAGS.find((t) => t.id === id),
@@ -60,7 +60,15 @@ export function TodayScreen() {
       {/* Top bar */}
       <div className="flex items-center justify-between pt-6">
         <Wordmark />
-        <IconButton icon="Bell" label="Reminders" variant="soft" />
+        <div className="flex items-center gap-1">
+          <IconButton
+            icon="CalendarDays"
+            label="View history"
+            variant="soft"
+            onClick={() => navigate('/calendar')}
+          />
+          <IconButton icon="Bell" label="Reminders" variant="soft" />
+        </div>
       </div>
 
       {/* Greeting */}
@@ -113,9 +121,7 @@ export function TodayScreen() {
       {/* Context card */}
       <Card className="mt-7 p-5">
         <div className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-full bg-accent text-accent-foreground">
-            <Icon name="Wind" className="size-4" />
-          </span>
+          <IconBadge icon="Wind" size="sm" tone="accent" />
           <h2 className="text-base font-semibold text-foreground">Anything different today?</h2>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -133,8 +139,50 @@ export function TodayScreen() {
         </div>
       </Card>
 
+      {/* Quick access to the flagship history + appointment surfaces */}
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <QuickTile
+          icon="CalendarDays"
+          title="History"
+          subtitle="Your calendar"
+          onClick={() => navigate('/calendar')}
+        />
+        <QuickTile
+          icon="FileText"
+          title="Appointment"
+          subtitle="Visit summary"
+          onClick={() => navigate('/appointment')}
+        />
+      </div>
+
       <HealthNotice className="mt-7" compact />
       <PrivacyNote className="mt-4" />
     </Screen>
+  );
+}
+
+function QuickTile({
+  icon,
+  title,
+  subtitle,
+  onClick,
+}: {
+  icon: string;
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-14 items-center gap-3 rounded-2xl border border-border/60 bg-card p-4 text-left shadow-card transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+    >
+      <IconBadge icon={icon} size="md" tone="brand" />
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-foreground">{title}</span>
+        <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
+      </span>
+    </button>
   );
 }

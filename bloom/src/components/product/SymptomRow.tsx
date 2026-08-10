@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Icon } from '@/components/ui/icon';
+import { IconBadge } from '@/components/common/IconBadge';
 import type { Severity, Symptom } from '@/domain/models';
 import { SEVERITY_SCALE, severityLabel, severityOrdinal } from '@/domain/constants';
 import { cn } from '@/lib/utils';
@@ -22,9 +22,7 @@ export function SymptomRow({
   return (
     <div className={cn('py-3', className)}>
       <div className="flex items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
-          <Icon name={symptom.icon} className="size-5" />
-        </span>
+        <IconBadge icon={symptom.icon} size="lg" tone="brand" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground">{symptom.label}</p>
           {symptom.description ? (

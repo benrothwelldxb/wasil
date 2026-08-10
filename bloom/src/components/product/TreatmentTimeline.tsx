@@ -5,7 +5,9 @@ import { TREATMENT_CATEGORY_META } from '@/domain/constants';
 import { formatDayMonth } from '@/lib/date';
 import { cn } from '@/lib/utils';
 
-const ACCENT_DOT: Record<string, string> = {
+type TreatmentAccent = (typeof TREATMENT_CATEGORY_META)[keyof typeof TREATMENT_CATEGORY_META]['accent'];
+
+const ACCENT_DOT: Record<TreatmentAccent, string> = {
   primary: 'bg-primary-soft text-primary',
   lilac: 'bg-lilac/40 text-foreground',
   sage: 'bg-sage/40 text-foreground',

@@ -9,6 +9,7 @@ import { useCheckIns, usePeriods, useTreatments } from '@/hooks/queries';
 import { buildMonthGrid, monthLabel, WEEKDAY_LABELS } from '@/lib/calendar';
 import { MOCK_TODAY } from '@/data/mock';
 import type { IsoDate } from '@/lib/date';
+import { cn } from '@/lib/utils';
 
 const EMPTY_MARKERS: DayMarkers = {
   logged: false,
@@ -78,7 +79,7 @@ export function CalendarScreen() {
           <LegendItem className="bg-coral" label="Period" />
           <LegendItem className="bg-lilac" label="Treatment" />
           <LegendItem className="bg-sage" label="Note" shape="square" />
-          <LegendItem className="bg-attention" label="Unusual" />
+          <LegendItem className="bg-attention" label="Unusual" shape="diamond" />
         </div>
 
         <Card className="mt-4 p-4">
@@ -136,12 +137,17 @@ function LegendItem({
 }: {
   className: string;
   label: string;
-  shape?: 'dot' | 'square';
+  shape?: 'dot' | 'square' | 'diamond';
 }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <span
-        className={`inline-block size-2.5 ${shape === 'square' ? 'rounded-sm' : 'rounded-full'} ${className}`}
+        className={cn(
+          'inline-block',
+          shape === 'diamond' ? 'size-2 rotate-45' : 'size-2.5',
+          shape === 'square' ? 'rounded-sm' : shape === 'diamond' ? '' : 'rounded-full',
+          className,
+        )}
       />
       {label}
     </span>

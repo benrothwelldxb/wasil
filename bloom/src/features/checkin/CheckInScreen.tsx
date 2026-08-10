@@ -8,22 +8,18 @@ import { WellbeingSelector } from '@/components/product/WellbeingSelector';
 import { SymptomRow } from '@/components/product/SymptomRow';
 import { SeveritySelector } from '@/components/product/SeveritySelector';
 import { ContextTagChip } from '@/components/product/ContextTagChip';
-import { Icon } from '@/components/ui/icon';
 import { IconButton } from '@/components/common/IconButton';
-import { useCurrentUser } from '@/hooks/queries';
+import { IconBadge } from '@/components/common/IconBadge';
+import { SelectableOption } from '@/components/common/SelectableOption';
+import { usePinnedSymptoms } from '@/hooks/usePinnedSymptoms';
 import { useCheckInDraft } from '@/store/checkInDraftStore';
-import { findSymptom, CONTEXT_TAGS } from '@/data/catalog';
-import { cn } from '@/lib/utils';
+import { CONTEXT_TAGS } from '@/data/catalog';
 
 export function CheckInScreen() {
   const navigate = useNavigate();
-  const { data: user } = useCurrentUser();
-
   const draft = useCheckInDraft();
 
-  const pinnedSymptoms = (user?.pinnedSymptomIds ?? [])
-    .map((id) => findSymptom(id))
-    .filter((s): s is NonNullable<typeof s> => Boolean(s));
+  const pinnedSymptoms = usePinnedSymptoms();
 
   const handleSave = () => {
     // Phase 0: no persistence. Reset the draft and return to Today.
@@ -93,34 +89,27 @@ export function CheckInScreen() {
         </Step>
 
         {/* Special action */}
-        <button
-          type="button"
-          aria-pressed={draft.flaggedUnusual}
-          onClick={draft.toggleFlaggedUnusual}
-          className={cn(
-            'mt-6 flex w-full items-center gap-3 rounded-2xl border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-            draft.flaggedUnusual
-              ? 'border-attention bg-attention/10'
-              : 'border-dashed border-border bg-card hover:bg-muted/50',
-          )}
+        <SelectableOption
+          selected={draft.flaggedUnusual}
+          onToggle={draft.toggleFlaggedUnusual}
+          className="mt-6"
         >
-          <span
-            className={cn(
-              'flex size-9 shrink-0 items-center justify-center rounded-full',
-              draft.flaggedUnusual ? 'bg-attention text-attention-foreground' : 'bg-muted text-muted-foreground',
-            )}
-          >
-            <Icon name={draft.flaggedUnusual ? 'Check' : 'TriangleAlert'} className="size-5" />
-          </span>
-          <span className="flex-1">
-            <span className="block text-sm font-semibold text-foreground">
-              Today feels unusual
+          <span className="flex items-center gap-3">
+            <IconBadge
+              icon={draft.flaggedUnusual ? 'Check' : 'TriangleAlert'}
+              size="md"
+              tone={draft.flaggedUnusual ? 'attention' : 'muted'}
+            />
+            <span className="flex-1">
+              <span className="block text-sm font-semibold text-foreground">
+                Today feels unusual
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Flag this day so it stands out when you look back.
+              </span>
             </span>
-            <span className="block text-xs text-muted-foreground">
-              Flag this day so it stands out when you look back.
-            </span>
           </span>
-        </button>
+        </SelectableOption>
       </Screen>
 
       {/* Sticky save bar */}

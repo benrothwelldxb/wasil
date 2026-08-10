@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Screen } from '@/components/common/Screen';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +13,7 @@ import { useCurrentUser } from '@/hooks/queries';
 import { cn } from '@/lib/utils';
 
 export function ProfileScreen() {
+  const navigate = useNavigate();
   const { data: user } = useCurrentUser();
   const [reminders, setReminders] = useState(user?.preferences.remindersEnabled ?? true);
 
@@ -36,8 +38,22 @@ export function ProfileScreen() {
           <SectionHeading>Tracking</SectionHeading>
           <Card className="divide-y divide-border/60">
             <Row icon="Sparkles" label="My symptoms" detail="6 pinned" />
-            <Row icon="CalendarClock" label="Cycle settings" />
-            <Row icon="Pill" label="Treatments" detail="4 recorded" />
+            <Row
+              icon="CalendarClock"
+              label="Cycle & history"
+              onClick={() => navigate('/calendar')}
+            />
+            <Row
+              icon="Pill"
+              label="Treatments"
+              detail="4 recorded"
+              onClick={() => navigate('/appointment')}
+            />
+            <Row
+              icon="FileText"
+              label="Appointment summary"
+              onClick={() => navigate('/appointment')}
+            />
             <Row
               icon="Bell"
               label="Reminder settings"
@@ -96,6 +112,7 @@ function Row({
   trailing,
   destructive = false,
   disabled = false,
+  onClick,
 }: {
   icon: string;
   label: string;
@@ -103,6 +120,7 @@ function Row({
   trailing?: React.ReactNode;
   destructive?: boolean;
   disabled?: boolean;
+  onClick?: () => void;
 }) {
   const interactive = !trailing && !disabled;
   const content = (
@@ -134,6 +152,7 @@ function Row({
     return (
       <button
         type="button"
+        onClick={onClick}
         className="flex w-full min-h-14 items-center gap-3 p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         {content}

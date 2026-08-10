@@ -55,8 +55,11 @@ export function CalendarDay({
       <span className={cn('font-medium', markers.unusual && !selected && 'text-attention')}>
         {dayNumber}
       </span>
-      {/* Marker dots */}
+      {/* Marker dots (distinct shapes so nothing relies on colour alone) */}
       <span className="mt-0.5 flex h-1.5 items-center gap-0.5" aria-hidden="true">
+        {markers.unusual ? (
+          <span className={cn('size-1.5 rotate-45', selected ? 'bg-primary-foreground' : 'bg-attention')} />
+        ) : null}
         {markers.period ? (
           <span className={cn('size-1.5 rounded-full', selected ? 'bg-primary-foreground' : 'bg-coral')} />
         ) : null}

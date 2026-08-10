@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
+import { IconBadge } from '@/components/common/IconBadge';
 import type { LearningArticle } from '@/domain/models';
 import { LEARN_CATEGORY_META } from '@/domain/constants';
 import { formatShortDate } from '@/lib/date';
@@ -17,9 +18,7 @@ export function ArticleCard({ article }: { article: LearningArticle }) {
         to={`/learn/${article.slug}`}
         className="flex items-start gap-3 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-2xl"
       >
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary-soft text-primary">
-          <Icon name={meta.icon} className="size-5" />
-        </span>
+        <IconBadge icon={meta.icon} size="xl" tone="brand" shape="squircle" />
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             {meta.label}

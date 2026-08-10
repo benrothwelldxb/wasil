@@ -22,6 +22,14 @@ export function AppShell({
           'md:my-6 md:min-h-[calc(100dvh-3rem)] md:rounded-[2.5rem] md:border md:border-border/70 md:shadow-raised md:overflow-hidden',
         )}
       >
+        {/* Skip link — must precede the content region it targets. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
+        >
+          Skip to content
+        </a>
+
         {/* Scrollable content region */}
         <main
           id="main-content"

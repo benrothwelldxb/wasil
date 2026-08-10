@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Screen } from '@/components/common/Screen';
 import { PrimaryButton } from '@/components/common/PrimaryButton';
+import { SelectableOption } from '@/components/common/SelectableOption';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Wordmark } from '@/components/brand/Wordmark';
@@ -73,21 +74,16 @@ export function OnboardingScreen() {
             {ONBOARDING_REASONS.map((r) => {
               const selected = reason === r.value;
               return (
-                <button
+                <SelectableOption
                   key={r.value}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => setReason(r.value)}
-                  className={cn(
-                    'flex w-full min-h-14 items-center justify-between gap-3 rounded-2xl border-2 px-4 py-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                    selected
-                      ? 'border-primary bg-primary-soft text-foreground'
-                      : 'border-border bg-card text-foreground hover:bg-muted/50',
-                  )}
+                  selected={selected}
+                  onToggle={() => setReason(r.value)}
                 >
-                  {r.label}
-                  {selected ? <Icon name="Check" className="size-5 text-primary" /> : null}
-                </button>
+                  <span className="flex flex-1 items-center justify-between gap-3 text-sm font-medium text-foreground">
+                    {r.label}
+                    {selected ? <Icon name="Check" className="size-5 text-primary" /> : null}
+                  </span>
+                </SelectableOption>
               );
             })}
           </div>
@@ -111,24 +107,16 @@ export function OnboardingScreen() {
             {SYMPTOMS.map((symptom) => {
               const selected = selectedSymptomIds.includes(symptom.id);
               return (
-                <button
+                <SelectableOption
                   key={symptom.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => toggleSymptom(symptom.id)}
-                  className={cn(
-                    'flex min-h-14 items-center gap-2.5 rounded-2xl border-2 px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                    selected
-                      ? 'border-primary bg-primary-soft'
-                      : 'border-border bg-card hover:bg-muted/50',
-                  )}
+                  selected={selected}
+                  onToggle={() => toggleSymptom(symptom.id)}
+                  icon={symptom.icon}
+                  showCheckWhenSelected
+                  className="px-3"
                 >
-                  <Icon
-                    name={selected ? 'Check' : symptom.icon}
-                    className={cn('size-5 shrink-0', selected ? 'text-primary' : 'text-muted-foreground')}
-                  />
                   <span className="text-sm font-medium text-foreground">{symptom.label}</span>
-                </button>
+                </SelectableOption>
               );
             })}
           </div>

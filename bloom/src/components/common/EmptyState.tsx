@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Icon } from '@/components/ui/icon';
+import { IconBadge } from './IconBadge';
 import { cn } from '@/lib/utils';
 
 /** A calm, reassuring empty state for screens/sections without data yet. */
@@ -23,9 +23,7 @@ export function EmptyState({
         className,
       )}
     >
-      <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-primary-soft text-primary">
-        <Icon name={icon} className="size-6" />
-      </div>
+      <IconBadge icon={icon} size="2xl" tone="brand" className="mb-3" />
       <p className="text-base font-semibold text-foreground">{title}</p>
       {description ? (
         <p className="mt-1 max-w-xs text-sm text-muted-foreground">{description}</p>

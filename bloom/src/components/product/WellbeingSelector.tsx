@@ -1,10 +1,10 @@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Icon } from '@/components/ui/icon';
-import { WELLBEING_LEVELS } from '@/domain/constants';
+import { WELLBEING_LEVELS, type WellbeingMeta } from '@/domain/constants';
 import type { WellbeingLevel } from '@/domain/models';
 import { cn } from '@/lib/utils';
 
-const ACCENT_SELECTED: Record<string, string> = {
+const ACCENT_SELECTED: Record<WellbeingMeta['accent'], string> = {
   sage: 'border-sage bg-sage/25',
   primary: 'border-primary bg-primary-soft',
   beige: 'border-beige bg-beige/40',

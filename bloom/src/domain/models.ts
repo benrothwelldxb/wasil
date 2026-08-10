@@ -110,6 +110,11 @@ export interface ContextTag {
 // Daily check-in & notes
 // ---------------------------------------------------------------------------
 
+/**
+ * A standalone dated note. In Phase 0 notes are captured inline on the
+ * `DailyCheckIn.note` field; this separate entity models the future case where
+ * a day can hold multiple timestamped notes independent of a check-in.
+ */
 export interface DailyNote {
   id: Id;
   date: IsoDate;
