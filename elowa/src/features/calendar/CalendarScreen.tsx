@@ -59,9 +59,15 @@ export function CalendarScreen() {
     checkIns?.forEach((c) => {
       const m = ensure(c.date);
       m.logged = true;
-      if (!c.feltNormal && c.observations.some((o) => o.status === 'a_little_worse' || o.status === 'much_worse')) {
-        m.unusual = true;
-      }
+      const worse = c.observations.some(
+        (o) =>
+          o.status === 'a_little_worse' ||
+          o.status === 'much_worse' ||
+          o.severity === 'moderate' ||
+          o.severity === 'strong' ||
+          o.severity === 'severe',
+      );
+      if (!c.feltNormal && worse) m.unusual = true;
       if (c.note) m.note = true;
     });
     periods?.forEach((p) => {

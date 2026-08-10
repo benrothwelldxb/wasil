@@ -107,7 +107,11 @@ export function resolveSymptomValues(
     } else if (pinnedIds.has(symptomId)) {
       status = 'about_usual';
     } else {
-      continue; // no sample for a non-pinned, unobserved symptom
+      // Non-pinned symptoms only accrue samples on days they were explicitly
+      // observed. (Deliberate: normal days sample every pinned symptom as
+      // "about usual", but never invent data for symptoms the user isn't
+      // actively tracking.)
+      continue;
     }
 
     // Explicit severity wins; otherwise anchor a relative status at "usual".

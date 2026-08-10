@@ -38,4 +38,15 @@ describe('safeCopy templates', () => {
     const s = safeCopy.treatmentObservation('Night sweats', 'HRT change', '12 June', 'less');
     expect(s.body.toLowerCase()).toContain('does not establish');
   });
+
+  it('co-occurrence describes both symptoms in the same direction (both worse)', () => {
+    const s = safeCopy.cooccurrence('Sleep', 'Anxiety');
+    // Must not imply opposite directions (one lower, one higher).
+    expect(s.title.toLowerCase()).not.toContain('lower');
+    expect(s.title.toLowerCase().match(/worse-than-usual/g)?.length).toBe(2);
+  });
+
+  it('frequency title reflects worse-than-usual days, not just logging', () => {
+    expect(safeCopy.frequency('Hot flushes', 5, 7).title.toLowerCase()).toContain('worse than usual');
+  });
 });

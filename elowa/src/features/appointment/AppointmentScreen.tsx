@@ -175,7 +175,7 @@ export function AppointmentScreen() {
                         type="button"
                         onClick={() => removeQuestion(i)}
                         aria-label={`Remove question: ${q}`}
-                        className="no-print shrink-0 text-muted-foreground hover:text-attention"
+                        className="no-print -my-2 flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-attention focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <Icon name="X" className="size-4" />
                       </button>

@@ -63,19 +63,19 @@ export const safeCopy = {
   },
   frequency(label: string, days: number, total: number): { title: string; body: string } {
     return {
-      title: `You've logged ${lower(label)} on ${days} of the past ${total} days.`,
-      body: 'A count of the days you recorded this recently.',
+      title: `${label} has been worse than usual on ${days} of the past ${total} days.`,
+      body: 'A count of the days you recorded this above your usual range recently.',
     };
   },
   cooccurrence(a: string, b: string): { title: string; body: string } {
     return {
-      title: `Lower ${lower(a)} and higher ${lower(b)} have tended to appear on the same days.`,
+      title: `Worse-than-usual ${lower(a)} and worse-than-usual ${lower(b)} have tended to appear on the same days.`,
       body: 'These tended to occur together in your data. This is an association, not a reason.',
     };
   },
   sequence(a: string, b: string): { title: string; body: string } {
     return {
-      title: `Higher ${lower(b)} has often appeared the day after nights you marked as ${lower(a)}.`,
+      title: `Worse-than-usual ${lower(b)} has often appeared the day after days you marked ${lower(a)} higher.`,
       body: 'This describes a pattern in the order of your entries, not a reason for it.',
     };
   },
