@@ -1,32 +1,43 @@
 import { create } from 'zustand';
 import type { OnboardingReason } from '@/domain/models';
+import { DEFAULT_PINNED_SYMPTOM_IDS } from '@/data/catalog';
 
 /**
- * Local-only onboarding state. The reason and the chosen symptoms conceptually
- * become the user's pinned daily symptoms. No persistence in Phase 0.
+ * Local-only onboarding state. Selections are persisted to the repositories
+ * when the user completes onboarding. Reasons are multi-select; pinned symptoms
+ * become the user's daily focus (target 3–7).
  */
 interface OnboardingState {
-  reason: OnboardingReason | null;
+  reasons: OnboardingReason[];
   selectedSymptomIds: string[];
-  completed: boolean;
 
-  setReason: (reason: OnboardingReason) => void;
+  toggleReason: (reason: OnboardingReason) => void;
   toggleSymptom: (symptomId: string) => void;
-  complete: () => void;
+  addSymptom: (symptomId: string) => void;
   reset: () => void;
 }
 
 export const useOnboardingStore = create<OnboardingState>((set) => ({
-  reason: null,
-  selectedSymptomIds: ['sym_sleep', 'sym_mood', 'sym_hot_flushes'],
-  completed: false,
-  setReason: (reason) => set({ reason }),
-  toggleSymptom: (symptomId) =>
-    set((state) => ({
-      selectedSymptomIds: state.selectedSymptomIds.includes(symptomId)
-        ? state.selectedSymptomIds.filter((id) => id !== symptomId)
-        : [...state.selectedSymptomIds, symptomId],
+  reasons: [],
+  selectedSymptomIds: [...DEFAULT_PINNED_SYMPTOM_IDS],
+
+  toggleReason: (reason) =>
+    set((s) => ({
+      reasons: s.reasons.includes(reason)
+        ? s.reasons.filter((r) => r !== reason)
+        : [...s.reasons, reason],
     })),
-  complete: () => set({ completed: true }),
-  reset: () => set({ reason: null, selectedSymptomIds: [], completed: false }),
+  toggleSymptom: (symptomId) =>
+    set((s) => ({
+      selectedSymptomIds: s.selectedSymptomIds.includes(symptomId)
+        ? s.selectedSymptomIds.filter((id) => id !== symptomId)
+        : [...s.selectedSymptomIds, symptomId],
+    })),
+  addSymptom: (symptomId) =>
+    set((s) => ({
+      selectedSymptomIds: s.selectedSymptomIds.includes(symptomId)
+        ? s.selectedSymptomIds
+        : [...s.selectedSymptomIds, symptomId],
+    })),
+  reset: () => set({ reasons: [], selectedSymptomIds: [...DEFAULT_PINNED_SYMPTOM_IDS] }),
 }));

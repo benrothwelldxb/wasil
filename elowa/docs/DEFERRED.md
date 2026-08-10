@@ -1,50 +1,38 @@
-# Deliberately deferred functionality
+# Deferred functionality
 
-Phase 0 builds the **product shell only**. The following are intentionally **not** implemented,
-and the codebase is structured so they can be added later without restructuring.
+## Done in Phase 1
 
-## Explicitly out of scope for Phase 0
+Local persistence (versioned, real/demo namespaces), functional onboarding, personal baseline
+engine, "Today feels normal" / "Something feels different", change-based check-ins, context tags,
+notes, cycle tracking, treatment/HRT timeline, editable/deletable history, deterministic insights
+engine with confidence + "why am I seeing this?", live Today dashboard, baseline-band
+visualisations, appointment summary v1 with print, JSON export, delete-all, privacy screen, demo
+mode, and tests for the non-UI logic.
 
-- Authentication / accounts
-- Database / persistence
-- Backend API
-- AI / LLM calls / AI interpretation of data
-- Medical diagnosis, treatment recommendations, or red-flag logic
-- Real trend/insight calculations (all insights are mock examples)
-- Real appointment PDF generation
-- Real data export / sharing (buttons are present but static)
-- Notifications / reminders delivery
-- Apple Health integration
-- Health Connect integration
-- Clinician accounts
-- Partner accounts
-- Subscriptions / payments
-- Analytics or advertising SDKs
-- Real voice recording (the mic button is a disabled placeholder)
-- Cloud storage
+## Explicitly deferred to a later phase
 
-## Deferred but scaffolded
+- backend / API / cloud sync
+- authentication / accounts
+- LLM / generative AI / AI interpretation
+- Apple Health / Health Connect / wearables
+- push notifications / reminders delivery
+- subscriptions / payments
+- community / social / partner accounts
+- clinician portal / messaging
+- medical diagnosis / medication recommendations
+- real PDF generation (Phase 1 uses `window.print()` of a clean HTML view)
+- voice transcription / OCR
+- fertile-window / next-period prediction (intentionally never)
 
-These have models, UI slots or seams already in place:
+## Known Phase 1 limitations
 
-| Area | What exists now | What Phase 1+ adds |
-| --- | --- | --- |
-| Check-in submission | Interactive draft in `checkInDraftStore`; "Save" resets & returns | A mutation that persists a `DailyCheckIn` and invalidates the query |
-| Insights | `Insight` model + `InsightCard` + mock examples | On-device trend computation feeding the same model |
-| Appointment export/share | Static buttons + one-page layout | PDF/one-page render + share sheet |
-| Learn provenance | `reviewedBy`/`reviewedAt`/`sources` fields displayed | Real reviewed content |
-| Health integrations | "Coming soon" rows in Profile | Apple Health / Health Connect readers |
-| Data export & deletion | Menu rows + privacy positioning | Real export bundle + delete flow |
-| Onboarding | Local selections in `onboardingStore` | Persisted pinned symptoms + first-run gating |
-| Reminders | Toggle + time preference | Scheduled local notifications |
-
-## Known Phase 0 limitations
-
-- **No persistence:** check-in edits, onboarding choices and the reminder toggle reset on reload.
-  This is intentional — there is no storage layer yet.
-- **Mock data is deterministic, not simulated:** ~12 weeks of history are generated from a fixed
-  seed with hand-tuned patterns; it is not a physiological model.
-- **Insights are illustrative:** every card is flagged as an example and uses cautious language;
-  none are computed from the data.
-- **Fonts load from Google Fonts** with a system-font fallback; there is no offline font bundle.
-- **`en-GB` locale** is assumed for date formatting; i18n is not addressed.
+- **Device-local only:** data lives in this browser's `localStorage`. Clearing browser storage, or
+  switching browser/device, means history isn't available there. No sync yet.
+- **Baseline is a heuristic, not a clinical measure:** it anchors "usual" at Mild=1 and learns each
+  symptom's range from that. It is deliberately cautious and never claims precision.
+- **Insights are associations only:** deterministic, local, and gated by minimum-evidence
+  thresholds; they never assert causation or diagnosis.
+- **Reminders toggle is cosmetic:** no notifications are actually scheduled.
+- **`en-GB` locale** assumed for dates; no i18n.
+- **Custom symptom management** is available at onboarding; a dedicated post-onboarding editor for
+  pinned/custom symptoms is a small follow-up.

@@ -35,7 +35,14 @@ npm run build      # type-check (tsc -b) then production build (vite)
 npm run preview    # preview the production build
 npm run typecheck  # strict TypeScript check, no emit
 npm run lint       # eslint, zero warnings allowed
+npm test           # vitest — baseline/insights/cycle/persistence/safety logic
 ```
+
+Phase 1 adds **local persistence** (your data is saved in the browser and survives reloads), a
+deterministic **personal baseline** and **insights** engine, cycle & treatment tracking, an
+appointment summary you can print, data export/delete, and a **demo mode** (Profile → Developer →
+Load demo data) with ~12 weeks of a fictional user's data. See `docs/BASELINE.md`,
+`docs/INSIGHTS.md` and `docs/ARCHITECTURE.md`.
 
 Requirements: Node 20+ (developed on Node 22).
 

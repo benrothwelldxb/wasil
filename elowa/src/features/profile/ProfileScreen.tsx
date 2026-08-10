@@ -9,61 +9,60 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { SectionHeading } from '@/components/layout/SectionHeading';
 import { PrivacyNote } from '@/components/common/PrivacyNote';
 import { HealthNotice } from '@/components/common/HealthNotice';
-import { useCurrentUser } from '@/hooks/queries';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import {
+  useCurrentUser,
+  useDataMode,
+  useDeleteAllData,
+  useSetPreferences,
+} from '@/hooks/queries';
+import { downloadExport } from '@/services/dataManagement';
 import { cn } from '@/lib/utils';
 
 export function ProfileScreen() {
   const navigate = useNavigate();
   const { data: user } = useCurrentUser();
-  const [reminders, setReminders] = useState(user?.preferences.remindersEnabled ?? true);
+  const setPreferences = useSetPreferences();
+  const deleteAll = useDeleteAllData();
+  const { mode, enterDemo, exitDemo, resetDemo } = useDataMode();
+
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const reminders = user?.preferences.remindersEnabled ?? false;
+  const name = user?.profile.displayName;
+  const pinnedCount = user?.pinnedSymptomIds.length ?? 0;
+
+  const toggleReminders = () => {
+    if (!user) return;
+    setPreferences.mutate({ ...user.preferences, remindersEnabled: !reminders });
+  };
 
   return (
     <>
       <ScreenHeader eyebrow="Settings" title="Me" />
       <Screen>
-        {/* Identity */}
         <Card className="mt-1 flex items-center gap-4 p-5">
           <span className="flex size-14 items-center justify-center rounded-full bg-primary text-xl font-semibold text-primary-foreground">
-            {user?.displayName?.[0] ?? 'E'}
+            {name?.[0]?.toUpperCase() ?? 'E'}
           </span>
           <div>
-            <p className="text-lg font-semibold text-foreground">{user?.displayName ?? 'You'}</p>
-            {user?.age ? (
-              <p className="text-sm text-muted-foreground">{user.age} years old</p>
-            ) : null}
+            <p className="text-lg font-semibold text-foreground">{name ?? 'You'}</p>
+            <p className="text-sm text-muted-foreground">
+              {user?.profile.age ? `${user.profile.age} years old · ` : ''}Private, on this device
+            </p>
           </div>
         </Card>
 
         <div className="mt-6">
           <SectionHeading>Tracking</SectionHeading>
           <Card className="divide-y divide-border/60">
-            <Row icon="Sparkles" label="My symptoms" detail="6 pinned" />
-            <Row
-              icon="CalendarClock"
-              label="Cycle & history"
-              onClick={() => navigate('/calendar')}
-            />
-            <Row
-              icon="Pill"
-              label="Treatments"
-              detail="4 recorded"
-              onClick={() => navigate('/appointment')}
-            />
-            <Row
-              icon="FileText"
-              label="Appointment summary"
-              onClick={() => navigate('/appointment')}
-            />
+            <Row icon="Sparkles" label="My symptoms" detail={`${pinnedCount} pinned`} />
+            <Row icon="Droplet" label="Cycle" onClick={() => navigate('/cycle')} />
+            <Row icon="Pill" label="Treatments" onClick={() => navigate('/treatments')} />
+            <Row icon="FileText" label="Appointment summary" onClick={() => navigate('/appointment')} />
             <Row
               icon="Bell"
-              label="Reminder settings"
-              trailing={
-                <Switch
-                  checked={reminders}
-                  onCheckedChange={setReminders}
-                  aria-label="Daily reminders"
-                />
-              }
+              label="Daily reminder"
+              trailing={<Switch checked={reminders} onCheckedChange={toggleReminders} aria-label="Daily reminder" />}
             />
           </Card>
         </div>
@@ -71,36 +70,56 @@ export function ProfileScreen() {
         <div className="mt-6">
           <SectionHeading>Privacy & data</SectionHeading>
           <Card className="divide-y divide-border/60">
-            <Row icon="Shield" label="Data & privacy" />
-            <Row icon="Download" label="Export my data" />
-            <Row icon="Trash2" label="Delete my data" destructive />
+            <Row icon="Shield" label="Data & privacy" onClick={() => navigate('/privacy')} />
+            <Row icon="Download" label="Export my data" onClick={() => downloadExport(new Date().toISOString())} />
+            <Row icon="Trash2" label="Delete all my data" destructive onClick={() => setConfirmDelete(true)} />
           </Card>
         </div>
 
         <div className="mt-6">
           <SectionHeading>Health integrations</SectionHeading>
           <Card className="divide-y divide-border/60">
-            <Row
-              icon="Activity"
-              label="Apple Health"
-              trailing={<Badge variant="neutral">Coming soon</Badge>}
-              disabled
-            />
-            <Row
-              icon="HeartPulse"
-              label="Health Connect"
-              trailing={<Badge variant="neutral">Coming soon</Badge>}
-              disabled
-            />
+            <Row icon="Activity" label="Apple Health" trailing={<Badge variant="neutral">Coming soon</Badge>} disabled />
+            <Row icon="HeartPulse" label="Health Connect" trailing={<Badge variant="neutral">Coming soon</Badge>} disabled />
+          </Card>
+        </div>
+
+        <div className="mt-6">
+          <SectionHeading>Developer</SectionHeading>
+          <Card className="divide-y divide-border/60">
+            {mode === 'demo' ? (
+              <>
+                <Row icon="RotateCcw" label="Reset demo data" onClick={() => resetDemo()} />
+                <Row icon="ArrowRight" label="Exit demo mode" onClick={() => exitDemo()} />
+              </>
+            ) : (
+              <Row icon="Sparkles" label="Load demo data" detail="Fictional example user" onClick={() => enterDemo()} />
+            )}
           </Card>
           <p className="mt-2 px-1 text-xs text-muted-foreground">
-            Integrations are not enabled in this version.
+            Demo data is stored separately and never mixed with your own.
           </p>
         </div>
 
         <HealthNotice className="mt-7" compact />
         <PrivacyNote className="mt-4" />
       </Screen>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={mode === 'demo' ? 'Clear demo data?' : 'Delete all your data?'}
+        description={
+          <>
+            This permanently removes all {mode === 'demo' ? 'demo ' : ''}check-ins, cycle records,
+            treatments, notes and settings stored on this device. This can’t be undone
+            {mode === 'demo' ? '.' : ', and you’ll return to onboarding.'}
+          </>
+        }
+        confirmLabel="Delete everything"
+        destructive
+        onConfirm={() => deleteAll.mutate(undefined, { onSuccess: () => navigate('/today') })}
+      />
     </>
   );
 }
@@ -122,7 +141,7 @@ function Row({
   disabled?: boolean;
   onClick?: () => void;
 }) {
-  const interactive = !trailing && !disabled;
+  const interactive = !trailing && !disabled && Boolean(onClick);
   const content = (
     <>
       <span
@@ -133,18 +152,11 @@ function Row({
       >
         <Icon name={icon} className="size-5" />
       </span>
-      <span
-        className={cn(
-          'flex-1 text-sm font-medium',
-          destructive ? 'text-attention' : 'text-foreground',
-        )}
-      >
+      <span className={cn('flex-1 text-sm font-medium', destructive ? 'text-attention' : 'text-foreground')}>
         {label}
       </span>
       {detail ? <span className="text-sm text-muted-foreground">{detail}</span> : null}
-      {trailing ?? (
-        <Icon name="ChevronRight" className="size-5 text-muted-foreground" />
-      )}
+      {trailing ?? (interactive ? <Icon name="ChevronRight" className="size-5 text-muted-foreground" /> : null)}
     </>
   );
 
@@ -153,12 +165,11 @@ function Row({
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full min-h-14 items-center gap-3 p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex min-h-14 w-full items-center gap-3 p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         {content}
       </button>
     );
   }
-
   return <div className="flex min-h-14 items-center gap-3 p-4">{content}</div>;
 }

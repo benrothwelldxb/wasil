@@ -112,11 +112,49 @@ floating on a warm backdrop (`AppShell`).
 - **Ephemeral UI-state** (in-progress check-in, onboarding choices) → **Zustand** stores. These
   are intentionally non-persistent in Phase 0.
 
-## Why this survives Phase 1+
+## Phase 1 additions — local persistence & analysis
 
-- Adding a real API = rewriting `services/*` bodies only.
-- Adding auth = a provider + guarded routes; layouts already isolate this.
-- Adding real insights = replace `insightService` with a computation/endpoint; `InsightCard`
-  and the `Insight` model are already the contract.
-- Persisting a check-in = a mutation that reads from `checkInDraftStore` and invalidates the
-  `checkIns` query key.
+Phase 1 turned the static shell into a working tracker. Two new layers were added **under** the
+existing service boundary, so components and hooks were rewired but not restructured:
+
+```
+components / features
+        │  hooks (TanStack Query + mutations)
+        ▼
+services (composition)  ──►  repositories  ──►  storage driver (localStorage today)
+        │                         │
+        ▼                         ▼
+analysis engines (pure)     domain models
+```
+
+- **Storage** (`services/storage/`): a tiny `StorageDriver` interface with `LocalStorageDriver`
+  and `MemoryStorageDriver` (tests/SSR). `dataContext.ts` picks the active driver and keeps
+  **real** and **demo** data in separate key namespaces (`elowa:v1:real:` / `elowa:v1:demo:`) with
+  a stored schema version. Components never touch `localStorage`.
+- **Repositories** (`services/repositories/`): `CheckIn`, `Symptom` (tracking config),
+  `Cycle` (periods), `Treatment`, `UserPreferences`. They are the only code that reads/writes
+  storage. Swapping in a backend = changing the driver or these repository bodies.
+- **Analysis engines** (`domain/analysis/`): pure, deterministic, unit-tested — `stats`,
+  `baseline`, `cycle`, `insights`, `appointment`, with all thresholds in `thresholds.ts`. See
+  `BASELINE.md` and `INSIGHTS.md`.
+- **Safety** (`domain/safety/language.ts`): the single place health-adjacent copy is built, plus a
+  `findUnsafeLanguage` lint asserted by tests.
+- **Demo mode** (`services/demo.ts`, `data/demo/`): seeds a deterministic 12-week dataset into the
+  demo namespace; never mixes with real data.
+
+Data-mutation hooks write via repositories then invalidate the shared `DATA_QUERY_KEYS`, so every
+screen reflects changes immediately.
+
+## Testing
+
+Vitest covers the non-UI logic (`npm test`): baseline resolution & states, rolling stats, cycle
+derivation, insight thresholds & co-occurrence, safety language, persistence round-trips, export,
+deletion, and demo determinism. Deterministic fixtures live in `src/test/factories.ts`.
+
+## Why this survives Phase 2+
+
+- Adding a real API = swapping the storage driver or repository bodies; services/hooks/components
+  stay put.
+- Adding auth = a provider + the existing `RequireOnboarded`-style guard.
+- Real cloud sync = a second driver behind `dataContext`; the export bundle already defines the
+  serialisation shape.

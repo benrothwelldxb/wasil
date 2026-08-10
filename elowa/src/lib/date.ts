@@ -41,6 +41,18 @@ export function addDays(iso: IsoDate, days: number): IsoDate {
   return toIsoDate(d);
 }
 
+/** Whole days from `a` to `b` (positive if `b` is later). */
+export function daysBetween(a: IsoDate, b: IsoDate): number {
+  const da = new Date(`${a}T00:00:00`).getTime();
+  const db = new Date(`${b}T00:00:00`).getTime();
+  return Math.round((db - da) / 86_400_000);
+}
+
+/** Today as an ISO date string (local time). */
+export function todayIso(): IsoDate {
+  return toIsoDate(new Date());
+}
+
 /** Greeting keyed to the time of day. */
 export function greetingForHour(hour: number): string {
   if (hour < 12) return 'Good morning';

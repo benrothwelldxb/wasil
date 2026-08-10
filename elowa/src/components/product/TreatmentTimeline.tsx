@@ -16,19 +16,25 @@ const ACCENT_DOT: Record<TreatmentAccent, string> = {
 };
 
 /**
- * A reusable vertical treatment / intervention timeline. Overlaying it against
- * symptom trends comes later; for now it renders mock events chronologically.
+ * A reusable vertical treatment / intervention timeline. Renders the events the
+ * user has recorded, chronologically. An optional `onSelect` makes rows tappable
+ * (used on the Treatments management screen).
  */
 export function TreatmentTimeline({
   events,
   className,
   showNotes = true,
+  onSelect,
 }: {
   events: TreatmentEvent[];
   className?: string;
   showNotes?: boolean;
+  onSelect?: (event: TreatmentEvent) => void;
 }) {
   const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
+
+  const dose = (event: TreatmentEvent) =>
+    [event.dose, event.frequency].filter(Boolean).join(' · ');
 
   return (
     <ol className={cn('relative space-y-0', className)}>
@@ -56,20 +62,31 @@ export function TreatmentTimeline({
               <div className="flex items-center gap-2">
                 <time className="text-xs font-medium text-muted-foreground">
                   {formatDayMonth(event.date)}
+                  {event.endDate ? ` – ${formatDayMonth(event.endDate)}` : ''}
                 </time>
                 <Badge variant="neutral">{meta.label}</Badge>
               </div>
-              <p className="mt-0.5 text-sm font-semibold text-foreground">{event.title}</p>
-              {event.dosage ? (
-                <p className="text-xs text-muted-foreground">{event.dosage}</p>
-              ) : null}
-              {showNotes && event.description ? (
-                <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>
-              ) : null}
-              {showNotes && event.clinicianNote ? (
-                <p className="mt-1 text-xs italic text-muted-foreground">
-                  Note: {event.clinicianNote}
+              <div className="flex items-center justify-between gap-2">
+                <p className="mt-0.5 text-sm font-semibold text-foreground">{event.title}</p>
+                {onSelect ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelect(event)}
+                    aria-label={`Edit ${event.title}`}
+                    className="shrink-0 rounded-full p-1 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Icon name="Pencil" className="size-4" />
+                  </button>
+                ) : null}
+              </div>
+              {dose(event) ? <p className="text-xs text-muted-foreground">{dose(event)}</p> : null}
+              {event.doseChangeDate ? (
+                <p className="text-xs text-muted-foreground">
+                  Dose changed {formatDayMonth(event.doseChangeDate)}
                 </p>
+              ) : null}
+              {showNotes && event.note ? (
+                <p className="mt-1 text-sm text-muted-foreground">{event.note}</p>
               ) : null}
             </div>
           </li>

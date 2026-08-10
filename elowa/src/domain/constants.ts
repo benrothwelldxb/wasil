@@ -6,37 +6,41 @@
  */
 
 import type {
+  FlowLevel,
   LearnCategory,
   OnboardingReason,
+  RelativeStatus,
   Severity,
   TreatmentCategory,
-  WellbeingLevel,
 } from './models';
 
-// --- Wellbeing -------------------------------------------------------------
+// --- Relative status (elowa's primary "change from usual" scale) -----------
 
-export interface WellbeingMeta {
-  value: WellbeingLevel;
+export interface RelativeStatusMeta {
+  value: RelativeStatus;
   label: string;
-  /** Lucide icon name. */
-  icon: string;
-  /** Token colour key used for the selected state. */
-  accent: 'sage' | 'primary' | 'beige' | 'coral';
+  short: string;
+  /** Signed deviation in severity units, used by the analysis engine. */
+  delta: number;
+  tone: 'positive' | 'neutral' | 'watch';
 }
 
-export const WELLBEING_LEVELS: readonly WellbeingMeta[] = [
-  { value: 'great', label: 'Great', icon: 'Sun', accent: 'sage' },
-  { value: 'okay', label: 'Okay', icon: 'CloudSun', accent: 'primary' },
-  { value: 'not_great', label: 'Not great', icon: 'Cloud', accent: 'beige' },
-  { value: 'rough', label: 'Rough', icon: 'CloudRain', accent: 'coral' },
+export const RELATIVE_STATUS_SCALE: readonly RelativeStatusMeta[] = [
+  { value: 'better', label: 'Better than usual', short: 'Better', delta: -1, tone: 'positive' },
+  { value: 'about_usual', label: 'About usual', short: 'About usual', delta: 0, tone: 'neutral' },
+  { value: 'a_little_worse', label: 'A little worse', short: 'A little worse', delta: 1, tone: 'watch' },
+  { value: 'much_worse', label: 'Much worse', short: 'Much worse', delta: 2, tone: 'watch' },
 ] as const;
 
-// --- Severity --------------------------------------------------------------
+export function relativeStatusMeta(value: RelativeStatus): RelativeStatusMeta {
+  return RELATIVE_STATUS_SCALE.find((s) => s.value === value) ?? RELATIVE_STATUS_SCALE[1]!;
+}
+
+// --- Severity (absolute, retained where useful) ----------------------------
 
 export interface SeverityMeta {
   value: Severity;
   label: string;
-  /** 0–4 ordinal for bars / comparisons. */
   ordinal: number;
 }
 
@@ -52,8 +56,26 @@ export function severityOrdinal(value: Severity): number {
   return SEVERITY_SCALE.find((s) => s.value === value)?.ordinal ?? 0;
 }
 
+export function severityFromOrdinal(ordinal: number): Severity {
+  const clamped = Math.max(0, Math.min(4, Math.round(ordinal)));
+  return SEVERITY_SCALE[clamped]!.value;
+}
+
 export function severityLabel(value: Severity): string {
   return SEVERITY_SCALE.find((s) => s.value === value)?.label ?? 'None';
+}
+
+// --- Flow ------------------------------------------------------------------
+
+export const FLOW_LEVELS: readonly { value: FlowLevel; label: string }[] = [
+  { value: 'spotting', label: 'Spotting' },
+  { value: 'light', label: 'Light' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'heavy', label: 'Heavy' },
+] as const;
+
+export function flowLabel(value: FlowLevel): string {
+  return FLOW_LEVELS.find((f) => f.value === value)?.label ?? value;
 }
 
 // --- Onboarding reasons ----------------------------------------------------
@@ -66,6 +88,8 @@ export const ONBOARDING_REASONS: readonly {
   { value: 'poor_sleep', label: "I'm not sleeping properly" },
   { value: 'not_myself', label: "I don't feel like myself" },
   { value: 'hot_flushes', label: 'Hot flushes or night sweats' },
+  { value: 'mood_different', label: 'My mood feels different' },
+  { value: 'low_energy', label: "I'm struggling with energy" },
   { value: 'considering_hrt', label: "I'm considering HRT" },
   { value: 'started_hrt', label: "I've recently started HRT" },
   { value: 'understand', label: 'I want to understand what’s happening' },
@@ -85,12 +109,17 @@ export const TREATMENT_CATEGORY_META: Record<
   other: { label: 'Other', icon: 'Circle', accent: 'coral' },
 };
 
+export const TREATMENT_CATEGORY_ORDER: readonly TreatmentCategory[] = [
+  'hrt',
+  'medication',
+  'supplement',
+  'lifestyle',
+  'other',
+] as const;
+
 // --- Learn categories ------------------------------------------------------
 
-export const LEARN_CATEGORY_META: Record<
-  LearnCategory,
-  { label: string; icon: string }
-> = {
+export const LEARN_CATEGORY_META: Record<LearnCategory, { label: string; icon: string }> = {
   understanding: { label: 'Understanding perimenopause', icon: 'Compass' },
   sleep: { label: 'Sleep', icon: 'Moon' },
   vasomotor: { label: 'Hot flushes & night sweats', icon: 'Thermometer' },
@@ -103,7 +132,6 @@ export const LEARN_CATEGORY_META: Record<
   clinician: { label: 'Talking to your clinician', icon: 'Stethoscope' },
 };
 
-/** Ordered list for the Learn hub. */
 export const LEARN_CATEGORY_ORDER: readonly LearnCategory[] = [
   'understanding',
   'sleep',

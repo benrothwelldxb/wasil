@@ -1,85 +1,165 @@
 /**
  * Application services.
  *
- * Each function returns a Promise and is the ONLY place components/hooks reach
- * for data. Today they read from the mock data layer; tomorrow they call a real
- * API. Keeping this boundary is what lets a backend arrive without refactoring
- * the UI.
+ * The composition layer between the UI (via hooks) and the persistence
+ * repositories + analysis engines. Components never import repositories or
+ * engines directly — they go through these services and the query hooks.
  */
 
 import type {
   AppointmentSummary,
-  CycleEntry,
   DailyCheckIn,
   Insight,
   LearningArticle,
   PeriodEntry,
+  Symptom,
   TreatmentEvent,
   User,
 } from '@/domain/models';
 import type { IsoDate } from '@/lib/date';
+import { MOCK_ARTICLES, findArticle } from '@/data/mock';
 import {
-  MOCK_APPOINTMENT,
-  MOCK_ARTICLES,
-  MOCK_CHECKINS,
-  MOCK_CYCLES,
-  MOCK_INSIGHTS,
-  MOCK_PERIODS,
-  MOCK_TREATMENTS,
-  MOCK_USER,
-  checkInForDate,
-  findArticle,
-} from '@/data/mock';
-import { resolveMock } from './mockDelay';
+  checkInRepository,
+  cycleRepository,
+  preferencesRepository,
+  symptomRepository,
+  treatmentRepository,
+} from './repositories';
+import {
+  analyzeSymptoms,
+  computeOverallBaseline,
+  type OverallBaseline,
+  type SymptomAnalysis,
+} from '@/domain/analysis/baseline';
+import { deriveCycles, cycleStats, type CycleStats } from '@/domain/analysis/cycle';
+import { generateInsights } from '@/domain/analysis/insights';
+import { buildAppointmentSummary } from '@/domain/analysis/appointment';
+import type { CycleEntry } from '@/domain/models';
+
+/** Build a label resolver over the catalogue + custom symptoms. */
+export function symptomLabelResolver(): (id: string) => string {
+  const map = new Map(symptomRepository.allSymptoms().map((s) => [s.id, s.label]));
+  return (id: string) => map.get(id) ?? 'Symptom';
+}
+
+/** Symptom ids that appear in observations plus the pinned ids. */
+function relevantSymptomIds(checkIns: readonly DailyCheckIn[], pinned: readonly string[]): string[] {
+  const ids = new Set<string>(pinned);
+  for (const ci of checkIns) for (const o of ci.observations) ids.add(o.symptomId);
+  return [...ids];
+}
 
 export const userService = {
-  getCurrentUser(): Promise<User> {
-    return resolveMock(MOCK_USER);
+  getCurrentUser(): User {
+    return {
+      profile: preferencesRepository.getProfile(),
+      pinnedSymptomIds: symptomRepository.getPinnedIds(),
+      onboardingReasons: preferencesRepository.getOnboardingReasons(),
+      preferences: preferencesRepository.getPreferences(),
+      onboarded: preferencesRepository.isOnboarded(),
+      createdAt: preferencesRepository.getCreatedAt(),
+    };
+  },
+};
+
+export const symptomService = {
+  allSymptoms(): Symptom[] {
+    return symptomRepository.allSymptoms();
+  },
+  pinnedSymptoms(): Symptom[] {
+    const pinned = new Set(symptomRepository.getPinnedIds());
+    return symptomRepository.allSymptoms().filter((s) => pinned.has(s.id));
   },
 };
 
 export const checkInService = {
-  list(): Promise<DailyCheckIn[]> {
-    return resolveMock([...MOCK_CHECKINS]);
+  list(): DailyCheckIn[] {
+    return checkInRepository.list();
   },
-  getByDate(date: IsoDate): Promise<DailyCheckIn | null> {
-    return resolveMock(checkInForDate(date) ?? null);
+  getByDate(date: IsoDate): DailyCheckIn | null {
+    return checkInRepository.getByDate(date);
+  },
+  upsert(checkIn: DailyCheckIn): DailyCheckIn {
+    return checkInRepository.upsert(checkIn);
+  },
+  removeByDate(date: IsoDate): void {
+    checkInRepository.removeByDate(date);
   },
 };
 
 export const cycleService = {
-  listCycles(): Promise<CycleEntry[]> {
-    return resolveMock([...MOCK_CYCLES]);
+  listPeriods(): PeriodEntry[] {
+    return cycleRepository.listPeriods();
   },
-  listPeriods(): Promise<PeriodEntry[]> {
-    return resolveMock([...MOCK_PERIODS]);
+  cycles(): CycleEntry[] {
+    return deriveCycles(cycleRepository.listPeriods());
+  },
+  stats(): CycleStats {
+    return cycleStats(deriveCycles(cycleRepository.listPeriods()));
   },
 };
 
 export const treatmentService = {
-  list(): Promise<TreatmentEvent[]> {
-    return resolveMock([...MOCK_TREATMENTS]);
+  list(): TreatmentEvent[] {
+    return treatmentRepository.list();
+  },
+};
+
+export interface AnalysisSnapshot {
+  overall: OverallBaseline;
+  symptoms: Map<string, SymptomAnalysis>;
+}
+
+export const analysisService = {
+  snapshot(): AnalysisSnapshot {
+    const checkIns = checkInRepository.list();
+    const pinned = symptomRepository.getPinnedIds();
+    const ids = relevantSymptomIds(checkIns, pinned);
+    return {
+      overall: computeOverallBaseline(checkIns),
+      symptoms: analyzeSymptoms(checkIns, ids, new Set(pinned)),
+    };
   },
 };
 
 export const insightService = {
-  list(): Promise<Insight[]> {
-    return resolveMock([...MOCK_INSIGHTS]);
+  list(): Insight[] {
+    const checkIns = checkInRepository.list();
+    const pinned = symptomRepository.getPinnedIds();
+    return generateInsights({
+      checkIns,
+      symptomIds: relevantSymptomIds(checkIns, pinned),
+      pinnedIds: pinned,
+      labelOf: symptomLabelResolver(),
+      treatments: treatmentRepository.list(),
+      periods: cycleRepository.listPeriods(),
+    });
   },
 };
 
 export const appointmentService = {
-  getLatestSummary(): Promise<AppointmentSummary> {
-    return resolveMock(MOCK_APPOINTMENT);
+  build(generatedAt: string): AppointmentSummary {
+    const checkIns = checkInRepository.list();
+    const pinned = symptomRepository.getPinnedIds();
+    return buildAppointmentSummary({
+      checkIns,
+      symptomIds: relevantSymptomIds(checkIns, pinned),
+      pinnedIds: pinned,
+      labelOf: symptomLabelResolver(),
+      treatments: treatmentRepository.list(),
+      periods: cycleRepository.listPeriods(),
+      questions: preferencesRepository.getQuestions(),
+      generatedAt,
+    });
   },
 };
 
 export const articleService = {
-  list(): Promise<LearningArticle[]> {
-    return resolveMock([...MOCK_ARTICLES]);
+  list(): LearningArticle[] {
+    return [...MOCK_ARTICLES];
   },
-  getBySlug(slug: string): Promise<LearningArticle | null> {
-    return resolveMock(findArticle(slug) ?? null);
+  getBySlug(slug: string): LearningArticle | null {
+    return findArticle(slug) ?? null;
   },
 };
 
@@ -88,11 +168,24 @@ export const queryKeys = {
   currentUser: ['currentUser'] as const,
   checkIns: ['checkIns'] as const,
   checkIn: (date: string) => ['checkIns', date] as const,
-  cycles: ['cycles'] as const,
   periods: ['periods'] as const,
+  cycles: ['cycles'] as const,
   treatments: ['treatments'] as const,
   insights: ['insights'] as const,
+  analysis: ['analysis'] as const,
   appointmentSummary: ['appointmentSummary'] as const,
   articles: ['articles'] as const,
   article: (slug: string) => ['articles', slug] as const,
 };
+
+/** Keys that depend on logged data — invalidated together after any write. */
+export const DATA_QUERY_KEYS = [
+  queryKeys.currentUser,
+  queryKeys.checkIns,
+  queryKeys.periods,
+  queryKeys.cycles,
+  queryKeys.treatments,
+  queryKeys.insights,
+  queryKeys.analysis,
+  queryKeys.appointmentSummary,
+] as const;

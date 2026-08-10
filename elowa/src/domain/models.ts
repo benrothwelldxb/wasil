@@ -4,8 +4,8 @@
  * These interfaces describe the product's data shapes independently of any
  * storage or transport. They are intentionally backend-agnostic: IDs are
  * opaque strings, dates are ISO strings, and there are no ORM/framework types.
- * A future backend can map rows/documents onto these shapes without the UI
- * needing to change.
+ * The Phase 1 persistence layer maps these onto local storage; a future backend
+ * can map rows/documents onto the same shapes without the UI needing to change.
  */
 
 import type { IsoDate } from '@/lib/date';
@@ -16,46 +16,40 @@ import type { IsoDate } from '@/lib/date';
 
 export type Id = string;
 
-/** Ordered wellbeing scale used for the daily overall check-in. */
-export type WellbeingLevel = 'great' | 'okay' | 'not_great' | 'rough';
-
-/** Ordered severity scale used for individual symptoms. */
+/** Absolute severity scale, retained where an explicit level is useful. */
 export type Severity = 'none' | 'mild' | 'moderate' | 'strong' | 'severe';
+
+/**
+ * elowa's PRIMARY language: change relative to the user's own usual range.
+ * This is what most check-ins capture.
+ */
+export type RelativeStatus = 'better' | 'about_usual' | 'a_little_worse' | 'much_worse';
 
 /** Categories a symptom can belong to (drives grouping and iconography). */
 export type SymptomCategory =
   | 'sleep'
-  | 'mood'
   | 'energy'
+  | 'mood'
+  | 'cognitive'
   | 'vasomotor' // hot flushes / night sweats
   | 'pain'
   | 'digestive'
-  | 'cognitive'
-  | 'cycle'
   | 'genitourinary'
+  | 'cycle'
   | 'other';
 
 // ---------------------------------------------------------------------------
-// User
+// User, preferences & session
 // ---------------------------------------------------------------------------
 
-export interface User {
-  id: Id;
-  displayName: string;
+export interface UserProfile {
+  displayName?: string;
   age?: number;
-  /** Symptom ids the user has pinned to their daily check-in. */
-  pinnedSymptomIds: Id[];
-  /** Set during onboarding — why they downloaded the app. */
-  onboardingReason?: OnboardingReason;
-  preferences: UserPreferences;
-  createdAt: IsoDate;
 }
 
 export interface UserPreferences {
-  /** Cosmetic only in Phase 0. */
-  reminderTime?: string; // `HH:mm`
   remindersEnabled: boolean;
-  /** Whether cycle tracking surfaces are shown at all. */
+  reminderTime?: string; // `HH:mm`
   cycleTrackingEnabled: boolean;
 }
 
@@ -64,39 +58,64 @@ export type OnboardingReason =
   | 'poor_sleep'
   | 'not_myself'
   | 'hot_flushes'
+  | 'mood_different'
+  | 'low_energy'
   | 'considering_hrt'
   | 'started_hrt'
   | 'understand'
   | 'other';
 
+/**
+ * The assembled "current user" view, composed by the user service from the
+ * preferences and symptom repositories. There is no account in Phase 1.
+ */
+export interface User {
+  profile: UserProfile;
+  pinnedSymptomIds: Id[];
+  onboardingReasons: OnboardingReason[];
+  preferences: UserPreferences;
+  onboarded: boolean;
+  createdAt: IsoDate;
+}
+
 // ---------------------------------------------------------------------------
 // Symptoms
 // ---------------------------------------------------------------------------
 
-/** A trackable symptom definition (the catalogue, not a logged value). */
+/** A trackable symptom definition (catalogue or user-created). */
 export interface Symptom {
   id: Id;
-  /** Stable machine key, e.g. `sleep`, `hot_flushes`. */
   key: string;
   label: string;
   category: SymptomCategory;
-  /** Short helper text shown under the label. */
   description?: string;
   /** Lucide icon name, resolved in the UI layer. */
   icon: string;
+  /** True for user-created symptoms. */
+  custom?: boolean;
 }
 
-/** A single symptom reading captured within a daily check-in. */
-export interface SymptomEntry {
+/** A single symptom observation within a check-in. */
+export interface SymptomObservation {
   symptomId: Id;
-  severity: Severity;
+  /** Change from the user's usual range (primary signal). */
+  status?: RelativeStatus;
+  /** Optional absolute level. */
+  severity?: Severity;
+}
+
+/** Persisted tracking configuration (what the user has chosen to track). */
+export interface TrackingConfig {
+  pinnedSymptomIds: Id[];
+  customSymptoms: Symptom[];
+  customContextTags: ContextTag[];
 }
 
 // ---------------------------------------------------------------------------
-// Context tags ("what changed?")
+// Context tags
 // ---------------------------------------------------------------------------
 
-export type ContextTagGroup = 'lifestyle' | 'health' | 'treatment';
+export type ContextTagGroup = 'life' | 'lifestyle' | 'health';
 
 export interface ContextTag {
   id: Id;
@@ -104,38 +123,29 @@ export interface ContextTag {
   label: string;
   group: ContextTagGroup;
   icon: string;
+  custom?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Daily check-in & notes
+// Daily check-in
 // ---------------------------------------------------------------------------
 
-/**
- * A standalone dated note. In Phase 0 notes are captured inline on the
- * `DailyCheckIn.note` field; this separate entity models the future case where
- * a day can hold multiple timestamped notes independent of a check-in.
- */
-export interface DailyNote {
-  id: Id;
-  date: IsoDate;
-  text: string;
-  createdAt: string; // ISO datetime
-}
+export type CheckInKind = 'normal' | 'detailed';
 
 export interface DailyCheckIn {
   id: Id;
   date: IsoDate;
-  /** Overall wellbeing for the day. */
-  wellbeing: WellbeingLevel;
-  /** Individual symptom readings (only those the user logged). */
-  symptoms: SymptomEntry[];
+  kind: CheckInKind;
+  /** True when the user asserted the day was within their usual range. */
+  feltNormal: boolean;
+  /** Per-symptom observations (empty for a plain "normal" day). */
+  observations: SymptomObservation[];
   /** Context tag ids selected for the day. */
   contextTagIds: Id[];
   /** Optional free-text note. */
   note?: string;
-  /** User flagged the day as unusual, for later analysis. */
-  flaggedUnusual: boolean;
-  completedAt: string; // ISO datetime
+  createdAt: string; // ISO datetime
+  updatedAt: string; // ISO datetime
 }
 
 // ---------------------------------------------------------------------------
@@ -144,65 +154,78 @@ export interface DailyCheckIn {
 
 export type FlowLevel = 'spotting' | 'light' | 'medium' | 'heavy';
 
-/** A single day marked as a period day. */
+/** A single day marked as a period (or spotting) day. */
 export interface PeriodEntry {
   id: Id;
   date: IsoDate;
   flow: FlowLevel;
+  note?: string;
 }
 
-/** A derived/observed menstrual cycle (start to next start). */
+/** A derived menstrual cycle (computed, not stored). */
 export interface CycleEntry {
   id: Id;
   startDate: IsoDate;
-  /** End of bleeding (not end of cycle). */
   bleedEndDate?: IsoDate;
+  /** Bleed duration in days. */
+  periodDays: number;
   /** Length in days from this start to the next start, if known. */
   lengthDays?: number;
-  notes?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Treatments & interventions
 // ---------------------------------------------------------------------------
 
-export type TreatmentCategory =
-  | 'hrt'
-  | 'medication'
-  | 'supplement'
-  | 'lifestyle'
-  | 'other';
+export type TreatmentCategory = 'hrt' | 'medication' | 'supplement' | 'lifestyle' | 'other';
 
 export interface TreatmentEvent {
   id: Id;
-  date: IsoDate;
   category: TreatmentCategory;
   title: string;
-  description?: string;
-  /** e.g. "50mcg patch, twice weekly". */
-  dosage?: string;
-  /** Optional note intended for/from a clinician. */
-  clinicianNote?: string;
+  /** When this started (or the intervention began). */
+  date: IsoDate;
+  endDate?: IsoDate;
+  /** Date the dose changed, if applicable. */
+  doseChangeDate?: IsoDate;
+  dose?: string;
+  frequency?: string;
+  note?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Insights (mock, illustrative)
+// Insights (deterministic, generated from local data)
 // ---------------------------------------------------------------------------
 
-export type InsightKind = 'trend' | 'association' | 'cycle' | 'summary';
+export type InsightKind =
+  | 'change'
+  | 'frequency'
+  | 'improvement'
+  | 'cooccurrence'
+  | 'sequence'
+  | 'treatment'
+  | 'cycle';
+
 export type InsightTone = 'positive' | 'neutral' | 'watch';
+
+/** How much data stands behind an insight. */
+export type InsightConfidence = 'early_signal' | 'recurring_pattern';
 
 export interface Insight {
   id: Id;
   kind: InsightKind;
   tone: InsightTone;
+  confidence: InsightConfidence;
+  /** Safe, headline claim. */
   title: string;
+  /** Safe supporting sentence. */
   body: string;
-  /** Cautious framing label, e.g. "associated with". */
+  /** "Why am I seeing this?" — the concrete evidence behind the insight. */
+  explanation: string;
+  /** Cautious framing label, e.g. "tended to occur together". */
   framing?: string;
-  /** Always true in Phase 0 — these are illustrative examples. */
-  isExample: boolean;
-  /** Optional tiny sparkline series for the card (0–1 normalised). */
+  relatedSymptomIds?: Id[];
+  /** Optional normalised (0–1) series for a sparkline. */
   spark?: number[];
 }
 
@@ -215,18 +238,51 @@ export interface RankedSymptom {
   label: string;
   /** 0–1 disruption score, for a simple bar. */
   disruption: number;
+  /** Count of days this appeared worse-than-usual in range. */
+  worseDays: number;
+}
+
+export interface BaselineChange {
+  symptomId: Id;
+  label: string;
+  direction: 'up' | 'down';
+  /** Human, cautious description of the change. */
+  description: string;
 }
 
 export interface AppointmentSummary {
-  id: Id;
   rangeStart: IsoDate;
   rangeEnd: IsoDate;
-  mostDisruptiveSymptoms: RankedSymptom[];
+  checkInCount: number;
+  daysTracked: number;
+  changes: BaselineChange[];
+  mostDisruptive: RankedSymptom[];
   cycleSummary: string;
   treatmentEventIds: Id[];
-  symptomTrendNote: string;
-  discussionPoints: string[];
-  generatedAt: string; // ISO datetime
+  observedPatterns: string[];
+  notes: { date: IsoDate; text: string }[];
+  questions: string[];
+  generatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Export bundle
+// ---------------------------------------------------------------------------
+
+export interface ExportBundle {
+  app: 'elowa';
+  schemaVersion: number;
+  exportedAt: string; // ISO datetime
+  data: {
+    profile: UserProfile;
+    preferences: UserPreferences;
+    onboardingReasons: OnboardingReason[];
+    tracking: TrackingConfig;
+    checkIns: DailyCheckIn[];
+    periods: PeriodEntry[];
+    treatments: TreatmentEvent[];
+    appointmentQuestions: string[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +312,6 @@ export interface LearningArticle {
   slug: string;
   summary: string;
   category: LearnCategory;
-  /** Body as an array of paragraphs (placeholder content in Phase 0). */
   body: string[];
   readMinutes: number;
   reviewedBy?: string;

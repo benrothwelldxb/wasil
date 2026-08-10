@@ -119,3 +119,29 @@
     padding-bottom: max(env(safe-area-inset-bottom), 0px);
   }
 }
+
+/* Print: only the appointment summary is printed, on a clean white page. */
+@media print {
+  body {
+    background: #fff;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #appointment-print,
+  #appointment-print * {
+    visibility: visible;
+  }
+  #appointment-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0 12mm;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
