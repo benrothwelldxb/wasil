@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Bloom design tokens (single source of truth).
+ *
+ * Colours are stored as HSL channels so they can be composed with opacity via
+ * Tailwind's `hsl(var(--token) / <alpha>)`. The palette is warm and muted:
+ * cream backgrounds, a deep muted green brand colour, and soft botanical accents
+ * (coral / lilac / sage / beige). No clinical blue, no neon, no loud gradients.
+ */
+@layer base {
+  :root {
+    /* --- Neutrals & surfaces --- */
+    --canvas: 36 20% 90%; /* device backdrop behind the mobile canvas */
+    --background: 40 40% 96%; /* warm off-white / cream */
+    --foreground: 40 14% 16%; /* warm charcoal ink */
+
+    --card: 44 46% 98%; /* near-white, faintly warm */
+    --card-foreground: 40 14% 16%;
+
+    --popover: 44 46% 98%;
+    --popover-foreground: 40 14% 16%;
+
+    --muted: 40 24% 92%;
+    --muted-foreground: 38 8% 42%;
+
+    /* --- Brand: deep muted green --- */
+    --primary: 158 28% 29%;
+    --primary-foreground: 44 46% 98%;
+    --primary-soft: 158 24% 92%; /* tinted surfaces / selected states */
+
+    /* --- Secondary: warm beige surface --- */
+    --secondary: 38 30% 90%;
+    --secondary-foreground: 40 16% 24%;
+
+    /* --- Accent: soft coral / blush --- */
+    --accent: 12 58% 88%;
+    --accent-foreground: 10 40% 32%;
+
+    /* --- Botanical accent palette --- */
+    --coral: 11 62% 74%;
+    --lilac: 264 26% 78%;
+    --sage: 128 20% 72%;
+    --beige: 36 34% 82%;
+
+    /* --- Lines & controls --- */
+    --border: 38 22% 86%;
+    --input: 38 22% 84%;
+    --ring: 158 28% 34%;
+
+    /* --- Semantic status (calm, non-alarming) --- */
+    --success: 150 34% 38%;
+    --success-foreground: 44 46% 98%;
+    --warning: 36 64% 46%;
+    --warning-foreground: 44 46% 98%;
+    --attention: 8 52% 52%; /* reserved for "seek medical advice" callouts */
+    --attention-foreground: 44 46% 98%;
+
+    /* --- Elevation --- */
+    --shadow-color: 34 30% 22%;
+
+    /* --- Radius (rounded, soft) --- */
+    --radius: 1.25rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-canvas text-foreground font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  /* Headings use the display serif for an editorial, premium feel. */
+  h1,
+  h2,
+  h3 {
+    @apply font-display tracking-tight;
+  }
+
+  /* Always show a clear focus ring for keyboard users. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer utilities {
+  /* Respect users who prefer reduced motion: neutralise all animation. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Hide scrollbars on the horizontal chip rows while keeping them scrollable. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Safe-area padding for notched devices. */
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+}
