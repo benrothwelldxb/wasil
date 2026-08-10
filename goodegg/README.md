@@ -82,10 +82,20 @@ reciprocal A↔B pairs, honour exclusions, deterministic re-runs) live in
 | Fonts | Fraunces (display) + Inter (body), self-hosted via Fontsource |
 | PWA | `vite-plugin-pwa` |
 | Tests | Vitest + Testing Library |
-| Backend _(optional)_ | Supabase (Postgres + RLS + Edge Functions) |
+| Backend _(optional)_ | **Pick one** — see below |
 
 The frontend talks to a **`DataProvider`** abstraction, so it never needs to know
-which backend is behind it (see below).
+which backend is behind it. Three implementations ship, selected by the
+`VITE_DATA_PROVIDER` build-time variable:
+
+| `VITE_DATA_PROVIDER` | Backend | Use it for |
+| --- | --- | --- |
+| `local` _(default)_ | In-browser seeded demo | Instant review, no server |
+| `api` | Self-hosted Hono API + Postgres (`/server`) | **Railway** / Fly / a VPS — see [`docs/RAILWAY.md`](docs/RAILWAY.md) |
+| `supabase` | Supabase (Postgres + Auth + RLS + edge fn) | Managed backend — see below |
+
+Both real backends use **passwordless 6-digit email codes** and enforce the same
+secrecy model (assignments are never sent to a client; the draw is server-side).
 
 ---
 
@@ -121,8 +131,29 @@ review and for exploring every flow.
 | `npm run preview` | Preview the production build locally |
 | `npm run test` | Run the Vitest suite once |
 | `npm run test:watch` | Run Vitest in watch mode |
-| `npm run typecheck` | Type-check only (`tsc -b --noEmit`) |
+| `npm run typecheck` | Type-check the app **and** the server |
 | `npm run lint` | ESLint over `.ts`/`.tsx` |
+| `npm run start` | Run the production server (`/server`, serves `dist/` + API) |
+| `npm run server:dev` | Run the API with live reload |
+
+---
+
+## Self-hosting on Railway (no Supabase)
+
+Prefer to own your stack? The `/server` folder is a small **Hono API + Postgres**
+backend that serves the SPA and the API from one service, with passwordless
+6-digit email-code auth. Full guide: **[`docs/RAILWAY.md`](docs/RAILWAY.md)**.
+
+Try it locally with **no database to install** (in-process Postgres via PGlite):
+
+```bash
+# terminal 1 — API on :8080 with demo data
+USE_PGLITE=true SEED_DEMO=true npm run server:dev
+# terminal 2 — frontend on :5173, /api proxied to the server
+VITE_DATA_PROVIDER=api npm run dev
+```
+
+Sign in as `ben@work.example` (the code prints in terminal 1).
 
 ---
 
@@ -173,7 +204,7 @@ be-a-good-egg/
 │  │  ├─ brand/            # Logo, egg mark, wordmark
 │  │  ├─ layout/           # App frame, nav, screens scaffolding
 │  │  └─ ui/               # Buttons, cards, sheets — the design system
-│  ├─ data/                # DataProvider interface + local & supabase impls
+│  ├─ data/                # DataProvider interface + local / api / supabase impls
 │  ├─ features/            # Feature modules (group, buddy, ideas, inbox …)
 │  ├─ routes/              # Route components / router config
 │  ├─ store/               # Zustand stores (session, UI)
@@ -185,10 +216,19 @@ be-a-good-egg/
 │  │  ├─ utils.ts          # ids, join codes, dates, formatting
 │  │  └─ cn.ts             # Tailwind class merge helper
 │  └─ test/                # Vitest setup
-├─ supabase/
+├─ server/                 # Self-hosted Hono API (the "api" backend)
+│  ├─ index.ts             # Entry — serves dist/ + /api, runs migrations
+│  ├─ app.ts               # Route wiring + auth cookie
+│  ├─ repo.ts              # All data access + server-side authz (replaces RLS)
+│  ├─ auth.ts              # 6-digit codes + JWT sessions
+│  ├─ db.ts                # pg (prod) / PGlite (dev & tests) adapter
+│  ├─ schema.sql           # Railway Postgres schema
+│  └─ *.test.ts            # PGlite-backed integration tests
+├─ supabase/               # Alternative managed backend
 │  ├─ migrations/          # SQL schema + RLS policies
 │  └─ functions/           # run-draw edge function (service role)
 ├─ public/                 # Favicon, PWA icons
+├─ Dockerfile, railway.json# Self-hosting config
 ├─ tailwind.config.ts      # Design tokens
 └─ vite.config.ts          # Vite + PWA + Vitest config
 ```

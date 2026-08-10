@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { EggMascot } from '@/components/brand/EggMascot'
 import { Loading } from '@/components/ui/states'
 import { provider } from '@/data'
-import { useJoinGroup } from '@/data/hooks'
+import { useCurrentProfile, useJoinGroup } from '@/data/hooks'
 import { useSession } from '@/store/session'
 import type { Group } from '@/lib/types'
 
@@ -14,18 +14,22 @@ export function JoinInviteScreen() {
   const { code = '' } = useParams()
   const navigate = useNavigate()
   const join = useJoinGroup()
+  const me = useCurrentProfile()
   const setActiveGroup = useSession((s) => s.setActiveGroup)
 
   const [group, setGroup] = useState<Group | null | 'loading'>('loading')
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     provider.getGroupByCode(code).then((g) => setGroup(g))
   }, [code])
 
-  if (group === 'loading') return <div className="mx-auto max-w-app"><Loading /></div>
+  useEffect(() => {
+    if (me.data?.display_name && !name) setName(me.data.display_name)
+  }, [me.data, name])
+
+  if (group === 'loading' || me.isLoading) return <div className="mx-auto max-w-app"><Loading /></div>
 
   if (!group) {
     return (
@@ -38,13 +42,17 @@ export function JoinInviteScreen() {
     )
   }
 
+  const needsSignIn = provider.kind !== 'local' && !me.data
+
   async function onJoin(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
     setError(null)
+    if (needsSignIn) {
+      navigate(`/signin?next=${encodeURIComponent(`/join/${code}`)}`)
+      return
+    }
+    if (!name.trim()) return
     try {
-      // Passwordless: capture identity now; a magic link confirms it in production.
-      if (email.trim()) await provider.signIn(email.trim(), name.trim())
       const { group: joined } = await join.mutateAsync({ code, displayName: name.trim() })
       setActiveGroup(joined.id)
       navigate(`/onboard/${joined.id}/profile`)
@@ -65,29 +73,26 @@ export function JoinInviteScreen() {
       <Card tone="cream" className="mt-8">
         <CardBody>
           <form onSubmit={onJoin} className="space-y-4">
-            <TextInput
-              label="Your name"
-              hint="This is how your buddy will know you."
-              placeholder="e.g. Sam"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-              required
-            />
-            <TextInput
-              label="Email"
-              optional
-              hint="For a magic-link sign-in — no password needed."
-              type="email"
-              inputMode="email"
-              placeholder="you@work.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
+            {!needsSignIn && (
+              <TextInput
+                label="Your name"
+                hint="This is how your buddy will know you."
+                placeholder="e.g. Sam"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+                required
+              />
+            )}
             {error && <p className="text-sm text-coral-deep">{error}</p>}
-            <Button type="submit" size="lg" fullWidth disabled={!name.trim() || join.isPending}>
-              Join the group
+            <Button type="submit" size="lg" fullWidth disabled={(!needsSignIn && !name.trim()) || join.isPending}>
+              {needsSignIn ? 'Sign in to join' : 'Join the group'}
             </Button>
+            {needsSignIn && (
+              <p className="text-center text-xs text-ink-muted">
+                We’ll email you a 6-digit code — no password needed.
+              </p>
+            )}
           </form>
         </CardBody>
       </Card>

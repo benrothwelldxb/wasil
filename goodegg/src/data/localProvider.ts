@@ -140,6 +140,14 @@ export class LocalProvider implements DataProvider {
     return delay(prof)
   }
 
+  // Demo auth accepts any code — the gate is bypassed for the local provider.
+  requestOtp(_email: string, _displayName?: string): Promise<void> {
+    return delay(undefined)
+  }
+  verifyOtp(email: string, _code: string, displayName?: string): Promise<Profile> {
+    return this.signIn(email, displayName)
+  }
+
   signOut(): Promise<void> {
     this.db.currentProfileId = null
     this.persist()

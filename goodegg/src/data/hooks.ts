@@ -135,6 +135,21 @@ export function useSignIn() {
   })
 }
 
+export function useRequestOtp() {
+  return useMutation({
+    mutationFn: (v: { email: string; displayName?: string }) =>
+      provider.requestOtp(v.email, v.displayName),
+  })
+}
+
+export function useVerifyOtp() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { email: string; code: string }) => provider.verifyOtp(v.email, v.code),
+    onSuccess: () => qc.invalidateQueries(),
+  })
+}
+
 export function useSignOut() {
   const qc = useQueryClient()
   return useMutation({

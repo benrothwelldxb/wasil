@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
+import { RequireAuth } from './features/auth/RequireAuth'
+import { SignInScreen } from './features/auth/SignInScreen'
 import { LandingScreen } from './features/landing/LandingScreen'
 import { CreateGroupScreen } from './features/groups/CreateGroupScreen'
 import { InviteShareScreen } from './features/groups/InviteShareScreen'
@@ -26,20 +28,24 @@ export default function App() {
     <Routes>
       {/* Onboarding — no app chrome */}
       <Route path="/" element={<LandingScreen />} />
-      <Route path="/create" element={<CreateGroupScreen />} />
+      <Route path="/signin" element={<SignInScreen />} />
+      <Route path="/create" element={<RequireAuth><CreateGroupScreen /></RequireAuth>} />
       <Route path="/join" element={<JoinCodeScreen />} />
       <Route path="/join/:code" element={<JoinInviteScreen />} />
-      <Route path="/onboard/:groupId/profile" element={<BuddyProfileScreen mode="onboard" />} />
+      <Route
+        path="/onboard/:groupId/profile"
+        element={<RequireAuth><BuddyProfileScreen mode="onboard" /></RequireAuth>}
+      />
 
       {/* Organiser — wider, desktop-friendly */}
-      <Route path="/hq" element={<OrganiserHome />} />
-      <Route path="/hq/invite/:groupId" element={<InviteShareScreen />} />
-      <Route path="/hq/participants" element={<ParticipantsScreen />} />
-      <Route path="/hq/settings" element={<GroupSettingsScreen />} />
-      <Route path="/hq/missions" element={<MissionsAdminScreen />} />
+      <Route path="/hq" element={<RequireAuth><OrganiserHome /></RequireAuth>} />
+      <Route path="/hq/invite/:groupId" element={<RequireAuth><InviteShareScreen /></RequireAuth>} />
+      <Route path="/hq/participants" element={<RequireAuth><ParticipantsScreen /></RequireAuth>} />
+      <Route path="/hq/settings" element={<RequireAuth><GroupSettingsScreen /></RequireAuth>} />
+      <Route path="/hq/missions" element={<RequireAuth><MissionsAdminScreen /></RequireAuth>} />
 
       {/* Participant app — mobile column + bottom nav */}
-      <Route path="/app" element={<AppShell />}>
+      <Route path="/app" element={<RequireAuth><AppShell /></RequireAuth>}>
         <Route index element={<HomeScreen />} />
         <Route path="reveal" element={<RevealScreen />} />
         <Route path="buddy" element={<BuddyViewScreen />} />

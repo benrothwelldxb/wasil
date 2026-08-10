@@ -1,6 +1,7 @@
 import type { DataProvider } from './provider'
 import { LocalProvider } from './localProvider'
 import { SupabaseProvider } from './supabaseProvider'
+import { ApiProvider } from './apiProvider'
 
 export type { DataProvider } from './provider'
 export type { CreateGroupInput, BuddyProfileInput, ReceivedQuestion } from './provider'
@@ -8,6 +9,7 @@ export type { CreateGroupInput, BuddyProfileInput, ReceivedQuestion } from './pr
 function create(): DataProvider {
   const kind = import.meta.env.VITE_DATA_PROVIDER ?? 'local'
   if (kind === 'supabase') return new SupabaseProvider()
+  if (kind === 'api') return new ApiProvider()
   return new LocalProvider()
 }
 

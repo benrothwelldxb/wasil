@@ -40,3 +40,6 @@ supabase/.temp
 
 # typescript build info
 *.tsbuildinfo
+
+# local pglite data
+.pglite

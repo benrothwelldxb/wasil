@@ -87,6 +87,25 @@ export class SupabaseProvider implements DataProvider {
     }
   }
 
+  async requestOtp(email: string, displayName?: string): Promise<void> {
+    const { error } = await this.sb.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+        data: displayName ? { display_name: displayName } : undefined,
+      },
+    })
+    if (error) throw new Error(error.message)
+  }
+
+  async verifyOtp(email: string, code: string): Promise<Profile> {
+    const { error } = await this.sb.auth.verifyOtp({ email, token: code, type: 'email' })
+    if (error) throw new Error(error.message)
+    const profile = await this.currentProfile()
+    if (!profile) throw new Error('Signed in, but no profile was found.')
+    return profile
+  }
+
   async signOut(): Promise<void> {
     await this.sb.auth.signOut()
   }

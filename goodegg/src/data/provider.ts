@@ -55,12 +55,16 @@ export interface RunDrawResult {
 }
 
 export interface DataProvider {
-  readonly kind: 'local' | 'supabase'
+  readonly kind: 'local' | 'supabase' | 'api'
 
   // --- Auth (passwordless) ---
   currentProfile(): Promise<Profile | null>
   /** Passwordless sign-in. Local provider resolves instantly. */
   signIn(email: string, displayName?: string): Promise<Profile>
+  /** Request a one-time 6-digit sign-in code by email. */
+  requestOtp(email: string, displayName?: string): Promise<void>
+  /** Verify the 6-digit code and establish a session. */
+  verifyOtp(email: string, code: string): Promise<Profile>
   signOut(): Promise<void>
   updateMyProfile(patch: Partial<Pick<Profile, 'display_name' | 'avatar_seed'>>): Promise<Profile>
 
