@@ -41,10 +41,14 @@ export function mergeById<T extends SyncableRecord>(
     if (t.collection === collection) deleted.set(t.recordId, Date.parse(t.deletedAt));
   }
 
+  // Local records are considered first, then remote. A record only replaces an
+  // existing one if it is STRICTLY newer, so on an equal `updatedAt` the
+  // first-seen (local) copy wins — a device never loses its own working copy to
+  // an equal-timestamp remote.
   const byId = new Map<string, T>();
   const consider = (r: T) => {
     const existing = byId.get(r.id);
-    if (!existing || time(r) >= time(existing)) byId.set(r.id, r);
+    if (!existing || time(r) > time(existing)) byId.set(r.id, r);
   };
   for (const r of local) consider(r);
   for (const r of remote) consider(r);

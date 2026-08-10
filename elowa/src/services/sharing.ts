@@ -30,20 +30,37 @@ export const SHARE_EXPIRY_OPTIONS = [
 /** Symptoms a partner may NOT see by default (opt-in only). */
 export const PARTNER_DEFAULT_EXCLUDED = SENSITIVE_SYMPTOM_IDS;
 
+const SENSITIVE = PARTNER_DEFAULT_EXCLUDED as readonly string[];
+
 export function createShareLink(input: {
   audience: ShareAudience;
   sections: ShareSection[];
   includedSymptomIds: string[];
+  /** Sensitive categories the user explicitly opted into for a partner link. */
+  optInSensitiveIds?: string[];
   expiryDays: number;
   partnerNote?: string;
   now: string; // ISO datetime
 }): ShareLink {
+  // Enforce the partner guarantee at the point a link is minted: a sensitive
+  // category can only ever appear in a partner link's allow-list if it was
+  // explicitly opted in. Any sensitive id that slips into `includedSymptomIds`
+  // without an opt-in is stripped here — the enforcement can't be bypassed by a
+  // caller passing a pre-built list.
+  const includedSymptomIds =
+    input.audience === 'partner'
+      ? [
+          ...input.includedSymptomIds.filter((id) => !SENSITIVE.includes(id)),
+          ...(input.optInSensitiveIds ?? []).filter((id) => SENSITIVE.includes(id)),
+        ]
+      : input.includedSymptomIds;
+
   return {
     id: makeId('share'),
     token: makeId('tok') + makeId('tok'),
     audience: input.audience,
     sections: input.sections,
-    includedSymptomIds: input.includedSymptomIds,
+    includedSymptomIds,
     createdAt: input.now,
     expiresAt: `${addDays(input.now.slice(0, 10), input.expiryDays)}T23:59:59.000Z`,
     ...(input.partnerNote ? { partnerNote: input.partnerNote } : {}),

@@ -153,7 +153,11 @@ export const checkInService = {
     return checkInRepository.upsert(checkIn);
   },
   removeByDate(date: IsoDate): void {
+    // Record a tombstone before removing so a sync from another device can't
+    // resurrect the deleted check-in.
+    const existing = checkInRepository.getByDate(date);
     checkInRepository.removeByDate(date);
+    if (existing) recordDeletion('checkIns', existing.id, new Date().toISOString());
   },
 };
 
@@ -167,11 +171,29 @@ export const cycleService = {
   stats(): CycleStats {
     return cycleStats(deriveCycles(cycleRepository.listPeriods()));
   },
+  upsertPeriod(entry: PeriodEntry): PeriodEntry {
+    return cycleRepository.upsertPeriod(entry);
+  },
+  removePeriod(date: IsoDate): void {
+    // Tombstone every period entry on this date so the deletion survives sync.
+    const now = new Date().toISOString();
+    for (const p of cycleRepository.listPeriods().filter((x) => x.date === date)) {
+      recordDeletion('periods', p.id, now);
+    }
+    cycleRepository.removeByDate(date);
+  },
 };
 
 export const treatmentService = {
   list(): TreatmentEvent[] {
     return treatmentRepository.list();
+  },
+  upsert(event: TreatmentEvent): TreatmentEvent {
+    return treatmentRepository.upsert(event);
+  },
+  remove(id: string): void {
+    treatmentRepository.remove(id);
+    recordDeletion('treatments', id, new Date().toISOString());
   },
 };
 
@@ -588,6 +610,7 @@ export const shareService = {
     audience: ShareAudience;
     sections: ShareSection[];
     includedSymptomIds: string[];
+    optInSensitiveIds?: string[];
     expiryDays: number;
     partnerNote?: string;
   }): ShareLink {

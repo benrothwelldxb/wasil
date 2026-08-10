@@ -25,10 +25,12 @@ export const cycleRepository = {
   },
 
   upsertPeriod(entry: PeriodEntry): PeriodEntry {
-    const list = read().filter((p) => p.date !== entry.date && p.id !== entry.id);
-    list.push(entry);
+    // Always advance updatedAt so sync's last-write-wins can order this edit.
+    const stamped: PeriodEntry = { ...entry, updatedAt: new Date().toISOString() };
+    const list = read().filter((p) => p.date !== stamped.date && p.id !== stamped.id);
+    list.push(stamped);
     write(list);
-    return entry;
+    return stamped;
   },
 
   removeByDate(date: IsoDate): void {

@@ -58,6 +58,43 @@ describe('partner scope', () => {
     expect(PARTNER_DEFAULT_EXCLUDED).toEqual(SENSITIVE_SYMPTOM_IDS);
   });
 
+  it('strips a sensitive id from a partner link unless it was explicitly opted in', () => {
+    // Caller passes a sensitive id in the base list but does NOT opt it in.
+    const link = createShareLink({
+      audience: 'partner',
+      sections: ['summary'],
+      includedSymptomIds: ['sym_sleep', 'sym_libido', 'sym_mood'],
+      expiryDays: 7,
+      now: NOW,
+    });
+    expect(link.includedSymptomIds).toEqual(['sym_sleep']);
+    expect(effectiveSymptomIds(link, new Set())).toEqual(['sym_sleep']);
+  });
+
+  it('includes a sensitive category only when explicitly opted in', () => {
+    const link = createShareLink({
+      audience: 'partner',
+      sections: ['summary'],
+      includedSymptomIds: ['sym_sleep'],
+      optInSensitiveIds: ['sym_mood'],
+      expiryDays: 7,
+      now: NOW,
+    });
+    expect(link.includedSymptomIds).toContain('sym_mood');
+    expect(link.includedSymptomIds).toContain('sym_sleep');
+  });
+
+  it('clinician links are unaffected by the partner sensitive filter', () => {
+    const link = createShareLink({
+      audience: 'clinician',
+      sections: ['symptoms'],
+      includedSymptomIds: ['sym_sleep', 'sym_mood'],
+      expiryDays: 7,
+      now: NOW,
+    });
+    expect(link.includedSymptomIds).toEqual(['sym_sleep', 'sym_mood']);
+  });
+
   it('never widens scope: report exclusions are subtracted at resolve time', () => {
     const link = createShareLink({
       audience: 'clinician',

@@ -187,6 +187,8 @@ export interface PeriodEntry {
   date: IsoDate;
   flow: FlowLevel;
   note?: string;
+  /** Stamped on every write; used for last-write-wins during sync. */
+  updatedAt?: string;
 }
 
 /** A derived menstrual cycle (computed, not stored). */
@@ -218,6 +220,8 @@ export interface TreatmentEvent {
   dose?: string;
   frequency?: string;
   note?: string;
+  /** Stamped on every write; used for last-write-wins during sync. */
+  updatedAt?: string;
 }
 
 // ---------------------------------------------------------------------------

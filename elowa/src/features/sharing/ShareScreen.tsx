@@ -131,18 +131,19 @@ function ShareBuilder({ audience, onDone }: { audience: ShareAudience; onDone: (
   const labelOf = (id: string) => symptoms?.find((s) => s.id === id)?.label ?? id;
 
   const submit = () => {
-    const symptomIds = audience === 'partner' ? [...included, ...optedIn] : included;
-    const link = create.mutate(
+    create.mutate(
       {
         audience,
         sections,
-        includedSymptomIds: symptomIds,
+        // Non-sensitive base list; sensitive categories are passed separately as
+        // explicit opt-ins so createShareLink can enforce the partner guarantee.
+        includedSymptomIds: included,
+        ...(audience === 'partner' ? { optInSensitiveIds: optedIn } : {}),
         expiryDays,
         ...(partnerNote.trim() ? { partnerNote: partnerNote.trim() } : {}),
       },
       { onSuccess: (l) => setCreated(shareUrl(l.token)) },
     );
-    return link;
   };
 
   return (

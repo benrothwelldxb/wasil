@@ -20,10 +20,12 @@ export const treatmentRepository = {
   },
 
   upsert(event: TreatmentEvent): TreatmentEvent {
-    const list = read().filter((t) => t.id !== event.id);
-    list.push(event);
+    // Always advance updatedAt so sync's last-write-wins can order this edit.
+    const stamped: TreatmentEvent = { ...event, updatedAt: new Date().toISOString() };
+    const list = read().filter((t) => t.id !== stamped.id);
+    list.push(stamped);
     write(list);
-    return event;
+    return stamped;
   },
 
   remove(id: string): void {

@@ -32,11 +32,9 @@ import {
 } from '@/services';
 import {
   checkInRepository,
-  cycleRepository,
   preferencesRepository,
   privacyRepository,
   symptomRepository,
-  treatmentRepository,
 } from '@/services/repositories';
 import { enterDemoMode, exitDemoMode, resetDemo } from '@/services/demo';
 import { deleteAllData } from '@/services/dataManagement';
@@ -141,7 +139,7 @@ export function useSaveCheckIn() {
 export function useDeleteCheckIn() {
   const invalidate = useInvalidateData();
   return useMutation({
-    mutationFn: async (date: IsoDate) => checkInRepository.removeByDate(date),
+    mutationFn: async (date: IsoDate) => checkInService.removeByDate(date),
     onSuccess: invalidate,
   });
 }
@@ -149,7 +147,7 @@ export function useDeleteCheckIn() {
 export function useUpsertPeriod() {
   const invalidate = useInvalidateData();
   return useMutation({
-    mutationFn: async (entry: PeriodEntry) => cycleRepository.upsertPeriod(entry),
+    mutationFn: async (entry: PeriodEntry) => cycleService.upsertPeriod(entry),
     onSuccess: invalidate,
   });
 }
@@ -157,7 +155,7 @@ export function useUpsertPeriod() {
 export function useRemovePeriod() {
   const invalidate = useInvalidateData();
   return useMutation({
-    mutationFn: async (date: IsoDate) => cycleRepository.removeByDate(date),
+    mutationFn: async (date: IsoDate) => cycleService.removePeriod(date),
     onSuccess: invalidate,
   });
 }
@@ -165,7 +163,7 @@ export function useRemovePeriod() {
 export function useUpsertTreatment() {
   const invalidate = useInvalidateData();
   return useMutation({
-    mutationFn: async (event: TreatmentEvent) => treatmentRepository.upsert(event),
+    mutationFn: async (event: TreatmentEvent) => treatmentService.upsert(event),
     onSuccess: invalidate,
   });
 }
@@ -173,7 +171,7 @@ export function useUpsertTreatment() {
 export function useRemoveTreatment() {
   const invalidate = useInvalidateData();
   return useMutation({
-    mutationFn: async (id: string) => treatmentRepository.remove(id),
+    mutationFn: async (id: string) => treatmentService.remove(id),
     onSuccess: invalidate,
   });
 }
@@ -497,6 +495,7 @@ export function useCreateShareLink() {
       audience: ShareAudience;
       sections: ShareSection[];
       includedSymptomIds: string[];
+      optInSensitiveIds?: string[];
       expiryDays: number;
       partnerNote?: string;
     }) => shareService.create(input),

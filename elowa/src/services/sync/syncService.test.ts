@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { clearMode, setDataMode } from '../storage/dataContext';
-import { checkInRepository, appointmentRepository, accountRepository } from '../repositories';
+import { checkInRepository, appointmentRepository, accountRepository, treatmentRepository } from '../repositories';
+import { checkInService, cycleService, treatmentService } from '@/services';
 import { sync, migrateToAccount, recordDeletion, buildLocalSnapshot } from './syncService';
 import { LocalMockBackend } from './remoteBackend';
 import { makeCheckIn } from '@/test/factories';
@@ -96,5 +97,46 @@ describe('migration & sync (repository-wired)', () => {
     const snap = buildLocalSnapshot();
     expect(snap.tombstones.some((t) => t.recordId === 'ci_x')).toBe(true);
     accountRepository.setTombstones([]);
+  });
+
+  it('deleting a check-in via the service is not resurrected by a later sync', async () => {
+    checkInService.upsert(makeCheckIn('2026-01-01', { normal: true }));
+    await sync(backend, ACCOUNT); // cloud now holds it
+
+    checkInService.removeByDate('2026-01-01'); // records a tombstone
+    await sync(backend, ACCOUNT);
+
+    expect(checkInRepository.getByDate('2026-01-01')).toBeNull();
+  });
+
+  it('deleting a treatment via the service is not resurrected by a later sync', async () => {
+    treatmentService.upsert({ id: 'trt1', category: 'hrt', title: 'HRT', date: '2026-01-01' });
+    await sync(backend, ACCOUNT);
+
+    treatmentService.remove('trt1');
+    await sync(backend, ACCOUNT);
+
+    expect(treatmentRepository.list().find((t) => t.id === 'trt1')).toBeUndefined();
+  });
+
+  it('a local edit to a treatment already in the cloud is not clobbered on sync', async () => {
+    treatmentService.upsert({ id: 'trt1', category: 'hrt', title: 'HRT', date: '2026-01-01' });
+    await sync(backend, ACCOUNT); // cloud holds the original
+
+    // Edit locally — the repository stamps a newer updatedAt.
+    treatmentService.upsert({ id: 'trt1', category: 'hrt', title: 'HRT', date: '2026-01-01', dose: '50mcg' });
+    await sync(backend, ACCOUNT);
+
+    expect(treatmentRepository.list().find((t) => t.id === 'trt1')?.dose).toBe('50mcg');
+  });
+
+  it('deleting a period via the service is not resurrected by a later sync', async () => {
+    cycleService.upsertPeriod({ id: 'p1', date: '2026-01-05', flow: 'medium' });
+    await sync(backend, ACCOUNT);
+
+    cycleService.removePeriod('2026-01-05');
+    await sync(backend, ACCOUNT);
+
+    expect(cycleService.listPeriods().find((p) => p.id === 'p1')).toBeUndefined();
   });
 });
