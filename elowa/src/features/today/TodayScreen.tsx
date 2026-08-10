@@ -17,7 +17,9 @@ import {
   useAnalysis,
   useCheckInByDate,
   useCurrentUser,
-  useInsights,
+  useDueNotifications,
+  useHomeInsights,
+  useLatestHealthSample,
   useSaveCheckIn,
 } from '@/hooks/queries';
 import { CONTEXT_TAGS, QUICK_CONTEXT_TAG_IDS } from '@/data/catalog';
@@ -30,8 +32,10 @@ export function TodayScreen() {
   const today = todayIso();
   const { data: user } = useCurrentUser();
   const { data: analysis } = useAnalysis();
-  const { data: insights } = useInsights();
+  const { data: insights } = useHomeInsights();
   const { data: todayCheckIn } = useCheckInByDate(today);
+  const { data: latestSample } = useLatestHealthSample();
+  const { data: dueNotifications } = useDueNotifications();
   const save = useSaveCheckIn();
 
   const [normalOpen, setNormalOpen] = useState(false);
@@ -188,6 +192,30 @@ export function TodayScreen() {
         </div>
       )}
 
+      {/* Passive sleep (subtle) */}
+      {latestSample?.sleepMinutes ? (
+        <Card className="mt-4 flex items-center gap-3 p-4">
+          <span className="flex size-9 items-center justify-center rounded-full bg-primary-soft text-primary">
+            <Icon name="Moon" className="size-5" />
+          </span>
+          <div className="flex-1">
+            <p className="text-xs text-muted-foreground">Sleep (from your health data)</p>
+            <p className="text-base font-semibold text-foreground">
+              {Math.floor(latestSample.sleepMinutes / 60)}h {latestSample.sleepMinutes % 60}m
+            </p>
+          </div>
+          <span className="text-xs text-muted-foreground">last night</span>
+        </Card>
+      ) : null}
+
+      {/* A single gentle reminder, if any */}
+      {dueNotifications && dueNotifications.length > 0 ? (
+        <Card className="mt-4 flex items-start gap-3 bg-secondary/50 p-4">
+          <Icon name="Bell" className="mt-0.5 size-4 text-primary" />
+          <p className="flex-1 text-sm text-muted-foreground">{dueNotifications[0]!.body}</p>
+        </Card>
+      ) : null}
+
       {/* One useful insight */}
       {insights && insights.length > 0 ? (
         <div className="mt-8">
@@ -213,6 +241,8 @@ export function TodayScreen() {
 
       {/* Quick access */}
       <div className="mt-6 grid grid-cols-2 gap-3">
+        <QuickTile icon="Activity" title="What changed" subtitle="Since an event" onClick={() => navigate('/since')} />
+        <QuickTile icon="CalendarDays" title="Your month" subtitle="Reflection" onClick={() => navigate('/reflection')} />
         <QuickTile icon="Droplet" title="Cycle" subtitle="Periods & history" onClick={() => navigate('/cycle')} />
         <QuickTile icon="FileText" title="Appointment" subtitle="Visit summary" onClick={() => navigate('/appointment')} />
       </div>

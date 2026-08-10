@@ -6,6 +6,7 @@
 import type { OnboardingReason, UserPreferences, UserProfile } from '@/domain/models';
 import type { IsoDate } from '@/lib/date';
 import { todayIso } from '@/lib/date';
+import { DEFAULT_NOTIFICATION_PREFS } from '@/domain/notifications/rules';
 import { activeDriver } from '../storage/dataContext';
 import { StorageKeys } from '../storage/namespace';
 
@@ -80,7 +81,14 @@ export const preferencesRepository = {
     writePrefs({ ...readPrefs(), profile });
   },
   getPreferences(): UserPreferences {
-    return readPrefs().preferences;
+    const stored = readPrefs().preferences;
+    // Merge Phase 2 defaults so older records get sensible values.
+    return {
+      ...stored,
+      notifications: { ...DEFAULT_NOTIFICATION_PREFS, ...stored.notifications },
+      ai: { enabled: false, ...stored.ai },
+      analyticsEnabled: stored.analyticsEnabled ?? false,
+    };
   },
   setPreferences(preferences: UserPreferences): void {
     writePrefs({ ...readPrefs(), preferences });

@@ -79,6 +79,26 @@ export const safeCopy = {
       body: 'This describes a pattern in the order of your entries, not a reason for it.',
     };
   },
+  sleepChange(shorter: boolean, windowLabel = 'this week'): { title: string; body: string } {
+    return {
+      title: shorter
+        ? `Your recorded sleep has been shorter than usual ${windowLabel}.`
+        : `Your recorded sleep has been closer to your usual range ${windowLabel}.`,
+      body: 'Based on the passive sleep data you connected, compared with your usual range.',
+    };
+  },
+  contextSleep(tagLabel: string): { title: string; body: string } {
+    return {
+      title: `Sleep has more often been shorter than usual on days you tagged ${lower(tagLabel)}.`,
+      body: 'These tended to occur together in your data. This is an association, not a reason.',
+    };
+  },
+  activityMood(): { title: string; body: string } {
+    return {
+      title: 'On days with more movement, you have more often recorded better-than-usual mood.',
+      body: 'These tended to occur together in your data. This is an association, not a reason.',
+    };
+  },
   treatmentObservation(
     symptomLabel: string,
     treatmentTitle: string,
@@ -96,6 +116,20 @@ export const safeCopy = {
 export function explanation(recentText: string, comparisonText: string): string {
   return `${recentText}, compared with ${comparisonText}.`;
 }
+
+/**
+ * Reusable "What this means" note. Association findings always carry the
+ * explicit "cannot determine cause" caveat.
+ */
+export const whatThisMeans = {
+  association:
+    'These two things have often occurred together in your recent data. elowa cannot determine whether one leads to the other.',
+  change:
+    'This compares your recent check-ins with your own usual range. It describes what you recorded, not the reason for it.',
+  treatment:
+    'This changed around the same time. elowa cannot determine whether the treatment led to the change — it is worth discussing with a healthcare professional.',
+  cycle: 'A record of your cycle history. Changes in cycle length are common during perimenopause.',
+} as const;
 
 /** A cautious, standard reminder used across insight surfaces. */
 export const DISCLAIMER =

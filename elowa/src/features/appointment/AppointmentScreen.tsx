@@ -12,17 +12,21 @@ import { HealthNotice } from '@/components/common/HealthNotice';
 import { EmptyState } from '@/components/common/EmptyState';
 import {
   useAppointmentSummary,
+  useCheckIns,
   useSetAppointmentQuestions,
   useTreatments,
 } from '@/hooks/queries';
 import { downloadExport } from '@/services/dataManagement';
+import { downloadCsv } from '@/services/export/csv';
 import { formatDateRange } from '@/lib/date';
 
 export function AppointmentScreen() {
   const { data: summary } = useAppointmentSummary();
   const { data: treatments } = useTreatments();
+  const { data: checkIns } = useCheckIns();
   const setQuestions = useSetAppointmentQuestions();
   const [newQuestion, setNewQuestion] = useState('');
+  const exportCsv = () => downloadCsv(checkIns ?? [], new Date().toISOString());
 
   if (!summary) {
     return (
@@ -81,6 +85,10 @@ export function AppointmentScreen() {
             <div className="mb-3 hidden print:block">
               <h1 className="font-display text-2xl font-semibold text-primary">elowa — visit summary</h1>
             </div>
+
+            <AppointmentSection icon="Info" title="Context">
+              <p className="text-sm text-muted-foreground">{summary.context}</p>
+            </AppointmentSection>
 
             <AppointmentSection icon="CalendarDays" title="Overview">
               <p className="text-sm text-foreground">
@@ -184,6 +192,12 @@ export function AppointmentScreen() {
                 </ul>
               </AppointmentSection>
             ) : null}
+
+            {/* Clinical footer (printed) */}
+            <p className="mt-4 border-t border-border/60 pt-3 text-[11px] leading-relaxed text-muted-foreground">
+              Generated from information recorded by the user in elowa. This report does not provide
+              a medical diagnosis.
+            </p>
           </Card>
         </div>
 
@@ -211,10 +225,16 @@ export function AppointmentScreen() {
             <Icon name="Printer" className="size-5" />
             Print / save as PDF
           </PrimaryButton>
-          <Button variant="outline" size="lg" className="w-full" onClick={() => downloadExport(new Date().toISOString())}>
-            <Icon name="Download" className="size-5" />
-            Export my data (JSON)
-          </Button>
+          <div className="grid grid-cols-2 gap-2.5">
+            <Button variant="outline" size="lg" onClick={() => downloadExport(new Date().toISOString())}>
+              <Icon name="Download" className="size-5" />
+              JSON
+            </Button>
+            <Button variant="outline" size="lg" onClick={exportCsv}>
+              <Icon name="FileText" className="size-5" />
+              CSV
+            </Button>
+          </div>
         </div>
 
         <HealthNotice className="no-print mt-6" compact>

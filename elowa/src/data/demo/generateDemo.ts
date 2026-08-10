@@ -12,6 +12,7 @@
 
 import type {
   DailyCheckIn,
+  HealthDaySample,
   OnboardingReason,
   PeriodEntry,
   RelativeStatus,
@@ -30,6 +31,7 @@ export interface DemoDataset {
   checkIns: DailyCheckIn[];
   periods: PeriodEntry[];
   treatments: TreatmentEvent[];
+  healthSamples: HealthDaySample[];
   questions: string[];
 }
 
@@ -88,20 +90,15 @@ export function generateDemoDataset(endDate: IsoDate = todayIso()): DemoDataset 
   }
   const periodDates = new Set(periods.map((p) => p.date));
 
-  // --- Daily check-ins ---
+  // --- Daily check-ins + passive health samples ---
   const checkIns: DailyCheckIn[] = [];
+  const healthSamples: HealthDaySample[] = [];
   let prevSleepBad = false;
 
   for (let i = 0; i < DEMO_DAYS; i++) {
     const date = addDays(startDate, i);
     const dow = new Date(`${date}T00:00:00`).getDay();
     const isWeekend = dow === 0 || dow === 6;
-
-    // Skip ~10% of days (non-consecutive logging), but not the most recent 5.
-    if (i < DEMO_DAYS - 5 && rand() < 0.1) {
-      prevSleepBad = false;
-      continue;
-    }
 
     // Phase-driven probabilities.
     const weeksSinceHrt = (i - hrtDay) / 7;
@@ -123,6 +120,24 @@ export function generateDemoDataset(endDate: IsoDate = todayIso()): DemoDataset 
 
     const sleepBad = rand() < sleepBadP;
     const sleepMuch = sleepBad && rand() < 0.35;
+
+    // Passive health sample exists every day (independent of check-in logging).
+    const sleepHours = sleepBad ? (sleepMuch ? 4.8 : 5.7) : 7.3 - (isWeekend ? 0 : 0.1);
+    const walking = i > 58 && !isWeekend;
+    healthSamples.push({
+      date,
+      sleepMinutes: Math.round((sleepHours + (rand() - 0.5) * 0.4) * 60),
+      steps: Math.round((walking ? 8200 : 5200) + rand() * 2400),
+      activeMinutes: Math.round((walking ? 35 : 18) + rand() * 12),
+      restingHeartRate: Math.round(62 + rand() * 6),
+    });
+
+    // Skip ~10% of days for check-ins (non-consecutive logging), not the last 5.
+    if (i < DEMO_DAYS - 5 && rand() < 0.1) {
+      prevSleepBad = false;
+      continue;
+    }
+
     const hotBad = rand() < hotBadP;
     const moodBad = sleepBad && rand() < 0.7; // sleep/mood co-occurrence
     const energyBad = prevSleepBad && rand() < 0.6; // sequence: poor sleep → next-day energy
@@ -176,6 +191,7 @@ export function generateDemoDataset(endDate: IsoDate = todayIso()): DemoDataset 
     checkIns,
     periods,
     treatments,
+    healthSamples,
     questions: [
       'Is my current HRT dose right for me?',
       'Should I be concerned about how much my cycle length is changing?',

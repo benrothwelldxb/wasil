@@ -52,6 +52,40 @@ export const INSIGHTS = {
   RECURRING_MIN_EVIDENCE: 6,
 } as const;
 
+export const CHANGEPOINT = {
+  /** Minimum logged days for a measure before change detection runs. */
+  MIN_DAYS: 10,
+  /** Recent window (days) compared against the baseline. */
+  WINDOW: 7,
+  /** Minimum recent days present to evaluate the window. */
+  MIN_WINDOW: 5,
+  /** Deviation (severity units) that counts as "slightly outside". */
+  SLIGHT_DELTA: 0.5,
+  /** Deviation that counts as "noticeably different". */
+  NOTICEABLE_DELTA: 0.9,
+  /** Deviation required to call a change "sustained". */
+  SUSTAINED_DELTA: 0.7,
+  /** Share of the recent window that must agree in direction to be "sustained". */
+  SUSTAINED_SHARE: 0.5,
+} as const;
+
+export const PATTERNS = {
+  /** Minimum shared days for a same-day association. */
+  SAME_DAY_MIN: 4,
+  /** Minimum overlap rate of the rarer measure's notable days. */
+  SAME_DAY_MIN_RATE: 0.55,
+  /** Minimum occurrences for a lagged (A → next-day B) association. */
+  LAGGED_MIN: 3,
+  /** Minimum lagged occurrence rate over A's notable days. */
+  LAGGED_MIN_RATE: 0.5,
+  /** Evidence count at/above which a pattern is "strong". */
+  STRONG_MIN_EVIDENCE: 8,
+  /** Evidence count at/above which a pattern is "recurring". */
+  RECURRING_MIN_EVIDENCE: 5,
+  /** Max insights returned to any surface (before per-surface caps). */
+  MAX_INSIGHTS: 8,
+} as const;
+
 export const CYCLE = {
   /** Days gap that separates one bleed from the next (bridges spotting gaps). */
   MAX_BLEED_GAP: 2,

@@ -8,12 +8,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DATA_QUERY_KEYS,
   analysisService,
+  aiService,
   appointmentService,
   articleService,
   checkInService,
   cycleService,
+  healthService,
   insightService,
+  notificationService,
   queryKeys,
+  reflectionService,
+  sinceService,
   symptomService,
   treatmentService,
   userService,
@@ -22,6 +27,7 @@ import {
   checkInRepository,
   cycleRepository,
   preferencesRepository,
+  privacyRepository,
   symptomRepository,
   treatmentRepository,
 } from '@/services/repositories';
@@ -30,7 +36,10 @@ import { deleteAllData } from '@/services/dataManagement';
 import { useAppModeStore } from '@/store/appModeStore';
 import type {
   DailyCheckIn,
+  HealthMetricKind,
+  InsightFeedbackValue,
   PeriodEntry,
+  SymptomPrivacy,
   TrackingConfig,
   TreatmentEvent,
   UserPreferences,
@@ -98,6 +107,9 @@ function useInvalidateData() {
   return () => {
     for (const key of DATA_QUERY_KEYS) queryClient.invalidateQueries({ queryKey: key });
     queryClient.invalidateQueries({ queryKey: ['symptoms'] });
+    queryClient.invalidateQueries({ queryKey: ['since'] });
+    queryClient.invalidateQueries({ queryKey: ['reflection'] });
+    queryClient.invalidateQueries({ queryKey: ['symptomPrivacy'] });
   };
 }
 
@@ -236,4 +248,84 @@ export function useDataMode() {
       invalidate();
     },
   };
+}
+
+// --- Phase 2 queries -------------------------------------------------------
+
+export function useHomeInsights() {
+  return useQuery({ queryKey: queryKeys.homeInsights, queryFn: () => insightService.homeList() });
+}
+
+export function useSymptomPrivacyMap() {
+  return useQuery({ queryKey: ['symptomPrivacy'], queryFn: () => privacyRepository.getAll() });
+}
+
+export function useHealthCapabilities() {
+  return useQuery({ queryKey: [...queryKeys.health, 'capabilities'], queryFn: () => healthService.capabilities() });
+}
+
+export function useHealthPermissions() {
+  return useQuery({ queryKey: [...queryKeys.health, 'permissions'], queryFn: () => healthService.permissions() });
+}
+
+export function useLatestHealthSample() {
+  return useQuery({ queryKey: [...queryKeys.health, 'latest'], queryFn: () => healthService.latestSample() });
+}
+
+export function useDueNotifications() {
+  return useQuery({ queryKey: queryKeys.notifications, queryFn: () => notificationService.due() });
+}
+
+export function useSince(anchorDate: IsoDate | null, anchorLabel: string) {
+  return useQuery({
+    queryKey: ['since', anchorDate, anchorLabel],
+    queryFn: () => (anchorDate ? sinceService.build(anchorDate, anchorLabel) : null),
+    enabled: anchorDate !== null,
+  });
+}
+
+export function useReflection(month: string) {
+  return useQuery({ queryKey: queryKeys.reflection(month), queryFn: () => reflectionService.build(month) });
+}
+
+export function useAISummary() {
+  const user = useCurrentUser();
+  const aiOn = Boolean(user.data?.preferences.ai?.enabled && user.data?.preferences.ai?.consentedAt);
+  return useQuery({
+    queryKey: ['aiSummary', aiOn],
+    queryFn: () => aiService.summariseInsights(),
+  });
+}
+
+// --- Phase 2 mutations -----------------------------------------------------
+
+export function useConnectHealth() {
+  const invalidate = useInvalidateData();
+  return useMutation({
+    mutationFn: async (kinds: HealthMetricKind[]) => healthService.connect(kinds),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDisconnectHealth() {
+  const invalidate = useInvalidateData();
+  return useMutation({ mutationFn: async () => healthService.disconnect(), onSuccess: invalidate });
+}
+
+export function useSetSymptomPrivacy() {
+  const invalidate = useInvalidateData();
+  return useMutation({
+    mutationFn: async (input: { symptomId: string; privacy: SymptomPrivacy }) =>
+      privacyRepository.set(input.symptomId, input.privacy),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetInsightFeedback() {
+  const invalidate = useInvalidateData();
+  return useMutation({
+    mutationFn: async (input: { insightKey: string; value: InsightFeedbackValue }) =>
+      insightService.setFeedback(input.insightKey, input.value),
+    onSuccess: invalidate,
+  });
 }

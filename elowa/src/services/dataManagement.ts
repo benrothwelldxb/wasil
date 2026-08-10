@@ -9,7 +9,10 @@ import { clearMode, getDataMode } from './storage/dataContext';
 import {
   checkInRepository,
   cycleRepository,
+  healthRepository,
+  insightFeedbackRepository,
   preferencesRepository,
+  privacyRepository,
   symptomRepository,
   treatmentRepository,
 } from './repositories';
@@ -29,6 +32,9 @@ export function buildExportBundle(now: string): ExportBundle {
       periods: cycleRepository.listPeriods(),
       treatments: treatmentRepository.list(),
       appointmentQuestions: preferencesRepository.getQuestions(),
+      healthSamples: healthRepository.listSamples(),
+      symptomPrivacy: privacyRepository.getAll(),
+      insightFeedback: insightFeedbackRepository.getAll(),
     },
   };
 }

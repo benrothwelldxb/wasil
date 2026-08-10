@@ -10,7 +10,17 @@ import { FrequencyDots } from '@/components/product/FrequencyDots';
 import { HealthNotice } from '@/components/common/HealthNotice';
 import { EmptyState } from '@/components/common/EmptyState';
 import { IconBadge } from '@/components/common/IconBadge';
-import { useAnalysis, useCurrentUser, useInsights, useAllSymptoms } from '@/hooks/queries';
+import { Icon } from '@/components/ui/icon';
+import { Link } from 'react-router-dom';
+import {
+  useAnalysis,
+  useArticles,
+  useCurrentUser,
+  useInsights,
+  useAllSymptoms,
+  useSetInsightFeedback,
+} from '@/hooks/queries';
+import { insightKey } from '@/domain/analysis/insights';
 import { BASELINE, INSIGHTS } from '@/domain/analysis/thresholds';
 import { lastN } from '@/domain/analysis/stats';
 
@@ -26,6 +36,11 @@ export function InsightsScreen() {
   const { data: analysis } = useAnalysis();
   const { data: user } = useCurrentUser();
   const { data: symptoms } = useAllSymptoms();
+  const { data: articles } = useArticles();
+  const setFeedback = useSetInsightFeedback();
+
+  const learnTitleFor = (slug?: string) =>
+    slug ? articles?.find((a) => a.slug === slug)?.title : undefined;
 
   const labelOf = useMemo(() => {
     const map = new Map((symptoms ?? []).map((s) => [s.id, s.label]));
@@ -48,6 +63,15 @@ export function InsightsScreen() {
           Gentle observations from your own check-ins, compared with your usual range. These describe
           patterns — never a cause or a diagnosis.
         </p>
+
+        <div className="mt-3 flex gap-2">
+          <Link to="/reflection" className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-3 py-1.5 text-xs font-semibold text-primary">
+            <Icon name="CalendarDays" className="size-3.5" /> Your month
+          </Link>
+          <Link to="/since" className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-3 py-1.5 text-xs font-semibold text-primary">
+            <Icon name="Activity" className="size-3.5" /> What’s changed since…?
+          </Link>
+        </div>
 
         {/* Baseline status */}
         {overall ? (
@@ -72,7 +96,12 @@ export function InsightsScreen() {
           {insights && insights.length > 0 ? (
             <div className="space-y-3">
               {insights.map((insight) => (
-                <InsightCard key={insight.id} insight={insight} />
+                <InsightCard
+                  key={insight.id}
+                  insight={insight}
+                  {...(learnTitleFor(insight.learnSlug) ? { learnTitle: learnTitleFor(insight.learnSlug) } : {})}
+                  onFeedback={(value) => setFeedback.mutate({ insightKey: insightKey(insight), value })}
+                />
               ))}
             </div>
           ) : (

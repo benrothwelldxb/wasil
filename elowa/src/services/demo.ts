@@ -11,10 +11,12 @@ import { clearMode, getDataMode, setDataMode, type DataMode } from './storage/da
 import {
   checkInRepository,
   cycleRepository,
+  healthRepository,
   preferencesRepository,
   symptomRepository,
   treatmentRepository,
 } from './repositories';
+import { MockHealthProvider } from '@/domain/health';
 
 export function isDemoMode(): boolean {
   return getDataMode() === 'demo';
@@ -39,6 +41,9 @@ function writeDemoData(endDate: IsoDate): void {
   cycleRepository.replaceAll(data.periods);
   treatmentRepository.replaceAll(data.treatments);
   checkInRepository.replaceAll(data.checkIns);
+  // Passive health data: seed samples and grant permissions (demo only).
+  healthRepository.replaceAll(data.healthSamples);
+  healthRepository.setPermissions(new MockHealthProvider().capabilities().supported.map((kind) => ({ kind, granted: true })));
 }
 
 /** Enter demo mode, seeding the dataset (fresh each time for a clean demo). */

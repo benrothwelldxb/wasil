@@ -129,6 +129,9 @@ export function resolveSymptomValues(
 export function computeBaseline(
   symptomId: string,
   series: readonly { date: IsoDate; value: number }[],
+  /** Value range to clamp the band to. Symptoms use 0–4; passive metrics pass
+   *  their own range (e.g. [0, Infinity]) so hours/steps aren't squashed. */
+  range: readonly [number, number] = [0, 4],
 ): SymptomBaseline {
   const nums = series.map((s) => s.value);
   const n = nums.length;
@@ -136,8 +139,8 @@ export function computeBaseline(
   const window = lastN(nums, BASELINE.ROLLING_WINDOW);
   const m = mean(window);
   const sd = stdDev(window);
-  const low = clamp(m - sd, 0, 4);
-  const high = clamp(m + sd, 0, 4);
+  const low = clamp(m - sd, range[0], range[1]);
+  const high = clamp(m + sd, range[0], range[1]);
 
   const recent = lastN(nums, BASELINE.RECAL_WINDOW);
   const recentMean = mean(recent);
@@ -179,9 +182,11 @@ export function analyzeSymptoms(
   for (const symptomId of symptomIds) {
     const series = resolveSymptomValues(checkIns, symptomId, pinnedIds);
     const baseline = computeBaseline(symptomId, series);
-    // A day is "worse" when it sits above the usual-range upper band (and is at
-    // least mildly present), so a 0-value day is never flagged worse.
-    const threshold = Math.max(baseline.high + 1e-9, baseline.mean + 0.5);
+    // A day is "worse" when it reaches/passes the usual-range upper band (and is
+    // at least mildly present), so a 0-value day is never flagged worse. We use
+    // an inclusive `>=` (no epsilon) so a value sitting exactly at the band edge
+    // still counts — otherwise a 50/50 split can hide every worse day.
+    const threshold = Math.max(baseline.high, baseline.mean + 0.5);
     const values: DayValue[] = series.map((s) => ({
       date: s.date,
       value: s.value,

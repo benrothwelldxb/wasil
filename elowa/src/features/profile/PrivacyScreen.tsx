@@ -1,9 +1,16 @@
 import { Screen } from '@/components/common/Screen';
 import { Card } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { SectionHeading } from '@/components/layout/SectionHeading';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Icon } from '@/components/ui/icon';
+import { usePinnedSymptoms } from '@/hooks/usePinnedSymptoms';
+import { useSymptomPrivacyMap, useSetSymptomPrivacy } from '@/hooks/queries';
+import { privacyRepository } from '@/services/repositories';
+import type { Relevance } from '@/domain/models';
 import { downloadExport } from '@/services/dataManagement';
+import { cn } from '@/lib/utils';
 
 const POINTS: { icon: string; title: string; body: string }[] = [
   {
@@ -33,7 +40,19 @@ const POINTS: { icon: string; title: string; body: string }[] = [
   },
 ];
 
+const RELEVANCE_LABEL: Record<Relevance, string> = {
+  care: 'Focus',
+  neutral: 'Normal',
+  ignore: 'Don’t focus',
+};
+
 export function PrivacyScreen() {
+  const pinned = usePinnedSymptoms();
+  const { data: privacyMap } = useSymptomPrivacyMap();
+  const setPrivacy = useSetSymptomPrivacy();
+
+  const privacyFor = (id: string) => ({ ...privacyRepository.getFor(id), ...privacyMap?.[id] });
+
   return (
     <>
       <ScreenHeader eyebrow="How elowa handles your data" title="Data & privacy" showBack />
@@ -56,6 +75,59 @@ export function PrivacyScreen() {
           ))}
         </div>
 
+        {/* Focus & sensitive-topic controls */}
+        {pinned.length > 0 ? (
+          <div className="mt-6">
+            <SectionHeading>What elowa focuses on</SectionHeading>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Choose how much elowa highlights each area, and keep sensitive topics out of home
+              insights, AI summaries and reports.
+            </p>
+            <div className="space-y-3">
+              {pinned.map((s) => {
+                const pr = privacyFor(s.id);
+                const cycle: Relevance = pr.relevance === 'care' ? 'neutral' : pr.relevance === 'neutral' ? 'ignore' : 'care';
+                return (
+                  <Card key={s.id} className="p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-foreground">{s.label}</p>
+                      <button
+                        type="button"
+                        onClick={() => setPrivacy.mutate({ symptomId: s.id, privacy: { ...pr, relevance: cycle } })}
+                        className={cn(
+                          'rounded-full border px-3 py-1 text-xs font-semibold',
+                          pr.relevance === 'ignore'
+                            ? 'border-border text-muted-foreground'
+                            : 'border-primary bg-primary-soft text-primary',
+                        )}
+                      >
+                        {RELEVANCE_LABEL[pr.relevance]}
+                      </button>
+                    </div>
+                    <div className="mt-2 space-y-1.5">
+                      <PrivacyToggle
+                        label="Hide from home insights"
+                        checked={pr.excludeFromHome}
+                        onToggle={() => setPrivacy.mutate({ symptomId: s.id, privacy: { ...pr, excludeFromHome: !pr.excludeFromHome } })}
+                      />
+                      <PrivacyToggle
+                        label="Exclude from AI summaries"
+                        checked={pr.excludeFromAI}
+                        onToggle={() => setPrivacy.mutate({ symptomId: s.id, privacy: { ...pr, excludeFromAI: !pr.excludeFromAI } })}
+                      />
+                      <PrivacyToggle
+                        label="Exclude from appointment report"
+                        checked={pr.excludeFromReport}
+                        onToggle={() => setPrivacy.mutate({ symptomId: s.id, privacy: { ...pr, excludeFromReport: !pr.excludeFromReport } })}
+                      />
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-5">
           <Button variant="outline" size="lg" className="w-full" onClick={() => downloadExport(new Date().toISOString())}>
             <Icon name="Download" className="size-5" />
@@ -70,5 +142,14 @@ export function PrivacyScreen() {
         </p>
       </Screen>
     </>
+  );
+}
+
+function PrivacyToggle({ label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <Switch checked={checked} onCheckedChange={onToggle} aria-label={label} />
+    </div>
   );
 }

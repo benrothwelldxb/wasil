@@ -7,6 +7,7 @@ import type {
   AppointmentSummary,
   BaselineChange,
   DailyCheckIn,
+  OnboardingReason,
   PeriodEntry,
   RankedSymptom,
   TreatmentEvent,
@@ -24,7 +25,29 @@ export interface AppointmentInputs {
   treatments: readonly TreatmentEvent[];
   periods: readonly PeriodEntry[];
   questions: readonly string[];
+  onboardingReasons?: readonly OnboardingReason[];
+  /** Measure keys the user excluded from the report. */
+  excludeKeys?: ReadonlySet<string>;
   generatedAt: string;
+}
+
+const REASON_TEXT: Record<OnboardingReason, string> = {
+  periods_changed: 'changing periods',
+  poor_sleep: 'sleep difficulties',
+  not_myself: 'not feeling like themselves',
+  hot_flushes: 'hot flushes or night sweats',
+  mood_different: 'mood changes',
+  low_energy: 'low energy',
+  considering_hrt: 'considering HRT',
+  started_hrt: 'recently starting HRT',
+  understand: 'wanting to understand what’s happening',
+  other: 'other reasons',
+};
+
+function contextText(reasons: readonly OnboardingReason[] | undefined): string {
+  if (!reasons || reasons.length === 0) return 'The user began tracking to understand changes in their wellbeing.';
+  const phrases = reasons.map((r) => REASON_TEXT[r]);
+  return `The user began tracking because of ${phrases.join(', ')}.`;
 }
 
 export function cycleSummaryText(periods: readonly PeriodEntry[]): string {
@@ -42,7 +65,10 @@ export function cycleSummaryText(periods: readonly PeriodEntry[]): string {
 export function buildAppointmentSummary(inputs: AppointmentInputs): AppointmentSummary {
   const checkIns = normaliseCheckIns(inputs.checkIns);
   const pinnedSet = new Set(inputs.pinnedIds);
-  const analysis = analyzeSymptoms(checkIns, inputs.symptomIds, pinnedSet);
+  const excluded = inputs.excludeKeys ?? new Set<string>();
+  const analysis = new Map(
+    [...analyzeSymptoms(checkIns, inputs.symptomIds, pinnedSet)].filter(([id]) => !excluded.has(id)),
+  );
 
   const rangeStart = checkIns[0]?.date ?? inputs.generatedAt.slice(0, 10);
   const rangeEnd = checkIns[checkIns.length - 1]?.date ?? rangeStart;
@@ -102,6 +128,7 @@ export function buildAppointmentSummary(inputs: AppointmentInputs): AppointmentS
     .map((c) => ({ date: c.date as IsoDate, text: c.note!.trim() }));
 
   return {
+    context: contextText(inputs.onboardingReasons),
     rangeStart,
     rangeEnd,
     checkInCount: checkIns.length,

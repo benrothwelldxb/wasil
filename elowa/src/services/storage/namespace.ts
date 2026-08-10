@@ -23,6 +23,10 @@ export const StorageKeys = {
   periods: 'periods',
   treatments: 'treatments',
   appointmentQuestions: 'appointmentQuestions',
+  healthSamples: 'healthSamples',
+  healthPermissions: 'healthPermissions',
+  symptomPrivacy: 'symptomPrivacy',
+  insightFeedback: 'insightFeedback',
 } as const;
 
 export type StorageKey = (typeof StorageKeys)[keyof typeof StorageKeys];

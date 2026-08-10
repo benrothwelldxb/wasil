@@ -1,5 +1,24 @@
 # Deferred functionality
 
+## Done in Phase 2
+
+Health-data provider abstraction + permission UX + mock provider (native HealthKit/Health Connect
+deferred), passive sleep/activity in the baseline, Baseline v2 (unified measures, plain-language
+magnitudes), change-point detection, Pattern Engine v2 (same-day / lagged / activity / intervention
+associations, quality scoring, strength, ranking), reusable explainability ("Why am I seeing this?"
++ "What this means"), an optional AI interpretation pipeline (deterministic-first, consent,
+validation, fallback; no client secrets), monthly reflection, notification rules + preferences,
+"What's changed since…?", appointment summary v2 with printable clinical report, JSON/CSV export,
+insight feedback, category-level privacy controls, and a behavioural analytics choke point (off by
+default). Tests cover all of the above.
+
+## Explicitly deferred (Phase 2 → later)
+
+Native app wrapper for real HealthKit/Health Connect · a real server-proxied LLM provider · OS
+push-notification delivery · binary-PDF/native share sheet (Phase 2 uses browser print-to-PDF) ·
+home-screen widgets/shortcuts. Plus everything in the Phase 2 spec's "do not implement" list
+(clinician portal, prescriptions, diagnosis, community, fertility, etc.).
+
 ## Done in Phase 1
 
 Local persistence (versioned, real/demo namespaces), functional onboarding, personal baseline

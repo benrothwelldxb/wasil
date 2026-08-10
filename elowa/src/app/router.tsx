@@ -13,6 +13,11 @@ import { PrivacyScreen } from '@/features/profile/PrivacyScreen';
 import { CycleScreen } from '@/features/cycle/CycleScreen';
 import { TreatmentsScreen } from '@/features/treatments/TreatmentsScreen';
 import { OnboardingScreen } from '@/features/onboarding/OnboardingScreen';
+import { HealthConnectScreen } from '@/features/health/HealthConnectScreen';
+import { SinceScreen } from '@/features/since/SinceScreen';
+import { ReflectionScreen } from '@/features/reflection/ReflectionScreen';
+import { NotificationsScreen } from '@/features/settings/NotificationsScreen';
+import { AIScreen } from '@/features/settings/AIScreen';
 
 export const router = createBrowserRouter([
   {
@@ -27,6 +32,11 @@ export const router = createBrowserRouter([
       { path: '/learn', element: <LearnScreen /> },
       { path: '/learn/:slug', element: <ArticleScreen /> },
       { path: '/appointment', element: <AppointmentScreen /> },
+      { path: '/since', element: <SinceScreen /> },
+      { path: '/reflection', element: <ReflectionScreen /> },
+      { path: '/health', element: <HealthConnectScreen /> },
+      { path: '/notifications', element: <NotificationsScreen /> },
+      { path: '/ai', element: <AIScreen /> },
       { path: '/profile', element: <ProfileScreen /> },
       { path: '/privacy', element: <PrivacyScreen /> },
     ],
