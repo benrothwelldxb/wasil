@@ -11,6 +11,7 @@
  */
 
 import type {
+  AppointmentRecord,
   DailyCheckIn,
   HealthDaySample,
   OnboardingReason,
@@ -32,6 +33,7 @@ export interface DemoDataset {
   periods: PeriodEntry[];
   treatments: TreatmentEvent[];
   healthSamples: HealthDaySample[];
+  appointments: AppointmentRecord[];
   questions: string[];
 }
 
@@ -183,6 +185,32 @@ export function generateDemoDataset(endDate: IsoDate = todayIso()): DemoDataset 
     prevSleepBad = sleepBad;
   }
 
+  // --- Appointments (a past GP visit where HRT began, and an upcoming review) ---
+  const appointments: AppointmentRecord[] = [
+    {
+      id: 'demo_appt_gp',
+      date: addDays(startDate, 44),
+      clinicianName: 'Dr Aisha Rahman',
+      specialty: 'GP',
+      reason: 'Sleep, night sweats and low mood',
+      questions: ['Could this be perimenopause?', 'What are my options for the night sweats?'],
+      outcomes: ['Started estradiol patch (25mcg, twice weekly)', 'Review in 8 weeks'],
+      followUpDate: addDays(startDate, 100),
+      createdAt: `${addDays(startDate, 44)}T09:00:00.000Z`,
+      updatedAt: `${addDays(startDate, 46)}T09:00:00.000Z`,
+    },
+    {
+      id: 'demo_appt_review',
+      date: addDays(endDate, 12),
+      clinicianName: 'Dr Aisha Rahman',
+      specialty: 'GP',
+      reason: 'HRT review',
+      questions: ['Is my current dose right?', 'Should I be worried about my changing cycle length?'],
+      createdAt: `${endDate}T09:00:00.000Z`,
+      updatedAt: `${endDate}T09:00:00.000Z`,
+    },
+  ];
+
   return {
     profile: { displayName: 'Sarah', age: 47 },
     reasons: ['poor_sleep', 'hot_flushes'] as OnboardingReason[],
@@ -192,6 +220,7 @@ export function generateDemoDataset(endDate: IsoDate = todayIso()): DemoDataset 
     periods,
     treatments,
     healthSamples,
+    appointments,
     questions: [
       'Is my current HRT dose right for me?',
       'Should I be concerned about how much my cycle length is changing?',

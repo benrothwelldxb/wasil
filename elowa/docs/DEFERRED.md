@@ -1,5 +1,31 @@
 # Deferred functionality
 
+## Done in Phase 3
+
+Accounts & guest→account migration (`docs/AUTH.md`), an offline-first sync/merge
+engine (pure, idempotent, tombstone-aware; `docs/SYNC.md`) behind a `RemoteBackend`
+abstraction with an on-device mock "cloud", the longitudinal **Elowa Timeline**
+(deterministic promotion of meaningful moments only), **"How have I changed?"**,
+clinician appointment records with prep questions and after-visit outcomes,
+controlled **sharing** (clinician + light partner links; opaque tokens, scoped,
+expiring, revocable, sensitive categories excluded by default; `docs/SHARING.md`),
+**capability-based entitlements** with a respectful paywall that never gates data
+(`docs/SUBSCRIPTIONS.md`), an app-lock + consent-record + notification-privacy
+security surface, feature flags (`docs/ENVIRONMENTS.md`), export extended to *all*
+Phase 3 data, and demo fixtures for the new surfaces. New engines are unit-tested
+(sync/migration idempotency/conflict/tombstone, timeline promotion, how-changed
+buckets + safety language, entitlement gating, share scope/expiry/revoke).
+
+## Explicitly deferred (Phase 3 → later)
+
+Real managed backend + client-side encryption (`docs/BACKEND.md`, `docs/SECURITY.md`
+describe the design; the web build has no server and performs no real E2E
+encryption) · real passwordless/OAuth identity (local account model stands in) ·
+native app wrapper for HealthKit/Health Connect, biometric keystore, push, and
+store billing (`docs/NATIVE.md`; billing is simulated on-device here) · server-side
+share-token hosting for anonymous recipients (links resolve on-device in this
+build). Do **not** begin Phase 4.
+
 ## Done in Phase 2
 
 Health-data provider abstraction + permission UX + mock provider (native HealthKit/Health Connect

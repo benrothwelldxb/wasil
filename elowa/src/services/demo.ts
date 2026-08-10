@@ -9,6 +9,7 @@ import { generateDemoDataset } from '@/data/demo/generateDemo';
 import { todayIso, type IsoDate } from '@/lib/date';
 import { clearMode, getDataMode, setDataMode, type DataMode } from './storage/dataContext';
 import {
+  appointmentRepository,
   checkInRepository,
   cycleRepository,
   healthRepository,
@@ -41,6 +42,7 @@ function writeDemoData(endDate: IsoDate): void {
   cycleRepository.replaceAll(data.periods);
   treatmentRepository.replaceAll(data.treatments);
   checkInRepository.replaceAll(data.checkIns);
+  appointmentRepository.replaceAll(data.appointments);
   // Passive health data: seed samples and grant permissions (demo only).
   healthRepository.replaceAll(data.healthSamples);
   healthRepository.setPermissions(new MockHealthProvider().capabilities().supported.map((kind) => ({ kind, granted: true })));

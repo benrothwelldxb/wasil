@@ -19,6 +19,8 @@ import type {
 import type { IsoDate } from '@/lib/date';
 import { MOCK_ARTICLES, findArticle } from '@/data/mock';
 import {
+  accountRepository,
+  appointmentRepository,
   checkInRepository,
   cycleRepository,
   healthRepository,
@@ -52,6 +54,41 @@ import type {
   MonthlyReflection,
   SinceComparison,
 } from '@/domain/models';
+import type {
+  Account,
+  AppointmentRecord,
+  Capability,
+  ChangeSummary,
+  ConsentType,
+  DeviceSession,
+  Entitlement,
+  ReportArchiveEntry,
+  ShareAudience,
+  ShareLink,
+  ShareSection,
+  Tier,
+  TimelineEvent,
+  TimelineFilter,
+} from '@/domain/models';
+import { buildTimeline, filterTimeline, groupByMonth, timelineSince } from '@/domain/analysis/timeline';
+import { buildChangeSummary } from '@/domain/analysis/howChanged';
+import { effectiveTier, hasCapability } from '@/domain/entitlements/entitlements';
+import { getFlags, setFlag, type FeatureFlags } from '@/config/featureFlags';
+import { authService } from './auth';
+import {
+  createShareLink,
+  effectiveSymptomIds,
+  linkState,
+  revokeLink,
+  DEFAULT_CLINICIAN_SECTIONS,
+  DEFAULT_PARTNER_SECTIONS,
+  PARTNER_DEFAULT_EXCLUDED,
+} from './sharing';
+import { LocalMockBackend } from './sync/remoteBackend';
+import { sync as runSync, migrateToAccount, recordDeletion } from './sync/syncService';
+import { MetaKeys, META_PREFIX } from './storage/namespace';
+import { addDays, todayIso } from '@/lib/date';
+import { makeId } from '@/lib/id';
 
 /** Learn article slug for a measure/symptom (never claims it explains the user). */
 const LEARN_SLUG_BY_SYMPTOM: Record<string, string> = {
@@ -325,6 +362,253 @@ export const articleService = {
   },
 };
 
+// --- Phase 3: accounts, sync, timeline, sharing, entitlements --------------
+
+/** Feature flags & entitlements. Components ask about capabilities, never tiers. */
+export const entitlementService = {
+  flags(): FeatureFlags {
+    return getFlags();
+  },
+  setFlag(flag: keyof FeatureFlags, value: boolean): void {
+    setFlag(flag, value);
+  },
+  entitlement(): Entitlement {
+    return accountRepository.getEntitlement();
+  },
+  tier(): Tier {
+    return effectiveTier(accountRepository.getEntitlement());
+  },
+  can(capability: Capability): boolean {
+    return hasCapability(accountRepository.getEntitlement(), capability, getFlags());
+  },
+  /** Simulated purchase/restore for the local build (no real billing here). */
+  setTier(tier: Tier, source: Entitlement['source'] = 'local'): void {
+    accountRepository.setEntitlement(
+      tier === 'plus' ? { tier, source, validUntil: addDays(todayIso(), 365) + 'T00:00:00.000Z' } : { tier: 'free', source: 'free' },
+    );
+  },
+};
+
+/** Account lifecycle + encrypted cloud backup (local mock backend in this build). */
+const backend = new LocalMockBackend();
+
+export const accountService = {
+  current(): Account | null {
+    return authService.currentAccount();
+  },
+  isSignedIn(): boolean {
+    return authService.isSignedIn();
+  },
+  sessions(): DeviceSession[] {
+    return authService.sessions();
+  },
+  revokeSession(id: string): void {
+    authService.revokeSession(id);
+  },
+  /** Create an account and migrate existing local history into it. */
+  async createAccount(input: { email?: string; displayName?: string }): Promise<Account> {
+    const now = new Date().toISOString();
+    const account = authService.createAccount({ method: 'local', now, ...input });
+    if (getFlags().cloudSync) await migrateToAccount(backend, account.id);
+    return account;
+  },
+  signOut(options: { wipeLocal?: boolean } = {}): void {
+    authService.signOut(options);
+  },
+  /** Manual "back up now" — reconcile local ↔ cloud. Idempotent. */
+  async syncNow(): Promise<{ status: string }> {
+    const account = authService.currentAccount();
+    if (!account) return { status: 'local_only' };
+    if (!getFlags().cloudSync) return { status: 'offline' };
+    const result = await runSync(backend, account.id);
+    return { status: result.status };
+  },
+  /** Consent records (AI, health, partner sharing, marketing). */
+  consents() {
+    return accountRepository.getConsents();
+  },
+  hasConsent(type: ConsentType): boolean {
+    return accountRepository.hasConsent(type);
+  },
+  recordConsent(type: ConsentType, version = '1.0'): void {
+    accountRepository.recordConsent(type, version, new Date().toISOString());
+  },
+  withdrawConsent(type: ConsentType): void {
+    accountRepository.withdrawConsent(type, new Date().toISOString());
+  },
+};
+
+/** Biometric / passcode app lock. Device-level; a real native build maps this to Face ID / Touch ID. */
+const APP_LOCK_KEY = `${META_PREFIX}${MetaKeys.appLock}`;
+export const appLockService = {
+  isEnabled(): boolean {
+    try {
+      return window.localStorage.getItem(APP_LOCK_KEY) === 'on';
+    } catch {
+      return false;
+    }
+  },
+  setEnabled(on: boolean): void {
+    try {
+      window.localStorage.setItem(APP_LOCK_KEY, on ? 'on' : 'off');
+    } catch {
+      /* no-op */
+    }
+  },
+};
+
+export const appointmentRecordService = {
+  list(): AppointmentRecord[] {
+    return appointmentRepository.list().sort((a, b) => b.date.localeCompare(a.date));
+  },
+  get(id: string): AppointmentRecord | null {
+    return appointmentRepository.get(id);
+  },
+  upcoming(): AppointmentRecord | null {
+    const today = todayIso();
+    return (
+      appointmentRepository
+        .list()
+        .filter((a) => a.date >= today)
+        .sort((a, b) => a.date.localeCompare(b.date))[0] ?? null
+    );
+  },
+  save(input: Partial<AppointmentRecord> & { date: IsoDate }): AppointmentRecord {
+    const now = new Date().toISOString();
+    const existing = input.id ? appointmentRepository.get(input.id) : null;
+    const record: AppointmentRecord = {
+      id: existing?.id ?? makeId('appt'),
+      date: input.date,
+      questions: input.questions ?? existing?.questions ?? [],
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      ...(input.clinicianName !== undefined ? { clinicianName: input.clinicianName } : existing?.clinicianName ? { clinicianName: existing.clinicianName } : {}),
+      ...(input.specialty !== undefined ? { specialty: input.specialty } : existing?.specialty ? { specialty: existing.specialty } : {}),
+      ...(input.clinic !== undefined ? { clinic: input.clinic } : existing?.clinic ? { clinic: existing.clinic } : {}),
+      ...(input.reason !== undefined ? { reason: input.reason } : existing?.reason ? { reason: existing.reason } : {}),
+      ...(input.notes !== undefined ? { notes: input.notes } : existing?.notes ? { notes: existing.notes } : {}),
+      ...(input.followUpDate !== undefined ? { followUpDate: input.followUpDate } : existing?.followUpDate ? { followUpDate: existing.followUpDate } : {}),
+      ...(input.outcomes !== undefined ? { outcomes: input.outcomes } : existing?.outcomes ? { outcomes: existing.outcomes } : {}),
+    };
+    return appointmentRepository.upsert(record);
+  },
+  remove(id: string): void {
+    appointmentRepository.remove(id);
+    recordDeletion('appointments', id, new Date().toISOString());
+  },
+  reports(): ReportArchiveEntry[] {
+    return appointmentRepository.listReports();
+  },
+  archiveReport(entry: Omit<ReportArchiveEntry, 'id'>): void {
+    appointmentRepository.addReport({ ...entry, id: makeId('rep') });
+  },
+};
+
+/** The Elowa Timeline — the longitudinal story. */
+export const timelineService = {
+  build(): TimelineEvent[] {
+    const checkIns = checkInRepository.list();
+    const pinned = symptomRepository.getPinnedIds();
+    return buildTimeline({
+      checkIns,
+      symptomIds: relevantSymptomIds(checkIns, pinned),
+      pinnedIds: pinned,
+      labelOf: symptomLabelResolver(),
+      treatments: treatmentRepository.list(),
+      periods: cycleRepository.listPeriods(),
+      appointments: appointmentRepository.list(),
+      milestones: accountRepository.getMilestones(),
+      healthSamples: healthRepository.listSamples(),
+      excludeKeys: privacyRepository.excludedFromHome(),
+    });
+  },
+  filtered(filter: TimelineFilter): TimelineEvent[] {
+    return filterTimeline(this.build(), filter);
+  },
+  grouped(filter: TimelineFilter) {
+    return groupByMonth(filterTimeline(this.build(), filter));
+  },
+  since(anchor: IsoDate): TimelineEvent[] {
+    return timelineSince(this.build(), anchor);
+  },
+  addMilestone(input: { date: IsoDate; title: string; detail?: string }): void {
+    accountRepository.addMilestone({
+      id: makeId('mile'),
+      date: input.date,
+      kind: 'milestone',
+      title: input.title,
+      ...(input.detail ? { detail: input.detail } : {}),
+      weight: 0.6,
+      icon: 'Bookmark',
+    });
+  },
+};
+
+/** "How have I changed?" over a range (default: last ~6 months of data). */
+export const howChangedService = {
+  build(rangeStart?: IsoDate, rangeEnd?: IsoDate): ChangeSummary {
+    const checkIns = checkInRepository.list();
+    const pinned = symptomRepository.getPinnedIds();
+    const dates = checkIns.map((c) => c.date).sort();
+    const end = rangeEnd ?? dates[dates.length - 1] ?? todayIso();
+    const start = rangeStart ?? addDays(end, -180);
+    return buildChangeSummary({
+      checkIns,
+      symptomIds: relevantSymptomIds(checkIns, pinned),
+      pinnedIds: pinned,
+      labelOf: symptomLabelResolver(),
+      treatments: treatmentRepository.list(),
+      healthSamples: healthRepository.listSamples(),
+      rangeStart: start,
+      rangeEnd: end,
+      excludeKeys: privacyRepository.excludedFromHome(),
+    });
+  },
+};
+
+/** Controlled sharing — clinician links & light partner summaries. */
+export const shareService = {
+  links(): (ShareLink & { state: ReturnType<typeof linkState> })[] {
+    return accountRepository.getShareLinks().map((l) => ({ ...l, state: linkState(l) }));
+  },
+  clinicianDefaults(): { sections: ShareSection[]; symptomIds: string[] } {
+    const excluded = privacyRepository.excludedFromReport();
+    const symptomIds = relevantSymptomIds(checkInRepository.list(), symptomRepository.getPinnedIds()).filter(
+      (id) => !excluded.has(id),
+    );
+    return { sections: DEFAULT_CLINICIAN_SECTIONS, symptomIds };
+  },
+  /** Partner: sensitive categories excluded by default; caller opts each back in. */
+  partnerDefaults(): { sections: ShareSection[]; symptomIds: string[]; excluded: string[] } {
+    const all = relevantSymptomIds(checkInRepository.list(), symptomRepository.getPinnedIds());
+    const symptomIds = all.filter((id) => !PARTNER_DEFAULT_EXCLUDED.includes(id as never));
+    return { sections: DEFAULT_PARTNER_SECTIONS, symptomIds, excluded: [...PARTNER_DEFAULT_EXCLUDED] };
+  },
+  create(input: {
+    audience: ShareAudience;
+    sections: ShareSection[];
+    includedSymptomIds: string[];
+    expiryDays: number;
+    partnerNote?: string;
+  }): ShareLink {
+    const link = createShareLink({ ...input, now: new Date().toISOString() });
+    accountRepository.setShareLinks([...accountRepository.getShareLinks(), link]);
+    return link;
+  },
+  revoke(id: string): void {
+    accountRepository.setShareLinks(
+      accountRepository.getShareLinks().map((l) => (l.id === id ? revokeLink(l) : l)),
+    );
+  },
+  get(token: string): ShareLink | null {
+    return accountRepository.getShareLinks().find((l) => l.token === token) ?? null;
+  },
+  /** Effective symptom ids for a resolved link, honouring current privacy exclusions. */
+  visibleSymptomIds(link: ShareLink): string[] {
+    return effectiveSymptomIds(link, privacyRepository.excludedFromReport());
+  },
+};
+
 /** Centralised React Query keys — one source of truth for cache invalidation. */
 export const queryKeys = {
   currentUser: ['currentUser'] as const,
@@ -342,6 +626,19 @@ export const queryKeys = {
   reflection: (month: string) => ['reflection', month] as const,
   articles: ['articles'] as const,
   article: (slug: string) => ['articles', slug] as const,
+  // Phase 3
+  account: ['account'] as const,
+  sessions: ['sessions'] as const,
+  consents: ['consents'] as const,
+  entitlement: ['entitlement'] as const,
+  featureFlags: ['featureFlags'] as const,
+  appointments: ['appointments'] as const,
+  appointment: (id: string) => ['appointments', id] as const,
+  reportArchive: ['reportArchive'] as const,
+  timeline: ['timeline'] as const,
+  howChanged: ['howChanged'] as const,
+  shareLinks: ['shareLinks'] as const,
+  appLock: ['appLock'] as const,
 };
 
 /** Keys that depend on logged data — invalidated together after any write. */
@@ -357,4 +654,7 @@ export const DATA_QUERY_KEYS = [
   queryKeys.appointmentSummary,
   queryKeys.health,
   queryKeys.notifications,
+  queryKeys.timeline,
+  queryKeys.howChanged,
+  queryKeys.appointments,
 ] as const;

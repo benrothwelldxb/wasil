@@ -7,6 +7,8 @@ import type { ExportBundle } from '@/domain/models';
 import { SCHEMA_VERSION } from './storage/namespace';
 import { clearMode, getDataMode } from './storage/dataContext';
 import {
+  accountRepository,
+  appointmentRepository,
   checkInRepository,
   cycleRepository,
   healthRepository,
@@ -35,6 +37,11 @@ export function buildExportBundle(now: string): ExportBundle {
       healthSamples: healthRepository.listSamples(),
       symptomPrivacy: privacyRepository.getAll(),
       insightFeedback: insightFeedbackRepository.getAll(),
+      appointments: appointmentRepository.list(),
+      reportArchive: appointmentRepository.listReports(),
+      shareLinks: accountRepository.getShareLinks(),
+      consents: accountRepository.getConsents(),
+      account: accountRepository.getAccount(),
     },
   };
 }

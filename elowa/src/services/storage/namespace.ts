@@ -27,6 +27,21 @@ export const StorageKeys = {
   healthPermissions: 'healthPermissions',
   symptomPrivacy: 'symptomPrivacy',
   insightFeedback: 'insightFeedback',
+  appointments: 'appointments',
+  account: 'account',
+  sessions: 'sessions',
+  consents: 'consents',
+  entitlement: 'entitlement',
+  shareLinks: 'shareLinks',
+  tombstones: 'tombstones',
+  reportArchive: 'reportArchive',
+  milestones: 'milestones',
+} as const;
+
+/** App-level meta (outside the versioned data prefixes). */
+export const MetaKeys = {
+  featureFlags: 'featureFlags',
+  appLock: 'appLock',
 } as const;
 
 export type StorageKey = (typeof StorageKeys)[keyof typeof StorageKeys];

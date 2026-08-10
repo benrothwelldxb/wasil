@@ -35,6 +35,9 @@ export const privacyRepository = {
   set(symptomId: string, privacy: SymptomPrivacy): void {
     writeMap({ ...readMap(), [symptomId]: privacy });
   },
+  setAll(map: PrivacyMap): void {
+    writeMap(map);
+  },
   setRelevance(symptomId: string, relevance: Relevance): void {
     this.set(symptomId, { ...this.getFor(symptomId), relevance });
   },
@@ -75,6 +78,9 @@ export const insightFeedbackRepository = {
   },
   set(insightKey: string, value: InsightFeedbackValue): void {
     activeDriver().set(StorageKeys.insightFeedback, { ...this.getAll(), [insightKey]: value });
+  },
+  setAll(map: FeedbackMap): void {
+    activeDriver().set(StorageKeys.insightFeedback, map);
   },
   clear(): void {
     activeDriver().set(StorageKeys.insightFeedback, {});

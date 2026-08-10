@@ -18,6 +18,14 @@ import { SinceScreen } from '@/features/since/SinceScreen';
 import { ReflectionScreen } from '@/features/reflection/ReflectionScreen';
 import { NotificationsScreen } from '@/features/settings/NotificationsScreen';
 import { AIScreen } from '@/features/settings/AIScreen';
+import { SecurityScreen } from '@/features/settings/SecurityScreen';
+import { TimelineScreen } from '@/features/timeline/TimelineScreen';
+import { ChangedScreen } from '@/features/changed/ChangedScreen';
+import { AccountScreen } from '@/features/account/AccountScreen';
+import { AppointmentsScreen } from '@/features/appointments/AppointmentsScreen';
+import { ShareScreen } from '@/features/sharing/ShareScreen';
+import { SharedViewScreen } from '@/features/sharing/SharedViewScreen';
+import { PlusScreen } from '@/features/plus/PlusScreen';
 
 export const router = createBrowserRouter([
   {
@@ -32,15 +40,23 @@ export const router = createBrowserRouter([
       { path: '/learn', element: <LearnScreen /> },
       { path: '/learn/:slug', element: <ArticleScreen /> },
       { path: '/appointment', element: <AppointmentScreen /> },
+      { path: '/appointments', element: <AppointmentsScreen /> },
+      { path: '/timeline', element: <TimelineScreen /> },
+      { path: '/how-changed', element: <ChangedScreen /> },
       { path: '/since', element: <SinceScreen /> },
       { path: '/reflection', element: <ReflectionScreen /> },
       { path: '/health', element: <HealthConnectScreen /> },
       { path: '/notifications', element: <NotificationsScreen /> },
       { path: '/ai', element: <AIScreen /> },
+      { path: '/security', element: <SecurityScreen /> },
+      { path: '/account', element: <AccountScreen /> },
+      { path: '/share', element: <ShareScreen /> },
+      { path: '/plus', element: <PlusScreen /> },
       { path: '/profile', element: <ProfileScreen /> },
       { path: '/privacy', element: <PrivacyScreen /> },
     ],
   },
+  { path: '/shared/:token', element: <SharedViewScreen /> },
   {
     element: <FocusLayout />,
     children: [

@@ -63,6 +63,16 @@ import {
   Wind,
   Wine,
   X,
+  Bookmark,
+  CheckCircle2,
+  Fingerprint,
+  Link2,
+  LogOut,
+  Mail,
+  RefreshCw,
+  Smartphone,
+  Users,
+  CloudOff,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -137,6 +147,16 @@ const REGISTRY: Record<string, LucideIcon> = {
   Wind,
   Wine,
   X,
+  Bookmark,
+  CheckCircle2,
+  Fingerprint,
+  Link2,
+  LogOut,
+  Mail,
+  RefreshCw,
+  Smartphone,
+  Users,
+  CloudOff,
 };
 
 export interface IconProps {

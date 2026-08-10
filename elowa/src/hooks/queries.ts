@@ -9,17 +9,24 @@ import {
   DATA_QUERY_KEYS,
   analysisService,
   aiService,
+  accountService,
+  appLockService,
   appointmentService,
+  appointmentRecordService,
   articleService,
   checkInService,
   cycleService,
+  entitlementService,
   healthService,
+  howChangedService,
   insightService,
   notificationService,
   queryKeys,
   reflectionService,
+  shareService,
   sinceService,
   symptomService,
+  timelineService,
   treatmentService,
   userService,
 } from '@/services';
@@ -35,11 +42,18 @@ import { enterDemoMode, exitDemoMode, resetDemo } from '@/services/demo';
 import { deleteAllData } from '@/services/dataManagement';
 import { useAppModeStore } from '@/store/appModeStore';
 import type {
+  AppointmentRecord,
+  Capability,
+  ConsentType,
   DailyCheckIn,
   HealthMetricKind,
   InsightFeedbackValue,
   PeriodEntry,
+  ShareAudience,
+  ShareSection,
   SymptomPrivacy,
+  Tier,
+  TimelineFilter,
   TrackingConfig,
   TreatmentEvent,
   UserPreferences,
@@ -328,5 +342,172 @@ export function useSetInsightFeedback() {
     mutationFn: async (input: { insightKey: string; value: InsightFeedbackValue }) =>
       insightService.setFeedback(input.insightKey, input.value),
     onSuccess: invalidate,
+  });
+}
+
+// --- Phase 3: accounts, sync, timeline, sharing, entitlements --------------
+
+export function useTimeline(filter: TimelineFilter = 'all') {
+  return useQuery({ queryKey: [...queryKeys.timeline, filter], queryFn: () => timelineService.grouped(filter) });
+}
+
+export function useHowChanged() {
+  return useQuery({ queryKey: queryKeys.howChanged, queryFn: () => howChangedService.build() });
+}
+
+export function useAddMilestone() {
+  const invalidate = useInvalidateData();
+  return useMutation({
+    mutationFn: async (input: { date: IsoDate; title: string; detail?: string }) =>
+      timelineService.addMilestone(input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAccount() {
+  return useQuery({ queryKey: queryKeys.account, queryFn: () => accountService.current() });
+}
+
+export function useDeviceSessions() {
+  return useQuery({ queryKey: queryKeys.sessions, queryFn: () => accountService.sessions() });
+}
+
+export function useEntitlement() {
+  return useQuery({ queryKey: queryKeys.entitlement, queryFn: () => entitlementService.entitlement() });
+}
+
+export function useCapability(capability: Capability) {
+  return useQuery({
+    queryKey: [...queryKeys.entitlement, capability],
+    queryFn: () => entitlementService.can(capability),
+  });
+}
+
+export function useConsents() {
+  return useQuery({ queryKey: queryKeys.consents, queryFn: () => accountService.consents() });
+}
+
+function useInvalidateAccount() {
+  const queryClient = useQueryClient();
+  return () => {
+    for (const key of [queryKeys.account, queryKeys.sessions, queryKeys.consents, queryKeys.entitlement]) {
+      queryClient.invalidateQueries({ queryKey: key });
+    }
+  };
+}
+
+export function useCreateAccount() {
+  const invalidate = useInvalidateAccount();
+  return useMutation({
+    mutationFn: async (input: { email?: string; displayName?: string }) => accountService.createAccount(input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSignOut() {
+  const invalidate = useInvalidateAccount();
+  return useMutation({
+    mutationFn: async (options: { wipeLocal?: boolean } = {}) => accountService.signOut(options),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSyncNow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => accountService.syncNow(),
+    onSuccess: () => {
+      for (const key of DATA_QUERY_KEYS) queryClient.invalidateQueries({ queryKey: key });
+    },
+  });
+}
+
+export function useRevokeSession() {
+  const invalidate = useInvalidateAccount();
+  return useMutation({
+    mutationFn: async (id: string) => accountService.revokeSession(id),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetConsent() {
+  const invalidate = useInvalidateAccount();
+  return useMutation({
+    mutationFn: async (input: { type: ConsentType; granted: boolean }) =>
+      input.granted ? accountService.recordConsent(input.type) : accountService.withdrawConsent(input.type),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetTier() {
+  const invalidate = useInvalidateAccount();
+  return useMutation({
+    mutationFn: async (tier: Tier) => entitlementService.setTier(tier),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAppLock() {
+  return useQuery({ queryKey: queryKeys.appLock, queryFn: () => appLockService.isEnabled() });
+}
+
+export function useSetAppLock() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (on: boolean) => appLockService.setEnabled(on),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.appLock }),
+  });
+}
+
+// Appointments (records)
+export function useAppointments() {
+  return useQuery({ queryKey: queryKeys.appointments, queryFn: () => appointmentRecordService.list() });
+}
+
+export function useAppointment(id: string) {
+  return useQuery({ queryKey: queryKeys.appointment(id), queryFn: () => appointmentRecordService.get(id) });
+}
+
+export function useSaveAppointment() {
+  const invalidate = useInvalidateData();
+  return useMutation({
+    mutationFn: async (input: Partial<AppointmentRecord> & { date: IsoDate }) =>
+      appointmentRecordService.save(input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteAppointment() {
+  const invalidate = useInvalidateData();
+  return useMutation({
+    mutationFn: async (id: string) => appointmentRecordService.remove(id),
+    onSuccess: invalidate,
+  });
+}
+
+// Sharing
+export function useShareLinks() {
+  return useQuery({ queryKey: queryKeys.shareLinks, queryFn: () => shareService.links() });
+}
+
+export function useCreateShareLink() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      audience: ShareAudience;
+      sections: ShareSection[];
+      includedSymptomIds: string[];
+      expiryDays: number;
+      partnerNote?: string;
+    }) => shareService.create(input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.shareLinks }),
+  });
+}
+
+export function useRevokeShareLink() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => shareService.revoke(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.shareLinks }),
   });
 }

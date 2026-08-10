@@ -327,6 +327,12 @@ export interface ExportBundle {
     healthSamples: HealthDaySample[];
     symptomPrivacy: Record<string, SymptomPrivacy>;
     insightFeedback: Record<string, InsightFeedbackValue>;
+    // Phase 3 — included so an export is genuinely ALL of the user's data.
+    appointments?: AppointmentRecord[];
+    reportArchive?: ReportArchiveEntry[];
+    shareLinks?: ShareLink[];
+    consents?: ConsentRecord[];
+    account?: Account | null;
   };
 }
 
@@ -496,5 +502,186 @@ export interface SinceComparison {
   dataQuality: 'good' | 'limited';
   changes: SinceMeasureChange[];
   unchanged: string[];
+  caveat: string;
+}
+
+// ===========================================================================
+// Phase 3 — accounts, sync, sharing, subscriptions
+// ===========================================================================
+
+// --- Account & auth --------------------------------------------------------
+
+export type AuthMethod = 'local' | 'magic_link' | 'apple' | 'google';
+
+export interface Account {
+  id: Id;
+  /** Email is optional for a local-only account. */
+  email?: string;
+  method: AuthMethod;
+  displayName?: string;
+  createdAt: string; // ISO datetime
+}
+
+/** A user-visible session/device the account is signed in on. */
+export interface DeviceSession {
+  id: Id;
+  label: string; // e.g. "iPhone", "This browser"
+  platform: string;
+  lastActiveAt: string; // ISO datetime
+  current: boolean;
+}
+
+// --- Sync ------------------------------------------------------------------
+
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'needs_attention' | 'local_only';
+
+/** A tombstone marks a deletion so it doesn't reappear from another device. */
+export interface Tombstone {
+  collection: string;
+  recordId: Id;
+  deletedAt: string; // ISO datetime
+}
+
+/** Metadata attached to every syncable record (added at the sync boundary). */
+export interface SyncMeta {
+  updatedAt: string; // ISO datetime — used for last-write-wins on the same record
+  deviceId: string;
+}
+
+// --- Consent records -------------------------------------------------------
+
+export type ConsentType = 'ai_processing' | 'health_integration' | 'partner_sharing' | 'marketing';
+
+export interface ConsentRecord {
+  type: ConsentType;
+  version: string;
+  grantedAt: string; // ISO datetime
+  withdrawnAt?: string; // ISO datetime
+}
+
+// --- Appointments (records) ------------------------------------------------
+
+export interface AppointmentRecord {
+  id: Id;
+  date: IsoDate;
+  clinicianName?: string;
+  specialty?: string;
+  clinic?: string;
+  reason?: string;
+  notes?: string;
+  questions: string[];
+  followUpDate?: IsoDate;
+  /** Post-appointment outcomes the user recorded (as-entered, never interpreted). */
+  outcomes?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- Report archive --------------------------------------------------------
+
+export type ReportType = 'appointment' | 'six_month' | 'since_event';
+
+export interface ReportArchiveEntry {
+  id: Id;
+  type: ReportType;
+  rangeStart: IsoDate;
+  rangeEnd: IsoDate;
+  generatedAt: string;
+  appointmentId?: Id;
+  /** Reports are regenerated from data, so we store metadata only. */
+  title: string;
+}
+
+// --- Sharing ---------------------------------------------------------------
+
+export type ShareAudience = 'clinician' | 'partner';
+
+export type ShareSection =
+  | 'summary'
+  | 'symptoms'
+  | 'cycle'
+  | 'treatments'
+  | 'patterns'
+  | 'notes'
+  | 'questions';
+
+export interface ShareLink {
+  id: Id;
+  token: string;
+  audience: ShareAudience;
+  /** Sections included (sensitive categories excluded unless re-enabled). */
+  sections: ShareSection[];
+  /** Symptom ids explicitly included (partner sharing is opt-in per category). */
+  includedSymptomIds: Id[];
+  createdAt: string; // ISO datetime
+  expiresAt: string; // ISO datetime
+  revokedAt?: string; // ISO datetime
+  /** A short user-written line for partner shares ("what might help"). */
+  partnerNote?: string;
+}
+
+// --- Subscriptions & entitlements -----------------------------------------
+
+export type Tier = 'free' | 'plus';
+
+export type Capability =
+  | 'cloud_sync'
+  | 'advanced_patterns'
+  | 'since_comparison'
+  | 'monthly_summary'
+  | 'ai_summaries'
+  | 'timeline'
+  | 'unlimited_reports'
+  | 'partner_sharing';
+
+export interface Entitlement {
+  tier: Tier;
+  /** ISO datetime the entitlement is valid until (undefined = free/forever). */
+  validUntil?: string;
+  /** Set during a billing grace period. */
+  inGracePeriod?: boolean;
+  source: 'free' | 'apple' | 'google' | 'promo' | 'local';
+}
+
+// --- Timeline --------------------------------------------------------------
+
+export type TimelineKind =
+  | 'symptom_change'
+  | 'baseline_shift'
+  | 'cycle_change'
+  | 'treatment'
+  | 'appointment'
+  | 'pattern'
+  | 'milestone';
+
+export type TimelineFilter = 'all' | 'symptoms' | 'cycle' | 'treatments' | 'appointments' | 'notes';
+
+export interface TimelineEvent {
+  id: Id;
+  date: IsoDate;
+  kind: TimelineKind;
+  title: string;
+  detail?: string;
+  /** Importance 0–1 used to curate what is promoted. */
+  weight: number;
+  icon: string;
+  relatedMeasureKeys?: Id[];
+}
+
+// --- "How have I changed?" -------------------------------------------------
+
+export type ChangeBucket = 'improved' | 'changed' | 'stable' | 'new';
+
+export interface ChangeLine {
+  bucket: ChangeBucket;
+  label: string;
+  text: string;
+}
+
+export interface ChangeSummary {
+  rangeStart: IsoDate;
+  rangeEnd: IsoDate;
+  lines: ChangeLine[];
+  treatmentContext: string[];
   caveat: string;
 }

@@ -10,12 +10,15 @@ import { PrivacyNote } from '@/components/common/PrivacyNote';
 import { HealthNotice } from '@/components/common/HealthNotice';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import {
+  useAccount,
   useCheckIns,
   useCurrentUser,
   useDataMode,
   useDeleteAllData,
+  useEntitlement,
   useSetPreferences,
 } from '@/hooks/queries';
+import { effectiveTier } from '@/domain/entitlements/entitlements';
 import { downloadExport } from '@/services/dataManagement';
 import { downloadCsv } from '@/services/export/csv';
 import { cn } from '@/lib/utils';
@@ -24,6 +27,9 @@ export function ProfileScreen() {
   const navigate = useNavigate();
   const { data: user } = useCurrentUser();
   const { data: checkIns } = useCheckIns();
+  const { data: account } = useAccount();
+  const { data: entitlement } = useEntitlement();
+  const isPlus = entitlement ? effectiveTier(entitlement) === 'plus' : false;
   const setPreferences = useSetPreferences();
   const deleteAll = useDeleteAllData();
   const { mode, enterDemo, exitDemo, resetDemo } = useDataMode();
@@ -57,6 +63,16 @@ export function ProfileScreen() {
         </Card>
 
         <div className="mt-6">
+          <SectionHeading>Your story</SectionHeading>
+          <Card className="divide-y divide-border/60">
+            <Row icon="Compass" label="Timeline" detail="What's changed over time" onClick={() => navigate('/timeline')} />
+            <Row icon="CalendarClock" label="How have I changed?" onClick={() => navigate('/how-changed')} />
+            <Row icon="Stethoscope" label="Appointments" onClick={() => navigate('/appointments')} />
+            <Row icon="Share2" label="Share with someone" onClick={() => navigate('/share')} />
+          </Card>
+        </div>
+
+        <div className="mt-6">
           <SectionHeading>Tracking</SectionHeading>
           <Card className="divide-y divide-border/60">
             <Row icon="Sparkles" label="My symptoms" detail={`${pinnedCount} pinned`} />
@@ -68,6 +84,14 @@ export function ProfileScreen() {
               label="Daily reminder"
               trailing={<Switch checked={reminders} onCheckedChange={toggleReminders} aria-label="Daily reminder" />}
             />
+          </Card>
+        </div>
+
+        <div className="mt-6">
+          <SectionHeading>Account</SectionHeading>
+          <Card className="divide-y divide-border/60">
+            <Row icon="Cloud" label="Account & backup" detail={account ? 'Signed in' : 'Guest'} onClick={() => navigate('/account')} />
+            <Row icon="Sparkles" label="elowa Plus" detail={isPlus ? 'Active' : undefined} onClick={() => navigate('/plus')} />
           </Card>
         </div>
 
@@ -84,6 +108,7 @@ export function ProfileScreen() {
           <SectionHeading>Privacy & data</SectionHeading>
           <Card className="divide-y divide-border/60">
             <Row icon="Shield" label="Data & privacy" onClick={() => navigate('/privacy')} />
+            <Row icon="Lock" label="Lock & permissions" onClick={() => navigate('/security')} />
             <Row icon="Download" label="Export archive (JSON)" onClick={() => downloadExport(new Date().toISOString())} />
             <Row icon="FileText" label="Export tracking (CSV)" onClick={exportCsv} />
             <Row icon="Trash2" label="Delete all my data" destructive onClick={() => setConfirmDelete(true)} />

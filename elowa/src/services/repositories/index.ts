@@ -5,3 +5,5 @@ export { treatmentRepository } from './treatmentRepository';
 export { preferencesRepository } from './preferencesRepository';
 export { healthRepository } from './healthRepository';
 export { privacyRepository, insightFeedbackRepository } from './privacyRepository';
+export { appointmentRepository } from './appointmentRepository';
+export { accountRepository } from './accountRepository';
