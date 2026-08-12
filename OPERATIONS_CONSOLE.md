@@ -5,11 +5,15 @@ the **backend** that powers the console (built and tested) and the **UI build
 plan** (the React modules, deferred to a follow-up — see "Status" below).
 
 > **Status.** The console's API + support-action layer is complete, audited,
-> tenant-safe and covered by real-Postgres integration tests. The React UI
-> (`apps/admin` modules) is specified here and is the immediate next step; it is
-> presentation over these APIs and carries no new server logic. The frontend
-> workspaces were not buildable in the delivery environment, so shipping
-> unverified UI was deliberately avoided.
+> tenant-safe and covered by real-Postgres integration tests. The **React UI is
+> now built** (`apps/admin/src/ops/`) — a dark "Mission Control" console mounted
+> at `/ops`, with a global ⌘K command palette. It reuses the platform data layer
+> (`api.ops`, `useApi`) and design-system primitives (`ConfirmModal`, `Toast`),
+> and is verified by `tsc` + a clean production `vite build`. Pages: Overview,
+> Parent Support, School Health, Incidents, Background Jobs, Audit Explorer,
+> System Health, Feature Flags, Invitations, Runbooks. Remaining UI gaps (light
+> mode, virtualised tables, component/E2E tests, lazy-loading the bundle) are
+> listed under "Future improvements".
 
 ---
 

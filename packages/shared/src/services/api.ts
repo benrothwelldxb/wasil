@@ -2364,7 +2364,69 @@ export const timetable = {
   },
 }
 
+// ── Operations Console types ──────────────────────────────────────────────
+export interface OpsMetrics {
+  generatedAt: string
+  scope: { schoolId: string | null }
+  parents: { total: number; invited: number; activated: number; pendingInvitations: number; notInvited: number; activationRatePct: number | null }
+  activity: { dailyActiveUsers: number; weeklyActiveUsers: number; activationsToday: number; activationsThisWeek: number }
+  auth: { successfulLogins24h: number; failedVerifications24h: number; lockouts24h: number }
+  bookings: { created7d: number; cancelled7d: number; cancellationRatePct: number | null }
+  notifications: { sent24h: number; failed24h: number; successRatePct: number | null; byKind: Record<string, { sent: number; failed: number; pending: number }> }
+  queue: { depth: number; failedJobs: number; oldestPendingAgeSec: number | null }
+  health: 'ok' | 'degraded' | 'down'
+}
+export type ComponentState = 'ok' | 'degraded' | 'down' | 'not_configured'
+export interface SystemStatus {
+  generatedAt: string
+  overall: ComponentState
+  components: Array<{ component: string; state: ComponentState; detail: string }>
+}
+export interface OpsIncident { id: string; severity: 'critical' | 'warning' | 'info'; title: string; affected: string; suggestedAction: string; runbook: string }
+export interface OpsSchool { id: string; name: string; parents: number; activated: number; activatedPct: number | null; pendingInvites: number; failedJobs: number; lastActivityAt: string | null }
+export interface OpsSearchResult { id: string; name: string; email: string; schoolId: string; invited: boolean; activated: boolean; matchedVia: string }
+export interface OpsParentDetail {
+  parent: { id: string; name: string; email: string; role: string; schoolId: string; invited: boolean; invitedAt: string | null; activated: boolean; lastLoginAt: string | null; createdAt: string; twoFactorEnabled: boolean; locked: boolean; lockedUntil: string | null; failedLoginAttempts: number; children: Array<{ name: string; className: string | null }> }
+  authEvents: Array<{ event: string; ipAddress: string | null; createdAt: string; metadata: unknown }>
+  auditLogs: Array<{ action: string; resourceType: string; resourceId: string; createdAt: string }>
+  notifications: Array<{ type: string; title: string; read: boolean; createdAt: string }>
+  bookings: { clubs: Array<{ id: string; paymentStatus: string; cancelledAt: string | null; createdAt: string; student: { firstName: string; lastName: string } }>; consultations: Array<{ id: string; createdAt: string }> }
+}
+export interface OpsJob { id: string; kind: string; status: string; attempts: number; lastError: string | null; runAfter: string; failedAt: string | null; createdAt: string; schoolId: string }
+export interface OpsAuditRow { source: 'auth' | 'business'; at: string; who: string | null; action: string; detail: string | null; ip: string | null; schoolId: string | null }
+export interface OpsFlag { key: string; description: string | null; enabledDefault: boolean; overrides: Array<{ id: string; schoolId: string | null; userId: string | null; enabled: boolean }> }
+export interface OpsRelease { version: string | null; commit: string | null; environment: string; migration: string | null; sentryConfigured: boolean; startedAt: string }
+
+const ops = {
+  metrics: (schoolId?: string) => fetchApi<OpsMetrics>(`/api/ops/metrics${schoolId ? `?schoolId=${schoolId}` : ''}`),
+  status: () => fetchApi<SystemStatus>('/api/ops/status'),
+  incidents: (schoolId?: string) => fetchApi<{ incidents: OpsIncident[] }>(`/api/ops/incidents${schoolId ? `?schoolId=${schoolId}` : ''}`),
+  release: () => fetchApi<OpsRelease>('/api/ops/release'),
+  schools: (schoolId?: string) => fetchApi<{ schools: OpsSchool[] }>(`/api/ops/schools${schoolId ? `?schoolId=${schoolId}` : ''}`),
+  searchParents: (q: string) => fetchApi<{ results: OpsSearchResult[] }>(`/api/ops/support/search?q=${encodeURIComponent(q)}`),
+  parent: (id: string) => fetchApi<OpsParentDetail>(`/api/ops/support/parent/${id}`),
+  // Support actions (audited server-side; destructive ones confirmed in the UI).
+  resendInvite: (id: string) => fetchApi<{ sent: boolean }>(`/api/ops/support/parent/${id}/resend-invite`, { method: 'POST' }),
+  unlock: (id: string) => fetchApi<{ unlocked: boolean }>(`/api/ops/support/parent/${id}/unlock`, { method: 'POST' }),
+  invalidateSessions: (id: string) => fetchApi<{ revoked: number }>(`/api/ops/support/parent/${id}/invalidate-sessions`, { method: 'POST' }),
+  resetOnboarding: (id: string) => fetchApi<{ reset: boolean }>(`/api/ops/support/parent/${id}/reset-onboarding`, { method: 'POST' }),
+  magicLink: (id: string) => fetchApi<{ url: string; expiresAt: string }>(`/api/ops/support/parent/${id}/magic-link`, { method: 'POST' }),
+  jobs: (status?: string) => fetchApi<{ summary: Record<string, number>; entries: OpsJob[] }>(`/api/ops/jobs${status ? `?status=${status}` : ''}`),
+  retryJob: (id: string) => fetchApi<{ retried: boolean }>(`/api/ops/jobs/${id}/retry`, { method: 'POST' }),
+  retryFailedJobs: () => fetchApi<{ retried: number }>('/api/ops/jobs/retry-failed', { method: 'POST' }),
+  audit: (params: { userId?: string; action?: string; from?: string; to?: string; limit?: number }) => {
+    const q = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => { if (v) q.append(k, String(v)) })
+    const s = q.toString()
+    return fetchApi<{ rows: OpsAuditRow[] }>(`/api/ops/audit${s ? `?${s}` : ''}`)
+  },
+  flags: () => fetchApi<{ flags: OpsFlag[] }>('/api/ops/flags'),
+  setFlagGlobal: (key: string, enabled: boolean) => fetchApi<{ flag: OpsFlag }>(`/api/ops/flags/${key}/global`, { method: 'POST', body: JSON.stringify({ enabled }) }),
+  setFlagOverride: (key: string, scope: { schoolId?: string; userId?: string }, enabled: boolean) => fetchApi<{ override: unknown }>(`/api/ops/flags/${key}/override`, { method: 'POST', body: JSON.stringify({ ...scope, enabled }) }),
+}
+
 export default {
+  ops,
   auth,
   messages,
   forms,

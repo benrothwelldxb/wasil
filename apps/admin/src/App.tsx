@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth, LoadingScreen } from '@wasil/shared'
 import { AdminLayout } from './components/layout/AdminLayout'
+import { OpsApp } from './ops/OpsApp'
 import { LoginPage } from './pages/LoginPage'
 import { TwoFactorSetupPage } from './pages/TwoFactorSetupPage'
 import { MessagesPage } from './pages/MessagesPage'
@@ -240,6 +241,15 @@ export default function App() {
           ) : (
             <Navigate to="/login" replace />
           )
+        }
+      />
+      {/* Operations Console — its own Mission-Control chrome, outside AdminLayout. */}
+      <Route
+        path="/ops/*"
+        element={
+          <ProtectedRoute>
+            <OpsApp />
+          </ProtectedRoute>
         }
       />
       <Route
