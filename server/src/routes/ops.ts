@@ -7,6 +7,13 @@ import {
   listFlags, setGlobalDefault, setOverride, clearOverride, resolveAll,
 } from '../services/featureFlags.js'
 import { startImpersonation, stopImpersonation, ImpersonationError } from '../services/impersonation.js'
+import {
+  resendInvite, unlockAccount, invalidateSessions, resetOnboarding, generateSupportMagicLink,
+  OpsError, type Actor,
+} from '../services/opsSupport.js'
+import {
+  getSchoolHealth, searchAudit, listJobs, retryJob, retryFailedJobs, getIncidents, getReleaseInfo,
+} from '../services/opsQueries.js'
 import { logAudit } from '../services/audit.js'
 
 /**
@@ -321,6 +328,97 @@ opsRouter.post('/impersonate/:userId', isAdmin, async (req: Request, res: Respon
 opsRouter.post('/impersonate/stop', isAdmin, async (req: Request, res: Response) => {
   const r = await stopImpersonation({ adminId: req.user!.id, sessionId: req.body?.sessionId, req })
   res.json(r)
+})
+
+// ── Module 3: support quick actions (audited, tenant-safe) ───────────────────
+function actorOf(req: Request): Actor {
+  return { id: req.user!.id, schoolId: req.user!.schoolId, isSuperAdmin: isSuper(req) }
+}
+
+// Wrap a support action: run it, translate OpsError → status, write a business
+// audit row on success. `label` is the audit metadata action tag.
+function supportAction(
+  label: string,
+  run: (actor: Actor, userId: string, req: Request) => Promise<unknown>,
+) {
+  return async (req: Request, res: Response) => {
+    try {
+      const result = await run(actorOf(req), req.params.id, req)
+      logAudit({ req, action: 'UPDATE', resourceType: 'USER', resourceId: req.params.id, metadata: { action: label } })
+      res.json(result)
+    } catch (e) {
+      if (e instanceof OpsError) return res.status(e.status).json({ error: e.message })
+      console.error(`[ops] support ${label} error`, e)
+      res.status(500).json({ error: `${label} failed` })
+    }
+  }
+}
+
+opsRouter.post('/support/parent/:id/resend-invite', isAdmin, supportAction('resend-invite', resendInvite))
+opsRouter.post('/support/parent/:id/unlock', isAdmin, supportAction('unlock', unlockAccount))
+opsRouter.post('/support/parent/:id/invalidate-sessions', isAdmin, supportAction('invalidate-sessions', invalidateSessions))
+opsRouter.post('/support/parent/:id/reset-onboarding', isAdmin, supportAction('reset-onboarding', resetOnboarding))
+// Magic link returns a credential — audited as issuance, returned only over this authed channel.
+opsRouter.post('/support/parent/:id/magic-link', isAdmin, supportAction('magic-link', generateSupportMagicLink))
+
+// ── Module 2: school health ──────────────────────────────────────────────────
+opsRouter.get('/schools', isAdmin, async (req: Request, res: Response) => {
+  try {
+    res.json({ schools: await getSchoolHealth(scopeSchool(req)) })
+  } catch (e) {
+    console.error('[ops] schools error', e)
+    res.status(500).json({ error: 'Failed to load schools' })
+  }
+})
+
+// ── Module 9: audit explorer ─────────────────────────────────────────────────
+opsRouter.get('/audit', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const rows = await searchAudit({
+      scopeSchoolId: scopeSchool(req),
+      userId: (req.query.userId as string) || undefined,
+      action: (req.query.action as string) || undefined,
+      from: req.query.from ? new Date(req.query.from as string) : undefined,
+      to: req.query.to ? new Date(req.query.to as string) : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+    })
+    res.json({ rows })
+  } catch (e) {
+    console.error('[ops] audit error', e)
+    res.status(500).json({ error: 'Audit query failed' })
+  }
+})
+
+// ── Module 7: background jobs ────────────────────────────────────────────────
+opsRouter.get('/jobs', isAdmin, async (req: Request, res: Response) => {
+  res.json(await listJobs(scopeSchool(req), (req.query.status as string) || undefined))
+})
+
+opsRouter.post('/jobs/:id/retry', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const r = await retryJob(scopeSchool(req), req.params.id)
+    logAudit({ req, action: 'UPDATE', resourceType: 'SCHOOL', resourceId: `job:${req.params.id}`, metadata: { action: 'retry-job' } })
+    res.json(r)
+  } catch (e) {
+    const status = (e as { status?: number }).status ?? 500
+    res.status(status).json({ error: status === 403 ? 'Forbidden' : 'Retry failed' })
+  }
+})
+
+opsRouter.post('/jobs/retry-failed', isAdmin, async (req: Request, res: Response) => {
+  const r = await retryFailedJobs(scopeSchool(req))
+  logAudit({ req, action: 'UPDATE', resourceType: 'SCHOOL', resourceId: 'jobs:failed', metadata: { action: 'retry-failed', retried: r.retried } })
+  res.json(r)
+})
+
+// ── Module 11: incidents ─────────────────────────────────────────────────────
+opsRouter.get('/incidents', isAdmin, async (req: Request, res: Response) => {
+  res.json({ incidents: await getIncidents(scopeSchool(req)) })
+})
+
+// ── Module 14: release info ──────────────────────────────────────────────────
+opsRouter.get('/release', isAdmin, async (_req: Request, res: Response) => {
+  res.json(await getReleaseInfo())
 })
 
 // ── Client-facing (any signed-in user) ───────────────────────────────────────

@@ -38,6 +38,12 @@ export const AUTH_EVENT = {
   LOGOUT: 'logout', // refresh token revoked
   IMPERSONATION_STARTED: 'impersonation_started', // an admin began impersonating a user
   IMPERSONATION_ENDED: 'impersonation_ended', // impersonation session explicitly ended
+  // Support actions taken by an operator on a parent account.
+  SUPPORT_INVITE_RESENT: 'support_invite_resent',
+  SUPPORT_ACCOUNT_UNLOCKED: 'support_account_unlocked',
+  SUPPORT_SESSIONS_INVALIDATED: 'support_sessions_invalidated',
+  SUPPORT_ONBOARDING_RESET: 'support_onboarding_reset',
+  SUPPORT_MAGIC_LINK_ISSUED: 'support_magic_link_issued',
 } as const
 
 export type AuthEventName = (typeof AUTH_EVENT)[keyof typeof AUTH_EVENT]
