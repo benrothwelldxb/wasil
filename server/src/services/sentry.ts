@@ -22,6 +22,13 @@ export function initErrorReporting(): void {
   Sentry.init({
     dsn,
     environment: process.env.NODE_ENV || 'development',
+    // Release tag so every event is attributable to a deploy. Railway exposes
+    // the commit SHA; fall back to an explicit RELEASE or the app version.
+    release:
+      process.env.RELEASE ||
+      process.env.RAILWAY_GIT_COMMIT_SHA ||
+      process.env.npm_package_version ||
+      undefined,
     // Error reporting only; we're not using Sentry for performance tracing.
     tracesSampleRate: 0,
   })

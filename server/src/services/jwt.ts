@@ -14,6 +14,10 @@ interface AccessTokenPayload {
   userId: string
   role: string
   schoolId: string
+  // Set ONLY on an impersonation token: the id of the administrator acting as
+  // this user. Its presence is what the client uses to show the "you are
+  // impersonating" banner, and what audit uses to attribute actions.
+  act?: string
 }
 
 export function generateAccessToken(user: { id: string; role: string; schoolId: string }): string {
@@ -22,6 +26,23 @@ export function generateAccessToken(user: { id: string; role: string; schoolId: 
     JWT_SECRET,
     { expiresIn: ACCESS_TOKEN_EXPIRY }
   )
+}
+
+// Impersonation access token: authenticates AS the target user but carries the
+// acting admin's id in `act`, and is deliberately short-lived. No refresh token
+// is minted — impersonation cannot be silently extended; when it expires the
+// operator must start a fresh, freshly-audited session.
+export function generateImpersonationToken(
+  target: { id: string; role: string; schoolId: string },
+  adminId: string,
+  ttlMinutes = 30,
+): { token: string; expiresAt: Date } {
+  const token = jwt.sign(
+    { userId: target.id, role: target.role, schoolId: target.schoolId, act: adminId } satisfies AccessTokenPayload,
+    JWT_SECRET,
+    { expiresIn: `${ttlMinutes}m` },
+  )
+  return { token, expiresAt: new Date(Date.now() + ttlMinutes * 60 * 1000) }
 }
 
 // Refresh tokens are stored as a SHA-256 hash, never in plaintext — a read-only

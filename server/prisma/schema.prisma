@@ -1040,6 +1040,105 @@ model AuthEvent {
   @@index([createdAt])
 }
 
+// ── Beta operations & support tooling ────────────────────────────────────────
+
+// Feature flags with three scopes. `FeatureFlag` holds the GLOBAL default for a
+// known key; `FeatureFlagOverride` pins a value for one SCHOOL or one USER.
+// Resolution precedence at read time is user > school > global default (see
+// services/featureFlags.ts). This is the beta kill-switch: an operator can
+// disable Clubs/Catering/Payments/Messaging/etc. instantly, globally or for one
+// tenant, without a deploy.
+model FeatureFlag {
+  key            String                @id // e.g. "clubs", "catering", "payments"
+  description    String?
+  enabledDefault Boolean               @default(false)
+  updatedBy      String?
+  updatedAt      DateTime              @updatedAt
+  createdAt      DateTime              @default(now())
+  overrides      FeatureFlagOverride[]
+}
+
+model FeatureFlagOverride {
+  id       String      @id @default(cuid())
+  flagKey  String
+  flag     FeatureFlag @relation(fields: [flagKey], references: [key], onDelete: Cascade)
+  // Exactly one of schoolId / userId is set (a school-scoped or user-scoped
+  // override). Enforced by the two partial unique indexes below.
+  schoolId String?
+  userId   String?
+  enabled  Boolean
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  createdAt DateTime  @default(now())
+
+  @@unique([flagKey, schoolId])
+  @@unique([flagKey, userId])
+  @@index([schoolId])
+  @@index([userId])
+}
+
+// In-app "Report a Problem" sink. Captures the free-text plus the client
+// context needed to reproduce (screen/url, app version, device, school, user).
+// No PII beyond what the reporter is already authenticated as; console logs are
+// optional and truncated by the API.
+model Feedback {
+  id          String   @id @default(cuid())
+  userId      String?
+  schoolId    String?
+  message     String
+  screen      String? // logical screen name
+  url         String? // location.href at report time
+  appVersion  String?
+  userAgent   String?
+  consoleLogs String? // optional, truncated
+  screenshotUrl String?
+  metadata    Json?
+  status      String   @default("open") // open | triaged | closed
+  createdAt   DateTime @default(now())
+
+  @@index([schoolId, createdAt])
+  @@index([status, createdAt])
+}
+
+// Operator-published banners (known issue / maintenance / closure / feature /
+// emergency). Scheduling is a [startsAt, endsAt) window; endsAt null = until
+// dismissed/deactivated. schoolId null = platform-wide. `active` is a hard
+// on/off independent of the window.
+model Announcement {
+  id        String    @id @default(cuid())
+  schoolId  String? // null = all schools
+  kind      String    @default("info") // known_issue | maintenance | closure | feature | emergency | info
+  level     String    @default("info") // info | warning | critical
+  title     String
+  body      String?
+  active    Boolean   @default(true)
+  startsAt  DateTime  @default(now())
+  endsAt    DateTime?
+  createdBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([active, startsAt, endsAt])
+  @@index([schoolId])
+}
+
+// A record of every administrator impersonation. Time-limited (expiresAt) and
+// fully audited: the minted token carries the actor id, and both start and stop
+// are also written to AuthEvent. `endedAt` marks an explicit early exit.
+model ImpersonationSession {
+  id           String    @id @default(cuid())
+  adminId      String // the operator doing the impersonating
+  targetUserId String // the parent/user being impersonated
+  schoolId     String?
+  reason       String?
+  startedAt    DateTime  @default(now())
+  expiresAt    DateTime
+  endedAt      DateTime?
+
+  @@index([adminId, startedAt])
+  @@index([targetUserId, startedAt])
+}
+
 // Link Categories for organizing external links
 model LinkCategory {
   id          String         @id @default(cuid())

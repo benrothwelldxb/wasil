@@ -20,6 +20,10 @@ declare global {
         id: string
         providerId: string
       }
+      // Set when the request is authenticated with an impersonation token: the
+      // id of the administrator acting as `req.user`. Routes/audit can attribute
+      // actions to the real operator; the client shows a banner.
+      impersonatedBy?: string
     }
   }
 }
@@ -100,6 +104,8 @@ export async function isAuthenticated(req: Request, res: Response, next: NextFun
     }
 
     req.user = user as Express.User
+    // Impersonation token: attribute to the acting admin (banner + audit).
+    if (payload.act) req.impersonatedBy = payload.act
     // Enrich the per-request logger so every subsequent log line carries
     // schoolId/userId/role — invaluable when debugging a specific parent's
     // complaint from prod logs.

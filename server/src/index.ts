@@ -14,6 +14,7 @@ import { initErrorReporting } from './services/sentry.js'
 
 import { configurePassport } from './middleware/passport.js'
 import authRoutes from './routes/auth.js'
+import opsRoutes, { clientOpsRouter } from './routes/ops.js'
 import hubAuthRoutes from './routes/hubAuth.js'
 import hubSyncRoutes from './routes/hubSync.js'
 import hubWebhookRoutes from './routes/hubWebhook.js'
@@ -182,6 +183,12 @@ app.use('/api/partner', partnerRoutes)
 app.use('/api/timetable', timetableRoutes)
 // Admin-triggered Wasil Hub MIS sync (POST /api/admin/hub-sync)
 app.use('/api/admin', hubSyncRoutes)
+// Beta operations & support tooling: metrics, status, support search, feature
+// flags, announcements, feedback triage, impersonation (admin/super-admin).
+app.use('/api/ops', opsRoutes)
+// Client-facing ops endpoints (any signed-in user): submit feedback, read
+// active announcements, bootstrap feature flags.
+app.use('/api', clientOpsRouter)
 
 // Liveness probe — the process is up. Cheap and always returns 200.
 // Use this to decide "should we restart the container?".

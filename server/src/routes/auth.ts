@@ -391,6 +391,9 @@ router.get('/me', isAuthenticated, async (req, res) => {
     res.json({
       ...serializeUser(user),
       twoFactorRequired,
+      // Present only on an impersonation session — the client shows a banner and
+      // offers "exit impersonation" (discard this token, restore the admin's).
+      ...(req.impersonatedBy ? { impersonatedBy: req.impersonatedBy } : {}),
     })
   } catch (error) {
     console.error('Error fetching user:', error)

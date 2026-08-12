@@ -36,6 +36,8 @@ export const AUTH_EVENT = {
   SESSION_CREATED: 'session_created', // access + refresh pair issued
   TWO_FACTOR_REQUIRED: 'two_factor_required', // correct code but 2FA handoff returned instead of a session
   LOGOUT: 'logout', // refresh token revoked
+  IMPERSONATION_STARTED: 'impersonation_started', // an admin began impersonating a user
+  IMPERSONATION_ENDED: 'impersonation_ended', // impersonation session explicitly ended
 } as const
 
 export type AuthEventName = (typeof AUTH_EVENT)[keyof typeof AUTH_EVENT]
