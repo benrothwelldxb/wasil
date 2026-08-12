@@ -8,9 +8,12 @@ import QRCode from 'qrcode'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
-import { generateAccessToken, generateRefreshToken, revokeRefreshToken, rotateRefreshToken } from '../services/jwt.js'
+import { generateAccessToken, generateRefreshToken, revokeRefreshToken, rotateRefreshToken, verifyAccessToken } from '../services/jwt.js'
 import { sendMagicLinkEmail, sendInvitationEmail, sendLoginCodeEmail } from '../services/email.js'
 import { logAudit } from '../services/audit.js'
+import { logAuthEvent, AUTH_EVENT } from '../services/authAudit.js'
+import { issueSession } from '../services/session.js'
+import { prismaRateLimitStore } from '../services/rateLimitStore.js'
 import { serializeUser } from '../services/serializers.js'
 import {
   generateSecret as generateTotpSecret,
@@ -254,10 +257,18 @@ const registerPerEmailLimiter = rateLimit({
 // most a couple of codes in 10 min); per-IP is looser because a whole school
 // can legitimately sit behind one NAT'd address. Both return the same generic
 // message so neither reveals whether the email exists.
+//
+// All passwordless limiters use a Postgres-backed store (services/rateLimitStore)
+// so the counters are shared across every app instance — the default in-memory
+// store would reset per process and let the limit be bypassed simply by landing
+// on a different instance. See AUTHENTICATION.md → "Rate limiting".
 const codeRequestPerEmailLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
   max: 3,
   keyGenerator: (req) => req.body?.email?.toLowerCase() || 'unknown',
+  store: prismaRateLimitStore('code_req_email'),
+  // Keyed by email, not IP — opt out of the library's IPv6-in-key check.
+  validate: { keyGeneratorIpFallback: false },
   message: { error: 'Too many code requests for this email, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -266,7 +277,32 @@ const codeRequestPerEmailLimiter = rateLimit({
 const codeRequestIpLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
   max: 20,
+  store: prismaRateLimitStore('code_req_ip'),
   message: { error: 'Too many code requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+// Passwordless VERIFY limiters — defence-in-depth on top of the per-code
+// 5-attempt lock. Per-email bounds guessing across successive codes for one
+// account; per-IP bounds distributed guessing from one origin while still
+// allowing a NAT'd school. Distributed store, same rationale as above.
+const codeVerifyPerEmailLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 10,
+  keyGenerator: (req) => req.body?.email?.toLowerCase() || 'unknown',
+  store: prismaRateLimitStore('code_vrf_email'),
+  validate: { keyGeneratorIpFallback: false },
+  message: { error: 'Too many attempts for this email, please request a new code later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const codeVerifyIpLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 50,
+  store: prismaRateLimitStore('code_vrf_ip'),
+  message: { error: 'Too many attempts, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
 })
@@ -468,14 +504,8 @@ router.post('/demo-login', async (req, res) => {
       return res.status(404).json({ error: 'User not found' })
     }
 
-    const accessToken = generateAccessToken(user)
-    const refreshToken = await generateRefreshToken(user)
-
-    res.json({
-      user: serializeUser(user),
-      accessToken,
-      refreshToken,
-    })
+    const session = await issueSession(user, { req, method: 'demo' })
+    res.json(session)
   } catch (error) {
     console.error('Demo login error:', error)
     res.status(500).json({ error: 'Login failed' })
@@ -540,17 +570,9 @@ router.post('/login', loginLimiter, emailLoginLimiter, validate(loginSchema), as
       return res.json({ twoFactorRequired: true, twoFactorSessionToken: sessionToken })
     }
 
-    // Update last login
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-
-    const accessToken = generateAccessToken(user)
-    const refreshToken = await generateRefreshToken(user)
-
-    res.json({
-      user: serializeUser(user),
-      accessToken,
-      refreshToken,
-    })
+    // Shared issuance (stamps lastLoginAt, mints tokens, audits session_created).
+    const session = await issueSession(user, { req, method: 'password' })
+    res.json(session)
   } catch (error) {
     console.error('Login error:', error)
     res.status(500).json({ error: 'Login failed' })
@@ -576,14 +598,20 @@ router.post(
   validate(codeRequestSchema),
   async (req, res) => {
     const email = (req.body.email as string).toLowerCase()
+    void logAuthEvent({ event: AUTH_EVENT.LOGIN_REQUESTED, req, email })
 
     try {
       const user = await prisma.user.findUnique({
         where: { email },
-        include: { school: { select: { name: true } } },
+        include: { school: { select: { id: true, name: true } } },
       })
 
       if (user) {
+        // A live prior code means this is effectively a resend (the client's
+        // "resend" button and a fresh request both land here).
+        const priorLive = await prisma.loginCode.count({
+          where: { email, consumedAt: null, expiresAt: { gt: new Date() } },
+        })
         // Supersede every prior code for this email so only the newest is valid.
         await prisma.loginCode.deleteMany({ where: { email } })
 
@@ -594,12 +622,25 @@ router.post(
           data: { email, codeHash: hashLoginCode(code), expiresAt, attempts: 0 },
         })
 
-        await sendLoginCodeEmail({
+        void logAuthEvent({
+          event: priorLive > 0 ? AUTH_EVENT.CODE_RESENT : AUTH_EVENT.CODE_ISSUED,
+          req, email, userId: user.id, schoolId: user.schoolId,
+          metadata: { ttlMinutes: LOGIN_CODE_EXPIRY_MINUTES },
+        })
+
+        // Fire-and-forget the email. Awaiting a real provider round-trip only
+        // on the account-exists branch was a timing side-channel for account
+        // enumeration (the "always 200" body hid existence, but the latency
+        // did not). Not awaiting it collapses that gap and keeps the endpoint
+        // fast. Delivery failures are logged inside sendLoginCodeEmail.
+        void sendLoginCodeEmail({
           to: user.email,
           code,
           schoolName: user.school?.name,
           ttlMinutes: LOGIN_CODE_EXPIRY_MINUTES,
-        })
+        }).catch((err) => console.error('[code/request] email send failed:', err))
+      } else {
+        void logAuthEvent({ event: AUTH_EVENT.CODE_REQUEST_UNKNOWN, req, email })
       }
     } catch (error) {
       // Swallow: a failure here must not leak (via status/timing divergence)
@@ -613,90 +654,128 @@ router.post(
 
 // POST /auth/code/verify — validate the newest live code, then issue a session
 // exactly like /auth/login (2FA branch preserved).
-router.post('/code/verify', validate(codeVerifySchema), async (req, res) => {
-  const email = (req.body.email as string).toLowerCase()
-  const code = req.body.code as string
+//
+// Concurrency model (the crux of this endpoint's security):
+//   1. Find the newest live code (un-consumed, un-expired) for the email.
+//   2. CLAIM an attempt slot with ONE row-locked conditional UPDATE that only
+//      succeeds while `attempts < MAX` and the code is un-consumed. Because a
+//      single UPDATE is atomic and serialises concurrent writers on the row
+//      lock, AT MOST `MAX` requests can ever win a slot for a given code — the
+//      5-attempt ceiling cannot be bypassed by flooding parallel guesses.
+//   3. Only a slot-winner runs the timing-safe compare.
+//   4. On success, CONSUME single-use with a conditional UPDATE; exactly one
+//      concurrent correct guess flips `consumedAt`, so exactly one session is
+//      ever issued for a code (no duplicate sessions on a double-submit).
+// No `SELECT … FOR UPDATE` / long transaction needed: each conditional UPDATE
+// is itself the atomic, row-locked primitive.
+router.post(
+  '/code/verify',
+  codeVerifyIpLimiter,
+  codeVerifyPerEmailLimiter,
+  validate(codeVerifySchema),
+  async (req, res) => {
+    const email = (req.body.email as string).toLowerCase()
+    const code = req.body.code as string
+    void logAuthEvent({ event: AUTH_EVENT.VERIFY_ATTEMPTED, req, email })
 
-  try {
-    const record = await prisma.loginCode.findFirst({
-      where: { email, consumedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: 'desc' },
-    })
+    try {
+      const record = await prisma.loginCode.findFirst({
+        where: { email, consumedAt: null, expiresAt: { gt: new Date() } },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, codeHash: true },
+      })
 
-    if (!record) {
-      return res.status(400).json({ error: 'invalid_or_expired_code' })
-    }
+      if (!record) {
+        void logAuthEvent({ event: AUTH_EVENT.VERIFY_FAILED, req, email, metadata: { reason: 'no_live_code' } })
+        return res.status(400).json({ error: 'invalid_or_expired_code' })
+      }
 
-    // Already exhausted — make sure it's dead and reject.
-    if (record.attempts >= LOGIN_CODE_MAX_ATTEMPTS) {
-      await prisma.loginCode.update({
-        where: { id: record.id },
+      // (2) Atomically claim an attempt slot.
+      const claim = await prisma.loginCode.updateMany({
+        where: { id: record.id, consumedAt: null, attempts: { lt: LOGIN_CODE_MAX_ATTEMPTS } },
+        data: { attempts: { increment: 1 } },
+      })
+
+      if (claim.count === 0) {
+        // No slot: the code was consumed by a concurrent success, or it is at
+        // the attempt ceiling. Re-read (don't trust the stale row) to answer
+        // and audit precisely.
+        const state = await prisma.loginCode.findUnique({
+          where: { id: record.id },
+          select: { consumedAt: true },
+        })
+        if (state?.consumedAt) {
+          void logAuthEvent({ event: AUTH_EVENT.LOCKOUT_ACTIVE, req, email, metadata: { reason: 'already_consumed' } })
+          return res.status(400).json({ error: 'invalid_or_expired_code' })
+        }
+        void logAuthEvent({ event: AUTH_EVENT.LOCKOUT_ACTIVE, req, email, metadata: { reason: 'max_attempts' } })
+        return res.status(429).json({ error: 'too_many_attempts' })
+      }
+
+      // (3) Timing-safe compare (equal-length SHA-256 hex → Buffers).
+      const submitted = Buffer.from(hashLoginCode(code), 'hex')
+      const expected = Buffer.from(record.codeHash, 'hex')
+      const match =
+        submitted.length === expected.length && crypto.timingSafeEqual(submitted, expected)
+
+      if (!match) {
+        // We consumed a slot. If that pushed the code to the ceiling, kill it so
+        // no later correct guess can land — race-safe: only the request that
+        // takes it to MAX wins this conditional consume.
+        const killed = await prisma.loginCode.updateMany({
+          where: { id: record.id, consumedAt: null, attempts: { gte: LOGIN_CODE_MAX_ATTEMPTS } },
+          data: { consumedAt: new Date() },
+        })
+        if (killed.count > 0) {
+          void logAuthEvent({ event: AUTH_EVENT.LOCKOUT_TRIGGERED, req, email })
+        }
+        void logAuthEvent({ event: AUTH_EVENT.VERIFY_FAILED, req, email, metadata: { reason: 'wrong_code' } })
+        return res.status(401).json({ error: 'invalid_code' })
+      }
+
+      // (4) Correct code — consume single-use, conditionally. Exactly one of any
+      // racing correct submissions flips consumedAt and proceeds to a session.
+      const consumed = await prisma.loginCode.updateMany({
+        where: { id: record.id, consumedAt: null },
         data: { consumedAt: new Date() },
       })
-      return res.status(429).json({ error: 'too_many_attempts' })
-    }
+      if (consumed.count === 0) {
+        void logAuthEvent({ event: AUTH_EVENT.VERIFY_FAILED, req, email, metadata: { reason: 'lost_consume_race' } })
+        return res.status(400).json({ error: 'invalid_or_expired_code' })
+      }
 
-    // Timing-safe compare of the SHA-256 hashes (equal length, so safe).
-    const submitted = Buffer.from(hashLoginCode(code), 'hex')
-    const expected = Buffer.from(record.codeHash, 'hex')
-    const match =
-      submitted.length === expected.length && crypto.timingSafeEqual(submitted, expected)
-
-    if (!match) {
-      const attempts = record.attempts + 1
-      await prisma.loginCode.update({
-        where: { id: record.id },
-        // Kill the code once it hits the attempt ceiling so a lucky later guess
-        // can't land on an already-burned code.
-        data: attempts >= LOGIN_CODE_MAX_ATTEMPTS
-          ? { attempts, consumedAt: new Date() }
-          : { attempts },
+      const user = await prisma.user.findUnique({
+        where: { email },
+        include: {
+          children: { include: { class: true } },
+          studentLinks: { include: { student: { include: { class: true } } } },
+          school: true,
+        },
       })
-      return res.status(401).json({ error: 'invalid_code' })
+
+      if (!user) {
+        // Code existed but the account vanished between request and verify.
+        void logAuthEvent({ event: AUTH_EVENT.VERIFY_FAILED, req, email, metadata: { reason: 'user_vanished' } })
+        return res.status(400).json({ error: 'invalid_or_expired_code' })
+      }
+
+      void logAuthEvent({ event: AUTH_EVENT.VERIFY_SUCCEEDED, req, email, userId: user.id, schoolId: user.schoolId })
+
+      // 2FA branch — same handoff /auth/login uses.
+      if (user.twoFactorEnabled) {
+        const sessionToken = createTwoFactorSession(user.id)
+        void logAuthEvent({ event: AUTH_EVENT.TWO_FACTOR_REQUIRED, req, email, userId: user.id, schoolId: user.schoolId })
+        return res.json({ twoFactorRequired: true, twoFactorSessionToken: sessionToken })
+      }
+
+      const session = await issueSession(user, { req, method: 'code' })
+      return res.json(session)
+    } catch (error) {
+      console.error('Code verify error:', error)
+      return res.status(500).json({ error: 'Verification failed' })
     }
-
-    // Correct — burn the code (single-use) before issuing anything.
-    await prisma.loginCode.update({
-      where: { id: record.id },
-      data: { consumedAt: new Date() },
-    })
-
-    // From here, mirror /auth/login's success path exactly.
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: {
-        children: { include: { class: true } },
-        studentLinks: { include: { student: { include: { class: true } } } },
-        school: true,
-      },
-    })
-
-    if (!user) {
-      // Code existed but the account vanished between request and verify.
-      return res.status(400).json({ error: 'invalid_or_expired_code' })
-    }
-
-    // 2FA branch — same handoff /auth/login uses.
-    if (user.twoFactorEnabled) {
-      const sessionToken = createTwoFactorSession(user.id)
-      return res.json({ twoFactorRequired: true, twoFactorSessionToken: sessionToken })
-    }
-
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-
-    const accessToken = generateAccessToken(user)
-    const refreshToken = await generateRefreshToken(user)
-
-    return res.json({
-      user: serializeUser(user),
-      accessToken,
-      refreshToken,
-    })
-  } catch (error) {
-    console.error('Code verify error:', error)
-    return res.status(500).json({ error: 'Verification failed' })
   }
-})
+)
 
 // Set password (for admin/staff accounts) - also bootstraps admin if needed
 router.post('/set-password', setPasswordLimiter, validate(setPasswordSchema), async (req, res) => {
@@ -953,15 +1032,8 @@ router.post('/register', registerLimiter, registerPerEmailLimiter, validate(regi
       return res.status(500).json({ error: 'Failed to load user' })
     }
 
-    // Generate tokens
-    const accessToken = generateAccessToken(fullUser)
-    const refreshToken = await generateRefreshToken(fullUser)
-
-    res.json({
-      user: serializeUser(fullUser),
-      accessToken,
-      refreshToken,
-    })
+    const session = await issueSession(fullUser, { req, method: 'register' })
+    res.json(session)
   } catch (error) {
     console.error('Registration error:', error)
     res.status(500).json({ error: 'Registration failed' })
@@ -1094,14 +1166,8 @@ router.post('/magic-link/verify', magicLinkVerifyLimiter, async (req, res) => {
         return res.json({ twoFactorRequired: true, twoFactorSessionToken: sessionToken })
       }
 
-      const accessToken = generateAccessToken(user)
-      const refreshToken = await generateRefreshToken(user)
-
-      return res.json({
-        user: serializeUser(user),
-        accessToken,
-        refreshToken,
-      })
+      const session = await issueSession(user, { req, method: 'magic-link' })
+      return res.json(session)
     }
 
     // Handle REGISTRATION type
@@ -1209,15 +1275,8 @@ router.post('/magic-link/verify', magicLinkVerifyLimiter, async (req, res) => {
         return res.status(500).json({ error: 'Failed to load user' })
       }
 
-      const accessToken = generateAccessToken(fullUser)
-      const refreshToken = await generateRefreshToken(fullUser)
-
-      return res.json({
-        user: serializeUser(fullUser),
-        accessToken,
-        refreshToken,
-        isNewUser: true,
-      })
+      const session = await issueSession(fullUser, { req, method: 'magic-link-register' })
+      return res.json({ ...session, isNewUser: true })
     }
 
     res.status(400).json({ error: 'Invalid token type' })
@@ -1427,17 +1486,8 @@ router.post('/2fa/verify', twoFactorVerifyLimiter, validate(twoFactorVerifySchem
     // Success — consume the session token
     twoFactorSessionStore.delete(sessionToken)
 
-    // Update last login
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-
-    const accessToken = generateAccessToken(user)
-    const refreshToken = await generateRefreshToken(user)
-
-    res.json({
-      user: serializeUser(user),
-      accessToken,
-      refreshToken,
-    })
+    const issued = await issueSession(user, { req, method: '2fa' })
+    res.json(issued)
   } catch (error) {
     console.error('2FA verify error:', error)
     res.status(500).json({ error: 'Verification failed' })
@@ -1487,15 +1537,8 @@ router.post('/2fa/recover', twoFactorRecoverLimiter, validate(twoFactorRecoverSc
     // Consume the session token
     twoFactorSessionStore.delete(sessionToken)
 
-    const accessToken = generateAccessToken(user)
-    const refreshToken = await generateRefreshToken(user)
-
-    res.json({
-      user: serializeUser(user),
-      accessToken,
-      refreshToken,
-      recoveryCodesRemaining: hashedCodes.length,
-    })
+    const issued = await issueSession(user, { req, method: '2fa-recovery' })
+    res.json({ ...issued, recoveryCodesRemaining: hashedCodes.length })
   } catch (error) {
     console.error('2FA recover error:', error)
     res.status(500).json({ error: 'Recovery failed' })
@@ -1570,6 +1613,21 @@ router.post('/logout', async (req, res) => {
   if (refreshToken) {
     await revokeRefreshToken(refreshToken)
   }
+  // Best-effort audit. Logout carries no auth middleware, so resolve the
+  // principal from the access token if one was sent; never fail logout over it.
+  let userId: string | null = null
+  let schoolId: string | null = null
+  try {
+    const authHeader = req.headers.authorization
+    if (authHeader?.startsWith('Bearer ')) {
+      const payload = verifyAccessToken(authHeader.slice(7))
+      userId = payload.userId
+      schoolId = payload.schoolId
+    }
+  } catch {
+    /* expired/invalid access token on logout is fine */
+  }
+  void logAuthEvent({ event: AUTH_EVENT.LOGOUT, req, userId, schoolId })
   res.json({ message: 'Logged out successfully' })
 })
 

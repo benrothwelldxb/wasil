@@ -5,15 +5,24 @@ import { nowInTimezone } from './dateTime.js'
 import { enqueuePush } from './outbox.js'
 import { withJobLock } from './jobLock.js'
 
+// Auth-event retention: keep the security trail long enough for an
+// investigation but not forever (it holds subject emails + IPs). 180 days.
+const AUTH_EVENT_RETENTION_DAYS = 180
+
 /**
- * Clean up expired tokens from the database.
- * Deletes:
+ * Clean up expired auth/token rows from the database. Deletes:
  *  - MagicLinkToken records older than 24 hours
  *  - RefreshToken records that have expired (older than 30 days)
+ *  - LoginCode records that are expired OR consumed (single-use spent). An
+ *    ACTIVE code — un-consumed AND still within its TTL — never matches, so a
+ *    parent mid-sign-in is never swept out from under them.
+ *  - RateLimit counters whose window has closed (expiresAt in the past).
+ *  - AuthEvent rows older than the retention window.
  */
 export async function cleanupExpiredTokens(): Promise<void> {
   const now = new Date()
   const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  const authEventCutoff = new Date(now.getTime() - AUTH_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000)
 
   try {
     // Clean up expired magic link tokens (older than 24 hours)
@@ -33,9 +42,35 @@ export async function cleanupExpiredTokens(): Promise<void> {
       },
     })
 
-    if (deletedMagicLinks.count > 0 || deletedRefreshTokens.count > 0) {
+    // Clean up spent login codes — expired or consumed. Active codes (not
+    // consumed AND not yet expired) are deliberately excluded.
+    const deletedLoginCodes = await prisma.loginCode.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { lt: now } },
+          { consumedAt: { not: null } },
+        ],
+      },
+    })
+
+    // Clean up closed rate-limit windows.
+    const deletedRateLimits = await prisma.rateLimit.deleteMany({
+      where: { expiresAt: { lt: now } },
+    })
+
+    // Age out old auth-audit events.
+    const deletedAuthEvents = await prisma.authEvent.deleteMany({
+      where: { createdAt: { lt: authEventCutoff } },
+    })
+
+    if (
+      deletedMagicLinks.count > 0 || deletedRefreshTokens.count > 0 ||
+      deletedLoginCodes.count > 0 || deletedRateLimits.count > 0 || deletedAuthEvents.count > 0
+    ) {
       console.log(
-        `[Cleanup] Deleted ${deletedMagicLinks.count} expired magic link tokens, ${deletedRefreshTokens.count} expired refresh tokens`
+        `[Cleanup] Deleted ${deletedMagicLinks.count} magic link tokens, ` +
+        `${deletedRefreshTokens.count} refresh tokens, ${deletedLoginCodes.count} login codes, ` +
+        `${deletedRateLimits.count} rate-limit rows, ${deletedAuthEvents.count} auth events`
       )
     }
   } catch (error) {

@@ -3,11 +3,21 @@ import express from 'express'
 import request from 'supertest'
 import crypto from 'crypto'
 
-// Exercises the passwordless 6-digit sign-in (/auth/code/request + verify) with
-// the data + token + email layers mocked — no database.
+// Fast unit coverage of the passwordless 6-digit sign-in (/auth/code/request +
+// verify) with the data + token + email + audit layers mocked — no database.
+// The ATOMIC/concurrency guarantees are proven separately against real Postgres
+// in test/integration/authCode.itest.ts; here we cover the branch logic.
+
 const prismaMock = {
   user: { findUnique: vi.fn(), update: vi.fn() },
-  loginCode: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
+  loginCode: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    updateMany: vi.fn(),
+    create: vi.fn(),
+    deleteMany: vi.fn(),
+    count: vi.fn(),
+  },
   parentStudentLink: { findMany: vi.fn() },
   child: { findMany: vi.fn() },
 }
@@ -26,6 +36,17 @@ vi.mock('../src/services/email', () => ({
   sendLoginCodeEmail,
 }))
 vi.mock('../src/services/audit', () => ({ logAudit: vi.fn(), computeChanges: vi.fn(() => ({})) }))
+// Auth audit is DB-backed; stub it. AUTH_EVENT is referenced by name, so a
+// Proxy that echoes the key is enough.
+const logAuthEvent = vi.fn(async () => {})
+vi.mock('../src/services/authAudit', () => ({
+  logAuthEvent,
+  AUTH_EVENT: new Proxy({}, { get: (_t, p) => String(p) }),
+}))
+// Make the rate-limit store a no-op so the limiters fall back to the library's
+// in-memory MemoryStore for these unit tests (the Postgres store is exercised
+// in the integration suite).
+vi.mock('../src/services/rateLimitStore', () => ({ prismaRateLimitStore: () => undefined }))
 
 const { default: authRoutes } = await import('../src/routes/auth')
 
@@ -42,7 +63,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   prismaMock.loginCode.deleteMany.mockResolvedValue({ count: 0 })
   prismaMock.loginCode.create.mockResolvedValue({ id: 'lc-1' })
-  prismaMock.loginCode.update.mockResolvedValue({})
+  prismaMock.loginCode.count.mockResolvedValue(0)
   prismaMock.user.update.mockResolvedValue({})
 })
 
@@ -60,7 +81,7 @@ describe('POST /auth/code/request', () => {
 
   it('mints a hashed ~10-minute code and emails it for a known email', async () => {
     prismaMock.user.findUnique.mockResolvedValue({
-      id: 'u-1', email: 'known@example.com', schoolId: 'school-A', school: { name: 'VHPS' },
+      id: 'u-1', email: 'known@example.com', schoolId: 'school-A', school: { id: 'school-A', name: 'VHPS' },
     })
 
     const before = Date.now()
@@ -77,7 +98,6 @@ describe('POST /auth/code/request', () => {
     expect(created.attempts).toBe(0)
     // Only the hash is stored, never the plaintext.
     expect(created.codeHash).toMatch(/^[a-f0-9]{64}$/)
-    // ~10 min TTL.
     const ttl = created.expiresAt.getTime() - before
     expect(ttl).toBeGreaterThan(9 * 60 * 1000)
     expect(ttl).toBeLessThanOrEqual(10 * 60 * 1000 + 5000)
@@ -90,7 +110,7 @@ describe('POST /auth/code/request', () => {
 
   it('rate-limits repeated requests for the same email (per-email limiter trips)', async () => {
     prismaMock.user.findUnique.mockResolvedValue({
-      id: 'u-2', email: 'spam@example.com', schoolId: 'school-A', school: { name: 'VHPS' },
+      id: 'u-2', email: 'spam@example.com', schoolId: 'school-A', school: { id: 'school-A', name: 'VHPS' },
     })
     const app = makeApp()
 
@@ -107,19 +127,13 @@ describe('POST /auth/code/request', () => {
 
 describe('POST /auth/code/verify', () => {
   const CODE = '123456'
-  const liveRecord = (over: Record<string, unknown> = {}) => ({
-    id: 'lc-1',
-    email: 'p@example.com',
-    codeHash: sha256(CODE),
-    attempts: 0,
-    consumedAt: null,
-    expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-    createdAt: new Date(),
-    ...over,
-  })
+  const liveRecord = () => ({ id: 'lc-1', codeHash: sha256(CODE) })
 
   it('issues tokens for a correct code and burns it (single-use)', async () => {
     prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord())
+    prismaMock.loginCode.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim a slot
+      .mockResolvedValueOnce({ count: 1 }) // consume (single-use)
     prismaMock.user.findUnique.mockResolvedValue({
       id: 'u-1', email: 'p@example.com', role: 'PARENT', schoolId: 'school-A',
       twoFactorEnabled: false, children: [], studentLinks: [], school: { id: 'school-A', name: 'VHPS' },
@@ -131,45 +145,62 @@ describe('POST /auth/code/verify', () => {
     expect(res.body.accessToken).toBe('access-token')
     expect(res.body.refreshToken).toBe('refresh-token')
     expect(res.body.user.id).toBe('u-1')
-    // consumedAt stamped on the winning code.
-    const consumeCall = prismaMock.loginCode.update.mock.calls.find(c => c[0].data.consumedAt)
-    expect(consumeCall).toBeTruthy()
+    // The consuming update set consumedAt.
+    const consume = prismaMock.loginCode.updateMany.mock.calls.find(c => c[0].data?.consumedAt)
+    expect(consume).toBeTruthy()
   })
 
-  it('rejects a wrong code with 401 and increments attempts', async () => {
-    prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord({ attempts: 1 }))
+  it('rejects a wrong code with 401 (slot claimed, not yet at ceiling)', async () => {
+    prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord())
+    prismaMock.loginCode.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim
+      .mockResolvedValueOnce({ count: 0 }) // kill-at-ceiling: not at ceiling → no-op
 
     const res = await request(makeApp()).post('/auth/code/verify').send({ email: 'p@example.com', code: '000000' })
 
     expect(res.status).toBe(401)
     expect(res.body.error).toBe('invalid_code')
-    expect(prismaMock.loginCode.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'lc-1' }, data: { attempts: 2 } })
-    )
-    // No tokens issued.
+    // First updateMany is the atomic slot claim (increment attempts).
+    expect(prismaMock.loginCode.updateMany.mock.calls[0][0].data).toEqual({ attempts: { increment: 1 } })
     expect(res.body.accessToken).toBeUndefined()
   })
 
-  it('locks the code on the 5th wrong attempt (invalidates it)', async () => {
-    prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord({ attempts: 4 }))
+  it('locks the code when a wrong attempt reaches the ceiling', async () => {
+    prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord())
+    prismaMock.loginCode.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim (this one reaches MAX)
+      .mockResolvedValueOnce({ count: 1 }) // kill-at-ceiling succeeds → lockout
 
     const res = await request(makeApp()).post('/auth/code/verify').send({ email: 'p@example.com', code: '000000' })
 
     expect(res.status).toBe(401)
-    const call = prismaMock.loginCode.update.mock.calls[0][0]
-    expect(call.data.attempts).toBe(5)
-    expect(call.data.consumedAt).toBeInstanceOf(Date)
+    // The kill update conditionally sets consumedAt.
+    const kill = prismaMock.loginCode.updateMany.mock.calls[1][0]
+    expect(kill.where.attempts).toEqual({ gte: 5 })
+    expect(kill.data.consumedAt).toBeInstanceOf(Date)
   })
 
-  it('returns 429 too_many_attempts when the code is already at the ceiling', async () => {
-    prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord({ attempts: 5 }))
+  it('returns 429 too_many_attempts when no slot can be claimed and code is unconsumed', async () => {
+    prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord())
+    prismaMock.loginCode.updateMany.mockResolvedValueOnce({ count: 0 }) // claim fails (at ceiling)
+    prismaMock.loginCode.findUnique.mockResolvedValue({ consumedAt: null })
 
     const res = await request(makeApp()).post('/auth/code/verify').send({ email: 'p@example.com', code: CODE })
 
     expect(res.status).toBe(429)
     expect(res.body.error).toBe('too_many_attempts')
-    // Even a correct code cannot revive a locked row.
     expect(res.body.accessToken).toBeUndefined()
+  })
+
+  it('returns 400 when the claim fails because the code was already consumed', async () => {
+    prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord())
+    prismaMock.loginCode.updateMany.mockResolvedValueOnce({ count: 0 }) // claim fails
+    prismaMock.loginCode.findUnique.mockResolvedValue({ consumedAt: new Date() })
+
+    const res = await request(makeApp()).post('/auth/code/verify').send({ email: 'p@example.com', code: CODE })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('invalid_or_expired_code')
   })
 
   it('returns 400 invalid_or_expired_code when no live code exists', async () => {
@@ -179,20 +210,28 @@ describe('POST /auth/code/verify', () => {
 
     expect(res.status).toBe(400)
     expect(res.body.error).toBe('invalid_or_expired_code')
+    // No slot claim attempted when there's nothing to verify against.
+    expect(prismaMock.loginCode.updateMany).not.toHaveBeenCalled()
   })
 
-  it('cannot reuse a consumed code (findFirst filters consumed → 400)', async () => {
-    // A consumed code never matches the un-consumed filter, so the route sees none.
-    prismaMock.loginCode.findFirst.mockResolvedValue(null)
+  it('loses the consume race → 400 (guarantees a single success)', async () => {
+    prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord())
+    prismaMock.loginCode.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim
+      .mockResolvedValueOnce({ count: 0 }) // consume lost to a concurrent success
 
     const res = await request(makeApp()).post('/auth/code/verify').send({ email: 'p@example.com', code: CODE })
 
     expect(res.status).toBe(400)
     expect(res.body.error).toBe('invalid_or_expired_code')
+    expect(res.body.accessToken).toBeUndefined()
   })
 
   it('returns the 2FA handoff instead of tokens for a 2FA-enabled user', async () => {
     prismaMock.loginCode.findFirst.mockResolvedValue(liveRecord())
+    prismaMock.loginCode.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim
+      .mockResolvedValueOnce({ count: 1 }) // consume
     prismaMock.user.findUnique.mockResolvedValue({
       id: 'u-2fa', email: 'p@example.com', role: 'PARENT', schoolId: 'school-A',
       twoFactorEnabled: true, children: [], studentLinks: [], school: { id: 'school-A', name: 'VHPS' },

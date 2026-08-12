@@ -994,7 +994,50 @@ model LoginCode {
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
 
+  // Serves the "newest live code for this email" lookup, and the
+  // (consumedAt, expiresAt) cleanup sweep.
   @@index([email, createdAt])
+  @@index([expiresAt])
+}
+
+// Distributed rate-limit counters (fixed-window). Backs a Postgres-based
+// express-rate-limit Store so limits hold across MULTIPLE processes and
+// servers — an in-memory MemoryStore would reset per instance and multiply
+// the effective limit by the instance count. One row per (limiter, subject),
+// `key` already namespaced by the limiter. `count` is bumped by a single
+// atomic INSERT … ON CONFLICT statement (row-locked, race-safe); `expiresAt`
+// is the window end. Expired rows are swept by the cleanup job.
+model RateLimit {
+  key       String   @id
+  count     Int
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+// Authentication audit trail — a security-investigation log distinct from the
+// business `AuditLog` (which requires an authenticated user, a non-null
+// schoolId and an enum action, and so cannot represent pre-auth events like a
+// failed verification or a request for an unknown email). Deliberately has NO
+// foreign keys: writes must never fail on the hot auth path and the row must
+// outlive a deleted user. NEVER stores the code or its hash — only the event,
+// the subject email (lowercased), the resolved user/school when known, IP,
+// user-agent and a small metadata blob (outcome/reason/attempt number).
+model AuthEvent {
+  id        String   @id @default(cuid())
+  event     String // see AUTH_EVENT.* in services/authAudit.ts
+  email     String? // subject email (may not map to a real account)
+  userId    String? // resolved user, when known (no FK — survives deletion)
+  schoolId  String? // resolved school, when known
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([userId, createdAt])
+  @@index([event, createdAt])
+  @@index([createdAt])
 }
 
 // Link Categories for organizing external links
