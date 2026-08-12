@@ -2,6 +2,7 @@
 // rejected promise thrown from an async route handler is forwarded to the error
 // middleware instead of hanging the request until timeout.
 import 'express-async-errors'
+import crypto from 'crypto'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
@@ -15,6 +16,8 @@ import { initErrorReporting } from './services/sentry.js'
 import { configurePassport } from './middleware/passport.js'
 import authRoutes from './routes/auth.js'
 import opsRoutes, { clientOpsRouter } from './routes/ops.js'
+import resendWebhookRoutes from './routes/resendWebhook.js'
+import { resolveAll as resolveAllFlags } from './services/featureFlags.js'
 import hubAuthRoutes from './routes/hubAuth.js'
 import hubSyncRoutes from './routes/hubSync.js'
 import hubWebhookRoutes from './routes/hubWebhook.js'
@@ -93,6 +96,15 @@ const PORT = process.env.PORT || 4000
 app.use(
   pinoHttp({
     logger,
+    // Correlation ID: honour an inbound x-request-id / x-correlation-id (so a
+    // trace survives across services), else mint one. Echoed back on the
+    // response and attached to every log line + captured error as `correlationId`.
+    genReqId: (req, res) => {
+      const incoming = (req.headers['x-request-id'] || req.headers['x-correlation-id']) as string | undefined
+      const id = incoming && incoming.length <= 200 ? incoming : crypto.randomUUID()
+      res.setHeader('x-request-id', id)
+      return id
+    },
     customLogLevel: (_req, res, err) => {
       if (err) return 'error'
       if (res.statusCode >= 500) return 'error'
@@ -120,6 +132,9 @@ app.use(cors({
 // its HMAC signature is computed over the raw request bytes (it parses the body
 // with express.raw internally). See routes/hubWebhook.ts.
 app.use('/api/hub', hubWebhookRoutes)
+// Resend delivery webhook — also before express.json (Svix signature is over the
+// raw bytes). Records email delivery status for the Operations Console.
+app.use('/api/webhooks', resendWebhookRoutes)
 
 // JSON body limit. Explicit cap stops a single client from queueing
 // arbitrarily large payloads (default in Express is 100kb; this raises it to
@@ -213,14 +228,24 @@ app.get('/health/ready', async (_req, res) => {
 // reqId/schoolId/userId context is preserved), then funnels through the error
 // reporter so a future Sentry hook captures it too.
 app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const reqAny = req as express.Request & { log?: typeof logger }
-  ;(reqAny.log ?? logger).error({ err, route: req.path }, 'unhandled error')
-  captureException(err, {
-    route: req.path,
-    schoolId: req.user?.schoolId,
-    userId: req.user?.id,
-  })
-  res.status(500).json({ error: 'Internal server error' })
+  const reqAny = req as express.Request & { log?: typeof logger; id?: string }
+  const correlationId = reqAny.id
+  ;(reqAny.log ?? logger).error({ err, route: req.path, correlationId }, 'unhandled error')
+  // Best-effort feature-flag state so a Sentry event shows what was toggled at
+  // the time (errors are rare — one extra read is fine; never let it mask err).
+  resolveAllFlags({ userId: req.user?.id, schoolId: req.user?.schoolId })
+    .catch(() => undefined)
+    .then((featureFlags) => {
+      captureException(err, {
+        route: req.path,
+        schoolId: req.user?.schoolId,
+        userId: req.user?.id,
+        correlationId,
+        ...(featureFlags ? { featureFlags } : {}),
+      })
+    })
+  // Return the correlation id so support can quote it straight from the parent.
+  res.status(500).json({ error: 'Internal server error', correlationId })
 })
 
 // Don't lose async errors that escape the express stack

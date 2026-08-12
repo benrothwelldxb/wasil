@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth, LoadingScreen } from '@wasil/shared'
 import { AdminLayout } from './components/layout/AdminLayout'
-import { OpsApp } from './ops/OpsApp'
+// Lazy-loaded so the Operations Console ships as its own chunk and never bloats
+// the parent-admin bundle (it's only reached by staff at /ops).
+const OpsApp = lazy(() => import('./ops/OpsApp').then((m) => ({ default: m.OpsApp })))
 import { LoginPage } from './pages/LoginPage'
 import { TwoFactorSetupPage } from './pages/TwoFactorSetupPage'
 import { MessagesPage } from './pages/MessagesPage'
@@ -248,7 +250,9 @@ export default function App() {
         path="/ops/*"
         element={
           <ProtectedRoute>
-            <OpsApp />
+            <Suspense fallback={<LoadingScreen />}>
+              <OpsApp />
+            </Suspense>
           </ProtectedRoute>
         }
       />

@@ -135,7 +135,7 @@ opsRouter.get('/support/parent/:id', isAdmin, async (req: Request, res: Response
       return res.status(403).json({ error: 'Forbidden' })
     }
 
-    const [authEvents, auditLogs, notifications, clubBookings, consultations] = await Promise.all([
+    const [authEvents, auditLogs, notifications, clubBookings, consultations, emailDelivery] = await Promise.all([
       prisma.authEvent.findMany({
         where: { OR: [{ userId: user.id }, { email: user.email.toLowerCase() }] },
         orderBy: { createdAt: 'desc' }, take: 25,
@@ -157,6 +157,10 @@ opsRouter.get('/support/parent/:id', isAdmin, async (req: Request, res: Response
         where: { parentId: user.id }, orderBy: { createdAt: 'desc' }, take: 25,
         select: { id: true, createdAt: true },
       }).catch(() => []),
+      prisma.emailEvent.findMany({
+        where: { email: user.email.toLowerCase() }, orderBy: { createdAt: 'desc' }, take: 15,
+        select: { type: true, reason: true, messageId: true, createdAt: true },
+      }).catch(() => []),
     ])
 
     res.json({
@@ -171,7 +175,7 @@ opsRouter.get('/support/parent/:id', isAdmin, async (req: Request, res: Response
         failedLoginAttempts: user.failedLoginAttempts,
         children: user.studentLinks.map((l) => ({ name: `${l.student.firstName} ${l.student.lastName}`, className: l.student.class?.name ?? null })),
       },
-      authEvents, auditLogs, notifications,
+      authEvents, auditLogs, notifications, emailDelivery,
       bookings: { clubs: clubBookings, consultations },
     })
   } catch (e) {

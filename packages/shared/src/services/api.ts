@@ -2390,6 +2390,7 @@ export interface OpsParentDetail {
   authEvents: Array<{ event: string; ipAddress: string | null; createdAt: string; metadata: unknown }>
   auditLogs: Array<{ action: string; resourceType: string; resourceId: string; createdAt: string }>
   notifications: Array<{ type: string; title: string; read: boolean; createdAt: string }>
+  emailDelivery?: Array<{ type: string; reason: string | null; messageId: string | null; createdAt: string }>
   bookings: { clubs: Array<{ id: string; paymentStatus: string; cancelledAt: string | null; createdAt: string; student: { firstName: string; lastName: string } }>; consultations: Array<{ id: string; createdAt: string }> }
 }
 export interface OpsJob { id: string; kind: string; status: string; attempts: number; lastError: string | null; runAfter: string; failedAt: string | null; createdAt: string; schoolId: string }

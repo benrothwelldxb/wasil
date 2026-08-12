@@ -155,6 +155,26 @@ export function ParentSupportPage() {
                 )}
               </Card>
 
+              {/* Email delivery (Resend) — answers "why didn't they get it?" */}
+              <Card className="p-4">
+                <div className="mb-2 text-sm font-medium text-slate-200">Email delivery</div>
+                {(detail.data!.emailDelivery?.length ?? 0) === 0 ? (
+                  <EmptyState>No delivery events yet (Resend webhook not configured, or none for this address).</EmptyState>
+                ) : (
+                  <ul className="space-y-1.5 text-sm">
+                    {detail.data!.emailDelivery!.slice(0, 8).map((e, i) => (
+                      <li key={i} className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2">
+                          <Badge tone={e.type === 'delivered' ? 'green' : e.type === 'bounced' || e.type === 'complained' ? 'red' : e.type === 'opened' || e.type === 'clicked' ? 'sky' : 'amber'}>{e.type}</Badge>
+                          {e.reason && <span className="truncate text-xs text-slate-500">{e.reason}</span>}
+                        </span>
+                        <span className="shrink-0 text-xs text-slate-500">{relTime(e.createdAt)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+
               {/* Notifications + bookings */}
               <div className="grid gap-4 md:grid-cols-2">
                 <Card className="p-4">

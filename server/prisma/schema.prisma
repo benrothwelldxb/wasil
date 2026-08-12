@@ -1040,6 +1040,24 @@ model AuthEvent {
   @@index([createdAt])
 }
 
+// Email delivery events from the Resend webhook (delivered / opened / clicked /
+// bounced / complained / delivery_delayed). Keyed by recipient email so the
+// Operations Console can answer "why didn't this parent get their invite?"
+// without leaving the app. No FK — the recipient may not be a User row and the
+// event must record regardless. `type` is the Resend event minus the "email."
+// prefix; `reason` carries bounce/complaint detail when present.
+model EmailEvent {
+  id        String   @id @default(cuid())
+  messageId String? // Resend email_id
+  email     String // recipient (lowercased)
+  type      String // delivered | opened | clicked | bounced | complained | delivery_delayed | sent
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([type, createdAt])
+}
+
 // ── Beta operations & support tooling ────────────────────────────────────────
 
 // Feature flags with three scopes. `FeatureFlag` holds the GLOBAL default for a
