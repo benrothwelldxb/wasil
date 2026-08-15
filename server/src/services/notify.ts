@@ -76,21 +76,21 @@ export async function sendNotification({ req, type, title, body, resourceType, r
       })
       parentUserIds = parents.map(p => p.id)
     } else if (yearGroupId) {
-      // Parents with children in classes belonging to this year group
-      const children = await prisma.child.findMany({
-        where: {
-          class: { yearGroupId, schoolId },
-        },
-        select: { parentId: true },
+      // Parents of students in classes belonging to this year group. Reads the
+      // modern Student/ParentStudentLink tables (Hub-provisioned pupils) — see
+      // ADR 0004; the legacy Child table is no longer consulted.
+      const students = await prisma.student.findMany({
+        where: { schoolId, class: { yearGroupId } },
+        select: { parentLinks: { select: { userId: true } } },
       })
-      parentUserIds = Array.from(new Set(children.map(c => c.parentId)))
+      parentUserIds = [...new Set(students.flatMap(s => s.parentLinks.map(pl => pl.userId)))]
     } else if (classId) {
-      // Parents with children in this specific class
-      const children = await prisma.child.findMany({
+      // Parents of students in this specific class (modern Student tables).
+      const students = await prisma.student.findMany({
         where: { classId },
-        select: { parentId: true },
+        select: { parentLinks: { select: { userId: true } } },
       })
-      parentUserIds = Array.from(new Set(children.map(c => c.parentId)))
+      parentUserIds = [...new Set(students.flatMap(s => s.parentLinks.map(pl => pl.userId)))]
     }
 
     if (parentUserIds.length === 0) return

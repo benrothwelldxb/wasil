@@ -13,6 +13,8 @@ import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
+import { sendNotification } from '../services/notify.js'
+import { sanitizeRichText } from '../services/htmlSanitizer.js'
 
 const router = Router()
 
@@ -554,6 +556,421 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
     res.json({ recipients })
   } catch (error) {
     console.error('Error building partner inbox recipients:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// ============================================================================
+// Partner broadcast + group management — Desk (staff-facing) can send native
+// broadcasts and manage groups without leaving Desk; Connect stays the system of
+// record. Every route resolves a staff/admin `actor` from a Hub user id (a
+// parent/unknown id → 403) and hard-scopes every target to the actor's school.
+// Responses carry only counts / display names — never pupil or parent PII.
+// ============================================================================
+
+// Coerce a request-body value into a clean, de-duplicated string-id array.
+function toIdArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return [...new Set(v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map(x => x.trim()))]
+}
+
+// --- Broadcast -------------------------------------------------------------
+
+// Send a native broadcast to one or more audiences within the actor's school.
+//
+//   POST /api/partner/messages
+//   { hub_user_id, title, content, audience: { classHubIds?, wholeSchool?,
+//     yearGroupId?, groupIds? }, isUrgent?, scheduledAt?, expiresAt?,
+//     attachments?: [{ fileName, fileUrl, fileType, fileSize }] }
+//
+// `Message` is single-target per row, so we FAN OUT: one row per class, one per
+// group, one per year-group, plus one for whole-school. Every target is
+// validated to the actor's school UP FRONT — a single unknown/cross-school
+// target rejects the whole broadcast (400) and creates no rows. Each row mirrors
+// the native create (sanitized content, its own attachments, a `sendNotification`
+// with that row's target). Partner broadcasts are never pinned.
+//
+// NOTE (Connect-side follow-on, ADR 0004 — flagged, NOT fixed here): the
+// class/year-group fan-out inside `notify.ts` reads the legacy `Child` table, so
+// Desk/Hub-provisioned pupils (who live only in `Student`/`ParentStudentLink`)
+// are NOT reached via the class/year path until that service is modernised. The
+// `groupId` path already uses the modern tables, so group broadcasts fan out
+// fully. We mirror native behaviour exactly and leave the caveat as-is.
+router.post('/messages', requirePartner, async (req, res) => {
+  try {
+    const { hub_user_id, title, content, audience, isUrgent, scheduledAt, expiresAt, attachments } = req.body ?? {}
+    const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '')
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'title required' })
+    if (typeof content !== 'string' || !content.trim()) return res.status(400).json({ error: 'content required' })
+
+    const aud = (audience && typeof audience === 'object') ? audience as Record<string, unknown> : {}
+    const classHubIds = toIdArray(aud.classHubIds)
+    const groupIds = toIdArray(aud.groupIds)
+    const yearGroupId = typeof aud.yearGroupId === 'string' && aud.yearGroupId.trim() ? aud.yearGroupId.trim() : null
+    const wholeSchool = aud.wholeSchool === true
+
+    if (classHubIds.length === 0 && groupIds.length === 0 && !yearGroupId && !wholeSchool) {
+      return res.status(400).json({ error: 'audience required' })
+    }
+
+    // Validate EVERY target belongs to the actor's school before creating rows.
+    let resolvedClasses: { id: string; name: string }[] = []
+    if (classHubIds.length > 0) {
+      resolvedClasses = await prisma.class.findMany({
+        where: { hubClassId: { in: classHubIds }, schoolId: actor.schoolId },
+        select: { id: true, name: true },
+      })
+      if (resolvedClasses.length !== classHubIds.length) {
+        return res.status(400).json({ error: 'unknown or cross-school class in audience' })
+      }
+    }
+
+    let resolvedGroups: { id: string; name: string }[] = []
+    if (groupIds.length > 0) {
+      resolvedGroups = await prisma.group.findMany({
+        where: { id: { in: groupIds }, schoolId: actor.schoolId },
+        select: { id: true, name: true },
+      })
+      if (resolvedGroups.length !== groupIds.length) {
+        return res.status(400).json({ error: 'unknown or cross-school group in audience' })
+      }
+    }
+
+    let resolvedYearGroup: { id: string; name: string } | null = null
+    if (yearGroupId) {
+      resolvedYearGroup = await prisma.yearGroup.findFirst({
+        where: { id: yearGroupId, schoolId: actor.schoolId },
+        select: { id: true, name: true },
+      })
+      if (!resolvedYearGroup) {
+        return res.status(400).json({ error: 'unknown or cross-school year group in audience' })
+      }
+    }
+
+    // Build one fan-out target per resolved audience (class → group → year → school).
+    const targets: { targetClass: string; classId?: string; yearGroupId?: string; groupId?: string }[] = []
+    for (const c of resolvedClasses) targets.push({ targetClass: c.name, classId: c.id })
+    for (const g of resolvedGroups) targets.push({ targetClass: g.name, groupId: g.id })
+    if (resolvedYearGroup) targets.push({ targetClass: resolvedYearGroup.name, yearGroupId: resolvedYearGroup.id })
+    if (wholeSchool) targets.push({ targetClass: 'Whole School' })
+
+    const safeContent = sanitizeRichText(content)
+    const cleanTitle = title.trim()
+    const scheduledDate = typeof scheduledAt === 'string' && scheduledAt ? new Date(scheduledAt) : null
+    const expiresDate = typeof expiresAt === 'string' && expiresAt ? new Date(expiresAt) : null
+    const attachmentRows = Array.isArray(attachments) ? attachments : []
+
+    // `sendNotification` currently ignores `req`, but the native route passes it
+    // (for future sender-exclusion / socket / audit). The partner path has no
+    // `req.user`, so we stamp the resolved actor onto `req` to mirror the native
+    // contract and stay forward-compatible.
+    ;(req as unknown as { user: StaffActor }).user = actor
+
+    for (const t of targets) {
+      const message = await prisma.message.create({
+        data: {
+          title: cleanTitle,
+          content: safeContent,
+          targetClass: t.targetClass,
+          classId: t.classId ?? null,
+          yearGroupId: t.yearGroupId ?? null,
+          groupId: t.groupId ?? null,
+          schoolId: actor.schoolId,
+          senderId: actor.id,
+          senderName: actor.name,
+          isPinned: false,
+          isUrgent: isUrgent === true,
+          scheduledAt: scheduledDate,
+          expiresAt: expiresDate,
+        },
+      })
+
+      if (attachmentRows.length > 0) {
+        await prisma.messageAttachment.createMany({
+          data: attachmentRows.map((a: { fileName: string; fileUrl: string; fileType: string; fileSize: number }) => ({
+            messageId: message.id,
+            fileName: a.fileName,
+            fileUrl: a.fileUrl,
+            fileType: a.fileType,
+            fileSize: a.fileSize,
+          })),
+        })
+      }
+
+      await sendNotification({
+        req,
+        type: 'MESSAGE',
+        title: cleanTitle,
+        body: safeContent.substring(0, 200),
+        resourceType: 'MESSAGE',
+        resourceId: message.id,
+        target: {
+          targetClass: t.targetClass,
+          classId: t.classId,
+          yearGroupId: t.yearGroupId,
+          groupId: t.groupId,
+          schoolId: actor.schoolId,
+        },
+      })
+    }
+
+    res.status(201).json({ created: targets.length })
+  } catch (error) {
+    console.error('Error creating partner broadcast:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// This sender's recent broadcasts, newest first (cap 50). Display-only: a title,
+// the row's audience label, when it was sent, and `ackCount` — the number of
+// MessageAcknowledgment rows, i.e. how many parents have "seen"/acknowledged it.
+//
+//   GET /api/partner/messages/sent?hub_user_id=<Hub user id>
+router.get('/messages/sent', requirePartner, async (req, res) => {
+  try {
+    const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
+    const actor = await resolveStaffActor(hubUserId)
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    const rows = await prisma.message.findMany({
+      where: { senderId: actor.id, schoolId: actor.schoolId },
+      select: {
+        id: true,
+        title: true,
+        targetClass: true,
+        createdAt: true,
+        _count: { select: { acknowledgments: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    })
+
+    res.json({
+      messages: rows.map(m => ({
+        id: m.id,
+        title: m.title,
+        audienceLabel: m.targetClass,
+        sentAt: m.createdAt.toISOString(),
+        ackCount: m._count.acknowledgments,
+      })),
+    })
+  } catch (error) {
+    console.error('Error building partner sent messages:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// --- Groups ----------------------------------------------------------------
+
+// Active groups for a school, with a member count each.
+//
+//   GET /api/partner/groups?school_id=<Hub school id | Connect id>
+router.get('/groups', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+
+    const school = await prisma.school.findFirst({
+      where: { OR: [{ hubSchoolId: schoolIdParam }, { id: schoolIdParam }] },
+      select: { id: true },
+    })
+    // Unknown school is not an error — Desk may probe ids we don't host.
+    if (!school) return res.json({ groups: [] })
+
+    const groups = await prisma.group.findMany({
+      where: { schoolId: school.id, isActive: true },
+      select: { id: true, name: true, _count: { select: { studentMembers: true } } },
+      orderBy: { name: 'asc' },
+    })
+
+    res.json({ groups: groups.map(g => ({ id: g.id, name: g.name, memberCount: g._count.studentMembers })) })
+  } catch (error) {
+    console.error('Error building partner groups list:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// Resolve a set of Hub pupil ids to same-school internal Student ids. Desk keys
+// pupils on `Student.hubPupilId` (the Hub MIS link) and never sees our internal
+// ids, so this is the boundary map — same pattern as hubClassId→Class. Returns
+// the internal ids, or null if ANY id is unknown/cross-school (caller → 400).
+async function resolvePupilHubIds(pupilHubIds: string[], schoolId: string): Promise<string[] | null> {
+  if (pupilHubIds.length === 0) return []
+  const students = await prisma.student.findMany({
+    where: { hubPupilId: { in: pupilHubIds }, schoolId },
+    select: { id: true },
+  })
+  if (students.length !== pupilHubIds.length) return null
+  return students.map(s => s.id)
+}
+
+// Create a group in the actor's school with an initial pupil roster. Desk sends
+// Hub pupil ids (`pupilHubIds`); we map them to internal Student ids at the
+// boundary and store StudentGroupLink rows on the internal ids.
+//
+//   POST /api/partner/groups  { hub_user_id, name, pupilHubIds: string[] }
+router.post('/groups', requirePartner, async (req, res) => {
+  try {
+    const { hub_user_id, name, pupilHubIds } = req.body ?? {}
+    const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '')
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' })
+
+    // Map Hub pupil ids → internal Student ids, validating same-school.
+    const studentIds = await resolvePupilHubIds(toIdArray(pupilHubIds), actor.schoolId)
+    if (studentIds === null) return res.status(400).json({ error: 'unknown or cross-school pupil' })
+
+    let group: { id: string }
+    try {
+      group = await prisma.group.create({
+        data: { name: name.trim(), schoolId: actor.schoolId },
+        select: { id: true },
+      })
+    } catch (error: unknown) {
+      if ((error as { code?: string })?.code === 'P2002') {
+        return res.status(409).json({ error: 'a group with this name already exists' })
+      }
+      throw error
+    }
+
+    if (studentIds.length > 0) {
+      await prisma.studentGroupLink.createMany({
+        data: studentIds.map(studentId => ({ studentId, groupId: group.id })),
+        skipDuplicates: true,
+      })
+    }
+
+    res.status(201).json({ id: group.id })
+  } catch (error) {
+    console.error('Error creating partner group:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// One group with its members (display-only: name + class, no other pupil PII).
+//
+//   GET /api/partner/groups/:id?hub_user_id=<Hub user id>
+router.get('/groups/:id', requirePartner, async (req, res) => {
+  try {
+    const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
+    const actor = await resolveStaffActor(hubUserId)
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    const group = await prisma.group.findFirst({
+      where: { id: req.params.id, schoolId: actor.schoolId },
+      include: {
+        studentMembers: {
+          include: {
+            student: {
+              select: { hubPupilId: true, firstName: true, lastName: true, class: { select: { name: true } } },
+            },
+          },
+          orderBy: { student: { lastName: 'asc' } },
+        },
+      },
+    })
+
+    if (!group) return res.status(404).json({ error: 'not_found' })
+
+    // Members are keyed on the Hub pupil id (Desk's world), never our internal
+    // Student id — the boundary map. Display fields only, no other pupil PII.
+    res.json({
+      id: group.id,
+      name: group.name,
+      members: group.studentMembers.map(m => ({
+        pupilHubId: m.student.hubPupilId,
+        studentName: `${m.student.firstName} ${m.student.lastName}`.trim(),
+        className: m.student.class?.name ?? null,
+      })),
+    })
+  } catch (error) {
+    console.error('Error fetching partner group:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// Rename and/or add/remove members. Every mutation is gated to the actor's
+// school; add/remove pupils are Hub pupil ids mapped to same-school Students at
+// the boundary; a rename clash → 409.
+//
+//   PATCH /api/partner/groups/:id
+//   { hub_user_id, name?, addPupilHubIds?: string[], removePupilHubIds?: string[] }
+router.patch('/groups/:id', requirePartner, async (req, res) => {
+  try {
+    const { hub_user_id, name, addPupilHubIds, removePupilHubIds } = req.body ?? {}
+    const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '')
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    const { id } = req.params
+    const group = await prisma.group.findFirst({
+      where: { id, schoolId: actor.schoolId },
+      select: { id: true },
+    })
+    if (!group) return res.status(404).json({ error: 'not_found' })
+
+    // Map both sets of Hub pupil ids → internal Student ids up front (read-only),
+    // so a bad pupil on either side rejects the whole patch before any write.
+    const addStudentIds = await resolvePupilHubIds(toIdArray(addPupilHubIds), actor.schoolId)
+    if (addStudentIds === null) return res.status(400).json({ error: 'unknown or cross-school pupil' })
+    const removeStudentIds = await resolvePupilHubIds(toIdArray(removePupilHubIds), actor.schoolId)
+    if (removeStudentIds === null) return res.status(400).json({ error: 'unknown or cross-school pupil' })
+
+    if (typeof name === 'string' && name.trim()) {
+      try {
+        await prisma.group.update({ where: { id }, data: { name: name.trim() } })
+      } catch (error: unknown) {
+        if ((error as { code?: string })?.code === 'P2002') {
+          return res.status(409).json({ error: 'a group with this name already exists' })
+        }
+        throw error
+      }
+    }
+
+    if (addStudentIds.length > 0) {
+      await prisma.studentGroupLink.createMany({
+        data: addStudentIds.map(studentId => ({ studentId, groupId: id })),
+        skipDuplicates: true,
+      })
+    }
+
+    if (removeStudentIds.length > 0) {
+      await prisma.studentGroupLink.deleteMany({
+        where: { groupId: id, studentId: { in: removeStudentIds } },
+      })
+    }
+
+    res.json({ ok: true })
+  } catch (error) {
+    console.error('Error patching partner group:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// Archive a group (isActive:false) rather than hard-delete — a group may be
+// referenced by messages/events. Archived groups drop out of GET /groups.
+//
+//   DELETE /api/partner/groups/:id  { hub_user_id }
+router.delete('/groups/:id', requirePartner, async (req, res) => {
+  try {
+    const { hub_user_id } = req.body ?? {}
+    const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '')
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    const { id } = req.params
+    const group = await prisma.group.findFirst({
+      where: { id, schoolId: actor.schoolId },
+      select: { id: true },
+    })
+    if (!group) return res.status(404).json({ error: 'not_found' })
+
+    await prisma.group.update({ where: { id }, data: { isActive: false } })
+
+    res.json({ ok: true })
+  } catch (error) {
+    console.error('Error archiving partner group:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })
