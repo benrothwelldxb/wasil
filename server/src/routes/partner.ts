@@ -499,16 +499,18 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
 // actor teaches (StaffClassAssignment); `scope=school` = all pupils in the
 // school (Desk gates who may request the wider scope via its own grant; we still
 // hard-scope to the actor's school so it can never leak cross-school). An
-// unresolvable/parent id → 404 (not 403), so ids can't be probed. Empty is
-// valid → 200 { recipients: [] } (e.g. a teacher with no class assigned yet), so
-// the composer can say "no pupils yet" rather than "unavailable". Each row is
-// four display fields only — `parentName` is the first ParentStudentLink, exactly
-// as the start-thread route resolves it, so every returned studentId round-trips.
+// unresolvable/parent id → 403 (bad actor) — same rule as the thread routes;
+// recipients has no resource lookup (it's a list scoped to the actor), so its
+// only failure axis is the identity. Empty is valid → 200 { recipients: [] }
+// (e.g. a teacher with no class assigned yet), so the composer can say "no pupils
+// yet" rather than "unavailable". Each row is four display fields only —
+// `parentName` is the first ParentStudentLink, exactly as the start-thread route
+// resolves it, so every returned studentId round-trips.
 router.get('/inbox/recipients', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveStaffActor(hubUserId)
-    if (!actor) return res.status(404).json({ error: 'not_found' })
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
 
     const scope = req.query.scope === 'school' ? 'school' : 'own'
 

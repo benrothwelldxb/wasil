@@ -596,14 +596,14 @@ describe('GET /api/partner/inbox/recipients', () => {
     prismaMock.student.findMany.mockResolvedValue([])
   })
 
-  it('404 when the hub_user_id is unresolvable or a parent (ids can\'t be probed)', async () => {
+  it('403 when the hub_user_id is unresolvable or a parent (bad actor — same rule as the thread routes)', async () => {
     prismaMock.user.findUnique.mockResolvedValueOnce(null)
     const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=ghost'))
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(403)
 
     prismaMock.user.findUnique.mockResolvedValueOnce({ id: 'p-1', role: 'PARENT', schoolId: 'sch-1', name: 'A Parent' })
     const res2 = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=parent'))
-    expect(res2.status).toBe(404)
+    expect(res2.status).toBe(403)
   })
 
   it('scope=own: resolves the actor\'s assigned classes and lists only those pupils', async () => {
