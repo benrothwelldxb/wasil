@@ -15,6 +15,8 @@ const prismaMock = {
   notification: { create: vi.fn() },
   deviceToken: { findMany: vi.fn() },
   parentStudentLink: { findFirst: vi.fn() },
+  staffClassAssignment: { findMany: vi.fn() },
+  student: { findMany: vi.fn() },
   class: { findFirst: vi.fn() },
   school: { findFirst: vi.fn() },
   attendanceRequest: { findMany: vi.fn() },
@@ -581,5 +583,73 @@ describe('POST /api/partner/inbox/threads', () => {
     expect(res.body).toEqual({ id: 'c-old' })
     expect(prismaMock.conversation.update).toHaveBeenCalledWith({ where: { id: 'c-old' }, data: { archivedByStaff: false } })
     expect(prismaMock.conversation.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /api/partner/inbox/recipients', () => {
+  const auth = (r: request.Test) => r.set('Authorization', `Bearer ${TOKEN}`)
+  const STAFF = { id: 'staff-1', role: 'STAFF', schoolId: 'sch-1', name: 'Ms Khan' }
+
+  beforeEach(() => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    prismaMock.staffClassAssignment.findMany.mockResolvedValue([{ classId: 'cls-A' }])
+    prismaMock.student.findMany.mockResolvedValue([])
+  })
+
+  it('404 when the hub_user_id is unresolvable or a parent (ids can\'t be probed)', async () => {
+    prismaMock.user.findUnique.mockResolvedValueOnce(null)
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=ghost'))
+    expect(res.status).toBe(404)
+
+    prismaMock.user.findUnique.mockResolvedValueOnce({ id: 'p-1', role: 'PARENT', schoolId: 'sch-1', name: 'A Parent' })
+    const res2 = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=parent'))
+    expect(res2.status).toBe(404)
+  })
+
+  it('scope=own: resolves the actor\'s assigned classes and lists only those pupils', async () => {
+    prismaMock.staffClassAssignment.findMany.mockResolvedValue([{ classId: 'cls-A' }, { classId: 'cls-B' }])
+    prismaMock.student.findMany.mockResolvedValue([
+      { id: 'st-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' }, parentLinks: [{ user: { name: 'Sara Khan' } }] },
+    ])
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hub-1'))
+    expect(res.status).toBe(200)
+    expect(prismaMock.staffClassAssignment.findMany).toHaveBeenCalledWith({
+      where: { userId: 'staff-1', class: { schoolId: 'sch-1' } },
+      select: { classId: true },
+    })
+    const where = prismaMock.student.findMany.mock.calls[0][0].where
+    expect(where).toEqual({ schoolId: 'sch-1', classId: { in: ['cls-A', 'cls-B'] } })
+    expect(res.body.recipients[0]).toEqual({
+      studentId: 'st-1', studentName: 'Amina Khan', className: '1A', parentName: 'Sara Khan',
+    })
+    // Key-set lock — exactly these four fields, no pupil PII.
+    expect(Object.keys(res.body.recipients[0]).sort()).toEqual(['className', 'parentName', 'studentId', 'studentName'])
+  })
+
+  it('scope=own with no assigned classes → 200 { recipients: [] } (never an error, no student query)', async () => {
+    prismaMock.staffClassAssignment.findMany.mockResolvedValue([])
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hub-1'))
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ recipients: [] })
+    expect(prismaMock.student.findMany).not.toHaveBeenCalled()
+  })
+
+  it('scope=school: no class filter, hard-scoped to the actor\'s school (never cross-school)', async () => {
+    await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hub-1&scope=school'))
+    expect(prismaMock.staffClassAssignment.findMany).not.toHaveBeenCalled()
+    const where = prismaMock.student.findMany.mock.calls[0][0].where
+    expect(where).toEqual({ schoolId: 'sch-1' })
+    // Ordered by class then name.
+    expect(prismaMock.student.findMany.mock.calls[0][0].orderBy).toEqual([
+      { class: { name: 'asc' } }, { lastName: 'asc' }, { firstName: 'asc' },
+    ])
+  })
+
+  it('null class / no parent link degrade to null, not crash', async () => {
+    prismaMock.student.findMany.mockResolvedValue([
+      { id: 'st-9', firstName: 'No', lastName: 'Parent', class: null, parentLinks: [] },
+    ])
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hub-1'))
+    expect(res.body.recipients[0]).toEqual({ studentId: 'st-9', studentName: 'No Parent', className: null, parentName: null })
   })
 })

@@ -494,4 +494,66 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
   }
 })
 
+// 5. The pupils a staff member may start a thread with — completes Desk's
+// composer (replies already work). `scope=own` (default) = pupils in classes the
+// actor teaches (StaffClassAssignment); `scope=school` = all pupils in the
+// school (Desk gates who may request the wider scope via its own grant; we still
+// hard-scope to the actor's school so it can never leak cross-school). An
+// unresolvable/parent id → 404 (not 403), so ids can't be probed. Empty is
+// valid → 200 { recipients: [] } (e.g. a teacher with no class assigned yet), so
+// the composer can say "no pupils yet" rather than "unavailable". Each row is
+// four display fields only — `parentName` is the first ParentStudentLink, exactly
+// as the start-thread route resolves it, so every returned studentId round-trips.
+router.get('/inbox/recipients', requirePartner, async (req, res) => {
+  try {
+    const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
+    const actor = await resolveStaffActor(hubUserId)
+    if (!actor) return res.status(404).json({ error: 'not_found' })
+
+    const scope = req.query.scope === 'school' ? 'school' : 'own'
+
+    let classFilter: { classId: { in: string[] } } | undefined
+    if (scope === 'own') {
+      const assignments = await prisma.staffClassAssignment.findMany({
+        where: { userId: actor.id, class: { schoolId: actor.schoolId } },
+        select: { classId: true },
+      })
+      const classIds = assignments.map((a) => a.classId)
+      // No class assigned yet → empty (valid), not an error.
+      if (classIds.length === 0) return res.json({ recipients: [] })
+      classFilter = { classId: { in: classIds } }
+    }
+
+    const students = await prisma.student.findMany({
+      // Always hard-scoped to the actor's school — scope=school never crosses it.
+      where: { schoolId: actor.schoolId, ...(classFilter ?? {}) },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        class: { select: { name: true } },
+        parentLinks: {
+          select: { user: { select: { name: true } } },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+        },
+      },
+      orderBy: [{ class: { name: 'asc' } }, { lastName: 'asc' }, { firstName: 'asc' }],
+    })
+
+    const recipients = students.map((s) => ({
+      studentId: s.id,
+      studentName: `${s.firstName} ${s.lastName}`.trim(),
+      className: s.class?.name ?? null,
+      parentName: s.parentLinks[0]?.user?.name ?? null,
+    }))
+
+    res.set('Cache-Control', 'private, max-age=30')
+    res.json({ recipients })
+  } catch (error) {
+    console.error('Error building partner inbox recipients:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 export default router
