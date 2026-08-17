@@ -24,6 +24,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-i18next": "^16.5.4",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.21.0",
     "serve": "^14.2.0"
   },

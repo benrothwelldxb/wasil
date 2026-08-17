@@ -9,16 +9,42 @@
 // teacher) — and never other pupil PII. That keeps partners outside the
 // parent-data boundary by design.
 import { Router } from 'express'
+import multer from 'multer'
+import { marked } from 'marked'
 import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { sendNotification } from '../services/notify.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
+import { uploadFile, generateKey } from '../services/storage.js'
+import { checkUpload } from '../services/uploadValidation.js'
 
 const router = Router()
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// Attachment upload — same allowlist + limits as the native staff route
+// (messages.ts). Desk authors in markdown everywhere; on the broadcast path we
+// convert that markdown to HTML and run it through the SAME sanitizer the admin
+// composer uses, so a partner broadcast stores the same safe-HTML content model
+// as a native one (bold/italic/lists survive; anything unsafe is discarded).
+const ATTACHMENT_MIME_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 16 * 1024 * 1024 }, // 16MB, matches native
+})
+
+/** Desk markdown → sanitized HTML (broadcast content model is HTML). */
+function markdownToSafeHtml(md: string): string {
+  const html = marked.parse(md, { async: false, gfm: true, breaks: true }) as string
+  return sanitizeRichText(html)
+}
 
 // A resolved staff/admin actor, shaped exactly like `req.user`, so we can reuse
 // the native inbox logic against a partner (Desk) request. `hub_user_id` maps to
@@ -656,7 +682,9 @@ router.post('/messages', requirePartner, async (req, res) => {
     if (resolvedYearGroup) targets.push({ targetClass: resolvedYearGroup.name, yearGroupId: resolvedYearGroup.id })
     if (wholeSchool) targets.push({ targetClass: 'Whole School' })
 
-    const safeContent = sanitizeRichText(content)
+    // Desk sends markdown; convert → sanitized HTML so parents see formatting
+    // (the broadcast render path is HTML, shared with the admin composer).
+    const safeContent = markdownToSafeHtml(content)
     const cleanTitle = title.trim()
     const scheduledDate = typeof scheduledAt === 'string' && scheduledAt ? new Date(scheduledAt) : null
     const expiresDate = typeof expiresAt === 'string' && expiresAt ? new Date(expiresAt) : null
@@ -971,6 +999,38 @@ router.delete('/groups/:id', requirePartner, async (req, res) => {
     res.json({ ok: true })
   } catch (error) {
     console.error('Error archiving partner group:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// Attachment upload for Desk — the requirePartner twin of the native staff
+// `POST /messages/upload`. Desk can't store parent-facing files (Connect is the
+// record), so it uploads here and passes the returned descriptor as a
+// pre-hosted attachment on the inbox-send or broadcast routes. Same validation,
+// storage, and 16MB limit as the native route.
+//
+//   POST /api/partner/inbox/upload  (multipart/form-data, field "file")
+//     → { fileName, fileUrl, fileType, fileSize }
+router.post('/inbox/upload', requirePartner, attachmentUpload.single('file'), async (req, res) => {
+  try {
+    const uploaded = req.file
+    if (!uploaded) {
+      return res.status(400).json({ error: 'file required' })
+    }
+    const check = checkUpload(uploaded.buffer, uploaded.mimetype, uploaded.originalname, ATTACHMENT_MIME_TYPES)
+    if (!check.valid) {
+      return res.status(400).json({ error: `file rejected: ${check.reason}` })
+    }
+    const key = generateKey('message-attachments', uploaded.originalname)
+    const fileUrl = await uploadFile(uploaded.buffer, key, uploaded.mimetype)
+    res.json({
+      fileName: uploaded.originalname,
+      fileUrl,
+      fileType: uploaded.mimetype,
+      fileSize: uploaded.size,
+    })
+  } catch (error) {
+    console.error('Error uploading partner attachment:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })

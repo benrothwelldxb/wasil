@@ -40,8 +40,15 @@ const notifyMock = { sendNotification: vi.fn() }
 vi.mock('../src/services/notify', () => notifyMock)
 
 // sanitizeRichText is the real XSS-defense; stub it to an identity passthrough
-// so we can assert the exact stored content without pulling in sanitize-html.
+// so we can assert the exact stored content (the markdown→HTML from `marked`,
+// which runs for real) without pulling in sanitize-html.
 vi.mock('../src/services/htmlSanitizer', () => ({ sanitizeRichText: (s: string) => s }))
+
+// Storage + validation for the partner upload endpoint.
+const storageMock = { uploadFile: vi.fn(), generateKey: vi.fn((p: string, n: string) => `${p}/${n}`) }
+vi.mock('../src/services/storage', () => storageMock)
+const uploadValidationMock = { checkUpload: vi.fn() }
+vi.mock('../src/services/uploadValidation', () => uploadValidationMock)
 
 const { default: partnerRoutes } = await import('../src/routes/partner')
 
@@ -62,6 +69,8 @@ beforeEach(() => {
   prismaMock.partnerToken.findUnique.mockResolvedValue({ id: 'pt-1', name: 'desk', revokedAt: null })
   firebaseMock.sendPushNotification.mockResolvedValue({ failedTokens: [] })
   firebaseMock.removeInvalidTokens.mockResolvedValue(undefined)
+  storageMock.uploadFile.mockResolvedValue('https://cdn.example/message-attachments/a.pdf')
+  uploadValidationMock.checkUpload.mockReturnValue({ valid: true })
 })
 
 describe('partner auth', () => {
@@ -714,7 +723,7 @@ describe('POST /api/partner/messages', () => {
     const res = await auth(request(makeApp()).post('/api/partner/messages')).send({
       hub_user_id: 'hu-staff',
       title: 'Sports Day',
-      content: '<b>Bring water</b>',
+      content: '**Bring water**',
       audience: { classHubIds: ['hc-1', 'hc-2'], groupIds: ['g-1'], wholeSchool: true },
       isUrgent: true,
       attachments: [{ fileName: 'a.pdf', fileUrl: 'https://x/a.pdf', fileType: 'application/pdf', fileSize: 9 }],
@@ -742,10 +751,11 @@ describe('POST /api/partner/messages', () => {
       ['Choir', null, 'g-1', null],
       ['Whole School', null, null, null],
     ])
-    // Shared per-row fields: sanitized content, actor identity, never pinned, urgent honoured.
+    // Shared per-row fields: markdown converted → HTML (bold survives the
+    // sanitizer), actor identity, never pinned, urgent honoured.
     for (const r of rows) {
       expect(r).toMatchObject({
-        content: '<b>Bring water</b>',
+        content: expect.stringContaining('<strong>Bring water</strong>'),
         senderId: 'staff-1',
         senderName: 'Ms Noor',
         schoolId: 'sch-1',
@@ -1029,5 +1039,61 @@ describe('DELETE /api/partner/groups/:id', () => {
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ ok: true })
     expect(prismaMock.group.update).toHaveBeenCalledWith({ where: { id: 'g-1' }, data: { isActive: false } })
+  })
+})
+
+describe('POST /api/partner/messages — markdown', () => {
+  const auth = (r: request.Test) => r.set('Authorization', `Bearer ${TOKEN}`)
+
+  it('converts markdown bullets to sanitized HTML (<ul><li>) in the stored content', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'staff-1', role: 'STAFF', schoolId: 'sch-1', name: 'Ms Noor' })
+    const res = await auth(request(makeApp()).post('/api/partner/messages')).send({
+      hub_user_id: 'hu-staff',
+      title: 'Swimming',
+      content: '- Kit\n- Towel',
+      audience: { wholeSchool: true },
+    })
+    expect(res.status).toBe(201)
+    const stored = prismaMock.message.create.mock.calls[0][0].data.content as string
+    expect(stored).toContain('<ul>')
+    expect(stored).toContain('<li>Kit</li>')
+    expect(stored).toContain('<li>Towel</li>')
+  })
+})
+
+describe('POST /api/partner/inbox/upload', () => {
+  const auth = (r: request.Test) => r.set('Authorization', `Bearer ${TOKEN}`)
+
+  it('401 without a partner token', async () => {
+    const res = await request(makeApp())
+      .post('/api/partner/inbox/upload')
+      .attach('file', Buffer.from('%PDF-1.4'), 'note.pdf')
+    expect(res.status).toBe(401)
+  })
+
+  it('400 when no file is attached', async () => {
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/upload'))
+    expect(res.status).toBe(400)
+  })
+
+  it('400 when validation rejects the file', async () => {
+    uploadValidationMock.checkUpload.mockReturnValue({ valid: false, reason: 'unsupported type' })
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/upload'))
+      .attach('file', Buffer.from('MZ'), 'bad.exe')
+    expect(res.status).toBe(400)
+    expect(storageMock.uploadFile).not.toHaveBeenCalled()
+  })
+
+  it('stores a valid file and returns the attachment descriptor', async () => {
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/upload'))
+      .attach('file', Buffer.from('%PDF-1.4 body'), 'permission.pdf')
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({
+      fileName: 'permission.pdf',
+      fileUrl: 'https://cdn.example/message-attachments/a.pdf',
+      fileType: 'application/pdf',
+      fileSize: expect.any(Number),
+    })
+    expect(storageMock.uploadFile).toHaveBeenCalled()
   })
 })
