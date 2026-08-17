@@ -5,11 +5,13 @@ import type { KnowledgeCategory, KnowledgeArticle } from '@wasil/shared'
 import { useTranslation } from 'react-i18next'
 import { loadLanguage } from './i18n'
 import { initPushNotifications, setupPushListeners, isPushSupported } from './services/pushNotifications'
+import { ensureWebPushRegistered } from './services/webPush'
 import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
 import { BottomTabBar } from './components/layout/BottomTabBar'
 import { SideMenu } from './components/layout/SideMenu'
 import { InstallPrompt } from './components/layout/InstallPrompt'
+import { NotificationOptIn } from './components/layout/NotificationOptIn'
 import { LoginView } from './components/LoginView'
 import { RegisterPage } from './pages/RegisterPage'
 import { ParentDashboard } from './pages/ParentDashboard'
@@ -82,6 +84,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       >
         {children}
       </main>
+      <NotificationOptIn />
       <InstallPrompt />
       <BottomTabBar onMorePress={() => setMenuOpen(true)} />
     </div>
@@ -204,6 +207,16 @@ export default function App() {
         })
       }
     })
+  }, [isAuthenticated, user])
+
+  // Web push (browser / installed PWA): if the parent has already granted
+  // notification permission, silently ensure this browser's FCM token is
+  // registered on login. First-time opt-in is handled by <NotificationOptIn/>
+  // (we never auto-prompt). No-op on native — ensureWebPushRegistered() is
+  // gated on !Capacitor.isNativePlatform() internally.
+  useEffect(() => {
+    if (!isAuthenticated || !user) return
+    ensureWebPushRegistered()
   }, [isAuthenticated, user])
 
   if (isLoading) {

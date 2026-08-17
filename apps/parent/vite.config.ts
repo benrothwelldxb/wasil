@@ -57,6 +57,11 @@ export default defineConfig({
         // Keep the precache manifest lean; runtime API calls stay network-only
         // for now (no offline caching strategy has been designed yet).
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        // The FCM background handler is a SEPARATE service worker (registered at
+        // its own scope). It must never be precached/served by this Workbox SW,
+        // or the browser could get a stale copy and FCM SW updates would fight
+        // Workbox's cache. Let it be fetched fresh from the network every time.
+        globIgnores: ['**/firebase-messaging-sw.js'],
       },
     }),
   ],
