@@ -929,6 +929,106 @@ export interface EcaStatsResponse {
   mostPopular: EcaPopularActivity[]
 }
 
+// Launch-analytics suite (admin-only, school-scoped)
+
+// GET /api/analytics/launch
+export interface LaunchFunnel {
+  totalParents: number
+  invited: number       // welcomeSentAt not null
+  activated: number     // ever signed in (lastSeenAt, or RefreshToken/LoginCode history)
+  active7: number       // lastSeenAt within 7 days
+  active30: number      // lastSeenAt within 30 days
+}
+export interface LaunchPushAdoption {
+  count: number         // distinct parents with a DeviceToken
+  pct: number           // 0–100
+}
+export interface LaunchUsage {
+  messagesSent: number
+  inboxThreads: number
+  rsvps: number
+  formsSent: number
+  attendanceRequests: number
+  pulseResponses: number
+}
+export interface LaunchAnalytics {
+  funnel: LaunchFunnel
+  activationRate: number   // activated / totalParents, 0–100
+  pushAdoption: LaunchPushAdoption
+  usage: LaunchUsage
+}
+
+// GET /api/analytics/active-trend?days=30
+export interface ActiveTrendPoint {
+  date: string          // YYYY-MM-DD (UTC day)
+  activeUsers: number   // distinct parents active that day
+}
+export interface ActiveTrendResponse {
+  points: ActiveTrendPoint[]
+  wau: number           // distinct active parents in the last 7 days
+  mau: number           // distinct active parents in the last 30 days
+}
+
+// GET /api/analytics/feature-usage
+export interface FeatureUsageInbox {
+  threads: number
+  parentMessages: number
+  threadsWithStaffReply: number
+  replyRate: number     // threadsWithStaffReply / threads, 0–100
+}
+export interface FeatureUsagePosts {
+  sent: number
+  readRate: number      // parent acks / (posts × parents), capped 100
+}
+export interface FeatureUsageEvents {
+  count: number
+  rsvps: number
+  rsvpRate: number      // rsvps / (rsvp-required events × parents), capped 100
+}
+export interface FeatureUsageForms {
+  sent: number
+  completionRate: number // responses / (forms × parents), capped 100
+}
+export interface FeatureUsageAttendance {
+  parentRequests: number
+}
+export interface FeatureUsagePulse {
+  sent: number
+  responseRate: number  // responses / (surveys × parents), capped 100
+  avgScore: number      // mean of 1–5 numeric answers
+}
+export interface FeatureUsageResponse {
+  inbox: FeatureUsageInbox
+  posts: FeatureUsagePosts
+  events: FeatureUsageEvents
+  forms: FeatureUsageForms
+  attendance: FeatureUsageAttendance
+  pulse: FeatureUsagePulse
+}
+
+// GET /api/analytics/by-class
+export interface ClassEngagementRow {
+  id: string
+  name: string
+  totalParents: number
+  activatedParents: number
+  activePct: number     // activatedParents / totalParents, 0–100
+}
+export interface ByClassResponse {
+  classes: ClassEngagementRow[]
+}
+
+// GET /api/analytics/not-activated
+export interface NotActivatedParent {
+  userId: string
+  name: string
+  email: string
+  className: string | null  // first linked child's class, or null if unlinked
+}
+export interface NotActivatedResponse {
+  parents: NotActivatedParent[]
+}
+
 // School Services Types
 export type ServiceStatus = 'DRAFT' | 'PUBLISHED' | 'REGISTRATION_OPEN' | 'REGISTRATION_CLOSED' | 'ACTIVE' | 'ARCHIVED'
 export type RegistrationStatus = 'PENDING' | 'CONFIRMED' | 'WAITLISTED' | 'CANCELLED'

@@ -76,6 +76,11 @@ import type {
   AnalyticsMessagesResponse,
   EngagementTrendResponse,
   EcaStatsResponse,
+  LaunchAnalytics,
+  ActiveTrendResponse,
+  FeatureUsageResponse,
+  ByClassResponse,
+  NotActivatedResponse,
   EmergencyAlert,
   EmergencyAlertCreateData,
   SchoolService,
@@ -1855,6 +1860,16 @@ export const analytics = {
     fetchApi<EngagementTrendResponse>('/api/analytics/engagement-trend'),
   ecaStats: () =>
     fetchApi<EcaStatsResponse>('/api/analytics/eca-stats'),
+  launch: () =>
+    fetchApi<LaunchAnalytics>('/api/analytics/launch'),
+  activeTrend: (days?: number) =>
+    fetchApi<ActiveTrendResponse>(`/api/analytics/active-trend${days ? `?days=${days}` : ''}`),
+  featureUsage: () =>
+    fetchApi<FeatureUsageResponse>('/api/analytics/feature-usage'),
+  byClass: () =>
+    fetchApi<ByClassResponse>('/api/analytics/by-class'),
+  notActivated: () =>
+    fetchApi<NotActivatedResponse>('/api/analytics/not-activated'),
 }
 
 export const emergencyAlerts = {

@@ -193,6 +193,14 @@ model User {
   // Tracking
   lastLoginAt DateTime?
 
+  // Precise active-user tracking for launch analytics. Stamped (throttled,
+  // fire-and-forget) by the isAuthenticated middleware on any authenticated
+  // request — powers "active in last N days" + the activation funnel without a
+  // DB write per request. Null = never seen since this column shipped; the
+  // analytics "activated" definition falls back to RefreshToken/LoginCode
+  // history for parents who authenticated before it existed.
+  lastSeenAt DateTime?
+
   // Onboarding: when an admin last sent this parent the "you've been added"
   // welcome email (the passwordless sign-in nudge). Null = never invited.
   // Re-sending updates it; used by admin UI to show invite status.

@@ -92,6 +92,7 @@ export async function isAuthenticated(req: Request, res: Response, next: NextFun
         role: true,
         schoolId: true,
         preferredLanguage: true,
+        lastSeenAt: true,
       },
     })
 
@@ -100,6 +101,17 @@ export async function isAuthenticated(req: Request, res: Response, next: NextFun
     }
 
     req.user = user as Express.User
+
+    // Throttled, fire-and-forget last-seen stamp for launch analytics. Only
+    // write when we have no timestamp or it is older than ~10 minutes, so an
+    // active session doesn't trigger a DB write per request. Never awaited and
+    // errors are swallowed so tracking can never delay or fail a response.
+    const LAST_SEEN_THROTTLE_MS = 10 * 60 * 1000
+    if (!user.lastSeenAt || Date.now() - user.lastSeenAt.getTime() > LAST_SEEN_THROTTLE_MS) {
+      prisma.user
+        .update({ where: { id: user.id }, data: { lastSeenAt: new Date() } })
+        .catch(() => {})
+    }
     // Enrich the per-request logger so every subsequent log line carries
     // schoolId/userId/role — invaluable when debugging a specific parent's
     // complaint from prod logs.
