@@ -102,6 +102,20 @@ export function LoginView() {
     }
   }
 
+  // "I already have a code" — for parents given an admin-issued code by phone/in
+  // person (their email can't receive the emailed code). Jump straight to the
+  // code step WITHOUT calling requestLoginCode: sending a fresh email code would
+  // supersede the admin-issued one and invalidate it.
+  const handleUseExistingCode = () => {
+    setError(null)
+    if (!email.trim()) {
+      setError('Please enter your email address')
+      return
+    }
+    setCode('')
+    setStep('code')
+  }
+
   const handleVerifyCode = async () => {
     if (verifyingRef.current) return
     setError(null)
@@ -270,6 +284,15 @@ export function LoginView() {
               style={{ backgroundColor: theme.colors.brandColor }}
             >
               {isLoading ? 'Sending...' : 'Send code'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleUseExistingCode}
+              disabled={isLoading || !email}
+              className="w-full text-center text-xs font-medium text-gray-500 hover:text-gray-700 disabled:opacity-50 pt-0.5"
+            >
+              I already have a code
             </button>
           </form>
         )}

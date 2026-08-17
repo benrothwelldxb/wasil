@@ -565,6 +565,32 @@ function hashLoginCode(code: string): string {
   return crypto.createHash('sha256').update(code).digest('hex')
 }
 
+// Mint a fresh passwordless sign-in code for an email. Shared by the parent-
+// facing /auth/code/request route (~10 min TTL) and the admin-issued sign-in
+// code endpoint (24 h TTL). Generates a crypto 6-digit code, stores ONLY its
+// SHA-256 hash, supersedes any prior codes for the email so exactly one is
+// live, and returns the plaintext to the caller (emailed by the request route;
+// read aloud to the parent by the admin route — never emailed there). The
+// plaintext is returned, never persisted.
+export async function createLoginCode(
+  email: string,
+  ttlMinutes: number
+): Promise<{ code: string; expiresAt: Date }> {
+  const normalizedEmail = email.toLowerCase()
+
+  // Supersede every prior code for this email so only the newest is valid.
+  await prisma.loginCode.deleteMany({ where: { email: normalizedEmail } })
+
+  const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0')
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000)
+
+  await prisma.loginCode.create({
+    data: { email: normalizedEmail, codeHash: hashLoginCode(code), expiresAt, attempts: 0 },
+  })
+
+  return { code, expiresAt }
+}
+
 // POST /auth/code/request — enumeration-safe: ALWAYS 200 { ok: true }, never
 // revealing whether the email maps to a real account. If it does, mint a fresh
 // 6-digit code (crypto RNG), store only its SHA-256 hash, supersede any prior
@@ -584,15 +610,9 @@ router.post(
       })
 
       if (user) {
-        // Supersede every prior code for this email so only the newest is valid.
-        await prisma.loginCode.deleteMany({ where: { email } })
-
-        const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0')
-        const expiresAt = new Date(Date.now() + LOGIN_CODE_EXPIRY_MINUTES * 60 * 1000)
-
-        await prisma.loginCode.create({
-          data: { email, codeHash: hashLoginCode(code), expiresAt, attempts: 0 },
-        })
+        // Mint via the shared helper (supersede prior codes, hash, ~10 min TTL)
+        // and email the plaintext.
+        const { code } = await createLoginCode(email, LOGIN_CODE_EXPIRY_MINUTES)
 
         await sendLoginCodeEmail({
           to: user.email,

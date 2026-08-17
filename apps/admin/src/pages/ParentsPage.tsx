@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Plus, X, Trash2, Upload, Users, RefreshCw, Mail, Copy, QrCode, CheckCircle, XCircle, Clock, Eye, Search, Send, UserX } from 'lucide-react'
+import { Plus, X, Trash2, Upload, Users, RefreshCw, Mail, Copy, QrCode, CheckCircle, XCircle, Clock, Eye, Search, Send, UserX, KeyRound } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { Class, ParentInvitation, InvitationStatus } from '@wasil/shared'
 import { StudentSearchSelect } from '../components/StudentSearchSelect'
@@ -75,6 +75,11 @@ export function ParentsPage() {
   const [inviteAllConfirm, setInviteAllConfirm] = useState(false)
   const [sendingInvites, setSendingInvites] = useState(false)
   const [sendingInviteFor, setSendingInviteFor] = useState<string | null>(null)
+  // Admin-issued one-time sign-in code (for parents whose email can't receive codes)
+  const [signInCodeFor, setSignInCodeFor] = useState<{ id: string; name: string; email: string } | null>(null)
+  const [signInCode, setSignInCode] = useState<{ code: string; expiresAt: string } | null>(null)
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false)
+  const [codeCopied, setCodeCopied] = useState(false)
 
   const { data: parentsData, refetch: refetchParents } = useApi(
     () => api.parentInvitations.listParents({ search: parentsSearch, page: parentsPage, limit: 50 }),
@@ -318,6 +323,25 @@ export function ParentsPage() {
       toast.error(`Failed to send invite: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSendingInviteFor(null)
+    }
+  }
+
+  // Mint a one-time sign-in code for a parent whose email blocks the emailed
+  // code. The admin reads it out; the parent uses "I already have a code" on the
+  // sign-in screen. The code is display-only — never emailed.
+  const handleGenerateSignInCode = async (parent: { id: string; name: string | null; email: string }) => {
+    setSignInCodeFor({ id: parent.id, name: parent.name || 'Unknown', email: parent.email })
+    setSignInCode(null)
+    setCodeCopied(false)
+    setIsGeneratingCode(true)
+    try {
+      const result = await api.parentInvitations.generateSignInCode(parent.id)
+      setSignInCode(result)
+    } catch (error) {
+      toast.error(`Failed to generate sign-in code: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setSignInCodeFor(null)
+    } finally {
+      setIsGeneratingCode(false)
     }
   }
 
@@ -909,6 +933,15 @@ export function ParentsPage() {
                           <span>{sendingLoginLink === parent.id ? 'Sending...' : 'Send Login Link'}</span>
                         </button>
                         <button
+                          onClick={() => handleGenerateSignInCode(parent)}
+                          disabled={isGeneratingCode && signInCodeFor?.id === parent.id}
+                          className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 transition-colors"
+                          title="Generate a one-time sign-in code (for parents whose email can't receive codes)"
+                        >
+                          <KeyRound className="h-3 w-3" />
+                          <span>{isGeneratingCode && signInCodeFor?.id === parent.id ? 'Generating...' : 'Sign-in Code'}</span>
+                        </button>
+                        <button
                           onClick={() => { setSetPasswordFor({ id: parent.id, name: parent.name || 'Unknown', email: parent.email }); setNewPassword('') }}
                           className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
                           title="Set password"
@@ -1131,6 +1164,65 @@ export function ParentsPage() {
           onConfirm={handleSendAllInvites}
           onCancel={() => setInviteAllConfirm(false)}
         />
+      )}
+
+      {signInCodeFor && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-semibold text-gray-900">One-Time Sign-In Code</h3>
+              <button
+                onClick={() => { setSignInCodeFor(null); setSignInCode(null); setCodeCopied(false) }}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">{signInCodeFor.name} ({signInCodeFor.email})</p>
+
+            {isGeneratingCode || !signInCode ? (
+              <p className="text-center text-sm text-gray-500 py-8">Generating code...</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <code className="text-3xl font-mono font-bold tracking-[0.3em] text-gray-900 bg-slate-100 px-4 py-3 rounded-lg">
+                    {signInCode.code}
+                  </code>
+                  <button
+                    onClick={() => { copyToClipboard(signInCode.code); setCodeCopied(true); setTimeout(() => setCodeCopied(false), 2000) }}
+                    className="flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                    title="Copy code"
+                  >
+                    {codeCopied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    <span>{codeCopied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+                <p className="text-center text-xs text-gray-500 mb-4">
+                  Valid until {new Date(signInCode.expiresAt).toLocaleString()} · single use
+                </p>
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 text-sm text-gray-600">
+                  <p className="font-medium text-gray-700 mb-1">Read this to the parent:</p>
+                  <p>
+                    Ask the parent to open the sign-in screen, enter their email, tap
+                    {' '}<span className="font-medium text-gray-800">"I already have a code"</span>, and type this code.
+                  </p>
+                  <p className="mt-2 text-xs text-gray-400">
+                    This code is shown here only — it is never emailed. Use it for parents whose email can't receive the emailed code.
+                  </p>
+                </div>
+                <div className="flex justify-end mt-4">
+                  <button
+                    onClick={() => { setSignInCodeFor(null); setSignInCode(null); setCodeCopied(false) }}
+                    className="px-4 py-2 text-sm font-medium text-white rounded-lg"
+                    style={{ backgroundColor: theme.colors.brandColor }}
+                  >
+                    Done
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {setPasswordFor && (

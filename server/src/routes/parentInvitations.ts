@@ -3,6 +3,7 @@ import { Router, Request, Response } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
+import { createLoginCode } from './auth.js'
 import {
   generateAccessCode,
   generateMagicToken,
@@ -318,6 +319,41 @@ router.post('/parents/:id/reset-password', isAdmin, async (req: Request, res: Re
   } catch (error) {
     console.error('Error resetting parent password:', error)
     res.status(500).json({ error: 'Failed to send login link' })
+  }
+})
+
+// Admin-issued one-time sign-in code. For parents whose email blocks/spam-
+// filters the passwordless code (locked-down corporate inboxes): the admin
+// mints a code here, reads it to the parent by phone/in person, and the parent
+// signs in via the normal /auth/code/verify — no email involved. The plaintext
+// is returned to the admin ONLY (never emailed). Reuses the shared minting
+// helper: single-use, supersedes prior codes for the email, but with a 24-hour
+// TTL so a phone/in-person handoff has time to land.
+router.post('/parents/:id/sign-in-code', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const parent = await prisma.user.findFirst({
+      where: { id, schoolId: user.schoolId, role: 'PARENT' },
+    })
+    if (!parent) return res.status(404).json({ error: 'Parent not found' })
+
+    // 24-hour TTL, single-use, supersedes any prior codes for this email.
+    const { code, expiresAt } = await createLoginCode(parent.email.toLowerCase(), 24 * 60)
+
+    logAudit({
+      req,
+      action: 'CREATE',
+      resourceType: 'USER',
+      resourceId: id,
+      metadata: { action: 'admin-sign-in-code', parentEmail: parent.email, expiresAt: expiresAt.toISOString() },
+    })
+
+    res.json({ code, expiresAt: expiresAt.toISOString() })
+  } catch (error) {
+    console.error('Error generating sign-in code:', error)
+    res.status(500).json({ error: 'Failed to generate sign-in code' })
   }
 })
 

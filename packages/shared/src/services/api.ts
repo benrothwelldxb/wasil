@@ -1263,6 +1263,14 @@ export const parentInvitations = {
       method: 'POST',
       body: JSON.stringify({ password }),
     }),
+  // Admin-issued one-time sign-in code for parents whose email can't receive the
+  // passwordless code. Returns the plaintext 6-digit code (shown to the admin
+  // only, never emailed) + its 24-hour expiry. Parent signs in via the normal
+  // "I already have a code" path.
+  generateSignInCode: (parentId: string) =>
+    fetchApi<{ code: string; expiresAt: string }>(`/api/parent-invitations/parents/${parentId}/sign-in-code`, {
+      method: 'POST',
+    }),
 
   // Public/Parent endpoints
   validate: (data: { code?: string; token?: string }) =>
