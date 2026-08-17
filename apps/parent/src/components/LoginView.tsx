@@ -222,7 +222,7 @@ export function LoginView() {
           </h2>
           {step === 'email' && (
             <p className="text-gray-500 text-sm mt-1">
-              If you have a school account, enter the email your school has on file and we'll send you a 6-digit sign-in code.
+              Please use the email you gave the school when you registered your child, and we'll send you a 6-digit sign-in code.
             </p>
           )}
           {step === 'code' && (
@@ -324,7 +324,7 @@ export function LoginView() {
             </div>
 
             <p className="text-center text-xs text-gray-400 pt-1">
-              Can't find it? Check your spam folder — the code is sent from Wasil Connect. If nothing arrives, make sure you used the email your school has on file.
+              Can't find it? Check your spam folder — the code is sent from Wasil Connect. If nothing arrives, make sure you used the email you gave the school when you registered your child.
             </p>
           </div>
         )}
