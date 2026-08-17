@@ -326,6 +326,13 @@ export function LoginView() {
             <p className="text-center text-xs text-gray-400 pt-1">
               Can't find it? Check your spam folder — the code is sent from Wasil Connect. If nothing arrives, make sure you used the email you gave the school when you registered your child.
             </p>
+            <p className="text-center text-xs text-gray-400">
+              Still not receiving it?{' '}
+              <a href="mailto:moureen@vhprimarycoa.ae" className="underline" style={{ color: theme.colors.brandColor }}>
+                Email us for help
+              </a>
+              .
+            </p>
           </div>
         )}
 
