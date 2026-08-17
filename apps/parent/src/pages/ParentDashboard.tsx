@@ -7,7 +7,7 @@ import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import { useApi, useMutation } from '@wasil/shared'
 import * as api from '@wasil/shared'
-import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild } from '@wasil/shared'
+import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild, SchoolSettings } from '@wasil/shared'
 import { Clock, Sparkles, MapPin, ChevronRight, Calendar, Shield, Cloud, AlertTriangle, Heart, Siren, X, Check } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { Link } from 'react-router-dom'
@@ -142,6 +142,15 @@ export function ParentDashboard() {
     () => api.events.list(),
     []
   )
+
+  // Load school feature toggles. If settings haven't loaded (or the fetch
+  // fails), default to true so widgets stay visible until we know otherwise.
+  const { data: schoolSettings } = useApi<SchoolSettings>(
+    () => api.schoolSettings.get(),
+    []
+  )
+  const isEnabled = (flag: keyof SchoolSettings) =>
+    schoolSettings ? !!schoolSettings[flag] : true
 
   // Build class color map from actual class data
   const classColorMap = useMemo(() => {
@@ -460,7 +469,7 @@ export function ParentDashboard() {
   return (
     <div className="space-y-5">
       {/* Emergency Alert Banners */}
-      {activeAlerts && activeAlerts.length > 0 && activeAlerts.filter(a => !dismissedAlerts.has(a.id)).map(alert => {
+      {isEnabled('emergencyAlertsEnabled') && activeAlerts && activeAlerts.length > 0 && activeAlerts.filter(a => !dismissedAlerts.has(a.id)).map(alert => {
         const AlertIcon = getAlertIcon(alert.type)
         const isResolved = alert.status === 'RESOLVED'
         const isDrill = !!alert.isDrill
@@ -630,7 +639,7 @@ export function ParentDashboard() {
       </div>
 
       {/* Urgency Summary Banner */}
-      {urgencySummary && (
+      {isEnabled('formsEnabled') && urgencySummary && (
         <div
           className="rounded-[22px] px-5 py-4 flex items-center gap-4"
           style={{ backgroundColor: '#FFF7EC', border: '1.5px solid rgba(232,165,75,0.25)' }}
@@ -653,7 +662,7 @@ export function ParentDashboard() {
       )}
 
       {/* Today at school — today's calendar events (Hub-sourced) */}
-      {todaysEvents.length > 0 && (
+      {isEnabled('eventsEnabled') && todaysEvents.length > 0 && (
         <div className="bg-white rounded-[22px] overflow-hidden" style={{ border: '1.5px solid #F0E4E6' }}>
           <div className="p-[18px]">
             <p className="text-xs font-bold uppercase tracking-wider mb-[14px]" style={{ color: '#A8929A' }}>
@@ -688,7 +697,7 @@ export function ParentDashboard() {
       )}
 
       {/* Upcoming Events This Week */}
-      {upcomingThisWeek.length > 0 && (
+      {isEnabled('eventsEnabled') && upcomingThisWeek.length > 0 && (
         <Link
           to="/events"
           className="block overflow-hidden"
@@ -748,13 +757,20 @@ export function ParentDashboard() {
       )}
 
       {/* Your Family's Day — Child-centric cards */}
-      {childCards.length > 0 && (childCards.some(c => c.activities.length > 0 || c.timetableItems.length > 0) || todaysSchedule.length > 0) && (
+      {(() => {
+        const ecaOn = isEnabled('ecaEnabled')
+        const scheduleOn = isEnabled('scheduleEnabled')
+        const anyVisible = childCards.some(c =>
+          (ecaOn && c.activities.length > 0) || (scheduleOn && (c.timetableItems.length > 0 || c.schedule.length > 0))
+        )
+        if (childCards.length === 0 || !anyVisible) return null
+        return (
         <>
           <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#A8929A' }}>
             {t('dashboard.familyDay', "Your family's day")}
           </p>
           {childCards.map((child, idx) => (
-            (child.activities.length > 0 || child.schedule.length > 0 || child.timetableItems.length > 0) && (
+            ((ecaOn && child.activities.length > 0) || (scheduleOn && (child.schedule.length > 0 || child.timetableItems.length > 0))) && (
               <div
                 key={child.id}
                 className="bg-white rounded-[22px] overflow-hidden"
@@ -776,7 +792,7 @@ export function ParentDashboard() {
                     </div>
                   </div>
                   {/* Activities */}
-                  {child.activities.map((activity, aIdx) => (
+                  {ecaOn && child.activities.map((activity, aIdx) => (
                     <div
                       key={aIdx}
                       className="rounded-[16px] p-[14px] flex items-center gap-3 mb-2"
@@ -810,7 +826,7 @@ export function ParentDashboard() {
                     </div>
                   ))}
                   {/* Timetable reminders (Hub-sourced) take priority over the legacy schedule when present */}
-                  {child.timetableItems.length > 0 ? (
+                  {scheduleOn && (child.timetableItems.length > 0 ? (
                     child.timetableItems.map((item, tIdx) => (
                       <div
                         key={`t-${tIdx}`}
@@ -853,16 +869,17 @@ export function ParentDashboard() {
                         </div>
                       </div>
                     ))
-                  )}
+                  ))}
                 </div>
               </div>
             )
           ))}
         </>
-      )}
+        )
+      })()}
 
       {/* ECA Registration Banner */}
-      {openRegistrationTerm && (
+      {isEnabled('ecaEnabled') && openRegistrationTerm && (
         <Link
           to="/activities"
           className="block rounded-[22px] p-5 relative overflow-hidden"
@@ -887,7 +904,7 @@ export function ParentDashboard() {
       )}
 
       {/* Parent Pulse Banner */}
-      {openPulse && (
+      {isEnabled('pulseEnabled') && openPulse && (
         <PulseBanner
           pulse={openPulse}
           onStartSurvey={() => setShowPulseSurvey(true)}
@@ -895,55 +912,59 @@ export function ParentDashboard() {
       )}
 
       {/* Messages Section */}
-      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#A8929A' }}>
-        {t('messages.recentMessages', 'Recent messages')}
-      </p>
-
-      {/* Filter Pills */}
-      <div className="flex flex-wrap gap-2">
-        {filterOptions.map((filter) => (
-          <button
-            key={filter}
-            onClick={() => setSelectedClassFilter(filter)}
-            className="px-4 py-2 rounded-full text-sm font-bold transition-colors"
-            style={
-              selectedClassFilter === filter
-                ? { backgroundColor: '#C4506E', color: '#FFFFFF' }
-                : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
-            }
-          >
-            {getFilterLabel(filter)}
-          </button>
-        ))}
-      </div>
-
-      {/* Message Cards */}
-      <div className="space-y-4">
-        {messagesLoading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        ) : filteredMessages.length > 0 ? (
-          filteredMessages.map((message) => (
-            <MessageCard
-              key={message.id}
-              message={message}
-              onAcknowledge={handleAcknowledge}
-              onFormRespond={handleFormResponse}
-              classColors={classColorMap}
-            />
-          ))
-        ) : (
-          <p className="text-center py-8 font-medium" style={{ color: '#A8929A' }}>
-            {t('dashboard.noMessages')}
+      {isEnabled('postsEnabled') && (
+        <>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#A8929A' }}>
+            {t('messages.recentMessages', 'Recent messages')}
           </p>
-        )}
-      </div>
+
+          {/* Filter Pills */}
+          <div className="flex flex-wrap gap-2">
+            {filterOptions.map((filter) => (
+              <button
+                key={filter}
+                onClick={() => setSelectedClassFilter(filter)}
+                className="px-4 py-2 rounded-full text-sm font-bold transition-colors"
+                style={
+                  selectedClassFilter === filter
+                    ? { backgroundColor: '#C4506E', color: '#FFFFFF' }
+                    : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
+                }
+              >
+                {getFilterLabel(filter)}
+              </button>
+            ))}
+          </div>
+
+          {/* Message Cards */}
+          <div className="space-y-4">
+            {messagesLoading ? (
+              <>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </>
+            ) : filteredMessages.length > 0 ? (
+              filteredMessages.map((message) => (
+                <MessageCard
+                  key={message.id}
+                  message={message}
+                  onAcknowledge={handleAcknowledge}
+                  onFormRespond={handleFormResponse}
+                  classColors={classColorMap}
+                />
+              ))
+            ) : (
+              <p className="text-center py-8 font-medium" style={{ color: '#A8929A' }}>
+                {t('dashboard.noMessages')}
+              </p>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Weekly Principal Update — below messages, styled as a distinct section */}
-      {weeklyMessageData && (
+      {isEnabled('weeklyUpdatesEnabled') && weeklyMessageData && (
         <div
           className="rounded-[22px] overflow-hidden"
           style={{
