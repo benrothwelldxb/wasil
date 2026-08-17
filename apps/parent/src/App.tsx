@@ -9,6 +9,7 @@ import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
 import { BottomTabBar } from './components/layout/BottomTabBar'
 import { SideMenu } from './components/layout/SideMenu'
+import { InstallPrompt } from './components/layout/InstallPrompt'
 import { LoginView } from './components/LoginView'
 import { RegisterPage } from './pages/RegisterPage'
 import { ParentDashboard } from './pages/ParentDashboard'
@@ -81,6 +82,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       >
         {children}
       </main>
+      <InstallPrompt />
       <BottomTabBar onMorePress={() => setMenuOpen(true)} />
     </div>
   )
