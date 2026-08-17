@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { config, useAuth, useTheme } from '@wasil/shared'
-import { Eye, EyeOff } from 'lucide-react'
 
 const RESEND_COOLDOWN_SECONDS = 30
 
@@ -28,7 +27,6 @@ export function LoginView() {
   const {
     requestLoginCode,
     verifyLoginCode,
-    loginWithPassword,
     verify2fa,
     twoFactorPending,
   } = useAuth()
@@ -42,11 +40,6 @@ export function LoginView() {
   const [resendCooldown, setResendCooldown] = useState(0)
   const codeInputRef = useRef<HTMLInputElement>(null)
   const verifyingRef = useRef(false)
-
-  // Secondary password fallback
-  const [showPasswordForm, setShowPasswordForm] = useState(false)
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
 
   // 2FA (rare — most parents never see this)
   const [totpCode, setTotpCode] = useState('')
@@ -149,26 +142,6 @@ export function LoginView() {
     setResendCooldown(0)
   }
 
-  const handlePasswordLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-
-    if (!email || !password) {
-      setError('Please enter both email and password')
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      await loginWithPassword(email.trim().toLowerCase(), password)
-      // Non-2FA success and the 2FA hand-off are both picked up reactively.
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const handleVerify2fa = async () => {
     if (isVerifying2fa) return
     setError(null)
@@ -183,7 +156,7 @@ export function LoginView() {
     }
   }
 
-  // --- 2FA step (after a passwordless code or password is verified) ---
+  // --- 2FA step (after a passwordless code is verified, if the account has 2FA) ---
   if (twoFactorPending) {
     return (
       <div className="min-h-screen flex items-center justify-center px-5 py-8">
@@ -247,18 +220,17 @@ export function LoginView() {
           <h2 className="text-xl font-bold" style={{ color: theme.colors.brandColor }}>
             Welcome
           </h2>
-          {!showPasswordForm && step === 'email' && (
+          {step === 'email' && (
             <p className="text-gray-500 text-sm mt-1">
               Enter your email and we'll send you a 6-digit sign-in code.
             </p>
           )}
-          {!showPasswordForm && step === 'code' && (
+          {step === 'code' && (
             <p className="text-gray-500 text-sm mt-1">
               We've sent a 6-digit code to <span className="font-medium text-gray-700">{email}</span>.
               Enter it below.
             </p>
           )}
-          {showPasswordForm && <p className="text-gray-500 text-sm mt-1">Sign in with your password</p>}
         </div>
 
         {error && (
@@ -275,7 +247,7 @@ export function LoginView() {
           </div>
         )}
 
-        {!showPasswordForm && step === 'email' && (
+        {step === 'email' && (
           <form onSubmit={handleSendCode} className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -302,7 +274,7 @@ export function LoginView() {
           </form>
         )}
 
-        {!showPasswordForm && step === 'code' && (
+        {step === 'code' && (
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">6-digit code</label>
@@ -352,75 +324,6 @@ export function LoginView() {
             </div>
 
             <p className="text-center text-xs text-gray-400 pt-1">Can't find it? Check your spam folder.</p>
-          </div>
-        )}
-
-        {showPasswordForm && (
-          <form onSubmit={handlePasswordLogin} className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setError(null) }}
-                placeholder="your.email@example.com"
-                autoComplete="email"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                disabled={isLoading}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setError(null) }}
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
-                  className="w-full px-3 py-2.5 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  disabled={isLoading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  aria-label="Toggle password visibility"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading || !email || !password}
-              className="w-full py-2.5 rounded-lg font-semibold text-white transition-colors disabled:opacity-50"
-              style={{ backgroundColor: theme.colors.brandColor }}
-            >
-              {isLoading ? 'Signing in...' : 'Sign In'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setShowPasswordForm(false); setPassword(''); setError(null) }}
-              className="w-full text-center text-xs text-gray-500 hover:text-gray-700 font-medium"
-            >
-              Use a sign-in code instead
-            </button>
-          </form>
-        )}
-
-        {!showPasswordForm && step === 'email' && (
-          <div className="mt-3 text-center">
-            <button
-              type="button"
-              onClick={() => { setShowPasswordForm(true); setError(null) }}
-              className="text-gray-500 hover:text-gray-700 text-xs font-medium hover:underline"
-            >
-              Sign in with a password instead
-            </button>
           </div>
         )}
 
