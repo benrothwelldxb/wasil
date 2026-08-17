@@ -32,22 +32,21 @@ export default defineConfig({
         theme_color: THEME_COLOR,
         background_color: BACKGROUND_COLOR,
         icons: [
-          // NOTE: these reuse existing brand assets as-is; none are pre-sized
-          // to exactly 192x192 / 512x512, and none have maskable safe-zone
-          // padding. Good enough for installability, but proper 192/512/
-          // maskable PNG exports are a small recommended follow-on.
+          // Purpose-built PWA icons, exported from the burgundy brand tile
+          // (ios-icon-burgundy-1024.png): solid background (iOS-safe) with the
+          // crest inside the maskable safe zone.
           {
-            src: '/logo.png',
+            src: '/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: '/school-logo.png',
+            src: '/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
           },
           {
-            src: '/school-logo.png',
+            src: '/icon-512-maskable.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
