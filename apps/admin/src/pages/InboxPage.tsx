@@ -1098,6 +1098,8 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('')
   const [assignedUserId, setAssignedUserId] = useState('')
+  const [warnBeforeMessaging, setWarnBeforeMessaging] = useState(false)
+  const [warningMessage, setWarningMessage] = useState('')
   const [saving, setSaving] = useState(false)
 
   const resetForm = () => {
@@ -1105,6 +1107,8 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
     setDescription('')
     setIcon('')
     setAssignedUserId('')
+    setWarnBeforeMessaging(false)
+    setWarningMessage('')
     setEditingId(null)
     setShowForm(false)
   }
@@ -1114,6 +1118,8 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
     setDescription(contact.description || '')
     setIcon(contact.icon || '')
     setAssignedUserId(contact.assignedUserId)
+    setWarnBeforeMessaging(contact.warnBeforeMessaging === true)
+    setWarningMessage(contact.warningMessage || '')
     setEditingId(contact.id)
     setShowForm(true)
   }
@@ -1122,10 +1128,11 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
     if (!name || !assignedUserId) return
     setSaving(true)
     try {
+      const payload = { name, description, icon, assignedUserId, warnBeforeMessaging, warningMessage: warningMessage.trim() || null }
       if (editingId) {
-        await api.inbox.updateContact(editingId, { name, description, icon, assignedUserId })
+        await api.inbox.updateContact(editingId, payload)
       } else {
-        await api.inbox.createContact({ name, description, icon, assignedUserId })
+        await api.inbox.createContact(payload)
       }
       refetch()
       resetForm()
@@ -1164,7 +1171,14 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
                 {contact.icon || '📞'}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-900">{contact.name}</p>
+                <p className="text-sm font-medium text-slate-900">
+                  {contact.name}
+                  {contact.warnBeforeMessaging && (
+                    <span className="ml-2 align-middle inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
+                      Notice on
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-slate-500">Assigned to: {contact.assignedUserName}</p>
               </div>
               <div className="flex items-center gap-1">
@@ -1221,6 +1235,34 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
                   <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
                 ))}
               </select>
+
+              {/* Deflection guard-rail */}
+              <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={warnBeforeMessaging}
+                    onChange={(e) => setWarnBeforeMessaging(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-[#C4506E]"
+                  />
+                  <span className="text-sm text-slate-700">
+                    Show a gentle notice before parents message this contact
+                    <span className="block text-xs text-slate-400 mt-0.5">
+                      Nudges parents to try a class teacher or the office first — never blocks them.
+                    </span>
+                  </span>
+                </label>
+                {warnBeforeMessaging && (
+                  <textarea
+                    placeholder={"Optional custom message. Leave blank to use the default:\n“This inbox receives a high volume of messages. For the quickest response, your child’s class teacher or the school office can usually help. If it’s something only this contact can help with, please continue.”"}
+                    value={warningMessage}
+                    onChange={(e) => setWarningMessage(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400 resize-none"
+                  />
+                )}
+              </div>
+
               <div className="flex justify-end gap-2">
                 <button
                   onClick={resetForm}

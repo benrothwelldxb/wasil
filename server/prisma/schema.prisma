@@ -1700,6 +1700,11 @@ model SchoolContact {
   name           String   // "Reception", "Parent Liaison", "SEN Coordinator"
   description    String?
   icon           String?  // Emoji or icon name
+  // Optional "deflection" guard-rail: when on, parents see an editable notice
+  // (nudging them to try a class teacher / the office first) before starting a
+  // thread to this contact. Never blocks — there's always a "continue" path.
+  warnBeforeMessaging Boolean @default(false)
+  warningMessage      String?
   assignedUserId String
   assignedUser   User     @relation("SchoolContactAssignments", fields: [assignedUserId], references: [id])
   order          Int      @default(0)

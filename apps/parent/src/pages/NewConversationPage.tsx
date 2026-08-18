@@ -1,13 +1,18 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApi } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { AvailableContactsResponse } from '@wasil/shared'
-import { ArrowLeft, User, Phone } from 'lucide-react'
+import { ArrowLeft, User, Phone, Info } from 'lucide-react'
 
 function getInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
+
+type SchoolContact = AvailableContactsResponse['schoolContacts'][number]
+
+const DEFAULT_WARNING =
+  'This inbox receives a high volume of messages. For the quickest response, your child’s class teacher or the school office can usually help. If it’s something only this contact can help with, please continue.'
 
 export function NewConversationPage() {
   const navigate = useNavigate()
@@ -28,7 +33,9 @@ export function NewConversationPage() {
     }
   }
 
-  const handleSelectContact = async (contact: { assignedUserId: string; id: string }) => {
+  const [pendingContact, setPendingContact] = useState<SchoolContact | null>(null)
+
+  const startContactConversation = async (contact: SchoolContact) => {
     try {
       const result = await api.inbox.createConversation({
         staffId: contact.assignedUserId,
@@ -38,6 +45,15 @@ export function NewConversationPage() {
     } catch (error) {
       console.error('Failed to create conversation:', error)
     }
+  }
+
+  const handleSelectContact = (contact: SchoolContact) => {
+    // Deflection guard-rail: if this contact is flagged, show the notice first.
+    if (contact.warnBeforeMessaging) {
+      setPendingContact(contact)
+      return
+    }
+    startContactConversation(contact)
   }
 
   // Group teachers by child
@@ -61,6 +77,28 @@ export function NewConversationPage() {
           teachers: teachers.map(t => ({ id: t.id, name: t.name, avatarUrl: t.avatarUrl })),
         })
       }
+    }
+  }
+
+  // Flatten to (teacher, child) redirect candidates for the deflection notice.
+  const teacherCandidates = Array.from(childTeachers.values()).flatMap(group =>
+    group.teachers.map(t => ({
+      teacherId: t.id,
+      teacherName: t.name,
+      studentId: group.studentId,
+      studentName: group.studentName,
+    }))
+  )
+
+  const handleRedirectToTeacher = () => {
+    setPendingContact(null)
+    // One class teacher → jump straight into that thread. Otherwise dismiss the
+    // notice and let the parent pick from the teacher list shown above.
+    if (teacherCandidates.length === 1) {
+      const c = teacherCandidates[0]
+      handleSelectTeacher(c.teacherId, c.studentId)
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
 
@@ -173,6 +211,60 @@ export function NewConversationPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Deflection notice before messaging a high-traffic contact */}
+      {pendingContact && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4"
+          onClick={() => setPendingContact(null)}
+        >
+          <div
+            className="bg-white rounded-[24px] w-full max-w-sm p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0"
+                style={{ backgroundColor: '#FFF6E6' }}
+              >
+                <Info className="w-5 h-5" style={{ color: '#C7861A' }} />
+              </div>
+              <h2 className="text-base font-bold" style={{ color: '#2D2225' }}>
+                Before you message {pendingContact.name}
+              </h2>
+            </div>
+
+            <p className="text-sm leading-relaxed" style={{ color: '#5A4A4F' }}>
+              {pendingContact.warningMessage?.trim() || DEFAULT_WARNING}
+            </p>
+
+            <div className="space-y-2 pt-1">
+              {teacherCandidates.length > 0 && (
+                <button
+                  onClick={handleRedirectToTeacher}
+                  className="w-full py-3 rounded-2xl text-sm font-semibold text-white active:opacity-90 transition-opacity"
+                  style={{ backgroundColor: '#C4506E' }}
+                >
+                  {teacherCandidates.length === 1
+                    ? `Message ${teacherCandidates[0].teacherName} instead`
+                    : 'Message a class teacher instead'}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  const c = pendingContact
+                  setPendingContact(null)
+                  startContactConversation(c)
+                }}
+                className="w-full py-3 rounded-2xl text-sm font-medium active:bg-gray-50 transition-colors"
+                style={{ color: '#7A6469', border: '1px solid #F0E4E6' }}
+              >
+                Continue to {pendingContact.name}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

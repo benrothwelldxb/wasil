@@ -2044,12 +2044,12 @@ export const inbox = {
   // Admin contact management
   contacts: () =>
     fetchApi<SchoolContactInfo[]>('/api/inbox/contacts'),
-  createContact: (data: { name: string; description?: string; icon?: string; assignedUserId: string; order?: number }) =>
+  createContact: (data: { name: string; description?: string; icon?: string; assignedUserId: string; order?: number; warnBeforeMessaging?: boolean; warningMessage?: string | null }) =>
     fetchApi<SchoolContactInfo>('/api/inbox/contacts', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  updateContact: (id: string, data: { name?: string; description?: string; icon?: string; assignedUserId?: string; order?: number }) =>
+  updateContact: (id: string, data: { name?: string; description?: string; icon?: string; assignedUserId?: string; order?: number; warnBeforeMessaging?: boolean; warningMessage?: string | null }) =>
     fetchApi<SchoolContactInfo>(`/api/inbox/contacts/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),

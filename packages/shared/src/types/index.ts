@@ -1184,6 +1184,8 @@ export interface SchoolContactInfo {
   assignedUserId: string
   assignedUserName: string
   assignedUserEmail?: string
+  warnBeforeMessaging?: boolean
+  warningMessage?: string | null
   order: number
   archived: boolean
   createdAt: string
@@ -1287,6 +1289,8 @@ export interface AvailableContactsResponse {
     icon?: string | null
     assignedUserId: string
     assignedUserName: string
+    warnBeforeMessaging?: boolean
+    warningMessage?: string | null
   }>
   children: Array<{
     studentId: string

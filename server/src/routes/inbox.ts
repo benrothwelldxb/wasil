@@ -902,6 +902,8 @@ router.get('/contacts/available', isAuthenticated, async (req, res) => {
         icon: sc.icon,
         assignedUserId: sc.assignedUserId,
         assignedUserName: sc.assignedUser.name,
+        warnBeforeMessaging: sc.warnBeforeMessaging,
+        warningMessage: sc.warningMessage,
       })),
       children,
     })
@@ -1128,6 +1130,8 @@ router.get('/contacts', isAdmin, async (req, res) => {
       assignedUserId: c.assignedUserId,
       assignedUserName: c.assignedUser.name,
       assignedUserEmail: c.assignedUser.email,
+      warnBeforeMessaging: c.warnBeforeMessaging,
+      warningMessage: c.warningMessage,
       order: c.order,
       archived: c.archived,
       createdAt: c.createdAt.toISOString(),
@@ -1142,7 +1146,7 @@ router.get('/contacts', isAdmin, async (req, res) => {
 router.post('/contacts', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { name, description, icon, assignedUserId, order } = req.body
+    const { name, description, icon, assignedUserId, order, warnBeforeMessaging, warningMessage } = req.body
 
     if (!name || !assignedUserId) {
       return res.status(400).json({ error: 'name and assignedUserId are required' })
@@ -1164,6 +1168,8 @@ router.post('/contacts', isAdmin, async (req, res) => {
         icon: icon || null,
         assignedUserId,
         order: order ?? 0,
+        warnBeforeMessaging: warnBeforeMessaging === true,
+        warningMessage: warningMessage?.trim() || null,
       },
     })
 
@@ -1174,6 +1180,8 @@ router.post('/contacts', isAdmin, async (req, res) => {
       icon: contact.icon,
       assignedUserId: contact.assignedUserId,
       assignedUserName: staffUser.name,
+      warnBeforeMessaging: contact.warnBeforeMessaging,
+      warningMessage: contact.warningMessage,
       order: contact.order,
       archived: contact.archived,
       createdAt: contact.createdAt.toISOString(),
@@ -1189,7 +1197,7 @@ router.put('/contacts/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { name, description, icon, assignedUserId, order } = req.body
+    const { name, description, icon, assignedUserId, order, warnBeforeMessaging, warningMessage } = req.body
 
     const existing = await prisma.schoolContact.findFirst({
       where: { id, schoolId: user.schoolId },
@@ -1215,6 +1223,8 @@ router.put('/contacts/:id', isAdmin, async (req, res) => {
         ...(icon !== undefined && { icon: icon || null }),
         ...(assignedUserId !== undefined && { assignedUserId }),
         ...(order !== undefined && { order }),
+        ...(warnBeforeMessaging !== undefined && { warnBeforeMessaging: warnBeforeMessaging === true }),
+        ...(warningMessage !== undefined && { warningMessage: warningMessage?.trim() || null }),
       },
       include: {
         assignedUser: { select: { id: true, name: true } },
@@ -1228,6 +1238,8 @@ router.put('/contacts/:id', isAdmin, async (req, res) => {
       icon: contact.icon,
       assignedUserId: contact.assignedUserId,
       assignedUserName: contact.assignedUser.name,
+      warnBeforeMessaging: contact.warnBeforeMessaging,
+      warningMessage: contact.warningMessage,
       order: contact.order,
       archived: contact.archived,
       createdAt: contact.createdAt.toISOString(),
