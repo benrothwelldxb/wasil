@@ -195,29 +195,84 @@ export async function sendLoginCodeEmail({
 export async function sendParentWelcomeEmail({
   to,
   schoolName,
-  appName = 'Wasil',
+  appName = 'Wasil Connect',
+  appUrl = process.env.PARENT_APP_URL || 'https://app.wasilconnect.com',
+  // Absolute URLs (email clients can't render bundled/relative assets). Served
+  // from the parent app's public/ at the app domain. Per-school logo can be
+  // passed once branding is multi-tenant.
+  schoolLogoUrl = `${process.env.PARENT_APP_URL || 'https://app.wasilconnect.com'}/school-logo.png`,
+  wasilLogoUrl = `${process.env.PARENT_APP_URL || 'https://app.wasilconnect.com'}/wasil-logo-grey.png`,
 }: {
   to: string
   schoolName: string
   appName?: string
+  appUrl?: string
+  schoolLogoUrl?: string
+  wasilLogoUrl?: string
 }): Promise<boolean> {
-  const subject = `You've been added to ${schoolName} on ${appName}`
+  const subject = `Welcome to ${schoolName} — set up your ${appName} sign-in`
+  const BURGUNDY = '#7F0029'
 
+  // Email-safe: table layout, inline styles, web-safe fonts, absolute image URLs.
   const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f3f4f6; margin: 0; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 12px; padding: 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-    <h1 style="color: #111827; font-size: 24px; margin: 0 0 24px 0; text-align: center;">Welcome to ${schoolName}</h1>
-    <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">You've been added to ${schoolName} on ${appName}.</p>
-    <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">To sign in, open the app and enter your email address — we'll send you a 6-digit code to type in. No password needed.</p>
-    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 32px 0;">
-    <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">Powered by ${appName}</p>
-  </div>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="color-scheme" content="light"></head>
+<body style="margin:0;padding:0;background-color:#F4EFEC;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F4EFEC;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px -16px rgba(74,20,35,0.18);">
+        <tr><td style="height:5px;background-color:${BURGUNDY};font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td align="center" style="padding:34px 40px 8px 40px;">
+          <img src="${schoolLogoUrl}" width="76" alt="${schoolName} crest" style="display:block;width:76px;height:auto;margin:0 auto 14px auto;">
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:14px;letter-spacing:0.4px;color:${BURGUNDY};font-weight:bold;">${schoolName}</div>
+        </td></tr>
+        <tr><td style="padding:18px 40px 0 40px;">
+          <h1 style="margin:0 0 16px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:23px;line-height:1.3;color:#2A2024;text-align:center;font-weight:700;">You're set up on ${appName}</h1>
+          <p style="margin:0 0 14px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#4A3E43;">${schoolName} has added you to ${appName} — one place for messages, events, forms and more from your child's school.</p>
+          <p style="margin:0 0 6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#4A3E43;">To sign in, open the app and enter <strong>this email address</strong> — we'll send you a <strong>6-digit code</strong> to type in. No password to remember.</p>
+        </td></tr>
+        <tr><td align="center" style="padding:24px 40px 8px 40px;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td align="center" bgcolor="${BURGUNDY}" style="border-radius:12px;">
+              <a href="${appUrl}" target="_blank" style="display:inline-block;padding:14px 34px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:12px;">Open ${appName}</a>
+            </td>
+          </tr></table>
+          <div style="margin-top:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.5;color:#A8929A;">If the button doesn't work, use this link:<br><a href="${appUrl}" target="_blank" style="color:${BURGUNDY};font-weight:600;text-decoration:none;">${appUrl.replace(/^https?:\/\//, '')}</a></div>
+        </td></tr>
+        <tr><td style="padding:16px 40px 0 40px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#FBF6F3;border:1px solid #F0E3E6;border-radius:12px;">
+            <tr><td style="padding:14px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13.5px;line-height:1.6;color:#7A6469;">
+              <strong style="color:${BURGUNDY};">Tip —</strong> add it to your home screen for one-tap access: open the link above, then <strong>Share&nbsp;→ Add to Home Screen</strong> (iPhone) or the <strong>&#8942; menu&nbsp;→ Install app</strong> (Android).
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="padding:26px 40px 32px 40px;">
+          <div style="border-top:1px solid #EFE3E6;margin-bottom:18px;font-size:0;line-height:0;">&nbsp;</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td align="center">
+              <img src="${wasilLogoUrl}" width="96" alt="${appName}" style="display:block;width:96px;height:auto;margin:0 auto 6px auto;opacity:0.8;">
+              <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#A8929A;">Powered by ${appName}</div>
+            </td>
+          </tr></table>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>`
 
-  const text = `Welcome to ${schoolName}\n\nYou've been added to ${schoolName} on ${appName}.\n\nTo sign in, open the app and enter your email address — we'll send you a 6-digit code to type in. No password needed.`
+  const text = `Welcome to ${schoolName}
+
+${schoolName} has added you to ${appName} — one place for messages, events, forms and more from your child's school.
+
+To sign in, open the app and enter this email address — we'll send you a 6-digit code to type in. No password to remember.
+
+Open ${appName}: ${appUrl}
+(If the button doesn't work, use this link: ${appUrl})
+
+Tip: add it to your home screen for one-tap access — open the link, then Share > Add to Home Screen (iPhone) or the menu > Install app (Android).
+
+Powered by ${appName}`
 
   return sendEmail({ to, subject, html, text })
 }
