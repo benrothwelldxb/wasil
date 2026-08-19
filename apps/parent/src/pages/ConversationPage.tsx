@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth, useApi } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { ConversationDetail, ConversationMessageItem } from '@wasil/shared'
-import { ArrowLeft, Send, Paperclip, Search, X, MoreVertical, Download, Reply, Trash2 } from 'lucide-react'
+import { ArrowLeft, Send, Paperclip, Search, X, MoreVertical, Download, Reply, Trash2, UserPlus, LogOut, Users } from 'lucide-react'
+import type { ConversationGuardiansResponse } from '@wasil/shared'
 import ReactMarkdown from 'react-markdown'
 
 // Render a message body as restricted, safe markdown — bold / italic / bullets
@@ -120,6 +121,10 @@ export function ConversationPage() {
 
   // Header menu
   const [showHeaderMenu, setShowHeaderMenu] = useState(false)
+
+  // Co-guardian sharing
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [leaveConfirm, setLeaveConfirm] = useState(false)
 
   // Refs for click-outside handling
   const actionBarRef = useRef<HTMLDivElement>(null)
@@ -369,6 +374,37 @@ export function ConversationPage() {
       : conversation.parentName)
     : ''
 
+  // Co-guardian sharing state. The thread owner (primary parent) can share a
+  // child-thread with the child's other guardian; an added guardian can leave.
+  const isPrimaryParent = !!conversation && user?.id === conversation.parentId
+  const canManageSharing = isPrimaryParent && !!conversation?.studentId
+  const isSharedGuardian = !!conversation?.shared
+  // Names to show in the "shared with" indicator (everyone on the thread but me).
+  const sharedWithNames = conversation
+    ? (isPrimaryParent
+        ? (conversation.participants ?? []).map(p => p.name)
+        : [conversation.parentName, ...(conversation.participants ?? []).filter(p => p.userId !== user?.id).map(p => p.name)])
+    : []
+
+  const handleLeave = async () => {
+    if (!id || !user?.id) return
+    setLeaveConfirm(false)
+    try {
+      await api.inbox.removeConversationGuardian(id, user.id)
+      navigate('/inbox', { replace: true })
+    } catch (error) {
+      console.error('Failed to leave conversation:', error)
+    }
+  }
+
+  const refreshConversation = useCallback(async () => {
+    if (!id) return
+    try {
+      const fresh = await api.inbox.conversation(id)
+      setConversation(fresh)
+    } catch { /* silent */ }
+  }, [id, setConversation])
+
   // Convert reactions Record to array for rendering
   const getReactionEntries = (reactions?: Record<string, { count: number; reacted: boolean }>) => {
     if (!reactions) return []
@@ -409,6 +445,12 @@ export function ConversationPage() {
               About {conversation.studentName}{conversation.className ? ` — ${conversation.className}` : ''}
             </p>
           )}
+          {sharedWithNames.length > 0 && (
+            <p className="text-xs truncate flex items-center gap-1" style={{ color: '#C4506E' }}>
+              <Users className="w-3 h-3 shrink-0" />
+              Shared with {sharedWithNames.join(', ')}
+            </p>
+          )}
         </div>
 
         {/* Header actions */}
@@ -432,6 +474,16 @@ export function ConversationPage() {
               className="absolute right-0 top-11 z-50 bg-white rounded-2xl shadow-lg py-1.5 min-w-[180px]"
               style={{ border: '1px solid #F0E4E6' }}
             >
+              {canManageSharing && (
+                <button
+                  onClick={() => { setShowHeaderMenu(false); setShowShareModal(true) }}
+                  className="w-full text-left px-4 py-2.5 flex items-center gap-2.5 text-sm active:bg-gray-50 transition-colors"
+                  style={{ color: '#2D2225' }}
+                >
+                  <UserPlus className="w-4 h-4" style={{ color: '#7A6469' }} />
+                  {sharedWithNames.length > 0 ? 'Manage sharing' : 'Share with other parent'}
+                </button>
+              )}
               <button
                 onClick={handleExport}
                 className="w-full text-left px-4 py-2.5 flex items-center gap-2.5 text-sm active:bg-gray-50 transition-colors"
@@ -440,6 +492,16 @@ export function ConversationPage() {
                 <Download className="w-4 h-4" style={{ color: '#7A6469' }} />
                 Export Conversation
               </button>
+              {isSharedGuardian && (
+                <button
+                  onClick={() => { setShowHeaderMenu(false); setLeaveConfirm(true) }}
+                  className="w-full text-left px-4 py-2.5 flex items-center gap-2.5 text-sm active:bg-gray-50 transition-colors"
+                  style={{ color: '#D94444' }}
+                >
+                  <LogOut className="w-4 h-4" />
+                  Leave conversation
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -810,6 +872,48 @@ export function ConversationPage() {
         </div>
       )}
 
+      {/* Manage sharing modal (primary parent) */}
+      {showShareModal && id && conversation && (
+        <ShareGuardiansModal
+          conversationId={id}
+          studentName={conversation.studentName || 'your child'}
+          onClose={() => setShowShareModal(false)}
+          onChanged={refreshConversation}
+        />
+      )}
+
+      {/* Leave-conversation confirmation (added guardian) */}
+      {leaveConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30" onClick={() => setLeaveConfirm(false)}>
+          <div
+            className="bg-white rounded-2xl p-5 mx-6 max-w-sm w-full shadow-xl"
+            style={{ border: '1px solid #F0E4E6' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold mb-2" style={{ color: '#2D2225' }}>Leave this conversation?</h3>
+            <p className="text-sm mb-5" style={{ color: '#7A6469' }}>
+              It will be removed from your inbox and you'll stop receiving its messages. The other parent can add you back later.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setLeaveConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                style={{ backgroundColor: '#F5EEF0', color: '#7A6469' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLeave}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+                style={{ backgroundColor: '#D94444' }}
+              >
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Typing indicator */}
       {otherTyping && (
         <div className="px-5 py-1.5">
@@ -906,6 +1010,147 @@ export function ConversationPage() {
             />
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Manage which of the child's other guardians this thread is shared with.
+// Opt-in only: nothing is shared until the primary parent adds someone here.
+function ShareGuardiansModal({
+  conversationId,
+  studentName,
+  onClose,
+  onChanged,
+}: {
+  conversationId: string
+  studentName: string
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [data, setData] = useState<ConversationGuardiansResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busyUserId, setBusyUserId] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.inbox.conversationGuardians(conversationId)
+      setData(res)
+    } catch (error) {
+      console.error('Failed to load guardians:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [conversationId])
+
+  useEffect(() => { load() }, [load])
+
+  const handleAdd = async (userId: string) => {
+    setBusyUserId(userId)
+    try {
+      const res = await api.inbox.addConversationGuardian(conversationId, userId)
+      setData(res)
+      onChanged()
+    } catch (error) {
+      console.error('Failed to add guardian:', error)
+    } finally {
+      setBusyUserId(null)
+    }
+  }
+
+  const handleRemove = async (userId: string) => {
+    setBusyUserId(userId)
+    try {
+      await api.inbox.removeConversationGuardian(conversationId, userId)
+      const res = await api.inbox.conversationGuardians(conversationId)
+      setData(res)
+      onChanged()
+    } catch (error) {
+      console.error('Failed to remove guardian:', error)
+    } finally {
+      setBusyUserId(null)
+    }
+  }
+
+  const participants = data?.participants ?? []
+  const addable = data?.addable ?? []
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-[24px] sm:rounded-[24px] w-full max-w-md p-6 space-y-4 max-h-[85vh] overflow-y-auto"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold" style={{ color: '#2D2225' }}>Share this conversation</h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#F5EEF0' }}>
+            <X className="w-4 h-4" style={{ color: '#7A6469' }} />
+          </button>
+        </div>
+
+        <p className="text-sm leading-relaxed" style={{ color: '#7A6469' }}>
+          Add {studentName}'s other parent or guardian so they can see and reply to this conversation. Nothing is shared unless you add them, and you can remove them at any time.
+        </p>
+
+        {loading ? (
+          <div className="py-6 text-center text-sm" style={{ color: '#A8929A' }}>Loading…</div>
+        ) : (
+          <>
+            {/* Currently shared with */}
+            {participants.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#A8929A' }}>Shared with</p>
+                {participants.map(p => (
+                  <div key={p.userId} className="flex items-center gap-3 p-3 rounded-2xl" style={{ backgroundColor: '#F9F1F3' }}>
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ backgroundColor: '#F5DCE3', color: '#C4506E' }}>
+                      {p.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                    </div>
+                    <p className="flex-1 text-sm font-medium truncate" style={{ color: '#2D2225' }}>{p.name}</p>
+                    <button
+                      onClick={() => handleRemove(p.userId)}
+                      disabled={busyUserId === p.userId}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-full disabled:opacity-50"
+                      style={{ color: '#D94444', backgroundColor: '#FFFFFF', border: '1px solid #F0E4E6' }}
+                    >
+                      {busyUserId === p.userId ? '…' : 'Remove'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Addable guardians */}
+            {addable.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#A8929A' }}>
+                  {participants.length > 0 ? 'Add another' : `${studentName}'s other guardians`}
+                </p>
+                {addable.map(g => (
+                  <div key={g.userId} className="flex items-center gap-3 p-3 rounded-2xl" style={{ border: '1px solid #F0E4E6' }}>
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ backgroundColor: '#F5EEF0', color: '#7A6469' }}>
+                      {g.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                    </div>
+                    <p className="flex-1 text-sm font-medium truncate" style={{ color: '#2D2225' }}>{g.name}</p>
+                    <button
+                      onClick={() => handleAdd(g.userId)}
+                      disabled={busyUserId === g.userId}
+                      className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full text-white disabled:opacity-50"
+                      style={{ backgroundColor: '#C4506E' }}
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      {busyUserId === g.userId ? '…' : 'Add'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : participants.length === 0 ? (
+              <div className="py-4 text-center text-sm" style={{ color: '#A8929A' }}>
+                {studentName} has no other guardian on file to share with. Contact the school office if that's not right.
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   )

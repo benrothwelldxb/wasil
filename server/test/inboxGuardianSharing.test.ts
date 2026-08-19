@@ -234,7 +234,7 @@ describe('added guardian access', () => {
       staff: { id: 'staff-1', name: 'Ms Noor', avatarUrl: null },
       student: { id: 'stu-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' } },
       schoolContact: null,
-      participants: [{ id: 'part-1', mutedAt: null }],
+      participants: [{ id: 'part-1', userId: 'guardian-2', mutedAt: null, user: { name: 'Guardian Two' } }],
       lastMessageAt: new Date('2026-08-19T10:00:00.000Z'),
       createdAt: new Date('2026-08-18T10:00:00.000Z'),
       mutedByParent: false, mutedByStaff: false,
@@ -242,6 +242,10 @@ describe('added guardian access', () => {
     })
     const res = await request(makeApp()).get('/api/inbox/conversations/c-1')
     expect(res.status).toBe(200)
+    // Detail response exposes sharing state: `shared` true for an added guardian,
+    // and the participant roster (for the "shared with" header indicator).
+    expect(res.body.shared).toBe(true)
+    expect(res.body.participants).toContainEqual({ userId: 'guardian-2', name: 'Guardian Two' })
     // The where-clause authorizes the guardian via participants.some(userId).
     const orClause = prismaMock.conversation.findFirst.mock.calls[0][0].where.OR
     expect(orClause).toContainEqual({ participants: { some: { userId: 'guardian-2' } } })
