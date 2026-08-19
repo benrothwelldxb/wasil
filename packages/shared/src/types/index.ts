@@ -1275,9 +1275,9 @@ export interface ConversationDetail {
   lastMessageAt: string
   createdAt: string
   muted?: boolean
-  // Co-guardian sharing (Phase 1): additional guardians the thread is shared with,
-  // and whether the requester is an added guardian (true) vs the primary owner.
-  participants?: Array<{ userId: string; name: string }>
+  // Additional people on the thread: co-guardians (role 'PARENT') and CC'd staff
+  // (role 'STAFF'). `shared` = the requester is an added guardian, not the owner.
+  participants?: Array<{ userId: string; name: string; role?: 'PARENT' | 'STAFF' }>
   shared?: boolean
   messages: ConversationMessageItem[]
 }

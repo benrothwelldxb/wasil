@@ -199,7 +199,7 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
         parent: { select: { id: true, name: true, avatarUrl: true } },
         student: { select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } } },
         schoolContact: { select: { id: true, name: true, icon: true } },
-        participants: { select: { id: true, userId: true, mutedAt: true, user: { select: { name: true } } } },
+        participants: { select: { id: true, userId: true, role: true, mutedAt: true, user: { select: { name: true } } } },
         messages: {
           include: {
             sender: { select: { id: true, name: true } },
@@ -268,9 +268,10 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
       lastMessageAt: conversation.lastMessageAt.toISOString(),
       createdAt: conversation.createdAt.toISOString(),
       muted,
-      // Co-guardian sharing: the additional guardians on this thread, and whether
-      // the requester is one of them (an added guardian rather than the owner).
-      participants: conversation.participants.map(p => ({ userId: p.userId, name: p.user.name })),
+      // Additional people on this thread with their role, so the parent UI can
+      // separate co-guardians (PARENT) from CC'd staff (STAFF). `shared` = the
+      // requester is one of them (an added guardian) rather than the owner.
+      participants: conversation.participants.map(p => ({ userId: p.userId, name: p.user.name, role: p.role })),
       shared: !!myParticipant && !isPrimaryParent && !isStaffParty,
       messages: conversation.messages.map(m => serializeMessage(m as Parameters<typeof serializeMessage>[0], user.id)),
     })

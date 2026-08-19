@@ -295,6 +295,9 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
         // Number of additional CO-GUARDIANS this thread is shared with (STAFF CCs
         // are excluded — they are not co-guardians). 0 = ordinary 1-to-1.
         sharedCount: c.participants.filter((p) => p.role !== 'STAFF').length,
+        // True when the actor is on this thread as a CC'd staff member rather than
+        // the primary teacher — lets Desk badge "you're CC'd on this".
+        ccd: useParticipant,
       }
     })
 
@@ -367,6 +370,9 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
         // — they are not co-guardians. Staff-facing so a teacher can see which
         // (separated) parents can read their replies.
         sharedWith: conversation.participants.filter((p) => p.role !== 'STAFF').map((p) => p.user.name),
+        // Names of additional staff CC'd onto this thread (empty on an ordinary
+        // thread). Lets Desk show the primary teacher who else can see/reply.
+        ccStaff: conversation.participants.filter((p) => p.role === 'STAFF').map((p) => p.user.name),
       },
       messages: conversation.messages.map((m) => ({
         id: m.id,

@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth, useApi } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { ConversationDetail, ConversationMessageItem } from '@wasil/shared'
-import { ArrowLeft, Send, Paperclip, Search, X, MoreVertical, Download, Reply, Trash2, UserPlus, LogOut, Users } from 'lucide-react'
-import type { ConversationGuardiansResponse } from '@wasil/shared'
+import { ArrowLeft, Send, Paperclip, Search, X, MoreVertical, Download, Reply, Trash2, UserPlus, LogOut, Users, UserCog } from 'lucide-react'
+import type { ConversationGuardiansResponse, ConversationStaffResponse } from '@wasil/shared'
 import ReactMarkdown from 'react-markdown'
 
 // Render a message body as restricted, safe markdown — bold / italic / bullets
@@ -122,8 +122,9 @@ export function ConversationPage() {
   // Header menu
   const [showHeaderMenu, setShowHeaderMenu] = useState(false)
 
-  // Co-guardian sharing
+  // Co-guardian sharing + staff CC
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showStaffModal, setShowStaffModal] = useState(false)
   const [leaveConfirm, setLeaveConfirm] = useState(false)
 
   // Refs for click-outside handling
@@ -374,17 +375,23 @@ export function ConversationPage() {
       : conversation.parentName)
     : ''
 
-  // Co-guardian sharing state. The thread owner (primary parent) can share a
-  // child-thread with the child's other guardian; an added guardian can leave.
+  // Thread-people state. The owner (primary parent) can share a child-thread with
+  // the child's other guardian (co-guardian) and/or CC additional school staff;
+  // an added guardian can leave.
   const isPrimaryParent = !!conversation && user?.id === conversation.parentId
   const canManageSharing = isPrimaryParent && !!conversation?.studentId
+  const canAddStaff = isPrimaryParent
   const isSharedGuardian = !!conversation?.shared
-  // Names to show in the "shared with" indicator (everyone on the thread but me).
+  const guardianParticipants = (conversation?.participants ?? []).filter(p => p.role !== 'STAFF')
+  const staffParticipants = (conversation?.participants ?? []).filter(p => p.role === 'STAFF')
+  // Co-guardians on the thread, shown in the "shared with" indicator (everyone but me).
   const sharedWithNames = conversation
     ? (isPrimaryParent
-        ? (conversation.participants ?? []).map(p => p.name)
-        : [conversation.parentName, ...(conversation.participants ?? []).filter(p => p.userId !== user?.id).map(p => p.name)])
+        ? guardianParticipants.map(p => p.name)
+        : [conversation.parentName, ...guardianParticipants.filter(p => p.userId !== user?.id).map(p => p.name)])
     : []
+  // CC'd staff on the thread (shown to everyone on it).
+  const ccStaffNames = staffParticipants.map(p => p.name)
 
   const handleLeave = async () => {
     if (!id || !user?.id) return
@@ -451,6 +458,12 @@ export function ConversationPage() {
               Shared with {sharedWithNames.join(', ')}
             </p>
           )}
+          {ccStaffNames.length > 0 && (
+            <p className="text-xs truncate flex items-center gap-1" style={{ color: '#8A6A94' }}>
+              <UserCog className="w-3 h-3 shrink-0" />
+              Also with {ccStaffNames.join(', ')}
+            </p>
+          )}
         </div>
 
         {/* Header actions */}
@@ -482,6 +495,16 @@ export function ConversationPage() {
                 >
                   <UserPlus className="w-4 h-4" style={{ color: '#7A6469' }} />
                   {sharedWithNames.length > 0 ? 'Manage sharing' : 'Share with other parent'}
+                </button>
+              )}
+              {canAddStaff && (
+                <button
+                  onClick={() => { setShowHeaderMenu(false); setShowStaffModal(true) }}
+                  className="w-full text-left px-4 py-2.5 flex items-center gap-2.5 text-sm active:bg-gray-50 transition-colors"
+                  style={{ color: '#2D2225' }}
+                >
+                  <UserCog className="w-4 h-4" style={{ color: '#7A6469' }} />
+                  {ccStaffNames.length > 0 ? 'Manage school staff' : 'Add school staff'}
                 </button>
               )}
               <button
@@ -882,6 +905,15 @@ export function ConversationPage() {
         />
       )}
 
+      {/* Add school staff modal (primary parent) */}
+      {showStaffModal && id && (
+        <StaffCcModal
+          conversationId={id}
+          onClose={() => setShowStaffModal(false)}
+          onChanged={refreshConversation}
+        />
+      )}
+
       {/* Leave-conversation confirmation (added guardian) */}
       {leaveConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30" onClick={() => setLeaveConfirm(false)}>
@@ -1147,6 +1179,141 @@ function ShareGuardiansModal({
             ) : participants.length === 0 ? (
               <div className="py-4 text-center text-sm" style={{ color: '#A8929A' }}>
                 {studentName} has no other guardian on file to share with. Contact the school office if that's not right.
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Add/remove additional school staff (a "CC") on this thread. Staff are limited
+// to the people this parent can already message — their children's teachers and
+// the school's published contacts. A CC'd staff member can read and reply.
+function StaffCcModal({
+  conversationId,
+  onClose,
+  onChanged,
+}: {
+  conversationId: string
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [data, setData] = useState<ConversationStaffResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busyUserId, setBusyUserId] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      setData(await api.inbox.conversationStaff(conversationId))
+    } catch (error) {
+      console.error('Failed to load staff:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [conversationId])
+
+  useEffect(() => { load() }, [load])
+
+  const handleAdd = async (userId: string) => {
+    setBusyUserId(userId)
+    try {
+      setData(await api.inbox.addConversationStaff(conversationId, userId))
+      onChanged()
+    } catch (error) {
+      console.error('Failed to add staff:', error)
+    } finally {
+      setBusyUserId(null)
+    }
+  }
+
+  const handleRemove = async (userId: string) => {
+    setBusyUserId(userId)
+    try {
+      await api.inbox.removeConversationStaff(conversationId, userId)
+      setData(await api.inbox.conversationStaff(conversationId))
+      onChanged()
+    } catch (error) {
+      console.error('Failed to remove staff:', error)
+    } finally {
+      setBusyUserId(null)
+    }
+  }
+
+  const participants = data?.participants ?? []
+  const addable = data?.addable ?? []
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-[24px] sm:rounded-[24px] w-full max-w-md p-6 space-y-4 max-h-[85vh] overflow-y-auto"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold" style={{ color: '#2D2225' }}>Add school staff</h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#F5EEF0' }}>
+            <X className="w-4 h-4" style={{ color: '#7A6469' }} />
+          </button>
+        </div>
+
+        <p className="text-sm leading-relaxed" style={{ color: '#7A6469' }}>
+          Bring another member of staff into this conversation so they can see it and reply. You can only add your children's teachers and the school's listed contacts, and you can remove them at any time.
+        </p>
+
+        {loading ? (
+          <div className="py-6 text-center text-sm" style={{ color: '#A8929A' }}>Loading…</div>
+        ) : (
+          <>
+            {participants.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#A8929A' }}>On this conversation</p>
+                {participants.map(p => (
+                  <div key={p.userId} className="flex items-center gap-3 p-3 rounded-2xl" style={{ backgroundColor: '#F3F0F6' }}>
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ backgroundColor: '#E4DCEC', color: '#8A6A94' }}>
+                      {p.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                    </div>
+                    <p className="flex-1 text-sm font-medium truncate" style={{ color: '#2D2225' }}>{p.name}</p>
+                    <button
+                      onClick={() => handleRemove(p.userId)}
+                      disabled={busyUserId === p.userId}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-full disabled:opacity-50"
+                      style={{ color: '#D94444', backgroundColor: '#FFFFFF', border: '1px solid #F0E4E6' }}
+                    >
+                      {busyUserId === p.userId ? '…' : 'Remove'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {addable.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#A8929A' }}>
+                  {participants.length > 0 ? 'Add another' : 'Staff you can add'}
+                </p>
+                {addable.map(s => (
+                  <div key={s.userId} className="flex items-center gap-3 p-3 rounded-2xl" style={{ border: '1px solid #F0E4E6' }}>
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ backgroundColor: '#F5EEF0', color: '#7A6469' }}>
+                      {s.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                    </div>
+                    <p className="flex-1 text-sm font-medium truncate" style={{ color: '#2D2225' }}>{s.name}</p>
+                    <button
+                      onClick={() => handleAdd(s.userId)}
+                      disabled={busyUserId === s.userId}
+                      className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full text-white disabled:opacity-50"
+                      style={{ backgroundColor: '#8A6A94' }}
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      {busyUserId === s.userId ? '…' : 'Add'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : participants.length === 0 ? (
+              <div className="py-4 text-center text-sm" style={{ color: '#A8929A' }}>
+                There's no other staff you can add to this conversation right now.
               </div>
             ) : null}
           </>

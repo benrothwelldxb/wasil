@@ -309,6 +309,7 @@ describe('GET /api/partner/inbox/threads', () => {
           lastMessageAt: '2026-08-14T10:00:00.000Z',
           unread: 2,
           sharedCount: 1,
+          ccd: false,
         },
         {
           id: 'c-2',
@@ -320,6 +321,7 @@ describe('GET /api/partner/inbox/threads', () => {
           lastMessageAt: '2026-08-13T10:00:00.000Z',
           unread: 0,
           sharedCount: 0,
+          ccd: false,
         },
       ],
     })
@@ -340,7 +342,7 @@ describe('GET /api/partner/inbox/threads', () => {
     ])
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff'))
     expect(Object.keys(res.body.threads[0]).sort()).toEqual(
-      ['className', 'hubClassId', 'id', 'lastMessageAt', 'lastMessageText', 'parentName', 'sharedCount', 'studentName', 'unread'].sort(),
+      ['ccd', 'className', 'hubClassId', 'id', 'lastMessageAt', 'lastMessageText', 'parentName', 'sharedCount', 'studentName', 'unread'].sort(),
     )
   })
 
@@ -442,7 +444,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     })
     // soft-deleted excluded via the include filter
     expect(prismaMock.conversation.findFirst.mock.calls[0][0].include.messages.where).toEqual({ deletedAt: null })
-    expect(res.body.thread).toEqual({ id: 'c-1', parentName: 'Amina Dad', studentName: 'Amina Khan', className: '1A', sharedWith: ['Amina Mum'] })
+    expect(res.body.thread).toEqual({ id: 'c-1', parentName: 'Amina Dad', studentName: 'Amina Khan', className: '1A', sharedWith: ['Amina Mum'], ccStaff: [] })
     expect(res.body.messages).toEqual([
       {
         id: 'm-1', senderName: 'Amina Dad', mine: false, content: 'Hello', sentAt: '2026-08-14T09:00:00.000Z',
@@ -468,7 +470,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       ],
     })
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-1?hub_user_id=hu-staff'))
-    expect(Object.keys(res.body.thread).sort()).toEqual(['className', 'id', 'parentName', 'sharedWith', 'studentName'].sort())
+    expect(Object.keys(res.body.thread).sort()).toEqual(['ccStaff', 'className', 'id', 'parentName', 'sharedWith', 'studentName'].sort())
     expect(Object.keys(res.body.messages[0]).sort()).toEqual(
       ['attachments', 'content', 'id', 'mine', 'senderName', 'sentAt'].sort(),
     )
