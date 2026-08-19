@@ -11,6 +11,7 @@ const prismaMock = {
   user: { findUnique: vi.fn(), findFirst: vi.fn() },
   conversation: { count: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   conversationMessage: { create: vi.fn(), updateMany: vi.fn() },
+  conversationParticipant: { update: vi.fn() },
   conversationAttachment: { createMany: vi.fn() },
   notification: { create: vi.fn() },
   deviceToken: { findMany: vi.fn() },
@@ -262,15 +263,21 @@ describe('GET /api/partner/inbox/threads', () => {
     prismaMock.conversation.findMany.mockResolvedValue([
       {
         id: 'c-1',
+        staffId: 'staff-1',
         parent: { name: 'Amina Dad' },
         student: { firstName: 'Amina', lastName: 'Khan', class: { name: '1A', hubClassId: 'hc-1' } },
         lastMessageText: 'Thanks!',
         lastMessageAt: new Date('2026-08-14T10:00:00.000Z'),
-        messages: [{ id: 'm-1' }, { id: 'm-2' }],
-        participants: [{ userId: 'g-1' }],
+        // Two unread inbound messages (readAt null); the actor is the primary staff.
+        messages: [
+          { readAt: null, createdAt: new Date('2026-08-14T09:00:00.000Z') },
+          { readAt: null, createdAt: new Date('2026-08-14T09:05:00.000Z') },
+        ],
+        participants: [{ userId: 'g-1', role: 'PARENT', lastReadAt: null }],
       },
       {
         id: 'c-2',
+        staffId: 'staff-1',
         parent: { name: 'No Student' },
         student: null,
         lastMessageText: null,
@@ -282,7 +289,13 @@ describe('GET /api/partner/inbox/threads', () => {
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff'))
     expect(res.status).toBe(200)
     const where = prismaMock.conversation.findMany.mock.calls[0][0].where
-    expect(where).toEqual({ archivedByStaff: false, staffId: 'staff-1' })
+    // Non-admin: own non-archived threads OR threads they've been CC'd on.
+    expect(where).toEqual({
+      OR: [
+        { staffId: 'staff-1', archivedByStaff: false },
+        { participants: { some: { userId: 'staff-1', role: 'STAFF', archivedAt: null } } },
+      ],
+    })
     expect(prismaMock.conversation.findMany.mock.calls[0][0].orderBy).toEqual({ lastMessageAt: 'desc' })
     expect(res.body).toEqual({
       threads: [
@@ -376,10 +389,10 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     prismaMock.conversation.findFirst.mockResolvedValue(null)
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-x?hub_user_id=hu-staff'))
     expect(res.status).toBe(404)
-    // Gate: own thread OR (no admin branch for plain staff).
+    // Gate: own thread OR a thread they're a participant of (no admin branch for plain staff).
     expect(prismaMock.conversation.findFirst.mock.calls[0][0].where).toEqual({
       id: 'c-x',
-      OR: [{ staffId: 'staff-1' }],
+      OR: [{ staffId: 'staff-1' }, { participants: { some: { userId: 'staff-1' } } }],
     })
     expect(prismaMock.conversationMessage.updateMany).not.toHaveBeenCalled()
   })
@@ -397,7 +410,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     expect(res.status).toBe(200)
     expect(prismaMock.conversation.findFirst.mock.calls[0][0].where).toEqual({
       id: 'c-1',
-      OR: [{ staffId: 'admin-1' }, { schoolId: 'sch-1' }],
+      OR: [{ staffId: 'admin-1' }, { participants: { some: { userId: 'admin-1' } } }, { schoolId: 'sch-1' }],
     })
   })
 
@@ -1103,5 +1116,87 @@ describe('POST /api/partner/inbox/upload', () => {
       fileSize: expect.any(Number),
     })
     expect(storageMock.uploadFile).toHaveBeenCalled()
+  })
+})
+
+// Staff CC (Phase 2) — a CC'd staff member (a STAFF-role participant who is NOT
+// the primary staff) must see, open, and reply to the thread via the Desk
+// partner API, exactly like the primary staff, using their OWN participant
+// read-state (never the primary staff's flags).
+describe('Staff CC visibility (partner)', () => {
+  const auth = (r: request.Test) => r.set('Authorization', `Bearer ${TOKEN}`)
+  const CC = { id: 'cc-1', role: 'STAFF', schoolId: 'sch-1', name: 'CC Teacher' }
+
+  it('GET /inbox/threads ORs own threads with CC’d threads; unread uses the participant lastReadAt', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(CC)
+    prismaMock.conversation.findMany.mockResolvedValue([
+      {
+        id: 'c-1', staffId: 'primary-staff',
+        parent: { name: 'A Parent' },
+        student: { firstName: 'Amina', lastName: 'Khan', class: { name: '1A', hubClassId: 'hc-1' } },
+        lastMessageText: 'Hi', lastMessageAt: new Date('2026-08-19T10:00:00.000Z'),
+        // CC actor reads via their participant row (lastReadAt gates unread).
+        participants: [{ userId: 'cc-1', role: 'STAFF', lastReadAt: new Date('2026-08-19T09:00:00.000Z') }],
+        messages: [
+          { readAt: null, createdAt: new Date('2026-08-19T09:30:00.000Z') }, // after lastReadAt ⇒ unread
+          { readAt: null, createdAt: new Date('2026-08-19T08:00:00.000Z') }, // before ⇒ read
+        ],
+      },
+    ])
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-cc'))
+    expect(res.status).toBe(200)
+    // Non-admin OR-clause includes the STAFF-participant branch.
+    expect(prismaMock.conversation.findMany.mock.calls[0][0].where.OR).toEqual([
+      { staffId: 'cc-1', archivedByStaff: false },
+      { participants: { some: { userId: 'cc-1', role: 'STAFF', archivedAt: null } } },
+    ])
+    // Unread counted from the participant's lastReadAt; STAFF CC excluded from sharedCount.
+    expect(res.body.threads[0]).toMatchObject({ id: 'c-1', unread: 1, sharedCount: 0 })
+  })
+
+  it('GET /inbox/threads/:id: a CC opens via staffThreadWhere and stamps their participant lastReadAt', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(CC)
+    prismaMock.conversation.findFirst.mockResolvedValue({
+      id: 'c-1', staffId: 'primary-staff',
+      parent: { name: 'A Parent' },
+      student: { firstName: 'Amina', lastName: 'Khan', class: { name: '1A' } },
+      participants: [{ id: 'part-1', userId: 'cc-1', role: 'STAFF', user: { name: 'CC Teacher' } }],
+      messages: [],
+    })
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-1?hub_user_id=hu-cc'))
+    expect(res.status).toBe(200)
+    // staffThreadWhere authorizes the CC via the participants branch.
+    expect(prismaMock.conversation.findFirst.mock.calls[0][0].where.OR).toContainEqual(
+      { participants: { some: { userId: 'cc-1' } } },
+    )
+    // Read-state stamped on the participant row, not ConversationMessage.readAt.
+    expect(prismaMock.conversationParticipant.update).toHaveBeenCalledWith({
+      where: { id: 'part-1' }, data: { lastReadAt: expect.any(Date) },
+    })
+    expect(prismaMock.conversationMessage.updateMany).not.toHaveBeenCalled()
+    // STAFF CCs are excluded from sharedWith (they are not co-guardians).
+    expect(res.body.thread.sharedWith).toEqual([])
+  })
+
+  it('POST /inbox/threads/:id/messages: a CC reply notifies the parent + primary staff (not the sender)', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(CC)
+    prismaMock.conversation.findFirst.mockResolvedValue({
+      id: 'c-1', parentId: 'p-1', staffId: 'primary-staff', schoolId: 'sch-1',
+      mutedByParent: false, mutedByStaff: false,
+      parent: { id: 'p-1', name: 'A Parent' }, staff: { id: 'primary-staff', name: 'Primary Teacher' },
+      schoolContact: null,
+      participants: [{ userId: 'cc-1', mutedAt: null }],
+    })
+    prismaMock.conversationMessage.create.mockResolvedValue({
+      id: 'msg-9', senderId: 'cc-1', content: 'Chiming in', createdAt: new Date('2026-08-19T11:00:00.000Z'),
+    })
+    prismaMock.deviceToken.findMany.mockResolvedValue([])
+
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/threads/c-1/messages'))
+      .send({ hub_user_id: 'hu-cc', content: 'Chiming in' })
+    expect(res.status).toBe(201)
+    const notifiedUserIds = prismaMock.notification.create.mock.calls.map(c => c[0].data.userId).sort()
+    expect(notifiedUserIds).toEqual(['p-1', 'primary-staff'])
+    expect(notifiedUserIds).not.toContain('cc-1')
   })
 })

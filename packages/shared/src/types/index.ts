@@ -1293,6 +1293,15 @@ export interface ConversationGuardiansResponse {
   participants: Array<{ userId: string; name: string }>
 }
 
+// Staff CC (Phase 2). Returned by GET and POST /api/inbox/conversations/:id/staff
+// (primary parent only). `participants` = the STAFF members currently CC'd on the
+// thread; `addable` = staff the parent may still add (their contactable staff set
+// minus the primary teacher and anyone already on the thread).
+export interface ConversationStaffResponse {
+  addable: Array<{ userId: string; name: string }>
+  participants: Array<{ userId: string; name: string }>
+}
+
 export interface AvailableContactsResponse {
   teachers: Array<{
     id: string

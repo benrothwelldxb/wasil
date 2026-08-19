@@ -76,6 +76,9 @@ function staffThreadWhere(id: string, actor: StaffActor) {
     id,
     OR: [
       { staffId: actor.id },
+      // A CC'd staff member (a STAFF-role participant) may open and reply to the
+      // thread, exactly like the primary staff.
+      { participants: { some: { userId: actor.id } } },
       ...(isAdminActor(actor) ? [{ schoolId: actor.schoolId }] : []),
     ],
   }
@@ -225,11 +228,18 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
     const isAdmin = isAdminActor(actor)
-    const where: Record<string, unknown> = { archivedByStaff: false }
+    const where: Record<string, unknown> = {}
     if (isAdmin) {
+      // Admin: whole school, unchanged.
       where.schoolId = actor.schoolId
+      where.archivedByStaff = false
     } else {
-      where.staffId = actor.id
+      // Non-admin: their OWN threads PLUS any thread they've been CC'd on as a
+      // STAFF participant (their own participant archivedAt drives archive).
+      where.OR = [
+        { staffId: actor.id, archivedByStaff: false },
+        { participants: { some: { userId: actor.id, role: 'STAFF', archivedAt: null } } },
+      ]
     }
 
     const classIdParam = typeof req.query.class_id === 'string' ? req.query.class_id.trim() : ''
@@ -255,27 +265,38 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
           },
         },
         messages: {
-          where: { senderId: { not: actor.id }, readAt: null },
-          select: { id: true },
+          where: { senderId: { not: actor.id }, deletedAt: null },
+          select: { readAt: true, createdAt: true },
         },
-        participants: { select: { userId: true } },
+        participants: { select: { userId: true, role: true, lastReadAt: true } },
       },
       orderBy: { lastMessageAt: 'desc' },
     })
 
-    const threads = conversations.map((c) => ({
-      id: c.id,
-      parentName: c.parent.name,
-      studentName: c.student ? `${c.student.firstName} ${c.student.lastName}`.trim() : null,
-      hubClassId: c.student?.class?.hubClassId ?? null,
-      className: c.student?.class?.name ?? null,
-      lastMessageText: c.lastMessageText,
-      lastMessageAt: c.lastMessageAt.toISOString(),
-      unread: c.messages.length,
-      // Number of additional co-guardians this thread is shared with (0 = ordinary
-      // 1-to-1). Lets Desk badge shared threads in the list.
-      sharedCount: c.participants.length,
-    }))
+    const threads = conversations.map((c) => {
+      // A CC'd staff member (a STAFF participant who is NOT the primary staff)
+      // reads via their own participant row: unread = inbound newer than their
+      // lastReadAt (null ⇒ all inbound). The primary staff (and admins) keep the
+      // two-party ConversationMessage.readAt model unchanged.
+      const myPart = c.participants.find((p) => p.userId === actor.id && p.role === 'STAFF')
+      const useParticipant = !!myPart && c.staffId !== actor.id
+      const unread = useParticipant
+        ? c.messages.filter((m) => (myPart!.lastReadAt ? m.createdAt > myPart!.lastReadAt : true)).length
+        : c.messages.filter((m) => m.readAt === null).length
+      return {
+        id: c.id,
+        parentName: c.parent.name,
+        studentName: c.student ? `${c.student.firstName} ${c.student.lastName}`.trim() : null,
+        hubClassId: c.student?.class?.hubClassId ?? null,
+        className: c.student?.class?.name ?? null,
+        lastMessageText: c.lastMessageText,
+        lastMessageAt: c.lastMessageAt.toISOString(),
+        unread,
+        // Number of additional CO-GUARDIANS this thread is shared with (STAFF CCs
+        // are excluded — they are not co-guardians). 0 = ordinary 1-to-1.
+        sharedCount: c.participants.filter((p) => p.role !== 'STAFF').length,
+      }
+    })
 
     res.json({ threads })
   } catch (error) {
@@ -301,7 +322,7 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
       include: {
         parent: { select: { name: true } },
         student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } },
-        participants: { select: { user: { select: { name: true } } } },
+        participants: { select: { id: true, userId: true, role: true, user: { select: { name: true } } } },
         messages: {
           where: { deletedAt: null },
           include: {
@@ -317,11 +338,21 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
       return res.status(404).json({ error: 'not_found' })
     }
 
-    // Mark inbound (non-actor) messages as read — same side-effect as native.
-    await prisma.conversationMessage.updateMany({
-      where: { conversationId: id, senderId: { not: actor.id }, readAt: null },
-      data: { readAt: new Date() },
-    })
+    // Mark-read side-effect. A CC'd staff member (a STAFF participant who is NOT
+    // the primary staff) stamps their OWN participant lastReadAt; the primary
+    // staff (and admins) keep the two-party ConversationMessage.readAt model.
+    const myPart = conversation.participants.find((p) => p.userId === actor.id && p.role === 'STAFF')
+    if (myPart && conversation.staffId !== actor.id) {
+      await prisma.conversationParticipant.update({
+        where: { id: myPart.id },
+        data: { lastReadAt: new Date() },
+      })
+    } else {
+      await prisma.conversationMessage.updateMany({
+        where: { conversationId: id, senderId: { not: actor.id }, readAt: null },
+        data: { readAt: new Date() },
+      })
+    }
 
     res.json({
       thread: {
@@ -332,9 +363,10 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
           : null,
         className: conversation.student?.class?.name ?? null,
         // Co-guardian sharing: names of additional guardians this thread is shared
-        // with (empty when it's an ordinary 1-to-1 thread). Staff-facing so a
-        // teacher can see both separated parents can read their replies.
-        sharedWith: conversation.participants.map((p) => p.user.name),
+        // with (empty when it's an ordinary 1-to-1 thread). STAFF CCs are excluded
+        // — they are not co-guardians. Staff-facing so a teacher can see which
+        // (separated) parents can read their replies.
+        sharedWith: conversation.participants.filter((p) => p.role !== 'STAFF').map((p) => p.user.name),
       },
       messages: conversation.messages.map((m) => ({
         id: m.id,
@@ -410,16 +442,23 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
       },
     })
 
-    // Recipient fan-out — sender is staff, so recipients are the parent parties:
-    // the primary parent plus every added guardian (participants). Deduped by
-    // userId; each carries their own mute state (mutedByParent for the primary,
-    // participant.mutedAt for added guardians).
-    const senderDisplayName = conversation.schoolContact
-      ? `${conversation.staff.name} (via ${conversation.schoolContact.name})`
-      : conversation.staff.name
+    // Recipient fan-out — notify everyone on the thread EXCEPT the sender: the
+    // primary parent, the primary staff (so a CC'd staff sender still reaches the
+    // primary teacher), and every added participant (co-guardians + other staff
+    // CCs). Deduped by userId; each carries their own mute state (the primary
+    // flags for the primary parent/staff, participant.mutedAt for added ones).
+    // The sender's display name is the primary staff name unless the sender is a
+    // CC'd staff participant, in which case it's the actor's own name.
+    const senderIsPrimaryStaff = conversation.staffId === actor.id
+    const senderDisplayName = senderIsPrimaryStaff
+      ? (conversation.schoolContact
+          ? `${conversation.staff.name} (via ${conversation.schoolContact.name})`
+          : conversation.staff.name)
+      : actor.name
 
     const recipients: Array<{ userId: string; muted: boolean }> = [
       { userId: conversation.parentId, muted: conversation.mutedByParent },
+      { userId: conversation.staffId, muted: conversation.mutedByStaff },
     ]
     for (const p of conversation.participants ?? []) {
       recipients.push({ userId: p.userId, muted: p.mutedAt != null })

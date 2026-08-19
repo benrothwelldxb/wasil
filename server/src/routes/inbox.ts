@@ -845,6 +845,210 @@ router.delete('/conversations/:id/guardians/:userId', isAuthenticated, async (re
   }
 })
 
+// ==========================================
+// Staff CC (Phase 2)
+// ==========================================
+//
+// A thread's PRIMARY parent (`parentId`) may add an ADDITIONAL staff member (a
+// "CC") as a STAFF-role participant. The CC'd staff can read + reply, and the
+// thread appears in BOTH their Connect staff inbox and their Desk inbox. The
+// parent may only CC staff they are already allowed to contact — the exact
+// bounded set surfaced by `GET /inbox/contacts/available` (a teacher of one of
+// their children's classes, or a published school-contact assignee).
+
+// The classIds of the parent's children — via ParentStudentLink first, falling
+// back to the legacy Child relation (mirrors `/contacts/available`).
+async function parentChildrenClassIds(parentUserId: string): Promise<string[]> {
+  const links = await prisma.parentStudentLink.findMany({
+    where: { userId: parentUserId },
+    select: { student: { select: { classId: true } } },
+  })
+  const set = new Set<string>(links.map(l => l.student.classId))
+  if (links.length === 0) {
+    const children = await prisma.child.findMany({
+      where: { parentId: parentUserId },
+      select: { classId: true },
+    })
+    for (const c of children) set.add(c.classId)
+  }
+  return [...set]
+}
+
+// The bounded set of staff a parent may contact / CC: teachers assigned to one
+// of their children's classes (StaffClassAssignment) PLUS the assignees of the
+// school's published (non-archived) SchoolContacts. Deduped by userId, each with
+// a display name. Mirrors the same two sources as `/contacts/available`.
+async function contactableStaff(parentUserId: string, schoolId: string): Promise<Array<{ userId: string; name: string }>> {
+  const classIds = await parentChildrenClassIds(parentUserId)
+  const byId = new Map<string, string>()
+  if (classIds.length > 0) {
+    const assignments = await prisma.staffClassAssignment.findMany({
+      where: { classId: { in: classIds } },
+      select: { userId: true, user: { select: { name: true } } },
+    })
+    for (const a of assignments) byId.set(a.userId, a.user.name)
+  }
+  const contacts = await prisma.schoolContact.findMany({
+    where: { schoolId, archived: false },
+    select: { assignedUserId: true, assignedUser: { select: { name: true } } },
+  })
+  for (const c of contacts) byId.set(c.assignedUserId, c.assignedUser.name)
+  return [...byId.entries()].map(([userId, name]) => ({ userId, name }))
+}
+
+// Security gate: is `staffUserId` a staff member this parent is allowed to CC?
+// The target must be a real same-school STAFF/ADMIN/SUPER_ADMIN user AND fall
+// within the parent's `contactableStaff` set — never arbitrary staff.
+async function isStaffContactableByParent(parentUserId: string, schoolId: string, staffUserId: string): Promise<boolean> {
+  const staffUser = await prisma.user.findFirst({
+    where: { id: staffUserId, schoolId, role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] } },
+    select: { id: true },
+  })
+  if (!staffUser) return false
+  const set = await contactableStaff(parentUserId, schoolId)
+  return set.some(s => s.userId === staffUserId)
+}
+
+// Build the { addable, participants } response for a thread the requester is the
+// PRIMARY parent of. `participants` = current STAFF-role participants; `addable`
+// = the parent's contactable staff MINUS the primary staffId MINUS anyone
+// already participating.
+async function buildStaffResponse(conversation: {
+  parentId: string
+  staffId: string
+  schoolId: string
+  participants: Array<{ userId: string; role: string; user: { name: string } }>
+}) {
+  const participants = conversation.participants
+    .filter(p => p.role === 'STAFF')
+    .map(p => ({ userId: p.userId, name: p.user.name }))
+  const contactable = await contactableStaff(conversation.parentId, conversation.schoolId)
+  const excluded = new Set<string>([conversation.staffId, ...conversation.participants.map(p => p.userId)])
+  const addable = contactable.filter(s => !excluded.has(s.userId))
+  return { addable, participants }
+}
+
+// List the STAFF CCs on the thread + the staff the parent could still add.
+router.get('/conversations/:id/staff', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') {
+      return res.status(403).json({ error: 'Parent access required' })
+    }
+    const { id } = req.params
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, parentId: user.id },
+      include: {
+        participants: { select: { userId: true, role: true, user: { select: { name: true } } } },
+      },
+    })
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' })
+    }
+
+    res.json(await buildStaffResponse(conversation))
+  } catch (error) {
+    console.error('Error fetching conversation staff:', error)
+    res.status(500).json({ error: 'Failed to fetch staff' })
+  }
+})
+
+// CC an additional staff member onto the thread (primary parent only).
+router.post('/conversations/:id/staff', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') {
+      return res.status(403).json({ error: 'Parent access required' })
+    }
+    const { id } = req.params
+    const { userId } = req.body
+
+    if (!userId || typeof userId !== 'string') {
+      return res.status(400).json({ error: 'userId is required' })
+    }
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, parentId: user.id },
+      include: {
+        participants: { select: { userId: true, role: true, user: { select: { name: true } } } },
+      },
+    })
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' })
+    }
+
+    // The primary staff member is already on the thread.
+    if (userId === conversation.staffId) {
+      return res.status(400).json({ error: 'This staff member is already on the conversation' })
+    }
+
+    // Idempotent: adding an existing participant is a no-op success.
+    const already = conversation.participants.some(p => p.userId === userId)
+    if (already) {
+      return res.json(await buildStaffResponse(conversation))
+    }
+
+    // Security gate — the parent may only CC staff they are allowed to contact.
+    const contactable = await isStaffContactableByParent(user.id, user.schoolId, userId)
+    if (!contactable) {
+      return res.status(400).json({ error: 'This staff member cannot be added to this conversation' })
+    }
+
+    await prisma.conversationParticipant.create({
+      data: {
+        conversationId: id,
+        userId,
+        role: 'STAFF',
+        addedById: user.id,
+      },
+    })
+
+    const refreshed = await prisma.conversation.findFirst({
+      where: { id, parentId: user.id },
+      include: {
+        participants: { select: { userId: true, role: true, user: { select: { name: true } } } },
+      },
+    })
+
+    res.json(await buildStaffResponse(refreshed!))
+  } catch (error) {
+    console.error('Error adding conversation staff:', error)
+    res.status(500).json({ error: 'Failed to add staff' })
+  }
+})
+
+// Remove a STAFF CC (primary parent only). 404 (not 403) when there's no
+// matching STAFF participant row or the requester isn't the primary parent —
+// never leak existence.
+router.delete('/conversations/:id/staff/:userId', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') {
+      return res.status(403).json({ error: 'Parent access required' })
+    }
+    const { id, userId } = req.params
+
+    const participant = await prisma.conversationParticipant.findFirst({
+      where: { conversationId: id, userId, role: 'STAFF' },
+      select: { id: true, conversation: { select: { parentId: true } } },
+    })
+
+    if (!participant || participant.conversation.parentId !== user.id) {
+      return res.status(404).json({ error: 'Participant not found' })
+    }
+
+    await prisma.conversationParticipant.delete({ where: { id: participant.id } })
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Error removing conversation staff:', error)
+    res.status(500).json({ error: 'Failed to remove staff' })
+  }
+})
+
 // Message search within a conversation
 router.get('/conversations/:id/search', isAuthenticated, async (req, res) => {
   try {
@@ -1203,14 +1407,20 @@ router.get('/staff/conversations', isStaff, async (req, res) => {
 
     const isAdminUser = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
 
-    const where: Record<string, unknown> = {
-      archivedByStaff: false,
-    }
+    const where: Record<string, unknown> = {}
 
     if (isAdminUser) {
+      // Admin: whole school, primary two-party read model, own archive flag.
       where.schoolId = user.schoolId
+      where.archivedByStaff = false
     } else {
-      where.staffId = user.id
+      // Non-admin staff: their OWN threads PLUS any thread they've been CC'd on
+      // as a STAFF participant (their own participant archivedAt drives archive,
+      // never the primary staff's archivedByStaff flag).
+      where.OR = [
+        { staffId: user.id, archivedByStaff: false },
+        { participants: { some: { userId: user.id, role: 'STAFF', archivedAt: null } } },
+      ]
     }
 
     // Filter by class if specified
@@ -1225,33 +1435,50 @@ router.get('/staff/conversations', isStaff, async (req, res) => {
         staff: { select: { id: true, name: true } },
         student: { select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } } },
         schoolContact: { select: { id: true, name: true, icon: true } },
+        // The actor's own participant row (present when they are a CC, not the
+        // primary staff) — carries their lastReadAt/mutedAt for the CC view.
+        participants: { where: { userId: user.id }, select: { lastReadAt: true, mutedAt: true } },
         messages: {
-          where: { senderId: { not: user.id }, readAt: null },
-          select: { id: true },
+          where: { senderId: { not: user.id }, deletedAt: null },
+          select: { readAt: true, createdAt: true },
         },
       },
       orderBy: { lastMessageAt: 'desc' },
     })
 
-    res.json(conversations.map(c => ({
-      id: c.id,
-      parentId: c.parentId,
-      parentName: c.parent.name,
-      parentAvatarUrl: c.parent.avatarUrl,
-      staffId: c.staffId,
-      staffName: c.staff.name,
-      studentId: c.studentId,
-      studentName: c.student ? `${c.student.firstName} ${c.student.lastName}` : null,
-      className: c.student?.class?.name || null,
-      schoolContactId: c.schoolContactId,
-      schoolContactName: c.schoolContact?.name || null,
-      schoolContactIcon: c.schoolContact?.icon || null,
-      lastMessageAt: c.lastMessageAt.toISOString(),
-      lastMessageText: c.lastMessageText,
-      unreadCount: c.messages.length,
-      muted: c.mutedByStaff,
-      createdAt: c.createdAt.toISOString(),
-    })))
+    res.json(conversations.map(c => {
+      const myParticipant = c.participants[0]
+      // A CC'd staff member (a participant who is NOT the primary staff) reads
+      // via their participant row: unread = inbound newer than their lastReadAt
+      // (null ⇒ all inbound), muted from their mutedAt. The primary staff (and
+      // admins) keep the two-party ConversationMessage.readAt model unchanged.
+      const useParticipant = !!myParticipant && c.staffId !== user.id
+      const unreadCount = useParticipant
+        ? c.messages.filter(m => (myParticipant.lastReadAt ? m.createdAt > myParticipant.lastReadAt : true)).length
+        : c.messages.filter(m => m.readAt === null).length
+      const muted = useParticipant ? myParticipant.mutedAt != null : c.mutedByStaff
+      return {
+        id: c.id,
+        parentId: c.parentId,
+        parentName: c.parent.name,
+        parentAvatarUrl: c.parent.avatarUrl,
+        staffId: c.staffId,
+        staffName: c.staff.name,
+        studentId: c.studentId,
+        studentName: c.student ? `${c.student.firstName} ${c.student.lastName}` : null,
+        className: c.student?.class?.name || null,
+        schoolContactId: c.schoolContactId,
+        schoolContactName: c.schoolContact?.name || null,
+        schoolContactIcon: c.schoolContact?.icon || null,
+        lastMessageAt: c.lastMessageAt.toISOString(),
+        lastMessageText: c.lastMessageText,
+        unreadCount,
+        muted,
+        // True when the actor is a CC'd staff participant rather than the primary.
+        ccd: useParticipant || undefined,
+        createdAt: c.createdAt.toISOString(),
+      }
+    }))
   } catch (error) {
     console.error('Error fetching staff conversations:', error)
     res.status(500).json({ error: 'Failed to fetch conversations' })

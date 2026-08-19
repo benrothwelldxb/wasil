@@ -1965,6 +1965,7 @@ import type {
   ConversationDetail,
   ConversationMessageItem,
   ConversationGuardiansResponse,
+  ConversationStaffResponse,
   AvailableContactsResponse,
   SchoolContactInfo,
 } from '../types'
@@ -2037,6 +2038,19 @@ export const inbox = {
     }),
   removeConversationGuardian: (id: string, userId: string) =>
     fetchApi<{ success: boolean }>(`/api/inbox/conversations/${id}/guardians/${userId}`, {
+      method: 'DELETE',
+    }),
+
+  // Staff CC (Phase 2) — primary parent adds/removes an additional staff member.
+  conversationStaff: (id: string) =>
+    fetchApi<ConversationStaffResponse>(`/api/inbox/conversations/${id}/staff`),
+  addConversationStaff: (id: string, userId: string) =>
+    fetchApi<ConversationStaffResponse>(`/api/inbox/conversations/${id}/staff`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }),
+  removeConversationStaff: (id: string, userId: string) =>
+    fetchApi<{ success: boolean }>(`/api/inbox/conversations/${id}/staff/${userId}`, {
       method: 'DELETE',
     }),
 
