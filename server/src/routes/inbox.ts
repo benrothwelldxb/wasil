@@ -117,40 +117,61 @@ router.get('/conversations', isAuthenticated, async (req, res) => {
       return res.status(403).json({ error: 'Parent access required' })
     }
 
+    // A parent sees their OWN threads (parentId) plus any thread SHARED with them
+    // as an added guardian (a participant row with archivedAt: null). For a shared
+    // thread the added guardian's own muted/archived/lastReadAt drive the view —
+    // never the primary parent's flags or ConversationMessage.readAt.
     const conversations = await prisma.conversation.findMany({
       where: {
-        parentId: user.id,
-        archivedByParent: false,
+        OR: [
+          { parentId: user.id, archivedByParent: false },
+          { participants: { some: { userId: user.id, archivedAt: null } } },
+        ],
       },
       include: {
         staff: { select: { id: true, name: true, avatarUrl: true } },
         student: { select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } } },
         schoolContact: { select: { id: true, name: true, icon: true } },
+        participants: { where: { userId: user.id }, select: { mutedAt: true, lastReadAt: true } },
         messages: {
-          where: { senderId: { not: user.id }, readAt: null },
-          select: { id: true },
+          where: { senderId: { not: user.id }, deletedAt: null },
+          select: { readAt: true, createdAt: true },
         },
       },
       orderBy: { lastMessageAt: 'desc' },
     })
 
-    res.json(conversations.map(c => ({
-      id: c.id,
-      staffId: c.staffId,
-      staffName: c.staff.name,
-      staffAvatarUrl: c.staff.avatarUrl,
-      studentId: c.studentId,
-      studentName: c.student ? `${c.student.firstName} ${c.student.lastName}` : null,
-      className: c.student?.class?.name || null,
-      schoolContactId: c.schoolContactId,
-      schoolContactName: c.schoolContact?.name || null,
-      schoolContactIcon: c.schoolContact?.icon || null,
-      lastMessageAt: c.lastMessageAt.toISOString(),
-      lastMessageText: c.lastMessageText,
-      unreadCount: c.messages.length,
-      muted: c.mutedByParent,
-      createdAt: c.createdAt.toISOString(),
-    })))
+    res.json(conversations.map(c => {
+      const isPrimary = c.parentId === user.id
+      const myParticipant = c.participants[0]
+      // Primary parent: unread = inbound messages with no readAt (two-party read
+      // model). Added guardian: inbound messages newer than their lastReadAt
+      // (null lastReadAt ⇒ everything counts).
+      const unreadCount = isPrimary
+        ? c.messages.filter(m => m.readAt === null).length
+        : c.messages.filter(m => (myParticipant?.lastReadAt ? m.createdAt > myParticipant.lastReadAt : true)).length
+      const muted = isPrimary ? c.mutedByParent : myParticipant?.mutedAt != null
+      return {
+        id: c.id,
+        staffId: c.staffId,
+        staffName: c.staff.name,
+        staffAvatarUrl: c.staff.avatarUrl,
+        studentId: c.studentId,
+        studentName: c.student ? `${c.student.firstName} ${c.student.lastName}` : null,
+        className: c.student?.class?.name || null,
+        schoolContactId: c.schoolContactId,
+        schoolContactName: c.schoolContact?.name || null,
+        schoolContactIcon: c.schoolContact?.icon || null,
+        lastMessageAt: c.lastMessageAt.toISOString(),
+        lastMessageText: c.lastMessageText,
+        unreadCount,
+        muted,
+        // True when this thread was shared with the requester as a co-guardian
+        // (they are an added participant, not the primary parent).
+        shared: !isPrimary || undefined,
+        createdAt: c.createdAt.toISOString(),
+      }
+    }))
   } catch (error) {
     console.error('Error fetching conversations:', error)
     res.status(500).json({ error: 'Failed to fetch conversations' })
@@ -169,6 +190,7 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
         OR: [
           { parentId: user.id },
           ...(user.role !== 'PARENT' ? [{ staffId: user.id }] : []),
+          { participants: { some: { userId: user.id } } },
           ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
         ],
       },
@@ -177,6 +199,7 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
         parent: { select: { id: true, name: true, avatarUrl: true } },
         student: { select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } } },
         schoolContact: { select: { id: true, name: true, icon: true } },
+        participants: { where: { userId: user.id }, select: { id: true, mutedAt: true } },
         messages: {
           include: {
             sender: { select: { id: true, name: true } },
@@ -201,18 +224,32 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
       return res.status(404).json({ error: 'Conversation not found' })
     }
 
-    // Mark incoming messages as read
-    await prisma.conversationMessage.updateMany({
-      where: {
-        conversationId: id,
-        senderId: { not: user.id },
-        readAt: null,
-      },
-      data: { readAt: new Date() },
-    })
+    const isPrimaryParent = user.id === conversation.parentId
+    const isStaffParty = user.id === conversation.staffId
+    const myParticipant = conversation.participants[0]
 
-    const isParent = user.id === conversation.parentId
-    const muted = isParent ? conversation.mutedByParent : conversation.mutedByStaff
+    if (myParticipant && !isPrimaryParent && !isStaffParty) {
+      // Added guardian: their read-state lives on the participant row, not on the
+      // two-party ConversationMessage.readAt (which stays the primary read model).
+      await prisma.conversationParticipant.update({
+        where: { id: myParticipant.id },
+        data: { lastReadAt: new Date() },
+      })
+    } else {
+      // Primary parent / staff / admin: mark incoming messages as read.
+      await prisma.conversationMessage.updateMany({
+        where: {
+          conversationId: id,
+          senderId: { not: user.id },
+          readAt: null,
+        },
+        data: { readAt: new Date() },
+      })
+    }
+
+    const muted = myParticipant && !isPrimaryParent && !isStaffParty
+      ? myParticipant.mutedAt != null
+      : isPrimaryParent ? conversation.mutedByParent : conversation.mutedByStaff
 
     res.json({
       id: conversation.id,
@@ -311,13 +348,16 @@ router.post('/conversations', isAuthenticated, async (req, res) => {
 
 // Send message in conversation
 // Where-clause matching a conversation the requester participates in (or is an
-// admin for). Used to gate every per-conversation action.
+// admin for). Used to gate every per-conversation action. An added participant
+// (Phase 1: a co-guardian the primary parent opted to share the thread with) is
+// an authorized reader/sender via the `participants` relation.
 function participantWhere(id: string, user: Express.User) {
   return {
     id,
     OR: [
       { parentId: user.id },
       { staffId: user.id },
+      { participants: { some: { userId: user.id } } },
       ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
     ],
   }
@@ -340,6 +380,7 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
         parent: { select: { id: true, name: true } },
         staff: { select: { id: true, name: true } },
         schoolContact: { select: { name: true } },
+        participants: { select: { userId: true, mutedAt: true } },
       },
     })
 
@@ -391,28 +432,50 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
       data: updateData,
     })
 
-    // Send push notification to recipient
-    const recipientId = user.id === conversation.parentId ? conversation.staffId : conversation.parentId
-    const senderDisplayName = user.id === conversation.parentId
-      ? conversation.parent.name
-      : (conversation.schoolContact ? `${conversation.staff.name} (via ${conversation.schoolContact.name})` : conversation.staff.name)
+    // Fan-out: notify EVERYONE in the thread except the sender — primary parent,
+    // staff, and every added participant (co-guardians) — deduped by userId. The
+    // sender may be the primary parent, the staff member, or an added guardian.
+    const senderIsParent = user.id === conversation.parentId
+    const senderIsStaff = user.id === conversation.staffId
+    const senderDisplayName = senderIsStaff
+      ? (conversation.schoolContact ? `${conversation.staff.name} (via ${conversation.schoolContact.name})` : conversation.staff.name)
+      : senderIsParent
+        ? conversation.parent.name
+        : user.name // an added guardian replying
 
-    // Create notification record (always created regardless of mute)
-    await prisma.notification.create({
-      data: {
-        userId: recipientId,
-        type: 'DIRECT_MESSAGE',
-        title: `Message from ${senderDisplayName}`,
-        body: content.trim().substring(0, 200),
-        resourceType: 'CONVERSATION',
-        resourceId: id,
-        data: { conversationId: id, route: `/inbox/${id}` },
-        schoolId: conversation.schoolId,
-      },
+    // Each recipient carries their OWN mute state: primary flags for the primary
+    // parent/staff, the participant row's mutedAt for added guardians.
+    const recipients: Array<{ userId: string; muted: boolean }> = []
+    if (conversation.parentId !== user.id) recipients.push({ userId: conversation.parentId, muted: conversation.mutedByParent })
+    if (conversation.staffId !== user.id) recipients.push({ userId: conversation.staffId, muted: conversation.mutedByStaff })
+    for (const p of conversation.participants ?? []) {
+      if (p.userId !== user.id) recipients.push({ userId: p.userId, muted: p.mutedAt != null })
+    }
+    // Dedupe by userId (a user should only appear once as a recipient).
+    const seenRecipients = new Set<string>()
+    const dedupedRecipients = recipients.filter(r => {
+      if (seenRecipients.has(r.userId)) return false
+      seenRecipients.add(r.userId)
+      return true
     })
 
+    // Notification rows are always created regardless of mute.
+    for (const r of dedupedRecipients) {
+      await prisma.notification.create({
+        data: {
+          userId: r.userId,
+          type: 'DIRECT_MESSAGE',
+          title: `Message from ${senderDisplayName}`,
+          body: content.trim().substring(0, 200),
+          resourceType: 'CONVERSATION',
+          resourceId: id,
+          data: { conversationId: id, route: `/inbox/${id}` },
+          schoolId: conversation.schoolId,
+        },
+      })
+    }
+
     // Email teacher when parent starts a new exchange (first message ever, or no messages in 24h)
-    const senderIsParent = user.id === conversation.parentId
     if (senderIsParent) {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
       const recentMessages = await prisma.conversationMessage.count({
@@ -458,13 +521,11 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
       }
     }
 
-    // Check mute status before sending push notification
-    const recipientHasMuted = senderIsParent ? conversation.mutedByStaff : conversation.mutedByParent
-
-    if (!recipientHasMuted) {
-      // Send FCM push only if recipient hasn't muted
+    // Send FCM push to each recipient that hasn't muted this thread.
+    for (const r of dedupedRecipients) {
+      if (r.muted) continue
       const deviceTokens = await prisma.deviceToken.findMany({
-        where: { userId: recipientId },
+        where: { userId: r.userId },
         select: { token: true },
       })
       if (deviceTokens.length > 0) {
@@ -517,18 +578,31 @@ router.patch('/conversations/:id/archive', isAuthenticated, async (req, res) => 
     const { id } = req.params
 
     const conversation = await prisma.conversation.findFirst({
-      where: { id, OR: [{ parentId: user.id }, { staffId: user.id }] },
+      where: { id, OR: [{ parentId: user.id }, { staffId: user.id }, { participants: { some: { userId: user.id } } }] },
+      include: { participants: { where: { userId: user.id }, select: { id: true } } },
     })
 
     if (!conversation) {
       return res.status(404).json({ error: 'Conversation not found' })
     }
 
-    const field = user.id === conversation.parentId ? 'archivedByParent' : 'archivedByStaff'
-    await prisma.conversation.update({
-      where: { id },
-      data: { [field]: true },
-    })
+    const isPrimaryParent = user.id === conversation.parentId
+    const isStaffParty = user.id === conversation.staffId
+    const myParticipant = conversation.participants[0]
+
+    if (myParticipant && !isPrimaryParent && !isStaffParty) {
+      // Added guardian archives their own view via their participant row.
+      await prisma.conversationParticipant.update({
+        where: { id: myParticipant.id },
+        data: { archivedAt: new Date() },
+      })
+    } else {
+      const field = isPrimaryParent ? 'archivedByParent' : 'archivedByStaff'
+      await prisma.conversation.update({
+        where: { id },
+        data: { [field]: true },
+      })
+    }
 
     res.json({ success: true })
   } catch (error) {
@@ -549,23 +623,221 @@ router.patch('/conversations/:id/mute', isAuthenticated, async (req, res) => {
     }
 
     const conversation = await prisma.conversation.findFirst({
-      where: { id, OR: [{ parentId: user.id }, { staffId: user.id }] },
+      where: { id, OR: [{ parentId: user.id }, { staffId: user.id }, { participants: { some: { userId: user.id } } }] },
+      include: { participants: { where: { userId: user.id }, select: { id: true } } },
     })
 
     if (!conversation) {
       return res.status(404).json({ error: 'Conversation not found' })
     }
 
-    const field = user.id === conversation.parentId ? 'mutedByParent' : 'mutedByStaff'
-    await prisma.conversation.update({
-      where: { id },
-      data: { [field]: muted },
-    })
+    const isPrimaryParent = user.id === conversation.parentId
+    const isStaffParty = user.id === conversation.staffId
+    const myParticipant = conversation.participants[0]
+
+    if (myParticipant && !isPrimaryParent && !isStaffParty) {
+      // Added guardian mutes/unmutes their own view via their participant row.
+      await prisma.conversationParticipant.update({
+        where: { id: myParticipant.id },
+        data: { mutedAt: muted ? new Date() : null },
+      })
+    } else {
+      const field = isPrimaryParent ? 'mutedByParent' : 'mutedByStaff'
+      await prisma.conversation.update({
+        where: { id },
+        data: { [field]: muted },
+      })
+    }
 
     res.json({ success: true, muted })
   } catch (error) {
     console.error('Error muting conversation:', error)
     res.status(500).json({ error: 'Failed to mute conversation' })
+  }
+})
+
+// ==========================================
+// Co-guardian thread sharing (Phase 1)
+// ==========================================
+//
+// A thread's PRIMARY parent (`parentId`) may OPT-IN to share ONE child-specific
+// thread with another LINKED GUARDIAN of that same child. Strictly opt-in and
+// safeguarding-sensitive: separated/divorced guardians must never see each
+// other's threads unless deliberately shared. The added guardian can read,
+// reply, mute, and leave; only the primary parent can add/remove others.
+
+// Build the shared { student, addable, participants } response for a thread the
+// requester is the PRIMARY parent of. `conversation` must already be verified as
+// owned by the requester (parentId === requester).
+async function buildGuardiansResponse(conversation: {
+  id: string
+  parentId: string
+  studentId: string | null
+  schoolId: string
+  student: { id: string; firstName: string; lastName: string } | null
+  participants: Array<{ userId: string; user: { name: string } }>
+}) {
+  const student = conversation.student
+    ? { id: conversation.student.id, name: `${conversation.student.firstName} ${conversation.student.lastName}` }
+    : null
+  const participants = conversation.participants.map(p => ({ userId: p.userId, name: p.user.name }))
+
+  let addable: Array<{ userId: string; name: string }> = []
+  if (conversation.studentId) {
+    const excluded = new Set<string>([conversation.parentId, ...participants.map(p => p.userId)])
+    const links = await prisma.parentStudentLink.findMany({
+      where: {
+        studentId: conversation.studentId,
+        user: { schoolId: conversation.schoolId, role: 'PARENT' },
+      },
+      select: { userId: true, user: { select: { name: true } } },
+    })
+    addable = links
+      .filter(l => !excluded.has(l.userId))
+      .map(l => ({ userId: l.userId, name: l.user.name }))
+  }
+
+  return { student, addable, participants }
+}
+
+// List the student, addable co-guardians, and currently-added participants.
+router.get('/conversations/:id/guardians', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') {
+      return res.status(403).json({ error: 'Parent access required' })
+    }
+    const { id } = req.params
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, parentId: user.id },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true } },
+        participants: { select: { userId: true, user: { select: { name: true } } } },
+      },
+    })
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' })
+    }
+
+    res.json(await buildGuardiansResponse(conversation))
+  } catch (error) {
+    console.error('Error fetching conversation guardians:', error)
+    res.status(500).json({ error: 'Failed to fetch guardians' })
+  }
+})
+
+// Share the thread with another linked guardian of the thread's student.
+router.post('/conversations/:id/guardians', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') {
+      return res.status(403).json({ error: 'Parent access required' })
+    }
+    const { id } = req.params
+    const { userId } = req.body
+
+    if (!userId || typeof userId !== 'string') {
+      return res.status(400).json({ error: 'userId is required' })
+    }
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, parentId: user.id },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true } },
+        participants: { select: { userId: true, user: { select: { name: true } } } },
+      },
+    })
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' })
+    }
+
+    if (!conversation.studentId) {
+      return res.status(400).json({ error: 'This conversation is not about a student and cannot be shared' })
+    }
+
+    if (userId === conversation.parentId) {
+      return res.status(400).json({ error: 'Cannot add the primary parent' })
+    }
+
+    // Idempotent-ish: adding an existing participant is a no-op success.
+    const already = conversation.participants.some(p => p.userId === userId)
+    if (already) {
+      return res.json(await buildGuardiansResponse(conversation))
+    }
+
+    // The target must be a linked guardian of this student, in the same school.
+    const link = await prisma.parentStudentLink.findFirst({
+      where: {
+        userId,
+        studentId: conversation.studentId,
+        user: { schoolId: user.schoolId, role: 'PARENT' },
+      },
+      select: { id: true },
+    })
+    if (!link) {
+      return res.status(400).json({ error: 'User is not a linked guardian of this student' })
+    }
+
+    await prisma.conversationParticipant.create({
+      data: {
+        conversationId: id,
+        userId,
+        role: 'PARENT',
+        addedById: user.id,
+      },
+    })
+
+    // Re-read participants for the fresh list.
+    const refreshed = await prisma.conversation.findFirst({
+      where: { id, parentId: user.id },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true } },
+        participants: { select: { userId: true, user: { select: { name: true } } } },
+      },
+    })
+
+    res.json(await buildGuardiansResponse(refreshed!))
+  } catch (error) {
+    console.error('Error adding conversation guardian:', error)
+    res.status(500).json({ error: 'Failed to add guardian' })
+  }
+})
+
+// Remove a shared guardian — allowed if the requester is the PRIMARY parent
+// (removing someone) OR is that same participant (leaving).
+router.delete('/conversations/:id/guardians/:userId', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') {
+      return res.status(403).json({ error: 'Parent access required' })
+    }
+    const { id, userId } = req.params
+
+    const participant = await prisma.conversationParticipant.findFirst({
+      where: { conversationId: id, userId },
+      select: { id: true, conversation: { select: { parentId: true } } },
+    })
+
+    // 404 (not 403) when the row doesn't exist or the requester is neither the
+    // primary parent nor the participant themselves — never leak existence.
+    if (!participant) {
+      return res.status(404).json({ error: 'Participant not found' })
+    }
+    const isPrimaryParent = participant.conversation.parentId === user.id
+    const isSelfLeaving = userId === user.id
+    if (!isPrimaryParent && !isSelfLeaving) {
+      return res.status(404).json({ error: 'Participant not found' })
+    }
+
+    await prisma.conversationParticipant.delete({ where: { id: participant.id } })
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Error removing conversation guardian:', error)
+    res.status(500).json({ error: 'Failed to remove guardian' })
   }
 })
 
@@ -587,6 +859,7 @@ router.get('/conversations/:id/search', isAuthenticated, async (req, res) => {
         OR: [
           { parentId: user.id },
           ...(user.role !== 'PARENT' ? [{ staffId: user.id }] : []),
+          { participants: { some: { userId: user.id } } },
           ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
         ],
       },
@@ -746,6 +1019,7 @@ router.get('/conversations/:id/export', isAuthenticated, async (req, res) => {
         OR: [
           { parentId: user.id },
           ...(user.role !== 'PARENT' ? [{ staffId: user.id }] : []),
+          { participants: { some: { userId: user.id } } },
           ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
         ],
       },
@@ -1058,17 +1332,35 @@ router.get('/unread-count', isAuthenticated, async (req, res) => {
       select: { id: true },
     })
 
-    if (conversations.length === 0) {
-      return res.json({ count: 0 })
+    let count = 0
+    if (conversations.length > 0) {
+      count = await prisma.conversationMessage.count({
+        where: {
+          conversationId: { in: conversations.map(c => c.id) },
+          senderId: { not: user.id },
+          readAt: null,
+          deletedAt: null,
+        },
+      })
     }
 
-    const count = await prisma.conversationMessage.count({
-      where: {
-        conversationId: { in: conversations.map(c => c.id) },
-        senderId: { not: user.id },
-        readAt: null,
-      },
+    // Add threads shared with this user as an added guardian. Their unread is
+    // driven by the participant row's lastReadAt (null ⇒ all inbound count),
+    // excluding their own messages and deleted messages.
+    const participantRows = await prisma.conversationParticipant.findMany({
+      where: { userId: user.id, archivedAt: null },
+      select: { conversationId: true, lastReadAt: true },
     })
+    for (const p of participantRows) {
+      count += await prisma.conversationMessage.count({
+        where: {
+          conversationId: p.conversationId,
+          senderId: { not: user.id },
+          deletedAt: null,
+          ...(p.lastReadAt ? { createdAt: { gt: p.lastReadAt } } : {}),
+        },
+      })
+    }
 
     res.json({ count })
   } catch (error) {

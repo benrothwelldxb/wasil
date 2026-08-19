@@ -1964,6 +1964,7 @@ import type {
   ConversationListItem,
   ConversationDetail,
   ConversationMessageItem,
+  ConversationGuardiansResponse,
   AvailableContactsResponse,
   SchoolContactInfo,
 } from '../types'
@@ -2025,6 +2026,19 @@ export const inbox = {
   },
   availableContacts: () =>
     fetchApi<AvailableContactsResponse>('/api/inbox/contacts/available'),
+
+  // Co-guardian thread sharing (Phase 1)
+  conversationGuardians: (id: string) =>
+    fetchApi<ConversationGuardiansResponse>(`/api/inbox/conversations/${id}/guardians`),
+  addConversationGuardian: (id: string, userId: string) =>
+    fetchApi<ConversationGuardiansResponse>(`/api/inbox/conversations/${id}/guardians`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }),
+  removeConversationGuardian: (id: string, userId: string) =>
+    fetchApi<{ success: boolean }>(`/api/inbox/conversations/${id}/guardians/${userId}`, {
+      method: 'DELETE',
+    }),
 
   // Staff/Admin endpoints
   staffConversations: (classId?: string) => {

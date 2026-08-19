@@ -369,6 +369,7 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
         parent: { select: { id: true, name: true } },
         staff: { select: { id: true, name: true } },
         schoolContact: { select: { name: true } },
+        participants: { select: { userId: true, mutedAt: true } },
       },
     })
 
@@ -400,30 +401,48 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
       },
     })
 
-    // Recipient fan-out — sender is staff, so the recipient is the parent.
-    const recipientId = conversation.parentId
+    // Recipient fan-out — sender is staff, so recipients are the parent parties:
+    // the primary parent plus every added guardian (participants). Deduped by
+    // userId; each carries their own mute state (mutedByParent for the primary,
+    // participant.mutedAt for added guardians).
     const senderDisplayName = conversation.schoolContact
       ? `${conversation.staff.name} (via ${conversation.schoolContact.name})`
       : conversation.staff.name
 
-    // Notification row is always created regardless of mute.
-    await prisma.notification.create({
-      data: {
-        userId: recipientId,
-        type: 'DIRECT_MESSAGE',
-        title: `Message from ${senderDisplayName}`,
-        body: content.trim().substring(0, 200),
-        resourceType: 'CONVERSATION',
-        resourceId: id,
-        data: { conversationId: id, route: `/inbox/${id}` },
-        schoolId: conversation.schoolId,
-      },
+    const recipients: Array<{ userId: string; muted: boolean }> = [
+      { userId: conversation.parentId, muted: conversation.mutedByParent },
+    ]
+    for (const p of conversation.participants ?? []) {
+      recipients.push({ userId: p.userId, muted: p.mutedAt != null })
+    }
+    const seenRecipients = new Set<string>()
+    const dedupedRecipients = recipients.filter((r) => {
+      if (r.userId === actor.id || seenRecipients.has(r.userId)) return false
+      seenRecipients.add(r.userId)
+      return true
     })
 
-    // FCM push only if the parent hasn't muted this thread.
-    if (!conversation.mutedByParent) {
+    // Notification rows are always created regardless of mute.
+    for (const r of dedupedRecipients) {
+      await prisma.notification.create({
+        data: {
+          userId: r.userId,
+          type: 'DIRECT_MESSAGE',
+          title: `Message from ${senderDisplayName}`,
+          body: content.trim().substring(0, 200),
+          resourceType: 'CONVERSATION',
+          resourceId: id,
+          data: { conversationId: id, route: `/inbox/${id}` },
+          schoolId: conversation.schoolId,
+        },
+      })
+    }
+
+    // FCM push to each recipient that hasn't muted this thread.
+    for (const r of dedupedRecipients) {
+      if (r.muted) continue
       const deviceTokens = await prisma.deviceToken.findMany({
-        where: { userId: recipientId },
+        where: { userId: r.userId },
         select: { token: true },
       })
       if (deviceTokens.length > 0) {

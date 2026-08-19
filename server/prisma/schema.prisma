@@ -258,6 +258,7 @@ model User {
   // Inbox relations
   conversationsAsParent    Conversation[] @relation("ConversationsAsParent")
   conversationsAsStaff     Conversation[] @relation("ConversationsAsStaff")
+  conversationParticipations ConversationParticipant[] @relation("ConversationParticipations")
   sentConversationMessages ConversationMessage[] @relation("SentConversationMessages")
   schoolContactAssignments SchoolContact[] @relation("SchoolContactAssignments")
   messageReactions         MessageReaction[] @relation("MessageReactions")
@@ -1740,11 +1741,39 @@ model Conversation {
   updatedAt        DateTime @updatedAt
 
   messages         ConversationMessage[]
+  participants     ConversationParticipant[]
 
   @@unique([parentId, staffId, studentId, schoolContactId])
   @@index([parentId, archivedByParent, lastMessageAt])
   @@index([staffId, archivedByStaff, lastMessageAt])
   @@index([schoolId])
+}
+
+// Additional-participants layer over a Conversation. Phase 1: OPT-IN co-guardian
+// thread sharing — a thread's primary parent may share ONE child-specific thread
+// with another linked guardian of that same child (role = "PARENT"). Strictly
+// opt-in; nothing is shared by default (safeguarding: separated guardians must
+// never see each other's threads unless deliberately shared). Forward-compatible
+// for staff CCs later (role = "STAFF"). The added participant's OWN read/mute/
+// archive state lives HERE (lastReadAt / mutedAt / archivedAt) — never on the
+// Conversation's primary parent/staff flags or ConversationMessage.readAt.
+model ConversationParticipant {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation("ConversationParticipations", fields: [userId], references: [id])
+  role           String   @default("PARENT") // forward-compat: future "STAFF"
+  addedById      String?  // who added this participant (the acting primary parent)
+  lastReadAt     DateTime?
+  mutedAt        DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([userId, archivedAt])
+  @@index([conversationId])
 }
 
 // Individual message within a conversation

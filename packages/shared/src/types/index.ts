@@ -1209,6 +1209,9 @@ export interface ConversationListItem {
   lastMessageText?: string | null
   unreadCount: number
   muted?: boolean
+  // True when this thread was shared with the requester as a co-guardian (they
+  // are an added participant, not the primary parent). Absent on own threads.
+  shared?: boolean
   createdAt: string
 }
 
@@ -1273,6 +1276,17 @@ export interface ConversationDetail {
   createdAt: string
   muted?: boolean
   messages: ConversationMessageItem[]
+}
+
+// Co-guardian thread sharing (Phase 1). Returned by GET and POST
+// /api/inbox/conversations/:id/guardians. `student` is null when the thread is
+// not about a specific child (sharing not applicable ⇒ `addable` is empty).
+// `addable` lists the student's OTHER linked guardians eligible to be added;
+// `participants` lists the guardians currently shared with.
+export interface ConversationGuardiansResponse {
+  student: { id: string; name: string } | null
+  addable: Array<{ userId: string; name: string }>
+  participants: Array<{ userId: string; name: string }>
 }
 
 export interface AvailableContactsResponse {
