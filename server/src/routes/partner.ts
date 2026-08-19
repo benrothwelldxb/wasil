@@ -258,6 +258,7 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
           where: { senderId: { not: actor.id }, readAt: null },
           select: { id: true },
         },
+        participants: { select: { userId: true } },
       },
       orderBy: { lastMessageAt: 'desc' },
     })
@@ -271,6 +272,9 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
       lastMessageText: c.lastMessageText,
       lastMessageAt: c.lastMessageAt.toISOString(),
       unread: c.messages.length,
+      // Number of additional co-guardians this thread is shared with (0 = ordinary
+      // 1-to-1). Lets Desk badge shared threads in the list.
+      sharedCount: c.participants.length,
     }))
 
     res.json({ threads })
@@ -297,6 +301,7 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
       include: {
         parent: { select: { name: true } },
         student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } },
+        participants: { select: { user: { select: { name: true } } } },
         messages: {
           where: { deletedAt: null },
           include: {
@@ -326,6 +331,10 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
           ? `${conversation.student.firstName} ${conversation.student.lastName}`.trim()
           : null,
         className: conversation.student?.class?.name ?? null,
+        // Co-guardian sharing: names of additional guardians this thread is shared
+        // with (empty when it's an ordinary 1-to-1 thread). Staff-facing so a
+        // teacher can see both separated parents can read their replies.
+        sharedWith: conversation.participants.map((p) => p.user.name),
       },
       messages: conversation.messages.map((m) => ({
         id: m.id,

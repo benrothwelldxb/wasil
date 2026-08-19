@@ -267,6 +267,7 @@ describe('GET /api/partner/inbox/threads', () => {
         lastMessageText: 'Thanks!',
         lastMessageAt: new Date('2026-08-14T10:00:00.000Z'),
         messages: [{ id: 'm-1' }, { id: 'm-2' }],
+        participants: [{ userId: 'g-1' }],
       },
       {
         id: 'c-2',
@@ -275,6 +276,7 @@ describe('GET /api/partner/inbox/threads', () => {
         lastMessageText: null,
         lastMessageAt: new Date('2026-08-13T10:00:00.000Z'),
         messages: [],
+        participants: [],
       },
     ])
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff'))
@@ -293,6 +295,7 @@ describe('GET /api/partner/inbox/threads', () => {
           lastMessageText: 'Thanks!',
           lastMessageAt: '2026-08-14T10:00:00.000Z',
           unread: 2,
+          sharedCount: 1,
         },
         {
           id: 'c-2',
@@ -303,6 +306,7 @@ describe('GET /api/partner/inbox/threads', () => {
           lastMessageText: null,
           lastMessageAt: '2026-08-13T10:00:00.000Z',
           unread: 0,
+          sharedCount: 0,
         },
       ],
     })
@@ -318,11 +322,12 @@ describe('GET /api/partner/inbox/threads', () => {
         lastMessageText: 'Hi',
         lastMessageAt: new Date('2026-08-14T10:00:00.000Z'),
         messages: [],
+        participants: [],
       },
     ])
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff'))
     expect(Object.keys(res.body.threads[0]).sort()).toEqual(
-      ['className', 'hubClassId', 'id', 'lastMessageAt', 'lastMessageText', 'parentName', 'studentName', 'unread'].sort(),
+      ['className', 'hubClassId', 'id', 'lastMessageAt', 'lastMessageText', 'parentName', 'sharedCount', 'studentName', 'unread'].sort(),
     )
   })
 
@@ -385,6 +390,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       id: 'c-1',
       parent: { name: 'Dad' },
       student: { firstName: 'A', lastName: 'K', class: { name: '1A' } },
+      participants: [],
       messages: [],
     })
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-1?hub_user_id=hu-admin'))
@@ -401,6 +407,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       id: 'c-1',
       parent: { name: 'Amina Dad' },
       student: { firstName: 'Amina', lastName: 'Khan', class: { name: '1A' } },
+      participants: [{ user: { name: 'Amina Mum' } }],
       messages: [
         {
           id: 'm-1', senderId: 'p-1', content: 'Hello', createdAt: new Date('2026-08-14T09:00:00.000Z'),
@@ -422,7 +429,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     })
     // soft-deleted excluded via the include filter
     expect(prismaMock.conversation.findFirst.mock.calls[0][0].include.messages.where).toEqual({ deletedAt: null })
-    expect(res.body.thread).toEqual({ id: 'c-1', parentName: 'Amina Dad', studentName: 'Amina Khan', className: '1A' })
+    expect(res.body.thread).toEqual({ id: 'c-1', parentName: 'Amina Dad', studentName: 'Amina Khan', className: '1A', sharedWith: ['Amina Mum'] })
     expect(res.body.messages).toEqual([
       {
         id: 'm-1', senderName: 'Amina Dad', mine: false, content: 'Hello', sentAt: '2026-08-14T09:00:00.000Z',
@@ -438,6 +445,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       id: 'c-1',
       parent: { name: 'Dad' },
       student: { firstName: 'A', lastName: 'K', class: { name: '1A' } },
+      participants: [],
       messages: [
         {
           id: 'm-1', senderId: 'p-1', content: 'Hi', createdAt: new Date('2026-08-14T09:00:00.000Z'),
@@ -447,7 +455,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       ],
     })
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-1?hub_user_id=hu-staff'))
-    expect(Object.keys(res.body.thread).sort()).toEqual(['className', 'id', 'parentName', 'studentName'].sort())
+    expect(Object.keys(res.body.thread).sort()).toEqual(['className', 'id', 'parentName', 'sharedWith', 'studentName'].sort())
     expect(Object.keys(res.body.messages[0]).sort()).toEqual(
       ['attachments', 'content', 'id', 'mine', 'senderName', 'sentAt'].sort(),
     )
