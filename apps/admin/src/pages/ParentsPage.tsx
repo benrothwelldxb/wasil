@@ -1,25 +1,8 @@
 import React, { useState } from 'react'
-import { Plus, X, Trash2, Upload, Users, RefreshCw, Mail, Copy, QrCode, CheckCircle, XCircle, Clock, Eye, Search, Send, UserX, KeyRound } from 'lucide-react'
+import { X, Trash2, Users, RefreshCw, Mail, Copy, CheckCircle, XCircle, Clock, Eye, Search, Send, KeyRound } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
-import type { Class, ParentInvitation, InvitationStatus } from '@wasil/shared'
-import { StudentSearchSelect } from '../components/StudentSearchSelect'
-
-interface ChildEntry {
-  childName: string
-  classId: string
-}
-
-interface SelectedStudent {
-  id: string
-  fullName: string
-  className: string
-}
-
-interface BulkImportResult {
-  created: number
-  skipped: number
-  errors?: string[]
-}
+import type { ParentInvitation, InvitationStatus } from '@wasil/shared'
+import { HubSyncBanner } from '../components/HubSyncBanner'
 
 type Tab = 'invitations' | 'parents'
 
@@ -28,7 +11,8 @@ export function ParentsPage() {
   const toast = useToast()
   const [activeTab, setActiveTab] = useState<Tab>('invitations')
 
-  // === Invitations state ===
+  // === Invitations state (read-only — legacy access-code invites; new parent
+  // + child links now come from Hub guardian sync) ===
   const [statusFilter, setStatusFilter] = useState<InvitationStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -37,41 +21,18 @@ export function ParentsPage() {
     () => api.parentInvitations.list({ status: statusFilter, search: searchQuery, page, limit: 20 }),
     [statusFilter, searchQuery, page]
   )
-  const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
 
-  const [showForm, setShowForm] = useState(false)
-  const [showBulkImport, setShowBulkImport] = useState(false)
   const [showDetails, setShowDetails] = useState<ParentInvitation | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [revokeConfirm, setRevokeConfirm] = useState<{ id: string; code: string } | null>(null)
   const [isRevoking, setIsRevoking] = useState(false)
-
-  // Individual form
-  const [parentName, setParentName] = useState('')
-  const [parentEmail, setParentEmail] = useState('')
-  const [includeMagicLink, setIncludeMagicLink] = useState(true)
-  const [children, setChildren] = useState<ChildEntry[]>([{ childName: '', classId: '' }])
-  const [expiresInDays, setExpiresInDays] = useState(90)
-  const [useStudentSearch, setUseStudentSearch] = useState(true)
-  const [selectedStudents, setSelectedStudents] = useState<SelectedStudent[]>([])
-
-  // Bulk import
-  const [bulkText, setBulkText] = useState('')
-  const [bulkResult, setBulkResult] = useState<BulkImportResult | null>(null)
-  const [isBulkImporting, setIsBulkImporting] = useState(false)
 
   // === Registered Parents state ===
   const [parentsSearch, setParentsSearch] = useState('')
   const [parentsPage, setParentsPage] = useState(1)
-  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string; email: string } | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
   const [sendingLoginLink, setSendingLoginLink] = useState<string | null>(null)
   const [setPasswordFor, setSetPasswordFor] = useState<{ id: string; name: string; email: string } | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [isSettingPassword, setIsSettingPassword] = useState(false)
-  const [selectedParentIds, setSelectedParentIds] = useState<Set<string>>(new Set())
-  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
-  const [bulkDeleteProgress, setBulkDeleteProgress] = useState<{ current: number; total: number } | null>(null)
   const [inviteAllConfirm, setInviteAllConfirm] = useState(false)
   const [sendingInvites, setSendingInvites] = useState(false)
   const [sendingInviteFor, setSendingInviteFor] = useState<string | null>(null)
@@ -85,99 +46,6 @@ export function ParentsPage() {
     () => api.parentInvitations.listParents({ search: parentsSearch, page: parentsPage, limit: 50 }),
     [parentsSearch, parentsPage]
   )
-
-  const resetForm = () => {
-    setShowForm(false)
-    setShowBulkImport(false)
-    setShowDetails(null)
-    setParentName('')
-    setParentEmail('')
-    setIncludeMagicLink(true)
-    setChildren([{ childName: '', classId: '' }])
-    setExpiresInDays(90)
-    setBulkText('')
-    setBulkResult(null)
-    setSelectedStudents([])
-  }
-
-  const addChild = () => {
-    setChildren([...children, { childName: '', classId: '' }])
-  }
-
-  const removeChild = (index: number) => {
-    if (children.length > 1) {
-      setChildren(children.filter((_, i) => i !== index))
-    }
-  }
-
-  const updateChild = (index: number, field: keyof ChildEntry, value: string) => {
-    setChildren(children.map((c, i) => i === index ? { ...c, [field]: value } : c))
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (useStudentSearch) {
-      // New approach: use selected students
-      if (selectedStudents.length === 0) {
-        toast.warning('Please select at least one student')
-        return
-      }
-      setIsSubmitting(true)
-      try {
-        await api.parentInvitations.create({
-          parentName: parentName.trim() || undefined,
-          parentEmail: parentEmail.trim() || undefined,
-          studentIds: selectedStudents.map(s => s.id),
-          includeMagicLink,
-          expiresInDays,
-        })
-        resetForm()
-        refetchInvitations()
-      } catch (error) {
-        toast.error(`Failed to create invitation: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      } finally {
-        setIsSubmitting(false)
-      }
-    } else {
-      // Legacy approach: use child names
-      const validChildren = children.filter(c => c.childName.trim() && c.classId)
-      if (validChildren.length === 0) {
-        toast.warning('Please add at least one child with a name and class')
-        return
-      }
-      setIsSubmitting(true)
-      try {
-        await api.parentInvitations.create({
-          parentName: parentName.trim() || undefined,
-          parentEmail: parentEmail.trim() || undefined,
-          children: validChildren,
-          includeMagicLink,
-          expiresInDays,
-        })
-        resetForm()
-        refetchInvitations()
-      } catch (error) {
-        toast.error(`Failed to create invitation: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      } finally {
-        setIsSubmitting(false)
-      }
-    }
-  }
-
-  const handleBulkImport = async () => {
-    if (!bulkText.trim()) return
-    setIsBulkImporting(true)
-    try {
-      const result = await api.parentInvitations.bulkImport(bulkText, expiresInDays)
-      setBulkResult({ created: result.created, skipped: result.skipped, errors: result.errors })
-      refetchInvitations()
-    } catch (error) {
-      toast.error(`Bulk import failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
-      setIsBulkImporting(false)
-    }
-  }
 
   const handleRevoke = async () => {
     if (!revokeConfirm) return
@@ -212,66 +80,6 @@ export function ParentsPage() {
       toast.success('Email sent successfully')
     } catch (error) {
       toast.error(`Failed to resend: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
-  }
-
-  const handleDeleteParent = async () => {
-    if (!deleteConfirm) return
-    setIsDeleting(true)
-    try {
-      await api.parentInvitations.deleteParent(deleteConfirm.id)
-      toast.success('Parent account deleted')
-      refetchParents()
-      setDeleteConfirm(null)
-    } catch (error) {
-      toast.error(`Failed to delete parent: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
-  const handleBulkDeleteParents = async () => {
-    if (selectedParentIds.size === 0) return
-    setIsDeleting(true)
-    const total = selectedParentIds.size
-    setBulkDeleteProgress({ current: 0, total })
-    try {
-      let deleted = 0
-      let current = 0
-      for (const id of selectedParentIds) {
-        current++
-        setBulkDeleteProgress({ current, total })
-        try {
-          await api.parentInvitations.deleteParent(id)
-          deleted++
-        } catch { /* continue with others */ }
-      }
-      toast.success(`Deleted ${deleted} parent account${deleted !== 1 ? 's' : ''}`)
-      setSelectedParentIds(new Set())
-      setBulkDeleteConfirm(false)
-      refetchParents()
-    } catch (error) {
-      toast.error('Failed to delete parents')
-    } finally {
-      setIsDeleting(false)
-      setBulkDeleteProgress(null)
-    }
-  }
-
-  const toggleParentSelect = (id: string) => {
-    setSelectedParentIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const toggleSelectAllParents = () => {
-    if (selectedParentIds.size === registeredParents.length) {
-      setSelectedParentIds(new Set())
-    } else {
-      setSelectedParentIds(new Set(registeredParents.map(p => p.id)))
     }
   }
 
@@ -388,6 +196,8 @@ export function ParentsPage() {
 
   return (
     <div>
+      <HubSyncBanner noun="Parents" onSynced={() => { refetchParents(); refetchInvitations() }} />
+
       {/* Tabs */}
       <div className="flex items-center border-b border-slate-200 mb-6">
         <button
@@ -420,23 +230,6 @@ export function ParentsPage() {
         <>
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-slate-900">Parent Invitations</h2>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => { setShowBulkImport(!showBulkImport); setShowForm(false) }}
-                className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-              >
-                <Upload className="h-4 w-4" />
-                <span>Bulk Import</span>
-              </button>
-              <button
-                onClick={() => showForm ? resetForm() : (setShowForm(true), setShowBulkImport(false))}
-                className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
-                style={{ backgroundColor: theme.colors.brandColor }}
-              >
-                {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                <span>{showForm ? 'Cancel' : 'Create Invitation'}</span>
-              </button>
-            </div>
           </div>
 
           {/* Filters */}
@@ -460,191 +253,6 @@ export function ParentsPage() {
               className="flex-1 max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
-
-          {showBulkImport && (
-            <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 space-y-4">
-              <h3 className="font-medium text-gray-900">Bulk Import Invitations</h3>
-              <p className="text-sm text-gray-500">
-                Paste CSV data. Use <strong>Child UPN</strong> (recommended) or Child Name + Class Name.
-              </p>
-              <textarea
-                value={bulkText}
-                onChange={e => setBulkText(e.target.value)}
-                rows={8}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                placeholder={"Parent Email,Parent Name,Child UPN\njohn@example.com,John Smith,A123456789\njohn@example.com,John Smith,A987654321\n\n--- OR legacy format ---\nParent Email,Parent Name,Child Name,Class Name\njohn@example.com,John Smith,Emma Smith,Y1 Blue"}
-              />
-              <div className="flex items-center space-x-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Expires In (days)</label>
-                  <input
-                    type="number"
-                    value={expiresInDays}
-                    onChange={e => setExpiresInDays(parseInt(e.target.value) || 90)}
-                    min={1}
-                    max={365}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-                <div className="flex-1" />
-                <button
-                  onClick={handleBulkImport}
-                  disabled={isBulkImporting || !bulkText.trim()}
-                  className="px-4 py-2 rounded-lg text-white disabled:opacity-50"
-                  style={{ backgroundColor: theme.colors.brandColor }}
-                >
-                  {isBulkImporting ? 'Importing...' : 'Import Invitations'}
-                </button>
-              </div>
-
-              {bulkResult && (
-                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-                  <p className="font-medium text-gray-900">Import Complete</p>
-                  <div className="flex items-center space-x-4 mt-2 text-sm">
-                    <span className="text-green-600">{bulkResult.created} created</span>
-                    {bulkResult.skipped > 0 && <span className="text-amber-600">{bulkResult.skipped} skipped</span>}
-                  </div>
-                  {bulkResult.errors && bulkResult.errors.length > 0 && (
-                    <ul className="mt-2 text-sm text-red-600 space-y-1">
-                      {bulkResult.errors.map((err, i) => <li key={i}>{err}</li>)}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {showForm && (
-            <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-slate-200 p-6 mb-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Parent Name (optional)</label>
-                  <input
-                    type="text"
-                    value={parentName}
-                    onChange={e => setParentName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="John Smith"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Parent Email (optional)</label>
-                  <input
-                    type="email"
-                    value={parentEmail}
-                    onChange={e => setParentEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="john@example.com"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">Children</label>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => setUseStudentSearch(true)}
-                      className={`text-xs px-2 py-1 rounded ${useStudentSearch ? 'bg-blue-100 text-blue-800' : 'text-gray-500 hover:bg-gray-100'}`}
-                    >
-                      Search Students
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUseStudentSearch(false)}
-                      className={`text-xs px-2 py-1 rounded ${!useStudentSearch ? 'bg-blue-100 text-blue-800' : 'text-gray-500 hover:bg-gray-100'}`}
-                    >
-                      Manual Entry
-                    </button>
-                  </div>
-                </div>
-
-                {useStudentSearch ? (
-                  <StudentSearchSelect
-                    selectedStudents={selectedStudents}
-                    onChange={setSelectedStudents}
-                    placeholder="Search for students by name..."
-                  />
-                ) : (
-                  <>
-                    <div className="space-y-2">
-                      {children.map((child, index) => (
-                        <div key={index} className="flex items-center space-x-2">
-                          <input
-                            type="text"
-                            value={child.childName}
-                            onChange={e => updateChild(index, 'childName', e.target.value)}
-                            placeholder="Child's name"
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                          />
-                          <select
-                            value={child.classId}
-                            onChange={e => updateChild(index, 'classId', e.target.value)}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">Select class...</option>
-                            {classes?.map(cls => (
-                              <option key={cls.id} value={cls.id}>{cls.name}</option>
-                            ))}
-                          </select>
-                          {children.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeChild(index)}
-                              className="p-2 text-gray-400 hover:text-red-600"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={addChild}
-                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      + Add another child
-                    </button>
-                  </>
-                )}
-              </div>
-
-              <div className="flex items-center space-x-6">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeMagicLink}
-                    onChange={e => setIncludeMagicLink(e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-sm">Include magic link for email</span>
-                </label>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-600">Expires in</span>
-                  <input
-                    type="number"
-                    value={expiresInDays}
-                    onChange={e => setExpiresInDays(parseInt(e.target.value) || 90)}
-                    min={1}
-                    max={365}
-                    className="w-20 px-2 py-1 border border-gray-300 rounded-lg text-sm"
-                  />
-                  <span className="text-sm text-gray-600">days</span>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-4 py-2 rounded-lg text-white disabled:opacity-50"
-                style={{ backgroundColor: theme.colors.brandColor }}
-              >
-                {isSubmitting ? 'Creating...' : 'Create Invitation'}
-              </button>
-            </form>
-          )}
 
           {/* Invitations Table */}
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -750,7 +358,7 @@ export function ParentsPage() {
                   <tr>
                     <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
                       <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No invitations found. Create your first invitation above.</p>
+                      <p>No invitations found.</p>
                     </td>
                   </tr>
                 )}
@@ -812,43 +420,11 @@ export function ParentsPage() {
             </div>
           </div>
 
-          {/* Bulk action bar */}
-          {selectedParentIds.size > 0 && (
-            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4">
-              <span className="text-sm font-medium text-blue-800">
-                {selectedParentIds.size} parent{selectedParentIds.size !== 1 ? 's' : ''} selected
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setSelectedParentIds(new Set())}
-                  className="px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-100 rounded-lg"
-                >
-                  Clear selection
-                </button>
-                <button
-                  onClick={() => setBulkDeleteConfirm(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete selected
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Parents Table */}
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-4 py-3 w-10">
-                    <input
-                      type="checkbox"
-                      checked={registeredParents.length > 0 && selectedParentIds.size === registeredParents.length}
-                      onChange={toggleSelectAllParents}
-                      className="rounded border-gray-300"
-                    />
-                  </th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Name</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Email</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Children</th>
@@ -859,15 +435,7 @@ export function ParentsPage() {
               </thead>
               <tbody>
                 {registeredParents.map(parent => (
-                  <tr key={parent.id} className={`border-b border-slate-100 hover:bg-slate-50 ${selectedParentIds.has(parent.id) ? 'bg-blue-50/50' : ''}`}>
-                    <td className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedParentIds.has(parent.id)}
-                        onChange={() => toggleParentSelect(parent.id)}
-                        className="rounded border-gray-300"
-                      />
-                    </td>
+                  <tr key={parent.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center space-x-3">
                         {parent.avatarUrl ? (
@@ -948,21 +516,13 @@ export function ParentsPage() {
                         >
                           <span>Set Password</span>
                         </button>
-                        <button
-                          onClick={() => setDeleteConfirm({ id: parent.id, name: parent.name || 'Unknown', email: parent.email })}
-                          className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
-                          title="Delete parent account"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          <span>Delete</span>
-                        </button>
                       </div>
                     </td>
                   </tr>
                 ))}
                 {registeredParents.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
                       <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p>No registered parents found.</p>
                     </td>
@@ -1120,38 +680,6 @@ export function ParentsPage() {
           isLoading={isRevoking}
           onConfirm={handleRevoke}
           onCancel={() => setRevokeConfirm(null)}
-        />
-      )}
-
-      {deleteConfirm && (
-        <ConfirmModal
-          title="Delete Parent Account?"
-          message={`Are you sure you want to delete the account for ${deleteConfirm.name} (${deleteConfirm.email})? This will permanently remove their account and all associated data. This action cannot be undone.`}
-          confirmLabel="Delete Account"
-          variant="danger"
-          isLoading={isDeleting}
-          onConfirm={handleDeleteParent}
-          onCancel={() => setDeleteConfirm(null)}
-        />
-      )}
-
-      {bulkDeleteConfirm && (
-        <ConfirmModal
-          title={`Delete ${selectedParentIds.size} Parent Account${selectedParentIds.size !== 1 ? 's' : ''}?`}
-          message={
-            bulkDeleteProgress
-              ? `Deleting... ${bulkDeleteProgress.current} of ${bulkDeleteProgress.total}`
-              : `Are you sure you want to delete ${selectedParentIds.size} parent account${selectedParentIds.size !== 1 ? 's' : ''}? All associated data will be permanently removed. This action cannot be undone.`
-          }
-          confirmLabel={
-            bulkDeleteProgress
-              ? `Deleting ${bulkDeleteProgress.current}/${bulkDeleteProgress.total}...`
-              : `Delete ${selectedParentIds.size} Account${selectedParentIds.size !== 1 ? 's' : ''}`
-          }
-          variant="danger"
-          isLoading={isDeleting}
-          onConfirm={handleBulkDeleteParents}
-          onCancel={() => !isDeleting && setBulkDeleteConfirm(false)}
         />
       )}
 

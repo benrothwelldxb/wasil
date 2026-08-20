@@ -1,38 +1,10 @@
 import React, { useState } from 'react'
-import { Plus, X, Pencil, Trash2, Upload, Shield, GraduationCap, UserCog, Send, Check, Clock, ShieldCheck, ShieldOff } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
+import { X, Pencil, Shield, GraduationCap, UserCog, Send, Check, Clock, ShieldCheck, ShieldOff } from 'lucide-react'
+import { useTheme, useApi, api, useToast } from '@wasil/shared'
 import type { Class } from '@wasil/shared'
 import type { StaffMember } from '@wasil/shared'
-
-interface BulkStaffRow {
-  name: string
-  email: string
-  role: 'STAFF' | 'ADMIN'
-  classId: string
-}
-
-interface BulkImportResult {
-  created: number
-  skipped: number
-  errors?: string[]
-}
-
-function parseBulkInput(text: string): BulkStaffRow[] {
-  return text
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-    .map(line => {
-      const parts = line.includes('\t') ? line.split('\t') : line.split(',')
-      const name = (parts[0] || '').trim()
-      const email = (parts[1] || '').trim()
-      if (!name || !email.includes('@')) return null
-      const rolePart = (parts[2] || '').trim().toUpperCase()
-      const role: 'STAFF' | 'ADMIN' = rolePart === 'ADMIN' ? 'ADMIN' : 'STAFF'
-      return { name, email, role, classId: '' }
-    })
-    .filter((row): row is BulkStaffRow => row !== null)
-}
+import { HubSyncBanner } from '../components/HubSyncBanner'
+import { HubChip } from '../components/HubChip'
 
 export function StaffPage() {
   const theme = useTheme()
@@ -40,12 +12,11 @@ export function StaffPage() {
   const { data: staffList, refetch: refetchStaff } = useApi<StaffMember[]>(() => api.staff.list(), [])
   const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
 
-  const [showForm, setShowForm] = useState(false)
-  const [showBulkImport, setShowBulkImport] = useState(false)
+  // Editing here only ever manages Connect-owned role/permissions (and, for
+  // staff not linked to Hub, the remaining identity fields). There is no
+  // "Add Staff" — staff identity comes from Hub.
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
   const [sendingLoginTo, setSendingLoginTo] = useState<string | null>(null)
   const [resetting2faFor, setResetting2faFor] = useState<string | null>(null)
 
@@ -86,31 +57,20 @@ export function StaffPage() {
     return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
-  // Individual form
+  // Edit form fields
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<'STAFF' | 'ADMIN'>('STAFF')
   const [position, setPosition] = useState('')
   const [assignedClassIds, setAssignedClassIds] = useState<string[]>([])
 
-  // Bulk import
-  const [bulkText, setBulkText] = useState('')
-  const [bulkRows, setBulkRows] = useState<BulkStaffRow[]>([])
-  const [bulkResult, setBulkResult] = useState<BulkImportResult | null>(null)
-  const [isBulkImporting, setIsBulkImporting] = useState(false)
-
   const resetForm = () => {
-    setShowForm(false)
-    setShowBulkImport(false)
     setEditingStaff(null)
     setName('')
     setEmail('')
     setRole('STAFF')
     setPosition('')
     setAssignedClassIds([])
-    setBulkText('')
-    setBulkRows([])
-    setBulkResult(null)
   }
 
   const handleEdit = (member: StaffMember) => {
@@ -120,8 +80,6 @@ export function StaffPage() {
     setPosition(member.position || '')
     setAssignedClassIds(member.assignedClasses.map(c => c.id))
     setEditingStaff(member)
-    setShowForm(true)
-    setShowBulkImport(false)
   }
 
   const toggleClass = (id: string) => {
@@ -130,21 +88,20 @@ export function StaffPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim() || !email.trim()) return
+    if (!editingStaff) return
     setIsSubmitting(true)
     try {
-      const data = {
-        name: name.trim(),
-        email: email.trim(),
+      const isHubSourced = !!editingStaff.fromHub
+      await api.staff.update(editingStaff.id, {
+        // Identity fields are Hub-owned once linked — only send changes for
+        // staff that aren't Hub-sourced.
+        ...(isHubSourced ? {} : { name: name.trim(), email: email.trim(), position: position.trim() || undefined }),
         role,
-        position: position.trim() || undefined,
-        assignedClassIds: role === 'STAFF' ? assignedClassIds : undefined,
-      }
-      if (editingStaff) {
-        await api.staff.update(editingStaff.id, data)
-      } else {
-        await api.staff.create(data)
-      }
+        // Class-teacher assignments are authoritatively reconciled from Hub's
+        // class.teachers[] on sync for any Hub-synced class, so only editable
+        // here for staff Connect still owns end-to-end.
+        assignedClassIds: !isHubSourced && role === 'STAFF' ? assignedClassIds : undefined,
+      })
       resetForm()
       refetchStaff()
     } catch (error) {
@@ -154,193 +111,34 @@ export function StaffPage() {
     }
   }
 
-  const handleParseBulk = () => {
-    const parsed = parseBulkInput(bulkText)
-    setBulkRows(parsed)
-  }
-
-  const removeBulkRow = (index: number) => {
-    setBulkRows(prev => prev.filter((_, i) => i !== index))
-  }
-
-  const updateBulkRole = (index: number, newRole: 'STAFF' | 'ADMIN') => {
-    setBulkRows(prev => prev.map((row, i) => i === index ? { ...row, role: newRole } : row))
-  }
-
-  const updateBulkClass = (index: number, classId: string) => {
-    setBulkRows(prev => prev.map((row, i) => i === index ? { ...row, classId } : row))
-  }
-
-  const handleBulkImport = async () => {
-    if (bulkRows.length === 0) return
-    setIsBulkImporting(true)
-    try {
-      const result = await api.staff.bulkCreate(
-        bulkRows.map(r => ({ name: r.name, email: r.email, role: r.role }))
-      )
-      // Assign classes to newly created staff
-      if (result.staff) {
-        for (const created of result.staff) {
-          const row = bulkRows.find(r => r.email.toLowerCase() === created.email.toLowerCase())
-          if (row?.classId) {
-            try {
-              await api.staff.update(created.id, { assignedClassIds: [row.classId] })
-            } catch { /* ignore class assignment errors */ }
-          }
-        }
-      }
-      setBulkResult({ created: result.created, skipped: result.skipped, errors: result.errors })
-      refetchStaff()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Bulk import failed')
-    } finally {
-      setIsBulkImporting(false)
-    }
-  }
-
-  const handleDelete = async () => {
-    if (!deleteConfirm) return
-    setIsDeleting(true)
-    try {
-      await api.staff.delete(deleteConfirm.id)
-      refetchStaff()
-      setDeleteConfirm(null)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete')
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
   }
 
   return (
     <div>
+      <HubSyncBanner noun="Staff" onSynced={refetchStaff} />
+
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-slate-900">Staff</h2>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => { setShowBulkImport(!showBulkImport); setShowForm(false) }}
-            className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-          >
-            <Upload className="h-4 w-4" />
-            <span>Bulk Import</span>
-          </button>
-          <button
-            onClick={() => showForm ? resetForm() : (setShowForm(true), setShowBulkImport(false))}
-            className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white"
-            style={{ backgroundColor: theme.colors.brandColor }}
-          >
-            {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-            <span>{showForm ? 'Cancel' : 'Add Staff'}</span>
-          </button>
-        </div>
       </div>
 
-      {showBulkImport && (
-        <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 space-y-4">
-          <h3 className="font-medium text-gray-900">Bulk Import Staff</h3>
-          <p className="text-sm text-gray-500">
-            Paste tab or comma-separated data. Columns: <span className="font-medium text-slate-700">Name, Email</span> (required), <span className="font-medium text-slate-700">Role</span> (optional: staff or admin). You can assign classes after parsing.
-          </p>
-          <textarea
-            value={bulkText}
-            onChange={e => setBulkText(e.target.value)}
-            rows={6}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-            placeholder={"John Smith, john@school.com, staff\nJane Doe, jane@school.com, admin\nSam Wilson, sam@school.com"}
-          />
-          <button
-            type="button"
-            onClick={handleParseBulk}
-            className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-          >
-            Parse Data
-          </button>
-
-          {bulkRows.length > 0 && (
-            <div className="space-y-3">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 font-medium text-gray-700">Name</th>
-                    <th className="text-left py-2 font-medium text-gray-700">Email</th>
-                    <th className="text-left py-2 font-medium text-gray-700">Role</th>
-                    <th className="text-left py-2 font-medium text-gray-700">Class</th>
-                    <th className="py-2 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bulkRows.map((row, i) => (
-                    <tr key={i} className="border-b border-gray-100">
-                      <td className="py-2">{row.name}</td>
-                      <td className="py-2 text-gray-500">{row.email}</td>
-                      <td className="py-2">
-                        <select
-                          value={row.role}
-                          onChange={e => updateBulkRole(i, e.target.value as 'STAFF' | 'ADMIN')}
-                          className="px-2 py-1 border border-gray-300 rounded text-sm"
-                        >
-                          <option value="STAFF">Staff</option>
-                          <option value="ADMIN">Admin</option>
-                        </select>
-                      </td>
-                      <td className="py-2">
-                        <select
-                          value={row.classId}
-                          onChange={e => updateBulkClass(i, e.target.value)}
-                          className="px-2 py-1 border border-gray-300 rounded text-sm"
-                        >
-                          <option value="">No class</option>
-                          {classes?.map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-2">
-                        <button onClick={() => removeBulkRow(i)} className="p-1 text-gray-400 hover:text-red-600">
-                          <X className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <button
-                onClick={handleBulkImport}
-                disabled={isBulkImporting}
-                className="px-4 py-2 rounded-lg text-white disabled:opacity-50"
-                style={{ backgroundColor: theme.colors.brandColor }}
-              >
-                {isBulkImporting ? 'Importing...' : `Import ${bulkRows.length} Staff`}
-              </button>
-            </div>
-          )}
-
-          {bulkResult && (
-            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-              <p className="font-medium text-gray-900">Import Complete</p>
-              <div className="flex items-center space-x-4 mt-2 text-sm">
-                <span className="text-green-600">{bulkResult.created} created</span>
-                {bulkResult.skipped > 0 && <span className="text-amber-600">{bulkResult.skipped} skipped</span>}
-                {bulkResult.errors && bulkResult.errors.length > 0 && (
-                  <span className="text-red-600">{bulkResult.errors.length} error{bulkResult.errors.length !== 1 ? 's' : ''}</span>
-                )}
-              </div>
-              {bulkResult.errors && bulkResult.errors.length > 0 && (
-                <ul className="mt-2 text-sm text-red-600 space-y-1">
-                  {bulkResult.errors.map((err, i) => <li key={i}>{err}</li>)}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {showForm && (
+      {editingStaff && (
         <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-slate-200 p-6 mb-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium text-gray-900">Edit Staff Access — {editingStaff.name}</h3>
+            <button type="button" onClick={resetForm} className="p-1 text-gray-400 hover:text-gray-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {editingStaff.fromHub && (
+            <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+              Name, email, position and class assignments for this staff member are managed in Wasil Hub. Only their
+              Connect role can be changed here.
+            </p>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
@@ -348,7 +146,8 @@ export function StaffPage() {
                 type="text"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={editingStaff.fromHub}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-slate-50 disabled:text-slate-500"
                 required
               />
             </div>
@@ -358,7 +157,8 @@ export function StaffPage() {
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={editingStaff.fromHub}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-slate-50 disabled:text-slate-500"
                 required
               />
             </div>
@@ -378,42 +178,62 @@ export function StaffPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
-              <select
-                value={position}
-                onChange={e => setPosition(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">Select position...</option>
-                <option value="Class Teacher">Class Teacher</option>
-                <option value="Teaching Assistant">Teaching Assistant</option>
-                <option value="Specialist">Specialist</option>
-                <option value="Leadership Team">Leadership Team</option>
-                <option value="SEN Coordinator">SEN Coordinator</option>
-                <option value="Admin Team">Admin Team</option>
-                <option value="Support Staff">Support Staff</option>
-              </select>
+              {editingStaff.fromHub ? (
+                <p className="px-3 py-2 text-sm text-slate-500 bg-slate-50 border border-gray-200 rounded-lg">
+                  {position || '—'}
+                </p>
+              ) : (
+                <select
+                  value={position}
+                  onChange={e => setPosition(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select position...</option>
+                  <option value="Class Teacher">Class Teacher</option>
+                  <option value="Teaching Assistant">Teaching Assistant</option>
+                  <option value="Specialist">Specialist</option>
+                  <option value="Leadership Team">Leadership Team</option>
+                  <option value="SEN Coordinator">SEN Coordinator</option>
+                  <option value="Admin Team">Admin Team</option>
+                  <option value="Support Staff">Support Staff</option>
+                </select>
+              )}
             </div>
           </div>
 
           {role === 'STAFF' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Classes</label>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {classes?.map(cls => (
-                  <label key={cls.id} className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={assignedClassIds.includes(cls.id)}
-                      onChange={() => toggleClass(cls.id)}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm">{cls.name}</span>
-                  </label>
-                ))}
-                {(!classes || classes.length === 0) && (
-                  <p className="text-sm text-gray-400">No classes available</p>
-                )}
-              </div>
+              {editingStaff.fromHub ? (
+                <div className="flex flex-wrap gap-1">
+                  {editingStaff.assignedClasses.length > 0 ? (
+                    editingStaff.assignedClasses.map(cls => (
+                      <span key={cls.id} className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                        {cls.name}
+                      </span>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-400">No classes assigned in Hub</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {classes?.map(cls => (
+                    <label key={cls.id} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={assignedClassIds.includes(cls.id)}
+                        onChange={() => toggleClass(cls.id)}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-sm">{cls.name}</span>
+                    </label>
+                  ))}
+                  {(!classes || classes.length === 0) && (
+                    <p className="text-sm text-gray-400">No classes available</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -423,7 +243,7 @@ export function StaffPage() {
             className="px-4 py-2 rounded-lg text-white disabled:opacity-50"
             style={{ backgroundColor: theme.colors.brandColor }}
           >
-            {isSubmitting ? 'Saving...' : editingStaff ? 'Update Staff' : 'Add Staff'}
+            {isSubmitting ? 'Saving...' : 'Save Changes'}
           </button>
         </form>
       )}
@@ -442,6 +262,7 @@ export function StaffPage() {
                 <div>
                   <div className="flex items-center space-x-2">
                     <span className="font-medium text-gray-900">{member.name}</span>
+                    {member.fromHub && <HubChip />}
                     <span className={`text-xs px-2 py-0.5 rounded-full flex items-center space-x-1 ${member.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                       {member.role === 'ADMIN' ? <Shield className="h-3 w-3" /> : <GraduationCap className="h-3 w-3" />}
                       <span>{member.role === 'ADMIN' ? 'Admin' : 'Staff'}</span>
@@ -513,11 +334,8 @@ export function StaffPage() {
                     {resetting2faFor === member.id ? 'Resetting...' : 'Reset 2FA'}
                   </button>
                 )}
-                <button onClick={() => handleEdit(member)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                <button onClick={() => handleEdit(member)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Edit access">
                   <Pencil className="h-4 w-4" />
-                </button>
-                <button onClick={() => setDeleteConfirm({ id: member.id, name: member.name })} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -526,22 +344,10 @@ export function StaffPage() {
         {(!staffList || staffList.length === 0) && (
           <div className="text-center py-12 text-gray-500">
             <UserCog className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>No staff members yet. Add your first staff member above.</p>
+            <p>No staff members yet.</p>
           </div>
         )}
       </div>
-
-      {deleteConfirm && (
-        <ConfirmModal
-          title="Delete Staff Member?"
-          message={`Are you sure you want to delete "${deleteConfirm.name}"? This action cannot be undone.`}
-          confirmLabel="Delete"
-          variant="danger"
-          isLoading={isDeleting}
-          onConfirm={handleDelete}
-          onCancel={() => setDeleteConfirm(null)}
-        />
-      )}
     </div>
   )
 }
