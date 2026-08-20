@@ -65,6 +65,19 @@ export async function enqueueEmail(
   payload: EmailPayload,
   client: TxClient = prisma,
 ): Promise<void> {
+  // Global safety net: never enqueue email to a Test Account. Its mailbox is
+  // fake, and bounces to the school's real domain would harm sending reputation.
+  // Fail OPEN — only skip when we positively confirm an isTest recipient, so a
+  // lookup error can never silence a real email.
+  try {
+    const recipient = await client.user.findUnique({
+      where: { email: payload.to },
+      select: { isTest: true },
+    })
+    if (recipient?.isTest) return
+  } catch {
+    /* fall through and send — never let this guard drop a real email */
+  }
   await client.outboxEntry.create({
     data: {
       schoolId,
