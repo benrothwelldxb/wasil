@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { Save, Mail, Clock, Globe, Phone } from 'lucide-react'
+import { Save, Mail, Clock, Globe, Phone, FlaskConical, Copy, Trash2, RefreshCw, AlertTriangle, Check } from 'lucide-react'
 import { useToast, api } from '@wasil/shared'
-import type { SchoolSettings, SchoolModuleFlag } from '@wasil/shared'
+import type { SchoolSettings, SchoolModuleFlag, TestAccountInfo } from '@wasil/shared'
 
 interface ModuleGroup {
   label: string
@@ -298,6 +298,162 @@ export function SettingsPage() {
           </div>
         ))}
       </section>
+
+      <TestAccountsSection />
     </div>
+  )
+}
+
+// Staff backdoor into the live parent experience: one Test Parent + Test Student
+// per class. They sign in with the class email + the env-configured TEST_LOGIN_CODE
+// and see the real parent app for that class. Excluded from analytics + staff views.
+function TestAccountsSection() {
+  const toast = useToast()
+  const [accounts, setAccounts] = useState<TestAccountInfo[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [codeStatus, setCodeStatus] = useState<'set' | 'NOT SET' | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+
+  const load = async () => {
+    try {
+      const res = await api.testAccounts.list()
+      setAccounts(res.testAccounts)
+    } catch {
+      setAccounts([])
+    }
+  }
+  useEffect(() => { load() }, [])
+
+  const handleProvision = async () => {
+    setBusy(true)
+    try {
+      const res = await api.testAccounts.provision()
+      setCodeStatus(res.loginCode)
+      await load()
+      toast.success(`Provisioned ${res.provisioned.length} class account${res.provisioned.length === 1 ? '' : 's'}`)
+    } catch {
+      toast.error('Failed to provision test accounts')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleRemove = async () => {
+    setConfirmRemove(false)
+    setBusy(true)
+    try {
+      const res = await api.testAccounts.remove()
+      setAccounts([])
+      setCodeStatus(null)
+      toast.success(`Removed ${res.removedParents} account${res.removedParents === 1 ? '' : 's'}`)
+    } catch {
+      toast.error('Failed to remove test accounts')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const copyEmail = async (email: string) => {
+    try {
+      await navigator.clipboard.writeText(email)
+      setCopied(email)
+      setTimeout(() => setCopied(c => (c === email ? null : c)), 1500)
+    } catch { /* clipboard unavailable */ }
+  }
+
+  return (
+    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+            <FlaskConical className="w-4 h-4 text-violet-500" />
+            Test accounts
+          </h2>
+          <p className="text-xs text-slate-500 mt-1 leading-relaxed max-w-xl">
+            A login into the <strong>live</strong> parent app for each class — sign in on your phone with a class
+            email plus your test code to see exactly what that class's parents see. Test pupils are hidden from
+            registers, attendance and reports, and excluded from all analytics.
+          </p>
+        </div>
+        <button
+          onClick={handleProvision}
+          disabled={busy}
+          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
+          {accounts && accounts.length > 0 ? 'Refresh / add new classes' : 'Provision test accounts'}
+        </button>
+      </div>
+
+      {codeStatus === 'NOT SET' && (
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            Accounts are created, but <strong>TEST_LOGIN_CODE isn't set</strong> on the server yet, so nobody can
+            sign in. Set that environment variable in Railway, then these logins will work with it.
+          </span>
+        </div>
+      )}
+
+      {accounts === null ? (
+        <p className="text-xs text-slate-400">Loading…</p>
+      ) : accounts.length === 0 ? (
+        <p className="text-xs text-slate-500">
+          No test accounts yet. Provisioning creates one per class — safe to run again whenever you add classes.
+        </p>
+      ) : (
+        <>
+          <div className="rounded-lg border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="text-left font-medium px-3 py-2">Class</th>
+                  <th className="text-left font-medium px-3 py-2">Sign-in email</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {accounts.map(a => (
+                  <tr key={a.classId}>
+                    <td className="px-3 py-2 text-slate-700">{a.className}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-slate-600">{a.email}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        onClick={() => copyEmail(a.email)}
+                        className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700"
+                      >
+                        {copied === a.email ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copied === a.email ? 'Copied' : 'Copy'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-400">
+              Sign in at the parent app with any email above + your configured test code.
+            </p>
+            {confirmRemove ? (
+              <span className="flex items-center gap-2 text-xs">
+                <span className="text-slate-500">Remove all test accounts?</span>
+                <button onClick={handleRemove} disabled={busy} className="font-medium text-red-600 hover:text-red-700">Yes, remove</button>
+                <button onClick={() => setConfirmRemove(false)} className="text-slate-400 hover:text-slate-600">Cancel</button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmRemove(true)}
+                className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-600"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Remove all
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </section>
   )
 }
