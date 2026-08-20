@@ -12,6 +12,7 @@ const prismaMock = {
   student: { upsert: vi.fn(), create: vi.fn() },
   user: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
   parentStudentLink: { upsert: vi.fn(), create: vi.fn() },
+  staffClassAssignment: { findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -64,7 +65,7 @@ beforeEach(() => {
   // no staff. Individual tests override.
   mYearGroups.mockResolvedValue([{ id: 'hyg1', name: 'Year 1', ordinal: 1 }])
   mClasses.mockResolvedValue([
-    { id: 'hc1', name: '1A', yearGroupId: 'hyg1', yearGroupName: 'Year 1' },
+    { id: 'hc1', name: '1A', yearGroupId: 'hyg1', yearGroupName: 'Year 1', teachers: [] },
   ])
   mPupils.mockImplementation(async (_schoolId: string, opts: any = {}) =>
     opts.classId === 'hc1'
@@ -75,6 +76,10 @@ beforeEach(() => {
   // Dormant by default: Hub holds 0 guardians (the current live state).
   mGuardians.mockResolvedValue([])
   prismaMock.parentStudentLink.upsert.mockResolvedValue({ id: 'psl-1' })
+  // No pre-existing class-teacher assignments unless a test sets some.
+  prismaMock.staffClassAssignment.findMany.mockResolvedValue([])
+  prismaMock.staffClassAssignment.create.mockResolvedValue({ id: 'sca-1' })
+  prismaMock.staffClassAssignment.delete.mockResolvedValue({ id: 'sca-1' })
 })
 
 describe('syncSchoolFromHub — dependency ordering + mapping', () => {
@@ -118,12 +123,13 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       staff: { created: 0, updated: 0 },
       guardians: { created: 0, linked: 0, skippedNoEmail: 0 },
       parentLinks: { created: 0, skippedNoPupil: 0 },
+      teacherAssignments: { created: 0, removed: 0, unresolved: 0 },
     })
 
-    // On success the school is marked fresh.
+    // On success the school is marked fresh (and last-synced is stamped).
     expect(prismaMock.school.update).toHaveBeenCalledWith({
       where: { id: 'connect-school-1' },
-      data: { hubLastSyncedAt: expect.any(Date), hubDataStaleSince: null },
+      data: { hubLastSyncedAt: expect.any(Date), hubDataStaleSince: null, lastHubSyncAt: expect.any(Date) },
     })
   })
 })
@@ -350,6 +356,125 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
     expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
     expect(summary.guardians).toEqual({ created: 0, linked: 0, skippedNoEmail: 0 })
     expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 0 })
+  })
+})
+
+describe('syncSchoolFromHub — class-teacher assignments', () => {
+  it('resolves by hubUserId, falls back to email when hubUserId is null, and skips (counts) unresolved', async () => {
+    mClasses.mockResolvedValue([
+      {
+        id: 'hc1',
+        name: '1A',
+        yearGroupId: 'hyg1',
+        yearGroupName: 'Year 1',
+        teachers: [
+          { staffId: 'st-a', hubUserId: 'hu-a', firstName: 'Ann', lastName: 'A', email: 'a@school.ae', role: 'CLASS_TEACHER' },
+          { staffId: 'st-b', hubUserId: null, firstName: 'Ben', lastName: 'B', email: 'Ben.B@school.ae', role: 'CLASS_TEACHER' },
+          { staffId: 'st-c', hubUserId: null, firstName: 'Cal', lastName: 'C', email: 'cal@school.ae', role: 'ASSISTANT' },
+        ],
+      },
+    ])
+    // hu-a resolves by Hub user id; ben.b resolves by (lowercased) email;
+    // cal@school.ae has no Connect user → unresolved.
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) => {
+      if (where.hubUserId === 'hu-a') return { id: 'cu-a' }
+      if (where.email === 'ben.b@school.ae') return { id: 'cu-b' }
+      return null
+    })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.staffClassAssignment.create).toHaveBeenCalledWith({ data: { userId: 'cu-a', classId: 'cc-hc1' } })
+    expect(prismaMock.staffClassAssignment.create).toHaveBeenCalledWith({ data: { userId: 'cu-b', classId: 'cc-hc1' } })
+    expect(prismaMock.staffClassAssignment.create).toHaveBeenCalledTimes(2)
+    expect(prismaMock.staffClassAssignment.delete).not.toHaveBeenCalled()
+    expect(summary.teacherAssignments).toEqual({ created: 2, removed: 0, unresolved: 1 })
+  })
+
+  it('is idempotent — a second identical sync creates 0 and removes 0', async () => {
+    mClasses.mockResolvedValue([
+      {
+        id: 'hc1',
+        name: '1A',
+        yearGroupId: 'hyg1',
+        yearGroupName: 'Year 1',
+        teachers: [
+          { staffId: 'st-a', hubUserId: 'hu-a', firstName: 'Ann', lastName: 'A', email: 'a@school.ae', role: 'CLASS_TEACHER' },
+        ],
+      },
+    ])
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) =>
+      where.hubUserId === 'hu-a' ? { id: 'cu-a' } : null,
+    )
+    // Stateful assignment table: the second run sees what the first created.
+    let rows: Array<{ id: string; userId: string }> = []
+    prismaMock.staffClassAssignment.findMany.mockImplementation(async () => rows)
+    prismaMock.staffClassAssignment.create.mockImplementation(async ({ data }: any) => {
+      const row = { id: 'sca-' + data.userId, userId: data.userId }
+      rows = [...rows, row]
+      return row
+    })
+
+    const first = await syncSchoolFromHub('connect-school-1')
+    const second = await syncSchoolFromHub('connect-school-1')
+
+    expect(first.teacherAssignments).toEqual({ created: 1, removed: 0, unresolved: 0 })
+    expect(second.teacherAssignments).toEqual({ created: 0, removed: 0, unresolved: 0 })
+    expect(prismaMock.staffClassAssignment.create).toHaveBeenCalledTimes(1)
+    expect(prismaMock.staffClassAssignment.delete).not.toHaveBeenCalled()
+  })
+
+  it('removes an assignment when a teacher drops out of Hub and adds the new one (authoritative)', async () => {
+    mClasses.mockResolvedValue([
+      {
+        id: 'hc1',
+        name: '1A',
+        yearGroupId: 'hyg1',
+        yearGroupName: 'Year 1',
+        teachers: [
+          { staffId: 'st-new', hubUserId: 'hu-new', firstName: 'New', lastName: 'T', email: 'new@school.ae', role: 'CLASS_TEACHER' },
+        ],
+      },
+    ])
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) =>
+      where.hubUserId === 'hu-new' ? { id: 'cu-new' } : null,
+    )
+    // A stale assignment for a teacher no longer on Hub's list.
+    prismaMock.staffClassAssignment.findMany.mockResolvedValue([{ id: 'sca-old', userId: 'cu-old' }])
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.staffClassAssignment.create).toHaveBeenCalledWith({ data: { userId: 'cu-new', classId: 'cc-hc1' } })
+    expect(prismaMock.staffClassAssignment.delete).toHaveBeenCalledWith({ where: { id: 'sca-old' } })
+    expect(summary.teacherAssignments).toEqual({ created: 1, removed: 1, unresolved: 0 })
+  })
+
+  it('dedupes duplicate teacher entries that resolve to the same user', async () => {
+    mClasses.mockResolvedValue([
+      {
+        id: 'hc1',
+        name: '1A',
+        yearGroupId: 'hyg1',
+        yearGroupName: 'Year 1',
+        teachers: [
+          { staffId: 'st-a', hubUserId: 'hu-a', firstName: 'Ann', lastName: 'A', email: 'a@school.ae', role: 'CLASS_TEACHER' },
+          // Same person listed again (e.g. two roles) — resolves to the same user.
+          { staffId: 'st-a2', hubUserId: null, firstName: 'Ann', lastName: 'A', email: 'A@school.ae', role: 'ASSISTANT' },
+        ],
+      },
+    ])
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) => {
+      if (where.hubUserId === 'hu-a') return { id: 'cu-a' }
+      if (where.email === 'a@school.ae') return { id: 'cu-a' }
+      return null
+    })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    // Only one assignment despite two Hub entries for the same user.
+    expect(prismaMock.staffClassAssignment.create).toHaveBeenCalledTimes(1)
+    expect(prismaMock.staffClassAssignment.create).toHaveBeenCalledWith({ data: { userId: 'cu-a', classId: 'cc-hc1' } })
+    expect(summary.teacherAssignments).toEqual({ created: 1, removed: 0, unresolved: 0 })
   })
 })
 

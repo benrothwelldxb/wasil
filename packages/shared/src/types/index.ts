@@ -135,6 +135,8 @@ export interface YearGroup {
   order: number
   schoolId: string
   classCount?: number
+  /** True when this row was ingested from Hub (hubYearGroupId set). Admin only. */
+  fromHub?: boolean
 }
 
 // Class types
@@ -688,6 +690,8 @@ export interface Student {
   classId: string
   className: string
   parentCount: number
+  /** True when this row was ingested from Hub (hubPupilId set). Admin only. */
+  fromHub?: boolean
 }
 
 // Inclusion/IEP types

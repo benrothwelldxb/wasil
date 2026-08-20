@@ -59,6 +59,7 @@ router.get('/', isAdmin, async (req: Request, res: Response) => {
         classId: s.classId,
         className: s.class.name,
         parentCount: s._count.parentLinks,
+        fromHub: s.hubPupilId != null,
       })),
       pagination: {
         page: pageNum,

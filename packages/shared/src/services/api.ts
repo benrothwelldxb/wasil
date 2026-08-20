@@ -930,6 +930,8 @@ export interface ClassWithDetails extends Class {
   assignedStaff: Array<{ id: string; name: string; role: string }>
   yearGroupId?: string
   yearGroup?: { id: string; name: string; order: number } | null
+  /** True when this class was ingested from Hub (hubClassId set). Admin only. */
+  fromHub?: boolean
 }
 
 export const classes = {
@@ -1039,6 +1041,8 @@ export interface StaffMember {
   hasPassword?: boolean
   twoFactorEnabled?: boolean
   lastLoginAt?: string | null
+  /** True when this user is linked to Hub (hubUserId set). Admin only. */
+  fromHub?: boolean
   assignedClasses: Array<{ id: string; name: string }>
   createdAt: string
 }
@@ -2435,8 +2439,33 @@ export const timetable = {
   },
 }
 
+// ─── Wasil Hub roster sync (admin) ───────────────────────────────────────────
+export interface HubSyncSummary {
+  yearGroups: number
+  classes: number
+  pupils: number
+  staff: { created: number; updated: number }
+  guardians: { created: number; linked: number; skippedNoEmail: number }
+  parentLinks: { created: number; skippedNoPupil: number }
+  teacherAssignments: { created: number; removed: number; unresolved: number }
+}
+export interface HubSyncStatus {
+  lastSyncedAt: string | null
+}
+
+export const hub = {
+  // Trigger a roster sync; returns the summary plus the resulting last-synced
+  // timestamp (ISO string, or null if the sync didn't persist one).
+  sync: () =>
+    fetchApi<{ summary: HubSyncSummary; lastSyncedAt: string | null }>('/api/admin/hub-sync', {
+      method: 'POST',
+    }),
+  syncStatus: () => fetchApi<HubSyncStatus>('/api/admin/hub-sync/status'),
+}
+
 export default {
   auth,
+  hub,
   messages,
   forms,
   providers,

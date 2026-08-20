@@ -77,6 +77,7 @@ router.get('/all', isAdmin, async (req, res) => {
       yearGroupId: c.yearGroupId,
       yearGroup: c.yearGroup,
       studentCount: c._count.students,
+      fromHub: c.hubClassId != null,
       assignedStaff: c.assignedStaff.map(a => ({
         id: a.user.id,
         name: a.user.name,

@@ -39,6 +39,10 @@ model School {
   // banner (see INTEGRATION.md → Data freshness).
   hubLastSyncedAt    DateTime?
   hubDataStaleSince  DateTime?
+  // Timestamp of the last successful `syncSchoolFromHub` run, surfaced by the
+  // admin sync endpoint / status route (Stage 2, Feature C). Distinct from the
+  // freshness-banner fields above; set on every successful sync completion.
+  lastHubSyncAt      DateTime?
 
   // Wasil Hub calendar sync (Stage 4 / Phase A). Cursor from the last
   // `/api/v1/calendar/changes` pull, persisted per school for incremental

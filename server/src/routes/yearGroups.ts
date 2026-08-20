@@ -24,6 +24,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       order: yg.order,
       schoolId: yg.schoolId,
       classCount: yg._count.classes,
+      fromHub: yg.hubYearGroupId != null,
     })))
   } catch (error) {
     console.error('Error fetching year groups:', error)

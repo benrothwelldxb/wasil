@@ -8,6 +8,7 @@
 // Hub never syncs on our behalf, the admin pulls when they choose. No cron in
 // this slice.
 import { Router, Request, Response } from 'express'
+import prisma from '../services/prisma.js'
 import { isAdmin } from '../middleware/auth.js'
 import { syncSchoolFromHub, SchoolNotLinkedError } from '../services/hubSync.js'
 import { HubServiceTokenMissingError, HubMisError } from '../services/hubMis.js'
@@ -18,7 +19,11 @@ router.post('/hub-sync', isAdmin, async (req: Request, res: Response) => {
   const schoolId = req.user!.schoolId
   try {
     const summary = await syncSchoolFromHub(schoolId)
-    return res.json({ summary })
+    const school = await prisma.school.findUnique({
+      where: { id: schoolId },
+      select: { lastHubSyncAt: true },
+    })
+    return res.json({ summary, lastSyncedAt: school?.lastHubSyncAt?.toISOString() ?? null })
   } catch (err) {
     if (err instanceof SchoolNotLinkedError) {
       return res.status(400).json({ error: 'school_not_linked' })
@@ -32,6 +37,17 @@ router.post('/hub-sync', isAdmin, async (req: Request, res: Response) => {
     }
     throw err
   }
+})
+
+// When did this school last complete a Hub roster sync? Drives the admin
+// "last synced" label without triggering a sync.
+router.get('/hub-sync/status', isAdmin, async (req: Request, res: Response) => {
+  const schoolId = req.user!.schoolId
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { lastHubSyncAt: true },
+  })
+  return res.json({ lastSyncedAt: school?.lastHubSyncAt?.toISOString() ?? null })
 })
 
 export default router

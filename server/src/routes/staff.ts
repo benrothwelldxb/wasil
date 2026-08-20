@@ -126,6 +126,7 @@ router.get('/', isAdmin, async (req, res) => {
       hasPassword: !!s.passwordHash,
       twoFactorEnabled: s.twoFactorEnabled,
       lastLoginAt: s.lastLoginAt?.toISOString() || null,
+      fromHub: s.hubUserId != null,
       assignedClasses: s.assignedClasses.map(ac => ({
         id: ac.class.id,
         name: ac.class.name,

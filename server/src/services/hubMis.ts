@@ -46,13 +46,27 @@ export interface HubYearGroup {
   ordinal: number
 }
 
+// One class-teacher entry on a Hub ClassDTO. `hubUserId` is null for a teacher
+// who hasn't signed into Hub yet (but `email` is still present); sync resolves
+// these to Connect users to write StaffClassAssignment rows.
+export interface HubClassTeacher {
+  staffId: string
+  hubUserId: string | null
+  firstName: string
+  lastName: string
+  email: string | null
+  role: string
+}
+
 // Mirror of Hub's ClassDTO (subset). `yearGroupId` is a *Hub* year-group id,
-// resolved to a Connect YearGroup during sync.
+// resolved to a Connect YearGroup during sync. `teachers[]` carries the
+// class-teacher assignments reconciled into StaffClassAssignment during sync.
 export interface HubClass {
   id: string
   name: string
   yearGroupId: string
   yearGroupName: string
+  teachers: HubClassTeacher[]
 }
 
 // Mirror of Hub's PupilDTO (subset). Note: Hub's v1 MIS pupil surface carries

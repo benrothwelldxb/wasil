@@ -33,6 +33,7 @@ import {
   listGuardians,
   type HubStaff,
   type HubGuardian,
+  type HubClassTeacher,
 } from './hubMis.js'
 
 /** The Connect school isn't linked to a Hub school — nothing to sync. */
@@ -65,6 +66,12 @@ export interface SyncSummary {
    * `skippedNoPupil` counts guardian→pupil edges whose Hub pupil isn't synced
    * into Connect yet (no matching Student.hubPupilId). */
   parentLinks: { created: number; skippedNoPupil: number }
+  /** Class-teacher assignments reconciled from each Hub class's `teachers[]`.
+   * `created` = assignments added this run; `removed` = assignments dropped
+   * because the teacher is no longer on Hub's list; `unresolved` = Hub teachers
+   * that don't map to an existing Connect user yet (skipped, not created here —
+   * they get assigned on a later sync once the staff pass creates them). */
+  teacherAssignments: { created: number; removed: number; unresolved: number }
 }
 
 /**
@@ -98,8 +105,8 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
 
   // --- 2. Classes ----------------------------------------------------------
   // Map: name → name, yearGroupId (Hub) → Connect YearGroup resolved above.
-  // Unmapped Hub fields: `teachers[]` (class-teacher assignments — a documented
-  // follow-on; see TODO below). Keyed on hubClassId.
+  // `teachers[]` is reconciled into StaffClassAssignment in a dedicated pass
+  // AFTER staff are upserted (see step 6). Keyed on hubClassId.
   const hubClasses = await listClasses(hubSchoolId)
   const classIdByHub = new Map<string, string>()
   for (const cls of hubClasses) {
@@ -191,10 +198,61 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     else updated++
   }
 
+  // --- 6. Class-teacher assignments ----------------------------------------
+  // Reconcile StaffClassAssignment from each Hub class's `teachers[]`. Runs
+  // AFTER the staff pass so the Connect users to resolve against already exist.
+  // For every Hub-synced class (one with a hubClassId) the assignment set is
+  // made AUTHORITATIVE: after resolving, the class's rows equal exactly the
+  // resolved teacher set — missing rows created, stale rows removed. Classes
+  // without a hubClassId (manually created) are never touched. A Hub teacher
+  // that doesn't resolve to an existing Connect user is skipped and counted in
+  // `unresolved` (never created here — staff creation stays in the staff pass;
+  // they'll get assigned on a later sync once they exist).
+  const teacherAssignments = { created: 0, removed: 0, unresolved: 0 }
+  for (const cls of hubClasses) {
+    const classId = classIdByHub.get(cls.id)
+    if (!classId) continue
+
+    // Resolve each Hub teacher to a Connect user id, deduped by resolved id so
+    // duplicate teacher entries for the same user collapse to one assignment.
+    const desiredUserIds = new Set<string>()
+    for (const t of cls.teachers ?? []) {
+      const userId = await resolveTeacherUserId(t, schoolId)
+      if (!userId) {
+        teacherAssignments.unresolved++
+        continue
+      }
+      desiredUserIds.add(userId)
+    }
+
+    // Authoritative reconcile against the class's current assignments. Scoped
+    // by classId — each class belongs to exactly one school, so this only ever
+    // touches this school's rows.
+    const existing = await prisma.staffClassAssignment.findMany({
+      where: { classId },
+      select: { id: true, userId: true },
+    })
+    const existingByUser = new Map(existing.map((a) => [a.userId, a.id]))
+
+    // Create assignments present in Hub but missing in Connect. Relies on the
+    // @@unique([userId, classId]) for idempotency across re-runs.
+    for (const userId of desiredUserIds) {
+      if (existingByUser.has(userId)) continue
+      await prisma.staffClassAssignment.create({ data: { userId, classId } })
+      teacherAssignments.created++
+    }
+    // Remove assignments no longer present in Hub's list for this class.
+    for (const [userId, id] of existingByUser) {
+      if (desiredUserIds.has(userId)) continue
+      await prisma.staffClassAssignment.delete({ where: { id } })
+      teacherAssignments.removed++
+    }
+  }
+
   // --- Mark fresh ----------------------------------------------------------
   await prisma.school.update({
     where: { id: schoolId },
-    data: { hubLastSyncedAt: new Date(), hubDataStaleSince: null },
+    data: { hubLastSyncedAt: new Date(), hubDataStaleSince: null, lastHubSyncAt: new Date() },
   })
 
   return {
@@ -204,7 +262,34 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     staff: { created, updated },
     guardians: guardianSummary,
     parentLinks: parentLinkSummary,
+    teacherAssignments,
   }
+}
+
+/**
+ * Resolve a Hub class-teacher to an existing Connect user id. Order:
+ *   1. By `User.hubUserId === teacher.hubUserId` (only when Hub has a user id).
+ *   2. Else (or if that misses) by case-insensitive email on a staff-eligible
+ *      user in the same school.
+ * Returns null when neither resolves — the caller counts it as `unresolved`
+ * and never creates a user here (staff creation stays in the staff pass).
+ */
+async function resolveTeacherUserId(
+  t: HubClassTeacher,
+  schoolId: string,
+): Promise<string | null> {
+  if (t.hubUserId) {
+    const byHub = await prisma.user.findFirst({ where: { hubUserId: t.hubUserId, schoolId } })
+    if (byHub) return byHub.id
+  }
+  const email = t.email?.trim().toLowerCase() || null
+  if (email) {
+    const byEmail = await prisma.user.findFirst({
+      where: { schoolId, email, role: { in: STAFF_ELIGIBLE_ROLES } },
+    })
+    if (byEmail) return byEmail.id
+  }
+  return null
 }
 
 /**
