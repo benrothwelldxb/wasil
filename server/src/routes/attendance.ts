@@ -113,9 +113,10 @@ router.get('/class/:classId', isStaff, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Class not found' })
     }
 
-    // Get all students in the class
+    // Get all students in the class (Test Students are hidden from the staff
+    // register — they still receive class content, they just aren't marked).
     const students = await prisma.student.findMany({
-      where: { classId, schoolId: user.schoolId },
+      where: { classId, schoolId: user.schoolId, isTest: false },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
       select: { id: true, firstName: true, lastName: true },
     })
@@ -423,8 +424,8 @@ router.get('/analytics', isStaff, async (req: Request, res: Response) => {
     const monthStart = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), 1)
     const monthStartStr = monthStart.toISOString().slice(0, 10)
 
-    // Total students
-    const totalStudents = await prisma.student.count({ where: { schoolId: user.schoolId } })
+    // Total students (Test Students excluded from the attendance-rate denominator)
+    const totalStudents = await prisma.student.count({ where: { schoolId: user.schoolId, isTest: false } })
 
     // Today's records
     const todayRecords = await prisma.attendanceRecord.findMany({

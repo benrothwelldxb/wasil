@@ -206,6 +206,13 @@ model User {
   // Re-sending updates it; used by admin UI to show invite status.
   welcomeSentAt DateTime?
 
+  // "Test Parent" backdoor flag. A flagged parent signs in with a fixed
+  // env-gated code (no email) and sees the REAL, LIVE parent app for its
+  // linked child's class. MUST be excluded from every staff/admin enumeration
+  // and all launch analytics/counts, yet MUST still receive live class-targeted
+  // content and comms (that is the whole point). Never emailed anything.
+  isTest    Boolean  @default(false)
+
   // Parent relations
   children           Child[]
   studentLinks       ParentStudentLink[]
@@ -337,6 +344,14 @@ model Student {
   // Attendance relations
   attendanceRecords  AttendanceRecord[]
   attendanceRequests AttendanceRequest[]
+
+  // "Test Student" backdoor flag. Enrolled in a real class so its linked Test
+  // Parent receives that class's live content, but HIDDEN from every staff-
+  // facing management view (register, attendance, reports, staff lists) and
+  // excluded from all analytics/counts. Content targeting is by classId and
+  // does not require the pupil to appear in any staff list, so hiding it does
+  // not break delivery.
+  isTest      Boolean  @default(false)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

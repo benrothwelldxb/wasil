@@ -25,12 +25,14 @@ router.get('/system-stats', isAuthenticated, isSuperAdmin, async (req, res) => {
       parentCount,
     ] = await Promise.all([
       prisma.school.count({ where: { archived: false } }),
-      prisma.user.count(),
-      prisma.student.count(),
+      // Platform totals exclude Test Parents/Students so backdoor accounts never
+      // inflate cross-school metrics.
+      prisma.user.count({ where: { isTest: false } }),
+      prisma.student.count({ where: { isTest: false } }),
       prisma.message.count(),
       prisma.form.count(),
       prisma.school.count({ where: { archived: false, createdAt: { gte: startOfMonth } } }),
-      prisma.user.count({ where: { role: 'PARENT' } }),
+      prisma.user.count({ where: { role: 'PARENT', isTest: false } }),
     ])
 
     // Messages in last 30 days
@@ -115,7 +117,7 @@ router.get('/', isAuthenticated, isSuperAdmin, async (req, res) => {
     const enrichedSchools = await Promise.all(
       schools.map(async (school) => {
         const [parentCount, staffCount] = await Promise.all([
-          prisma.user.count({ where: { schoolId: school.id, role: 'PARENT' } }),
+          prisma.user.count({ where: { schoolId: school.id, role: 'PARENT', isTest: false } }),
           prisma.user.count({ where: { schoolId: school.id, role: { in: ['STAFF', 'ADMIN'] } } }),
         ])
         return { ...school, parentCount, staffCount }
@@ -221,10 +223,10 @@ router.get('/:id/stats', isAuthenticated, isSuperAdmin, async (req, res) => {
       formCount,
       ecaTermCount,
     ] = await Promise.all([
-      prisma.user.count({ where: { schoolId: id, role: 'PARENT' } }),
+      prisma.user.count({ where: { schoolId: id, role: 'PARENT', isTest: false } }),
       prisma.user.count({ where: { schoolId: id, role: 'STAFF' } }),
       prisma.user.count({ where: { schoolId: id, role: 'ADMIN' } }),
-      prisma.student.count({ where: { schoolId: id } }),
+      prisma.student.count({ where: { schoolId: id, isTest: false } }),
       prisma.class.count({ where: { schoolId: id } }),
       prisma.message.count({ where: { schoolId: id } }),
       prisma.form.count({ where: { schoolId: id } }),
@@ -437,7 +439,7 @@ router.get('/:id/users', isAuthenticated, isSuperAdmin, async (req, res) => {
       return res.status(404).json({ error: 'School not found' })
     }
 
-    const where: any = { schoolId: id }
+    const where: any = { schoolId: id, isTest: false } // hide Test Parents from the school user list
     if (role && typeof role === 'string') {
       where.role = role.toUpperCase()
     }

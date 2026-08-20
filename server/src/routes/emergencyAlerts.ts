@@ -244,12 +244,14 @@ router.post('/', isAdmin, async (req, res) => {
     })
 
     // Find target parents
-    let parentUsers: Array<{ id: string; email: string; name: string; phone: string | null }> = []
+    let parentUsers: Array<{ id: string; email: string; name: string; phone: string | null; isTest: boolean }> = []
 
     if (!targetClass || targetClass === 'Whole School') {
+      // Test Parents stay in the audience so push/in-app still reaches them; the
+      // email branch below is what's gated (their mailbox is fake).
       parentUsers = await prisma.user.findMany({
         where: { schoolId: user.schoolId, role: 'PARENT' },
-        select: { id: true, email: true, name: true, phone: true },
+        select: { id: true, email: true, name: true, phone: true, isTest: true },
       })
     } else {
       // Find parents with children in the specified class
@@ -276,7 +278,7 @@ router.post('/', isAdmin, async (req, res) => {
         if (parentIds.length > 0) {
           parentUsers = await prisma.user.findMany({
             where: { id: { in: parentIds } },
-            select: { id: true, email: true, name: true, phone: true },
+            select: { id: true, email: true, name: true, phone: true, isTest: true },
           })
         }
       }
@@ -322,8 +324,9 @@ router.post('/', isAdmin, async (req, res) => {
         )
       }
 
-      // Email delivery — via the outbox.
-      if (doSendEmail) {
+      // Email delivery — via the outbox. Never email a Test Parent (fake mailbox);
+      // they still get the alert via push/in-app above.
+      if (doSendEmail && !parent.isTest) {
         deliveryPromises.push(
           (async () => {
             const delivery = await prisma.alertDelivery.create({
@@ -447,8 +450,8 @@ router.get('/:id/acknowledgments', isAdmin, async (req, res) => {
     })
     if (!alert) return res.status(404).json({ error: 'Alert not found' })
 
-    // Count total targeted parents
-    const targetWhere: any = { schoolId: user.schoolId, role: 'PARENT' }
+    // Count total targeted parents (Test Parents excluded from the ack-rate denominator)
+    const targetWhere: any = { schoolId: user.schoolId, role: 'PARENT', isTest: false }
     // Don't filter by class for now — whole school alerts target all parents
     const totalParents = await prisma.user.count({ where: targetWhere })
 

@@ -56,6 +56,7 @@ import providersRoutes from './routes/providers.js'
 import providerPortalRoutes from './routes/providerPortal.js'
 import clubsRoutes from './routes/clubs.js'
 import timetableRoutes from './routes/timetable.js'
+import testAccountsRoutes from './routes/testAccounts.js'
 import prisma from './services/prisma.js'
 import { initFirebase } from './services/firebase.js'
 import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders } from './services/cleanup.js'
@@ -182,6 +183,8 @@ app.use('/api/partner', partnerRoutes)
 app.use('/api/timetable', timetableRoutes)
 // Admin-triggered Wasil Hub MIS sync (POST /api/admin/hub-sync)
 app.use('/api/admin', hubSyncRoutes)
+// Admin-only "Test Student" backdoor account provisioning (school-scoped).
+app.use('/api/admin/test-accounts', testAccountsRoutes)
 
 // Liveness probe — the process is up. Cheap and always returns 200.
 // Use this to decide "should we restart the container?".

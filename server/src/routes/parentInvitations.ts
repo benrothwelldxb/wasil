@@ -140,7 +140,8 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
     const limitNum = Math.min(100, parseInt(limit as string, 10) || 50)
     const skip = (pageNum - 1) * limitNum
 
-    const where: any = { schoolId: user.schoolId, role: 'PARENT' }
+    // Test Parents are hidden from the staff parent-management list.
+    const where: any = { schoolId: user.schoolId, role: 'PARENT', isTest: false }
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -368,7 +369,9 @@ router.post('/send-invites', isAdmin, async (req: Request, res: Response) => {
     const user = req.user!
     const { parentUserIds } = (req.body || {}) as { parentUserIds?: string[] }
 
-    const where: Record<string, unknown> = { schoolId: user.schoolId, role: 'PARENT' }
+    // NEVER send welcome/sign-in emails to Test Parents (fake mailboxes) — the
+    // isTest:false filter drops them even if their id is passed explicitly.
+    const where: Record<string, unknown> = { schoolId: user.schoolId, role: 'PARENT', isTest: false }
     if (Array.isArray(parentUserIds) && parentUserIds.length > 0) {
       where.id = { in: parentUserIds }
     }

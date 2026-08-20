@@ -59,7 +59,7 @@ export async function buildDigestData(schoolId: string, date: string): Promise<D
       },
       orderBy: [{ student: { class: { name: 'asc' } } }, { student: { lastName: 'asc' } }],
     }),
-    prisma.student.count({ where: { schoolId } }),
+    prisma.student.count({ where: { schoolId, isTest: false } }),
   ])
 
   const totalMarked = await prisma.attendanceRecord.count({ where: { schoolId, date } })

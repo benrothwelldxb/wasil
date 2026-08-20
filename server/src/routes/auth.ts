@@ -609,7 +609,11 @@ router.post(
         include: { school: { select: { name: true } } },
       })
 
-      if (user) {
+      // Test accounts have a fake mailbox and sign in with TEST_LOGIN_CODE, so
+      // short-circuit: return the same enumeration-safe success WITHOUT minting
+      // or emailing a code. This keeps the app's request→enter-code UI flow
+      // working while never sending mail to an isTest user.
+      if (user && !user.isTest) {
         // Mint via the shared helper (supersede prior codes, hash, ~10 min TTL)
         // and email the plaintext.
         const { code } = await createLoginCode(email, LOGIN_CODE_EXPIRY_MINUTES)
@@ -638,6 +642,40 @@ router.post('/code/verify', validate(codeVerifySchema), async (req, res) => {
   const code = req.body.code as string
 
   try {
+    // --- Env-gated Test-Account sign-in bypass (security-critical) ---
+    // The ONLY code path that authenticates without a live emailed LoginCode.
+    // It fires IF AND ONLY IF: TEST_LOGIN_CODE is configured, the resolved user
+    // exists AND is flagged isTest, AND the submitted code matches
+    // TEST_LOGIN_CODE exactly. A non-test user, an unset TEST_LOGIN_CODE, or any
+    // other submitted value can NEVER take this path — the normal emailed-code
+    // verification below is left completely untouched for everyone else. We only
+    // pay the extra lookup when TEST_LOGIN_CODE is set at all (backdoor envs).
+    const testLoginCode = process.env.TEST_LOGIN_CODE
+    if (testLoginCode) {
+      const testUser = await prisma.user.findUnique({
+        where: { email },
+        include: {
+          children: { include: { class: true } },
+          studentLinks: { include: { student: { include: { class: true } } } },
+          school: true,
+        },
+      })
+      if (testUser?.isTest && code === testLoginCode) {
+        // Issue a session EXACTLY like the normal success path (2FA preserved).
+        if (testUser.twoFactorEnabled) {
+          const sessionToken = createTwoFactorSession(testUser.id)
+          return res.json({ twoFactorRequired: true, twoFactorSessionToken: sessionToken })
+        }
+        await prisma.user.update({ where: { id: testUser.id }, data: { lastLoginAt: new Date() } })
+        const accessToken = generateAccessToken(testUser)
+        const refreshToken = await generateRefreshToken(testUser)
+        return res.json({ user: serializeUser(testUser), accessToken, refreshToken })
+      }
+      // Fall through: a test user who submitted the wrong code, or any non-test
+      // user, is handled by the unchanged emailed-code flow below (which, for a
+      // test user, finds no live code and returns invalid_or_expired_code).
+    }
+
     const record = await prisma.loginCode.findFirst({
       where: { email, consumedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },

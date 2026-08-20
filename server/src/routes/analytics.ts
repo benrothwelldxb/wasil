@@ -44,7 +44,9 @@ async function loadParentActivation(schoolId: string): Promise<{
   activatedIds: Set<string>
 }> {
   const parents = await prisma.user.findMany({
-    where: { schoolId, role: 'PARENT' },
+    // Exclude Test Parents so they never inflate the activation funnel,
+    // by-class table, or not-activated chase list (all derive from here).
+    where: { schoolId, role: 'PARENT', isTest: false },
     select: { id: true, email: true, name: true, lastSeenAt: true, welcomeSentAt: true },
   })
   const parentIds = parents.map(p => p.id)
@@ -88,7 +90,7 @@ router.get('/overview', isAdmin, async (req, res) => {
 
     // Total parents
     const totalParents = await prisma.user.count({
-      where: { schoolId, role: 'PARENT' },
+      where: { schoolId, role: 'PARENT', isTest: false },
     })
 
     // Active parents: those who acknowledged a message or submitted a form response in last 30 days
@@ -117,7 +119,7 @@ router.get('/overview', isAdmin, async (req, res) => {
     // Also count parents who have a refresh token updated recently (proxy for login)
     const recentTokenUsers = await prisma.refreshToken.findMany({
       where: {
-        user: { schoolId, role: 'PARENT' },
+        user: { schoolId, role: 'PARENT', isTest: false },
         createdAt: { gte: thirtyDaysAgo },
       },
       select: { userId: true },
@@ -128,9 +130,9 @@ router.get('/overview', isAdmin, async (req, res) => {
 
     const adoptionRate = totalParents > 0 ? Math.round((activeParents / totalParents) * 1000) / 10 : 0
 
-    // Total students
+    // Total students (Test Students excluded — never inflate pupil counts).
     const totalStudents = await prisma.student.count({
-      where: { schoolId },
+      where: { schoolId, isTest: false },
     })
 
     // Messages this month
@@ -151,7 +153,7 @@ router.get('/overview', isAdmin, async (req, res) => {
         targetClass: true,
         _count: {
           select: {
-            acknowledgments: { where: { user: { role: 'PARENT' } } },
+            acknowledgments: { where: { user: { role: 'PARENT', isTest: false } } },
           },
         },
       },
@@ -190,11 +192,12 @@ router.get('/overview', isAdmin, async (req, res) => {
 
     // ECA participation rate
     const [eligibleStudents, studentsWithAllocations] = await Promise.all([
-      prisma.student.count({ where: { schoolId } }),
+      prisma.student.count({ where: { schoolId, isTest: false } }),
       prisma.ecaAllocation.findMany({
         where: {
           ecaTerm: { schoolId },
           status: 'CONFIRMED',
+          student: { isTest: false },
         },
         select: { studentId: true },
         distinct: ['studentId'],
@@ -266,7 +269,7 @@ router.get('/messages', isAdmin, async (req, res) => {
 
     // Get parent count for read rate calculation
     const totalParents = await prisma.user.count({
-      where: { schoolId, role: 'PARENT' },
+      where: { schoolId, role: 'PARENT', isTest: false },
     })
 
     const messages = await prisma.message.findMany({
@@ -274,7 +277,7 @@ router.get('/messages', isAdmin, async (req, res) => {
       include: {
         _count: {
           select: {
-            acknowledgments: { where: { user: { role: 'PARENT' } } },
+            acknowledgments: { where: { user: { role: 'PARENT', isTest: false } } },
           },
         },
         form: {
@@ -431,11 +434,11 @@ router.get('/eca-stats', isAdmin, async (req, res) => {
         where: { ecaTermId: termId, isActive: true, isCancelled: false },
       }),
       prisma.ecaAllocation.findMany({
-        where: { ecaTermId: termId, status: 'CONFIRMED' },
+        where: { ecaTermId: termId, status: 'CONFIRMED', student: { isTest: false } },
         select: { studentId: true, ecaActivityId: true },
       }),
       prisma.ecaSelection.findMany({
-        where: { ecaTermId: termId, rank: 1 },
+        where: { ecaTermId: termId, rank: 1, student: { isTest: false } },
         select: { studentId: true, ecaActivityId: true },
       }),
       prisma.ecaActivity.findMany({
@@ -536,11 +539,14 @@ router.get('/launch', isAdmin, async (req, res) => {
         distinct: ['userId'],
       }),
       prisma.message.count({ where: { schoolId } }),
-      prisma.conversation.count({ where: { schoolId } }),
-      prisma.eventRsvp.count({ where: { event: { schoolId } } }),
+      // Parent-generated usage counts exclude Test Parents so they never inflate
+      // launch metrics (staff-authored content — messages/forms — needs no such
+      // filter). Delivery is unaffected: this is reporting, not fan-out.
+      prisma.conversation.count({ where: { schoolId, parent: { isTest: false } } }),
+      prisma.eventRsvp.count({ where: { event: { schoolId }, user: { isTest: false } } }),
       prisma.form.count({ where: { schoolId, status: { in: ['ACTIVE', 'CLOSED'] } } }),
-      prisma.attendanceRequest.count({ where: { schoolId } }),
-      prisma.pulseResponse.count({ where: { pulse: { schoolId } } }),
+      prisma.attendanceRequest.count({ where: { schoolId, parent: { isTest: false } } }),
+      prisma.pulseResponse.count({ where: { pulse: { schoolId }, user: { isTest: false } } }),
     ])
     const pushCount = pushUsers.length
 
@@ -593,7 +599,7 @@ router.get('/active-trend', isAdmin, async (req, res) => {
     // Map parent email -> id (for LoginCode, which is keyed by email) and the
     // set of parent ids used to scope inbox/attendance/token queries.
     const parents = await prisma.user.findMany({
-      where: { schoolId, role: 'PARENT' },
+      where: { schoolId, role: 'PARENT', isTest: false },
       select: { id: true, email: true },
     })
     const parentIds = parents.map(p => p.id)
@@ -620,21 +626,21 @@ router.get('/active-trend', isAdmin, async (req, res) => {
         select: { email: true, consumedAt: true },
       }),
       prisma.messageAcknowledgment.findMany({
-        where: { message: { schoolId }, user: { role: 'PARENT' }, createdAt: { gte: startDay } },
+        where: { message: { schoolId }, user: { role: 'PARENT', isTest: false }, createdAt: { gte: startDay } },
         select: { userId: true, createdAt: true },
       }),
       prisma.eventRsvp.findMany({
-        where: { event: { schoolId }, user: { role: 'PARENT' }, createdAt: { gte: startDay } },
+        where: { event: { schoolId }, user: { role: 'PARENT', isTest: false }, createdAt: { gte: startDay } },
         select: { userId: true, createdAt: true },
       }),
       prisma.formResponse.findMany({
-        where: { form: { schoolId }, user: { role: 'PARENT' }, createdAt: { gte: startDay } },
+        where: { form: { schoolId }, user: { role: 'PARENT', isTest: false }, createdAt: { gte: startDay } },
         select: { userId: true, createdAt: true },
       }),
       prisma.conversationMessage.findMany({
         where: {
           conversation: { schoolId },
-          sender: { role: 'PARENT' },
+          sender: { role: 'PARENT', isTest: false },
           createdAt: { gte: startDay },
         },
         select: { senderId: true, createdAt: true },
@@ -700,7 +706,7 @@ router.get('/feature-usage', isAdmin, async (req, res) => {
     const cached = getCached(cacheKey)
     if (cached) return res.json(cached)
 
-    const totalParents = await prisma.user.count({ where: { schoolId, role: 'PARENT' } })
+    const totalParents = await prisma.user.count({ where: { schoolId, role: 'PARENT', isTest: false } })
     const staffRoles: Array<'STAFF' | 'ADMIN' | 'SUPER_ADMIN'> = ['STAFF', 'ADMIN', 'SUPER_ADMIN']
 
     const [
@@ -718,28 +724,28 @@ router.get('/feature-usage', isAdmin, async (req, res) => {
       pulseSent,
       pulseResponseRows,
     ] = await Promise.all([
-      prisma.conversation.count({ where: { schoolId } }),
+      prisma.conversation.count({ where: { schoolId, parent: { isTest: false } } }),
       prisma.conversationMessage.count({
-        where: { conversation: { schoolId }, sender: { role: 'PARENT' } },
+        where: { conversation: { schoolId }, sender: { role: 'PARENT', isTest: false } },
       }),
       prisma.conversation.count({
-        where: { schoolId, messages: { some: { sender: { role: { in: staffRoles } } } } },
+        where: { schoolId, parent: { isTest: false }, messages: { some: { sender: { role: { in: staffRoles } } } } },
       }),
       prisma.message.count({ where: { schoolId } }),
       prisma.messageAcknowledgment.count({
-        where: { message: { schoolId }, user: { role: 'PARENT' } },
+        where: { message: { schoolId }, user: { role: 'PARENT', isTest: false } },
       }),
       prisma.event.count({ where: { schoolId } }),
       prisma.event.count({ where: { schoolId, requiresRsvp: true } }),
-      prisma.eventRsvp.count({ where: { event: { schoolId }, user: { role: 'PARENT' } } }),
+      prisma.eventRsvp.count({ where: { event: { schoolId }, user: { role: 'PARENT', isTest: false } } }),
       prisma.form.count({ where: { schoolId, status: { in: ['ACTIVE', 'CLOSED'] } } }),
       prisma.formResponse.count({
-        where: { form: { schoolId, status: { in: ['ACTIVE', 'CLOSED'] } }, user: { role: 'PARENT' } },
+        where: { form: { schoolId, status: { in: ['ACTIVE', 'CLOSED'] } }, user: { role: 'PARENT', isTest: false } },
       }),
-      prisma.attendanceRequest.count({ where: { schoolId } }),
+      prisma.attendanceRequest.count({ where: { schoolId, parent: { isTest: false } } }),
       prisma.pulseSurvey.count({ where: { schoolId, status: { in: ['OPEN', 'CLOSED'] } } }),
       prisma.pulseResponse.findMany({
-        where: { pulse: { schoolId, status: { in: ['OPEN', 'CLOSED'] } } },
+        where: { pulse: { schoolId, status: { in: ['OPEN', 'CLOSED'] } }, user: { isTest: false } },
         select: { answers: true },
       }),
     ])
@@ -810,7 +816,8 @@ router.get('/by-class', isAdmin, async (req, res) => {
     const { activatedIds } = await loadParentActivation(schoolId)
 
     const links = await prisma.parentStudentLink.findMany({
-      where: { user: { schoolId, role: 'PARENT' }, student: { schoolId } },
+      // Exclude Test Parents and Test Students from the per-class league table.
+      where: { user: { schoolId, role: 'PARENT', isTest: false }, student: { schoolId, isTest: false } },
       select: {
         userId: true,
         student: { select: { class: { select: { id: true, name: true } } } },

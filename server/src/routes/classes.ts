@@ -49,7 +49,7 @@ router.get('/all', isAdmin, async (req, res) => {
     const classes = await prisma.class.findMany({
       where: { schoolId: user.schoolId },
       include: {
-        _count: { select: { students: true } },
+        _count: { select: { students: { where: { isTest: false } } } },
         assignedStaff: {
           include: {
             user: { select: { id: true, name: true, role: true } },
@@ -134,7 +134,7 @@ router.post('/', isAdmin, async (req, res) => {
         } : undefined,
       },
       include: {
-        _count: { select: { students: true } },
+        _count: { select: { students: { where: { isTest: false } } } },
         assignedStaff: {
           include: {
             user: { select: { id: true, name: true, role: true } },
@@ -228,7 +228,7 @@ router.put('/:id', isAdmin, async (req, res) => {
         where: { id },
         data: { name, colorBg, colorText, yearGroupId: yearGroupId !== undefined ? (yearGroupId || null) : undefined },
         include: {
-          _count: { select: { students: true } },
+          _count: { select: { students: { where: { isTest: false } } } },
           assignedStaff: {
             include: {
               user: { select: { id: true, name: true, role: true } },
@@ -278,9 +278,10 @@ router.delete('/:id', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Class not found' })
     }
 
-    // Check if class has students
+    // Check if class has real students (Test Students are hidden from staff and
+    // must not block class deletion — the test-accounts DELETE cleans them up).
     const studentCount = await prisma.student.count({
-      where: { classId: id },
+      where: { classId: id, isTest: false },
     })
 
     if (studentCount > 0) {

@@ -17,7 +17,8 @@ router.get('/', isAdmin, async (req: Request, res: Response) => {
     const limitNum = Math.min(parseInt(limit as string, 10), 100)
     const skip = (pageNum - 1) * limitNum
 
-    const where: Record<string, unknown> = { schoolId: user.schoolId }
+    // Test Students are hidden from staff-facing management lists.
+    const where: Record<string, unknown> = { schoolId: user.schoolId, isTest: false }
 
     if (classId) {
       where.classId = classId
@@ -87,6 +88,7 @@ router.get('/search', isAdmin, async (req: Request, res: Response) => {
 
     const where: Record<string, unknown> = {
       schoolId: user.schoolId,
+      isTest: false, // hide Test Students from staff autocomplete
       OR: [
         { firstName: { contains: searchStr, mode: 'insensitive' } },
         { lastName: { contains: searchStr, mode: 'insensitive' } },
@@ -212,9 +214,10 @@ router.post('/reports/bulk', isAdmin, reportUpload.array('files', 200), async (r
       return res.status(400).json({ error: 'No files uploaded' })
     }
 
-    // Get all students with externalId for this school
+    // Get all students with externalId for this school (Test Students excluded —
+    // report cards are never matched/uploaded to them).
     const students = await prisma.student.findMany({
-      where: { schoolId: user.schoolId, externalId: { not: null } },
+      where: { schoolId: user.schoolId, externalId: { not: null }, isTest: false },
       select: { id: true, firstName: true, lastName: true, externalId: true },
     })
 
@@ -297,7 +300,9 @@ router.get('/reports/all', isAdmin, async (req: Request, res: Response) => {
     const limitNum = Math.min(200, Math.max(1, parseInt(limit as string, 10) || 50))
     const skip = (pageNum - 1) * limitNum
 
-    const where: Record<string, unknown> = { schoolId: user.schoolId }
+    // Test Students never have report cards; exclude defensively so the staff
+    // report roster stays clean.
+    const where: Record<string, unknown> = { schoolId: user.schoolId, student: { isTest: false } }
     if (academicYear) where.academicYear = academicYear as string
 
     const [reports, total] = await Promise.all([
@@ -885,9 +890,9 @@ router.post('/photos/bulk', isAdmin, photoUpload.array('photos', 200), async (re
       return res.status(400).json({ error: 'No photo files provided' })
     }
 
-    // Get all students in school with externalIds
+    // Get all students in school with externalIds (Test Students excluded).
     const students = await prisma.student.findMany({
-      where: { schoolId: user.schoolId, externalId: { not: null } },
+      where: { schoolId: user.schoolId, externalId: { not: null }, isTest: false },
       select: { id: true, externalId: true, firstName: true, lastName: true },
     })
 
@@ -967,9 +972,9 @@ router.post('/bulk-reassign', isAdmin, async (req: Request, res: Response) => {
     })
     const classNameToId = new Map(classes.map(c => [c.name, c.id]))
 
-    // Pre-fetch students
+    // Pre-fetch students (Test Students excluded from staff bulk reassignment).
     const allStudents = await prisma.student.findMany({
-      where: { schoolId: user.schoolId },
+      where: { schoolId: user.schoolId, isTest: false },
       select: { id: true, firstName: true, lastName: true, externalId: true, classId: true },
     })
     const studentByExternalId = new Map(allStudents.filter(s => s.externalId).map(s => [s.externalId!, s]))

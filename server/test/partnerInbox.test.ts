@@ -664,7 +664,8 @@ describe('GET /api/partner/inbox/recipients', () => {
       select: { classId: true },
     })
     const where = prismaMock.student.findMany.mock.calls[0][0].where
-    expect(where).toEqual({ schoolId: 'sch-1', classId: { in: ['cls-A', 'cls-B'] } })
+    // isTest:false hides Test Students from the Desk recipient picker.
+    expect(where).toEqual({ schoolId: 'sch-1', isTest: false, classId: { in: ['cls-A', 'cls-B'] } })
     expect(res.body.recipients[0]).toEqual({
       studentId: 'st-1', studentName: 'Amina Khan', className: '1A', parentName: 'Sara Khan',
     })
@@ -684,7 +685,7 @@ describe('GET /api/partner/inbox/recipients', () => {
     await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hub-1&scope=school'))
     expect(prismaMock.staffClassAssignment.findMany).not.toHaveBeenCalled()
     const where = prismaMock.student.findMany.mock.calls[0][0].where
-    expect(where).toEqual({ schoolId: 'sch-1' })
+    expect(where).toEqual({ schoolId: 'sch-1', isTest: false })
     // Ordered by class then name.
     expect(prismaMock.student.findMany.mock.calls[0][0].orderBy).toEqual([
       { class: { name: 'asc' } }, { lastName: 'asc' }, { firstName: 'asc' },

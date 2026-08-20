@@ -79,6 +79,7 @@ describe('POST /api/parent-invitations/send-invites', () => {
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ sent: 1, skipped: 0 })
     const where = prismaMock.user.findMany.mock.calls[0][0].where
-    expect(where).toEqual({ schoolId: 'school-A', role: 'PARENT', id: { in: ['p-9'] } })
+    // isTest:false ensures welcome/sign-in emails never target Test Parents.
+    expect(where).toEqual({ schoolId: 'school-A', role: 'PARENT', isTest: false, id: { in: ['p-9'] } })
   })
 })

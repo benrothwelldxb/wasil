@@ -178,6 +178,10 @@ export async function sendNotification({ req, type, title, body, resourceType, r
       const inactiveParents = await prisma.user.findMany({
         where: {
           id: { in: parentUserIds },
+          // Test Parents have fake mailboxes — deliver push + in-app to them
+          // (done above), but NEVER email them. Only the email fallback is gated;
+          // the notification/push fan-out still reaches the test parent.
+          isTest: false,
           email: { not: '' },
           OR: [
             { lastLoginAt: null },

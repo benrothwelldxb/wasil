@@ -223,9 +223,9 @@ router.post('/sync/ieps', authenticateApiKey, async (req: Request, res: Response
       return res.status(400).json({ error: 'ieps array is required' })
     }
 
-    // Pre-fetch all students
+    // Pre-fetch all students (Test Students excluded from IEP/inclusion sync)
     const allStudents = await prisma.student.findMany({
-      where: { schoolId },
+      where: { schoolId, isTest: false },
       select: { id: true, externalId: true },
     })
     const byExternalId = new Map(allStudents.filter(s => s.externalId).map(s => [s.externalId!, s]))

@@ -1872,6 +1872,26 @@ export const analytics = {
     fetchApi<NotActivatedResponse>('/api/analytics/not-activated'),
 }
 
+// Admin-only "Test Student" backdoor accounts (school-scoped).
+import type {
+  TestAccountsProvisionResponse,
+  TestAccountsListResponse,
+  TestAccountsDeleteResponse,
+} from '../types'
+export const testAccounts = {
+  // Idempotent: ensures one Test Parent + Test Student per class in the school.
+  provision: () =>
+    fetchApi<TestAccountsProvisionResponse>('/api/admin/test-accounts/provision', {
+      method: 'POST',
+    }),
+  list: () =>
+    fetchApi<TestAccountsListResponse>('/api/admin/test-accounts'),
+  remove: () =>
+    fetchApi<TestAccountsDeleteResponse>('/api/admin/test-accounts', {
+      method: 'DELETE',
+    }),
+}
+
 export const emergencyAlerts = {
   // Admin endpoints
   list: () =>
@@ -2445,6 +2465,7 @@ export default {
   eca,
   consultations,
   analytics,
+  testAccounts,
   emergencyAlerts,
   schoolServices,
   inbox,

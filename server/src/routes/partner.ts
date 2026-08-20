@@ -160,6 +160,8 @@ router.get('/attendance/today', requirePartner, async (req, res) => {
     const rows = await prisma.attendanceRequest.findMany({
       where: {
         schoolId: school.id,
+        // Test Students are hidden from Desk-facing lists (delivery is unaffected).
+        student: { isTest: false },
         // Window covers `date`: startDate <= date <= coalesce(endDate, startDate).
         startDate: { lte: date },
         OR: [
@@ -629,7 +631,9 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
 
     const students = await prisma.student.findMany({
       // Always hard-scoped to the actor's school — scope=school never crosses it.
-      where: { schoolId: actor.schoolId, ...(classFilter ?? {}) },
+      // Test Students are hidden from the Desk recipient picker (delivery via
+      // class fan-out is unaffected; this is only the staff-facing chooser).
+      where: { schoolId: actor.schoolId, isTest: false, ...(classFilter ?? {}) },
       select: {
         id: true,
         firstName: true,

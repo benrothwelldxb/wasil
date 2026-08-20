@@ -47,6 +47,8 @@ export async function generateDailyRegistersHtml(
       include: {
         yearGroup: { select: { name: true } },
         students: {
+          // Test Students are hidden from the printed staff register.
+          where: { isTest: false },
           orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
           select: { id: true, firstName: true, lastName: true },
         },

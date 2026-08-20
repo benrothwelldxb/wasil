@@ -1029,6 +1029,27 @@ export interface NotActivatedResponse {
   parents: NotActivatedParent[]
 }
 
+// "Test Student" backdoor accounts (admin-only, school-scoped). One Test Parent
+// + Test Student per class; the parent signs in with TEST_LOGIN_CODE and sees
+// the real, live parent app for that class.
+export interface TestAccountInfo {
+  classId: string
+  className: string
+  email: string
+  studentName?: string
+}
+export interface TestAccountsProvisionResponse {
+  provisioned: Array<{ classId: string; className: string; email: string }>
+  loginCode: 'set' | 'NOT SET'
+}
+export interface TestAccountsListResponse {
+  testAccounts: TestAccountInfo[]
+}
+export interface TestAccountsDeleteResponse {
+  removedParents: number
+  removedStudents: number
+}
+
 // School Services Types
 export type ServiceStatus = 'DRAFT' | 'PUBLISHED' | 'REGISTRATION_OPEN' | 'REGISTRATION_CLOSED' | 'ACTIVE' | 'ARCHIVED'
 export type RegistrationStatus = 'PENDING' | 'CONFIRMED' | 'WAITLISTED' | 'CANCELLED'
