@@ -168,12 +168,14 @@ export function EcaPage() {
   const termStatus = useMemo(() => {
     if (!termDetails) return null
     const now = new Date()
-    const regOpens = new Date(termDetails.registrationOpens)
-    const regCloses = new Date(termDetails.registrationCloses)
+    // Registration windows are null on a freshly Hub-synced term (DRAFT) until an
+    // admin sets them — guard so the term simply isn't "before/within" a window.
+    const regOpens = termDetails.registrationOpens ? new Date(termDetails.registrationOpens) : null
+    const regCloses = termDetails.registrationCloses ? new Date(termDetails.registrationCloses) : null
 
     return {
       status: termDetails.status,
-      isBeforeRegistration: now < regOpens,
+      isBeforeRegistration: regOpens ? now < regOpens : false,
       isDuringRegistration: termDetails.status === 'REGISTRATION_OPEN',
       isAfterRegistration: termDetails.status === 'REGISTRATION_CLOSED',
       isAllocated: termDetails.status === 'ALLOCATION_COMPLETE' || termDetails.status === 'ACTIVE' || termDetails.status === 'COMPLETED',
@@ -534,7 +536,7 @@ export function EcaPage() {
                   </h3>
                   <p className="text-sm" style={{ color: '#5B8EC4' }}>
                     {t('eca.registrationOpensOn', 'Registration opens on {{date}}', {
-                      date: formatDate(termDetails.registrationOpens)
+                      date: termDetails.registrationOpens ? formatDate(termDetails.registrationOpens) : 'TBC'
                     })}
                   </p>
                 </div>
@@ -553,7 +555,7 @@ export function EcaPage() {
                   </h3>
                   <p className="text-sm" style={{ color: '#5BA97B' }}>
                     {t('eca.registrationClosesOn', 'Register by {{date}}', {
-                      date: formatDate(termDetails.registrationCloses)
+                      date: termDetails.registrationCloses ? formatDate(termDetails.registrationCloses) : 'TBC'
                     })}
                   </p>
                 </div>

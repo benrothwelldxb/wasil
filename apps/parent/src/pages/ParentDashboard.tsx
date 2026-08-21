@@ -266,7 +266,7 @@ export function ParentDashboard() {
     if (!ecaTerms) return null
     const now = new Date()
     return ecaTerms.find(term => {
-      if (term.status !== 'REGISTRATION_OPEN') return false
+      if (term.status !== 'REGISTRATION_OPEN' || !term.registrationCloses) return false
       const closes = new Date(term.registrationCloses)
       return closes > now
     }) || null
@@ -274,7 +274,7 @@ export function ParentDashboard() {
 
   // Calculate days left for registration
   const registrationDaysLeft = useMemo(() => {
-    if (!openRegistrationTerm) return null
+    if (!openRegistrationTerm || !openRegistrationTerm.registrationCloses) return null
     const now = new Date()
     const closes = new Date(openRegistrationTerm.registrationCloses)
     const diffTime = closes.getTime() - now.getTime()
