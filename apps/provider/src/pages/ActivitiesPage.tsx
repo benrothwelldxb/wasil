@@ -23,6 +23,7 @@ interface Activity {
   paymentUrl: string | null
   isActive: boolean
   isCancelled: boolean
+  isPublished: boolean
   ecaTermId: string
   termName?: string
   schoolName?: string
@@ -66,6 +67,7 @@ export function ActivitiesPage() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [terms, setTerms] = useState<Term[]>([])
   const [form, setForm] = useState<FormState | null>(null)
+  const [publishing, setPublishing] = useState<string | null>(null)
 
   const load = async () => {
     setError(null)
@@ -103,6 +105,22 @@ export function ActivitiesPage() {
       paymentUrl: a.paymentUrl || '',
       eligibleGender: 'MIXED',
     })
+
+  // Flip the "Show on parent app" visibility toggle for one activity.
+  const togglePublish = async (a: Activity) => {
+    setPublishing(a.id)
+    try {
+      const updated = await apiFetch<Activity>(`/api/provider-portal/activities/${a.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isPublished: !a.isPublished }),
+      })
+      setActivities(prev => prev.map(x => (x.id === a.id ? updated : x)))
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Failed to update visibility.')
+    } finally {
+      setPublishing(null)
+    }
+  }
 
   const remove = async (a: Activity) => {
     if (!confirm(`Delete "${a.name}"? This cannot be undone.`)) return
@@ -178,6 +196,24 @@ export function ActivitiesPage() {
                 </div>
               </div>
               <div className="flex items-center gap-1 flex-none">
+                <button
+                  onClick={() => togglePublish(a)}
+                  disabled={publishing === a.id}
+                  aria-pressed={a.isPublished}
+                  title={a.isPublished ? 'Live — visible to parents. Click to hide.' : 'Hidden from parents. Click to show on the parent app.'}
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-60 ${
+                    a.isPublished
+                      ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                      : 'bg-slate-100 text-warm-text-tertiary hover:bg-slate-200'
+                  }`}
+                >
+                  {publishing === a.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <span className={`h-1.5 w-1.5 rounded-full ${a.isPublished ? 'bg-green-500' : 'bg-slate-400'}`} />
+                  )}
+                  {a.isPublished ? 'Live' : 'Hidden'}
+                </button>
                 <button onClick={() => openEdit(a)} aria-label="Edit" className="p-2 rounded-warm hover:bg-slate-50 text-warm-text-secondary">
                   <Pencil className="h-4 w-4" />
                 </button>

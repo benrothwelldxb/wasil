@@ -1151,6 +1151,14 @@ export function EcaPage() {
                           }`}>!</span>
                         )}
                         <h4 className="font-semibold text-gray-900">{activity.name}</h4>
+                        {!activity.isPublished && (
+                          <span
+                            title="Not yet published by the provider — hidden from parents"
+                            className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium"
+                          >
+                            Hidden
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center space-x-2 mt-1 text-sm text-gray-500">
                         <span>{DAY_NAMES[activity.dayOfWeek]}</span>

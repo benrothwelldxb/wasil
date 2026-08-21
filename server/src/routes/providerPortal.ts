@@ -40,7 +40,12 @@ const activitySchema = z.object({
   paymentUrl: z.string().url().nullable().optional(),
   eligibleGender: z.enum(['MIXED', 'BOYS_ONLY', 'GIRLS_ONLY']).optional(),
 })
-const updateActivitySchema = activitySchema.partial().omit({ ecaTermId: true })
+// Update accepts everything create does (minus the term) plus the parent-app
+// visibility toggle. Create never publishes immediately — a provider opts in
+// afterwards via PATCH { isPublished: true }.
+const updateActivitySchema = activitySchema.partial().omit({ ecaTermId: true }).extend({
+  isPublished: z.boolean().optional(),
+})
 const paymentStatusSchema = z.object({ paymentStatus: z.enum(['UNPAID', 'PAID', 'PARTIAL', 'WAIVED']) })
 
 const menuItemSchema = z.object({
@@ -99,7 +104,7 @@ async function mySchoolIds(providerId: string): Promise<string[]> {
 function serializeActivity(a: {
   id: string; name: string; description: string | null; dayOfWeek: number; timeSlot: string
   location: string | null; maxCapacity: number | null; cost: number | null; costDescription: string | null
-  paymentUrl: string | null; isActive: boolean; isCancelled: boolean; ecaTermId: string
+  paymentUrl: string | null; isActive: boolean; isCancelled: boolean; isPublished: boolean; ecaTermId: string
   ecaTerm?: { name: string; school: { id: string; name: string } }
   createdAt: Date
 }) {
@@ -116,6 +121,7 @@ function serializeActivity(a: {
     paymentUrl: a.paymentUrl,
     isActive: a.isActive,
     isCancelled: a.isCancelled,
+    isPublished: a.isPublished,
     ecaTermId: a.ecaTermId,
     termName: a.ecaTerm?.name,
     schoolId: a.ecaTerm?.school.id,
@@ -287,6 +293,7 @@ router.patch('/activities/:id', validate(updateActivitySchema), async (req, res)
         ...(b.costDescription !== undefined && { costDescription: b.costDescription }),
         ...(b.paymentUrl !== undefined && { paymentUrl: b.paymentUrl }),
         ...(b.eligibleGender !== undefined && { eligibleGender: b.eligibleGender }),
+        ...(b.isPublished !== undefined && { isPublished: b.isPublished }),
       },
       include: { ecaTerm: { select: { name: true, school: { select: { id: true, name: true } } } } },
     })

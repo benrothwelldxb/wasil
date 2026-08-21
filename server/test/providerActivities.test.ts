@@ -76,6 +76,48 @@ describe('provider activity scoping', () => {
     )
   })
 
+  it('new activities are created unpublished (create never sets isPublished true)', async () => {
+    prismaMock.ecaTerm.findFirst.mockResolvedValue({ id: 'term-1', schoolId: 'school-1' })
+    prismaMock.ecaActivity.create.mockResolvedValue({
+      id: 'act-1', name: 'Chess', description: null, dayOfWeek: 2, timeSlot: 'AFTER_SCHOOL',
+      location: null, maxCapacity: null, cost: null, costDescription: null, paymentUrl: null,
+      isActive: true, isCancelled: false, isPublished: false, ecaTermId: 'term-1', ecaTerm: termInclude, createdAt: new Date(),
+    })
+    const res = await request(makeApp()).post('/api/provider-portal/activities').send({
+      ecaTermId: 'term-1', name: 'Chess', dayOfWeek: 2, timeSlot: 'AFTER_SCHOOL',
+    })
+    expect(res.status).toBe(201)
+    expect(res.body.isPublished).toBe(false)
+    // The create payload must not opt into publishing — the DB default (false) governs.
+    const createArg = prismaMock.ecaActivity.create.mock.calls[0][0]
+    expect(createArg.data.isPublished).toBeUndefined()
+  })
+
+  it('a provider can toggle isPublished on its own activity', async () => {
+    prismaMock.ecaActivity.findFirst.mockResolvedValue({ id: 'act-1' }) // ownership passes
+    prismaMock.ecaActivity.update.mockResolvedValue({
+      id: 'act-1', name: 'Chess', description: null, dayOfWeek: 2, timeSlot: 'AFTER_SCHOOL',
+      location: null, maxCapacity: null, cost: null, costDescription: null, paymentUrl: null,
+      isActive: true, isCancelled: false, isPublished: true, ecaTermId: 'term-1', ecaTerm: termInclude, createdAt: new Date(),
+    })
+    const res = await request(makeApp()).patch('/api/provider-portal/activities/act-1').send({ isPublished: true })
+    expect(res.status).toBe(200)
+    expect(res.body.isPublished).toBe(true)
+    expect(prismaMock.ecaActivity.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'act-1' }, data: expect.objectContaining({ isPublished: true }) }),
+    )
+  })
+
+  it('cannot toggle isPublished on another provider\'s activity (still gated)', async () => {
+    prismaMock.ecaActivity.findFirst.mockResolvedValue(null) // ownership check fails
+    const res = await request(makeApp()).patch('/api/provider-portal/activities/act-other').send({ isPublished: true })
+    expect(res.status).toBe(404)
+    expect(prismaMock.ecaActivity.update).not.toHaveBeenCalled()
+    expect(prismaMock.ecaActivity.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: 'act-other', providerId: 'prov-1' }) }),
+    )
+  })
+
   it('scopes delete by providerId (404 when nothing owned matches)', async () => {
     prismaMock.ecaActivity.deleteMany.mockResolvedValue({ count: 0 })
     const res = await request(makeApp()).delete('/api/provider-portal/activities/act-other')

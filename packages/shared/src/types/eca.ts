@@ -103,6 +103,9 @@ export interface EcaActivity {
   isActive: boolean
   isCancelled: boolean
   cancelReason?: string | null
+  // Provider-controlled "Show on parent app" flag. Parents only see published
+  // activities; admins and the owning provider see all.
+  isPublished: boolean
   createdAt: string
   updatedAt: string
   // Computed fields

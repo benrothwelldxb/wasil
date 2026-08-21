@@ -1225,6 +1225,9 @@ model EcaActivity {
   staffId              String?
   staff                User?    @relation("EcaActivityStaff", fields: [staffId], references: [id])
   isActive             Boolean  @default(true)
+  // Provider-controlled visibility on the parent app. Activities are hidden from
+  // parents until the owning provider publishes them (admins/provider see all).
+  isPublished          Boolean  @default(false)
   cost                 Float?   // Cost per term (null = free)
   costDescription      String?  // Free text like "55 AED per term"
   // External provider-run club (null = school-run). Ownership for the provider

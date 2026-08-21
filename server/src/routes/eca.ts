@@ -449,6 +449,10 @@ router.post('/terms/:id/activities', isAdmin, async (req, res) => {
         customEndTime: customEndTime || null,
         location: location || null,
         activityType: activityType || 'OPEN',
+        // School-run activities are visible to parents on creation — the admin
+        // creating it is the publisher. (Provider-run clubs default unpublished
+        // and are shown only once the provider flips their toggle.)
+        isPublished: true,
         eligibleYearGroupIds: JSON.stringify(eligibleYearGroupIds || []),
         eligibleGender: eligibleGender || 'MIXED',
         minCapacity: minCapacity ? parseInt(String(minCapacity), 10) : null,
@@ -1515,7 +1519,10 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
       where: { id, schoolId: user.schoolId },
       include: {
         activities: {
-          where: { isActive: true, isCancelled: false },
+          // Parents only ever see activities the owning provider has published
+          // (school-run activities are created published by admin). Unpublished
+          // provider clubs are hidden until the provider flips the toggle.
+          where: { isActive: true, isCancelled: false, isPublished: true },
           include: {
             category: { select: { id: true, name: true, icon: true, color: true } },
             staff: { select: { id: true, name: true } },
@@ -1748,6 +1755,25 @@ router.post('/parent/terms/:id/selections', isAuthenticated, async (req, res) =>
     const studentLinks = user.studentLinks || []
     if (!studentLinks.some(l => l.studentId === studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' })
+    }
+
+    // Guard against selecting an activity a parent must not see: every chosen
+    // activity must belong to this term and be active + published. This stops a
+    // parent submitting a selection for a hidden/unpublished provider club.
+    const requestedActivityIds = (selections as { activityId: string }[]).map(s => s.activityId)
+    if (requestedActivityIds.length > 0) {
+      const selectableCount = await prisma.ecaActivity.count({
+        where: {
+          id: { in: requestedActivityIds },
+          ecaTermId: id,
+          isActive: true,
+          isCancelled: false,
+          isPublished: true,
+        },
+      })
+      if (selectableCount !== new Set(requestedActivityIds).size) {
+        return res.status(400).json({ error: 'One or more selected activities are not available' })
+      }
     }
 
     // Delete existing selections for this student/term
