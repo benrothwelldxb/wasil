@@ -46,10 +46,19 @@ export const DEFAULT_SUBJECT_REMINDERS: ReadonlyArray<{
   { subject: 'Music', emoji: '🎵', reminder: 'Bring instrument' },
 ]
 
+// Full-name / abbreviation variants Hub may use, mapped to the canonical key so
+// a rule named "PE" still matches Hub's "Physical Education" (and vice-versa).
+const SUBJECT_ALIASES: Record<string, string> = {
+  'physical education': 'pe',
+  'phys ed': 'pe',
+}
+
 /** The match key for a subject name — the same normalisation the DB's
- * `subjectKey` column stores. Case-insensitive, whitespace-collapsed. */
+ * `subjectKey` column stores. Case-insensitive, whitespace-collapsed, dots
+ * stripped ("P.E." → "pe"), then common aliases folded to a canonical key. */
 export function subjectKeyOf(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ')
+  const norm = name.trim().toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ')
+  return SUBJECT_ALIASES[norm] ?? norm
 }
 
 export interface ReminderResolver {
