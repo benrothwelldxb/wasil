@@ -94,7 +94,7 @@ const NAV_SECTIONS: NavSection[] = [
     defaultOpen: false,
     items: [
       { icon: CalendarDays, label: 'Term Dates', path: '/term-dates', flagKey: 'termDatesEnabled' },
-      { icon: Clock, label: 'Schedule', path: '/schedule', flagKey: 'scheduleEnabled' },
+      { icon: Clock, label: 'Schedule', path: '/schedule', flagKey: 'scheduleEnabled', hub: true },
     ],
   },
   {
