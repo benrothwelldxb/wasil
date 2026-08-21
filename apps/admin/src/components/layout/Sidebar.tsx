@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { HubChip } from '../HubChip'
 import {
   MessageSquare,
   ClipboardList,
@@ -47,6 +48,7 @@ interface NavItem {
   adminOnly?: boolean  // hidden from STAFF role
   badgeKey?: string
   flagKey?: SchoolModuleFlag  // hidden when the corresponding module is disabled
+  hub?: boolean  // roster item sourced from Wasil Hub — shows a "Hub" chip
 }
 
 interface NavSection {
@@ -100,9 +102,9 @@ const NAV_SECTIONS: NavSection[] = [
     defaultOpen: false,
     adminOnly: true,
     items: [
-      { icon: GraduationCap, label: 'Students', path: '/students' },
-      { icon: UserCog, label: 'Staff', path: '/staff' },
-      { icon: UserPlus, label: 'Parents', path: '/parents' },
+      { icon: GraduationCap, label: 'Students', path: '/students', hub: true },
+      { icon: UserCog, label: 'Staff', path: '/staff', hub: true },
+      { icon: UserPlus, label: 'Parents', path: '/parents', hub: true },
       { icon: Store, label: 'Providers', path: '/providers', adminOnly: true },
     ],
   },
@@ -111,8 +113,8 @@ const NAV_SECTIONS: NavSection[] = [
     defaultOpen: false,
     adminOnly: true,
     items: [
-      { icon: Layers, label: 'Year Groups', path: '/year-groups' },
-      { icon: Users, label: 'Classes', path: '/classes' },
+      { icon: Layers, label: 'Year Groups', path: '/year-groups', hub: true },
+      { icon: Users, label: 'Classes', path: '/classes', hub: true },
       { icon: UsersRound, label: 'Groups', path: '/groups' },
     ],
   },
@@ -320,6 +322,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                           {item.label}
                         </span>
                       )}
+                      {!collapsed && item.hub && <HubChip />}
                       {item.badgeKey === 'inbox' && inboxUnread > 0 && (
                         <span
                           className="shrink-0 flex items-center justify-center rounded-full text-white text-[10px] font-bold"
