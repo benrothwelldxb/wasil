@@ -73,7 +73,7 @@ const NAV_SECTIONS: NavSection[] = [
     defaultOpen: true,
     items: [
       { icon: ClipboardList, label: 'Forms', path: '/forms', adminOnly: true, flagKey: 'formsEnabled' },
-      { icon: Calendar, label: 'Events', path: '/events', flagKey: 'eventsEnabled' },
+      { icon: Calendar, label: 'Events', path: '/events', flagKey: 'eventsEnabled', hub: true },
       { icon: Newspaper, label: 'Weekly Updates', path: '/weekly', adminOnly: true, flagKey: 'weeklyUpdatesEnabled' },
       { icon: Activity, label: 'Parent Pulse', path: '/pulse', adminOnly: true, flagKey: 'pulseEnabled' },
       { icon: ClipboardCheck, label: 'Attendance', path: '/attendance', flagKey: 'attendanceEnabled' },
