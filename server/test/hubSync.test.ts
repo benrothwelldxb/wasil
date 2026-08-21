@@ -106,7 +106,7 @@ beforeEach(() => {
   ])
   mPupils.mockImplementation(async (_schoolId: string, opts: any = {}) =>
     opts.classId === 'hc1'
-      ? [{ id: 'hp1', firstName: 'Amina', lastName: 'Khan', className: '1A', yearGroupName: 'Year 1' }]
+      ? [{ id: 'hp1', misId: '100123', firstName: 'Amina', lastName: 'Khan', className: '1A', yearGroupName: 'Year 1' }]
       : [],
   )
   mStaff.mockResolvedValue([])
@@ -147,10 +147,11 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
         hubPupilId: 'hp1',
         firstName: 'Amina',
         lastName: 'Khan',
+        externalId: '100123',
         schoolId: 'connect-school-1',
         classId: 'cc-hc1',
       },
-      update: { firstName: 'Amina', lastName: 'Khan', classId: 'cc-hc1' },
+      update: { firstName: 'Amina', lastName: 'Khan', externalId: '100123', classId: 'cc-hc1' },
     })
 
     expect(summary).toEqual({

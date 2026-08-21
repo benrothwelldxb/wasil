@@ -139,8 +139,8 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   // Map: firstName → firstName, lastName → lastName, class → resolved Connect
   // class. Unmapped Hub fields: preferredName, senStatus, dateOfBirth, gender,
   // religion, houseName, arabicLanguage, termOfBirth, guardians (no Connect
-  // home). Connect-owned fields NOT touched by sync: externalId (UPN — not on
-  // Hub's v1 pupil surface), allergies, medicalNotes, photoUrl. Keyed on
+  // home). `misId` → `externalId` (the school MIS Student ID / UPN). Connect-owned
+  // fields NOT touched by sync: allergies, medicalNotes, photoUrl. Keyed on
   // hubPupilId.
   let pupils = 0
   // hubPupilId → Connect Student id, so the guardian pass can resolve each
@@ -157,12 +157,14 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
           hubPupilId: p.id,
           firstName: p.firstName,
           lastName: p.lastName,
+          externalId: p.misId ?? null,
           schoolId,
           classId,
         },
         update: {
           firstName: p.firstName,
           lastName: p.lastName,
+          externalId: p.misId ?? null,
           classId,
         },
       })

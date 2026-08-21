@@ -74,6 +74,7 @@ export interface HubClass {
 // from a sync (see hubSync mapping notes).
 export interface HubPupil {
   id: string
+  misId: string | null   // school MIS Student ID / UPN — maps to Connect Student.externalId
   firstName: string
   lastName: string
   className: string | null
