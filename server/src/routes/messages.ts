@@ -83,7 +83,14 @@ router.post('/upload', isStaff, attachmentUpload.single('file'), async (req, res
 router.get('/', isAuthenticated, async (req, res) => {
   try {
     const user = (await loadUserWithRelations(req.user!.id))!
-    const childClassIds = user.children?.map(c => c.classId) || []
+    // Class IDs must union BOTH the legacy children[] relation AND the Hub
+    // studentLinks — Hub-provisioned parents link children only via studentLinks
+    // and have zero legacy children, so children-only derivation left them with
+    // no class-targeted content. Deduped so legacy-children parents are unaffected.
+    const childClassIds = [...new Set([
+      ...(user.children?.map(c => c.classId) || []),
+      ...(user.studentLinks?.map(l => l.student.classId).filter((id): id is string => !!id) || []),
+    ])]
     const studentIds = user.studentLinks?.map(l => l.studentId) || []
     const now = new Date()
 

@@ -34,6 +34,9 @@ export interface CalendarSyncSummary {
   targetsSkipped: number
   /** Hub events dropped because they aren't parent-facing (e.g. STAFF_ONLY). */
   skippedNonParentFacing: number
+  /** In-window hub-sourced Connect events deleted because Hub no longer returns
+   * them (moved out of window or removed upstream). */
+  pruned: number
   /** The /changes cursor persisted for this school (null if Hub sent none). */
   cursor: number | null
 }
@@ -78,6 +81,7 @@ export async function syncCalendar(
     targetsResolved: 0,
     targetsSkipped: 0,
     skippedNonParentFacing: 0,
+    pruned: 0,
     cursor: null,
   })
 
@@ -106,6 +110,9 @@ export async function syncCalendar(
   let targetsResolved = 0
   let targetsSkipped = 0
   let skippedNonParentFacing = 0
+  // Every Hub calendar-event id we mirrored this run. Drives the orphan prune
+  // below: any in-window hub-sourced Connect event NOT in this set is stale.
+  const seenHubEventIds = new Set<string>()
 
   for (const dto of res.events) {
     // Parent-facing app: never mirror staff-only events into the School Calendar.
@@ -165,6 +172,7 @@ export async function syncCalendar(
           update: data,
         })
     upserted++
+    seenHubEventIds.add(dto.id)
 
     // Replace this event's targets so a Hub-side cohort change is reflected.
     await prisma.eventTarget.deleteMany({ where: { eventId: event.id } })
@@ -176,6 +184,28 @@ export async function syncCalendar(
     }
   }
 
+  // Prune orphans: delete hub-sourced events in THIS window that Hub no longer
+  // returns (deleted upstream, or moved to a different date now outside — or
+  // still inside — the window). Guards, all essential:
+  //   (i)  hubCalendarEventId non-null — never touch Connect-native events or
+  //        un-adopted local teacher proposals (both carry a null id, so `notIn`
+  //        already excludes them and `not: null` makes the empty-window case safe);
+  //   (ii) date within [from, to] — never delete outside the pulled window;
+  //   (iii) id not among the ids Hub returned this run (seenHubEventIds).
+  // Events store `date` as midnight-UTC of the local calendar date, and the
+  // window bounds are midnight-UTC too, so gte/lte are exact & inclusive.
+  const prune = await prisma.event.deleteMany({
+    where: {
+      schoolId: school.id,
+      date: { gte: new Date(window.from), lte: new Date(window.to) },
+      hubCalendarEventId:
+        seenHubEventIds.size > 0
+          ? { not: null, notIn: [...seenHubEventIds] }
+          : { not: null },
+    },
+  })
+  const pruned = prune.count
+
   // Persist the incremental cursor for the next /changes pull.
   const cursor = res.cursor ?? null
   if (cursor !== null) {
@@ -185,7 +215,7 @@ export async function syncCalendar(
     })
   }
 
-  return { skipped: false, upserted, targetsResolved, targetsSkipped, skippedNonParentFacing, cursor }
+  return { skipped: false, upserted, targetsResolved, targetsSkipped, skippedNonParentFacing, pruned, cursor }
 }
 
 /** Convenience for the webhook: resync a school over the default window. Always

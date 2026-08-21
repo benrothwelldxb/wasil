@@ -91,7 +91,12 @@ function sendFormNotifications(req: any, form: any, schoolId: string) {
 router.get('/', isAuthenticated, async (req, res) => {
   try {
     const user = (await loadUserWithRelations(req.user!.id))!
-    const childClassIds = user.children?.map((c: any) => c.classId) || []
+    // Union legacy children[] with Hub studentLinks so Hub-provisioned parents
+    // (zero legacy children) still match class-/year-group-targeted forms. Deduped.
+    const childClassIds = [...new Set([
+      ...(user.children?.map((c: any) => c.classId) || []),
+      ...(user.studentLinks?.map(l => l.student.classId).filter((id): id is string => !!id) || []),
+    ])]
     const now = new Date()
 
     const childClasses = childClassIds.length > 0

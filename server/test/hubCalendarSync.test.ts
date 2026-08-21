@@ -9,7 +9,7 @@ const prismaMock = {
   school: { findUnique: vi.fn(), update: vi.fn() },
   class: { findMany: vi.fn() },
   yearGroup: { findMany: vi.fn() },
-  event: { upsert: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
+  event: { upsert: vi.fn(), findFirst: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
   eventTarget: { deleteMany: vi.fn(), createMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
@@ -65,6 +65,7 @@ beforeEach(() => {
   // normal upsert path runs; adoption tests override findFirst per-case.
   prismaMock.event.findFirst.mockResolvedValue(null)
   prismaMock.event.update.mockImplementation(async ({ where }: any) => ({ id: where.id, hubCalendarEventId: 'hev-1' }))
+  prismaMock.event.deleteMany.mockResolvedValue({ count: 0 })
   prismaMock.eventTarget.deleteMany.mockResolvedValue({ count: 0 })
   prismaMock.eventTarget.createMany.mockResolvedValue({ count: 0 })
 })
@@ -208,6 +209,7 @@ describe('syncCalendar — dormant', () => {
       targetsResolved: 0,
       targetsSkipped: 0,
       skippedNonParentFacing: 0,
+      pruned: 0,
       cursor: null,
     })
     expect(mGetEvents).not.toHaveBeenCalled()
@@ -269,5 +271,76 @@ describe('syncCalendar — proposal reconciliation (Phase B)', () => {
     expect(prismaMock.event.upsert).toHaveBeenCalledTimes(1)
     expect((prismaMock.event.upsert.mock.calls[0][0] as any).where).toEqual({ hubCalendarEventId: 'hev-new' })
     expect(summary.upserted).toBe(1)
+  })
+})
+
+describe('syncCalendar — orphan prune', () => {
+  it('deletes in-window hub events Hub no longer returns, scoped to school + window + not-in-set, hubCalendarEventId non-null', async () => {
+    // Hub returns two events this run; a third (hev-gone) it previously had is
+    // now absent → must be pruned.
+    prismaMock.event.deleteMany.mockResolvedValue({ count: 1 })
+    mGetEvents.mockResolvedValue(
+      eventsResponse([dto({ id: 'hev-a' }), dto({ id: 'hev-b' })]),
+    )
+
+    const summary = await syncCalendar('connect-school-1', WINDOW)
+
+    expect(summary.pruned).toBe(1)
+    expect(prismaMock.event.deleteMany).toHaveBeenCalledTimes(1)
+    const where = prismaMock.event.deleteMany.mock.calls[0][0].where
+    // Tenant-scoped, hub-sourced only, within the pulled window, excluding the
+    // ids Hub returned this run.
+    expect(where.schoolId).toBe('connect-school-1')
+    expect(where.hubCalendarEventId).toEqual({ not: null, notIn: ['hev-a', 'hev-b'] })
+    expect(where.date.gte).toEqual(new Date(WINDOW.from))
+    expect(where.date.lte).toEqual(new Date(WINDOW.to))
+  })
+
+  it('keeps in-window hub events Hub still returns (their ids are excluded from the delete set)', async () => {
+    prismaMock.event.deleteMany.mockResolvedValue({ count: 0 })
+    mGetEvents.mockResolvedValue(eventsResponse([dto({ id: 'hev-keep' })]))
+
+    const summary = await syncCalendar('connect-school-1', WINDOW)
+
+    expect(summary.upserted).toBe(1)
+    expect(summary.pruned).toBe(0)
+    const where = prismaMock.event.deleteMany.mock.calls[0][0].where
+    expect(where.hubCalendarEventId.notIn).toContain('hev-keep')
+  })
+
+  it('never targets out-of-window or hubCalendarEventId-null (native / un-adopted proposal) events', async () => {
+    mGetEvents.mockResolvedValue(eventsResponse([dto({ id: 'hev-a' })]))
+
+    await syncCalendar('connect-school-1', WINDOW)
+
+    const where = prismaMock.event.deleteMany.mock.calls[0][0].where
+    // Guard (i): hubCalendarEventId must be non-null → native events + local
+    // teacher proposals (null id) are structurally excluded.
+    expect(where.hubCalendarEventId.not).toBeNull()
+    // Guard (ii): the delete is bounded to [from, to] — no unbounded date filter.
+    expect(where.date).toEqual({ gte: new Date(WINDOW.from), lte: new Date(WINDOW.to) })
+  })
+
+  it('when Hub returns zero in-window events, prunes ALL in-window hub events (delete filter is just hubCalendarEventId non-null)', async () => {
+    prismaMock.event.deleteMany.mockResolvedValue({ count: 3 })
+    mGetEvents.mockResolvedValue(eventsResponse([]))
+
+    const summary = await syncCalendar('connect-school-1', WINDOW)
+
+    expect(summary.upserted).toBe(0)
+    expect(summary.pruned).toBe(3)
+    const where = prismaMock.event.deleteMany.mock.calls[0][0].where
+    // No notIn when nothing was returned — delete every hub-sourced in-window row.
+    expect(where.hubCalendarEventId).toEqual({ not: null })
+  })
+
+  it('an adopted proposal (now carrying its hubCalendarEventId) is NOT pruned — its id is in the returned set', async () => {
+    mGetEvents.mockResolvedValue(eventsResponse([dto({ id: 'hev-appr', title: 'sports day' })]))
+    prismaMock.event.findFirst.mockResolvedValue({ id: 'proposal-row-1' })
+
+    await syncCalendar('connect-school-1', WINDOW)
+
+    const where = prismaMock.event.deleteMany.mock.calls[0][0].where
+    expect(where.hubCalendarEventId.notIn).toContain('hev-appr')
   })
 })

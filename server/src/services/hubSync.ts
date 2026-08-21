@@ -35,6 +35,7 @@ import {
   type HubGuardian,
   type HubClassTeacher,
 } from './hubMis.js'
+import { resyncCalendarForSchool, type CalendarSyncSummary } from './hubCalendarSync.js'
 
 /** The Connect school isn't linked to a Hub school — nothing to sync. */
 export class SchoolNotLinkedError extends Error {
@@ -72,6 +73,11 @@ export interface SyncSummary {
    * that don't map to an existing Connect user yet (skipped, not created here —
    * they get assigned on a later sync once the staff pass creates them). */
   teacherAssignments: { created: number; removed: number; unresolved: number }
+  /** Calendar resync result, folded in after the roster upserts so the manual
+   * "Sync from Hub" button also refreshes events. Dormant-safe: `null` when the
+   * calendar sync was skipped (not linked / no scope) or threw (a calendar
+   * failure must never break the roster sync). */
+  calendar?: CalendarSyncSummary | null
 }
 
 /**
@@ -255,6 +261,18 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     data: { hubLastSyncedAt: new Date(), hubDataStaleSince: null, lastHubSyncAt: new Date() },
   })
 
+  // --- Calendar refresh ----------------------------------------------------
+  // Fold the Hub calendar sync into the manual roster sync so the admin "Sync
+  // from Hub" button also pulls (and prunes) events. Dormant-safe on its own,
+  // but wrapped so a calendar failure can never fail the roster sync.
+  let calendar: CalendarSyncSummary | null = null
+  try {
+    calendar = await resyncCalendarForSchool(schoolId)
+  } catch (err) {
+    console.error('[hubSync] calendar resync failed (roster sync unaffected):', err)
+    calendar = null
+  }
+
   return {
     yearGroups: hubYearGroups.length,
     classes: hubClasses.length,
@@ -263,6 +281,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     guardians: guardianSummary,
     parentLinks: parentLinkSummary,
     teacherAssignments,
+    calendar,
   }
 }
 
