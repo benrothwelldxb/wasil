@@ -55,10 +55,13 @@ function isParentFacing(audience?: string): boolean {
  * month ago through ~13 months out (Hub windows are ≤400 days). */
 export function defaultCalendarWindow(): { from: string; to: string } {
   const day = (d: Date) => d.toISOString().slice(0, 10)
+  // Hub's calendar API caps the range at ~1 year — a wider window is rejected
+  // with a 400 (silently no-opping the sync). Keep the total span < 366 days:
+  // 30 days back (recent past) + ~330 ahead covers the rest of the school year.
   const from = new Date()
   from.setUTCDate(from.getUTCDate() - 30)
   const to = new Date()
-  to.setUTCDate(to.getUTCDate() + 395)
+  to.setUTCDate(to.getUTCDate() + 330)
   return { from: day(from), to: day(to) }
 }
 
