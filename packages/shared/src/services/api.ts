@@ -2293,7 +2293,7 @@ export interface ProviderDetail {
   users: Array<{ id: string; email: string; name: string; hasPassword: boolean; lastLoginAt: string | null }>
   pendingInvites: Array<{ id: string; email: string; expiresAt: string | null }>
 }
-export interface ProviderInviteResult { id: string; email: string; token: string; expiresAt: string }
+export interface ProviderInviteResult { id: string; email: string; token: string; registrationUrl?: string; expiresAt: string }
 
 export const providers = {
   list: () => fetchApi<ProviderSummary[]>('/api/providers'),

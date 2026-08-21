@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { X, Pencil, Shield, GraduationCap, UserCog, Send, Check, Clock, ShieldCheck, ShieldOff } from 'lucide-react'
+import { X, Pencil, Shield, GraduationCap, UserCog } from 'lucide-react'
 import { useTheme, useApi, api, useToast } from '@wasil/shared'
 import type { Class } from '@wasil/shared'
 import type { StaffMember } from '@wasil/shared'
@@ -17,45 +17,6 @@ export function StaffPage() {
   // "Add Staff" — staff identity comes from Hub.
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [sendingLoginTo, setSendingLoginTo] = useState<string | null>(null)
-  const [resetting2faFor, setResetting2faFor] = useState<string | null>(null)
-
-  const handleSendLogin = async (member: StaffMember) => {
-    setSendingLoginTo(member.id)
-    try {
-      const result = await api.staff.sendLogin(member.id)
-      toast.success(result.message || `Login email sent to ${member.email}`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to send login email')
-    } finally {
-      setSendingLoginTo(null)
-    }
-  }
-
-  const handleReset2fa = async (member: StaffMember) => {
-    if (!confirm(`Reset 2FA for ${member.name}? They will need to set it up again on next login.`)) return
-    setResetting2faFor(member.id)
-    try {
-      await api.staff.reset2fa(member.id)
-      refetchStaff()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reset 2FA')
-    } finally {
-      setResetting2faFor(null)
-    }
-  }
-
-  const formatLastLogin = (dateStr?: string | null) => {
-    if (!dateStr) return null
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-    if (diffDays === 0) return 'Today'
-    if (diffDays === 1) return 'Yesterday'
-    if (diffDays < 7) return `${diffDays} days ago`
-    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-  }
 
   // Edit form fields
   const [name, setName] = useState('')
@@ -267,17 +228,6 @@ export function StaffPage() {
                       {member.role === 'ADMIN' ? <Shield className="h-3 w-3" /> : <GraduationCap className="h-3 w-3" />}
                       <span>{member.role === 'ADMIN' ? 'Admin' : 'Staff'}</span>
                     </span>
-                    {member.twoFactorEnabled ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 flex items-center gap-0.5">
-                        <ShieldCheck className="h-3 w-3" />
-                        <span>2FA</span>
-                      </span>
-                    ) : (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 flex items-center gap-0.5">
-                        <ShieldOff className="h-3 w-3" />
-                        <span>No 2FA</span>
-                      </span>
-                    )}
                     {member.position && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                         {member.position}
@@ -286,18 +236,6 @@ export function StaffPage() {
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <span>{member.email}</span>
-                    <span className="text-gray-300">&middot;</span>
-                    {member.lastLoginAt ? (
-                      <span className="flex items-center gap-1 text-xs text-green-600">
-                        <Check className="h-3 w-3" />
-                        Last login: {formatLastLogin(member.lastLoginAt)}
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs text-amber-600">
-                        <Clock className="h-3 w-3" />
-                        Never logged in
-                      </span>
-                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1 ml-4">
@@ -309,31 +247,6 @@ export function StaffPage() {
                 </div>
               </div>
               <div className="flex items-center space-x-1">
-                <button
-                  onClick={() => handleSendLogin(member)}
-                  disabled={sendingLoginTo === member.id}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-colors"
-                  style={{
-                    backgroundColor: member.lastLoginAt ? '#F3F4F6' : '#EEF0FF',
-                    color: member.lastLoginAt ? '#6B7280' : '#5B6EC4',
-                    opacity: sendingLoginTo === member.id ? 0.5 : 1,
-                  }}
-                  title="Send login email"
-                >
-                  <Send className="h-3 w-3" />
-                  {sendingLoginTo === member.id ? 'Sending...' : member.lastLoginAt ? 'Resend' : 'Send Invite'}
-                </button>
-                {member.twoFactorEnabled && (
-                  <button
-                    onClick={() => handleReset2fa(member)}
-                    disabled={resetting2faFor === member.id}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50"
-                    title="Reset 2FA"
-                  >
-                    <ShieldOff className="h-3 w-3" />
-                    {resetting2faFor === member.id ? 'Resetting...' : 'Reset 2FA'}
-                  </button>
-                )}
                 <button onClick={() => handleEdit(member)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Edit access">
                   <Pencil className="h-4 w-4" />
                 </button>

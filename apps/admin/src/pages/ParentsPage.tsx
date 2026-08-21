@@ -29,10 +29,6 @@ export function ParentsPage() {
   // === Registered Parents state ===
   const [parentsSearch, setParentsSearch] = useState('')
   const [parentsPage, setParentsPage] = useState(1)
-  const [sendingLoginLink, setSendingLoginLink] = useState<string | null>(null)
-  const [setPasswordFor, setSetPasswordFor] = useState<{ id: string; name: string; email: string } | null>(null)
-  const [newPassword, setNewPassword] = useState('')
-  const [isSettingPassword, setIsSettingPassword] = useState(false)
   const [inviteAllConfirm, setInviteAllConfirm] = useState(false)
   const [sendingInvites, setSendingInvites] = useState(false)
   const [sendingInviteFor, setSendingInviteFor] = useState<string | null>(null)
@@ -80,22 +76,6 @@ export function ParentsPage() {
       toast.success('Email sent successfully')
     } catch (error) {
       toast.error(`Failed to resend: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
-  }
-
-  const handleSendLoginLink = async (id: string) => {
-    setSendingLoginLink(id)
-    try {
-      const result = await api.parentInvitations.resetParentPassword(id)
-      if (result.emailSent) {
-        toast.success(result.message)
-      } else {
-        toast.error(result.message)
-      }
-    } catch (error) {
-      toast.error(`Failed to send login link: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
-      setSendingLoginLink(null)
     }
   }
 
@@ -150,25 +130,6 @@ export function ParentsPage() {
       setSignInCodeFor(null)
     } finally {
       setIsGeneratingCode(false)
-    }
-  }
-
-  const handleSetPassword = async () => {
-    if (!setPasswordFor || !newPassword) return
-    if (newPassword.length < 8) {
-      toast.warning('Password must be at least 8 characters')
-      return
-    }
-    setIsSettingPassword(true)
-    try {
-      const result = await api.parentInvitations.setParentPassword(setPasswordFor.id, newPassword)
-      toast.success(result.message)
-      setSetPasswordFor(null)
-      setNewPassword('')
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to set password')
-    } finally {
-      setIsSettingPassword(false)
     }
   }
 
@@ -492,15 +453,6 @@ export function ParentsPage() {
                           <span>{sendingInviteFor === parent.id ? 'Sending...' : parent.welcomeSentAt ? 'Resend' : 'Send'}</span>
                         </button>
                         <button
-                          onClick={() => handleSendLoginLink(parent.id)}
-                          disabled={sendingLoginLink === parent.id}
-                          className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 transition-colors"
-                          title="Send login link"
-                        >
-                          <Send className="h-3 w-3" />
-                          <span>{sendingLoginLink === parent.id ? 'Sending...' : 'Send Login Link'}</span>
-                        </button>
-                        <button
                           onClick={() => handleGenerateSignInCode(parent)}
                           disabled={isGeneratingCode && signInCodeFor?.id === parent.id}
                           className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 transition-colors"
@@ -508,13 +460,6 @@ export function ParentsPage() {
                         >
                           <KeyRound className="h-3 w-3" />
                           <span>{isGeneratingCode && signInCodeFor?.id === parent.id ? 'Generating...' : 'Sign-in Code'}</span>
-                        </button>
-                        <button
-                          onClick={() => { setSetPasswordFor({ id: parent.id, name: parent.name || 'Unknown', email: parent.email }); setNewPassword('') }}
-                          className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
-                          title="Set password"
-                        >
-                          <span>Set Password</span>
                         </button>
                       </div>
                     </td>
@@ -753,39 +698,6 @@ export function ParentsPage() {
         </div>
       )}
 
-      {setPasswordFor && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">Set Password</h3>
-            <p className="text-sm text-gray-500 mb-4">{setPasswordFor.name} ({setPasswordFor.email})</p>
-            <input
-              type="text"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              placeholder="Enter new password (min 8 chars)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-1"
-              autoFocus
-            />
-            <p className="text-xs text-gray-400 mb-4">Must be at least 8 characters</p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => { setSetPasswordFor(null); setNewPassword('') }}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSetPassword}
-                disabled={isSettingPassword || newPassword.length < 8}
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50"
-                style={{ backgroundColor: '#C4506E' }}
-              >
-                {isSettingPassword ? 'Setting...' : 'Set Password'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -5,10 +5,14 @@ import prisma from '../services/prisma.js'
 import { isAdmin } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { logAudit } from '../services/audit.js'
+import { enqueueEmail } from '../services/outbox.js'
 
 const router = Router()
 
 const INVITE_EXPIRY_DAYS = 7
+// The provider self-service portal's public origin. Configurable per environment;
+// the invite registration link + email are built from it.
+const PROVIDER_APP_URL = process.env.PROVIDER_APP_URL || 'https://provider.wasilconnect.com'
 
 const createProviderSchema = z.object({
   name: z.string().min(1),
@@ -180,9 +184,32 @@ router.post('/:id/invitations', isAdmin, validate(inviteSchema), async (req, res
     })
 
     logAudit({ req, action: 'CREATE', resourceType: 'PROVIDER_INVITATION' as never, resourceId: invitation.id, metadata: { providerId: link.providerId, email } })
-    // Email delivery of the link is wired in a later phase; return the token so
-    // the admin UI can surface/copy the invite link now.
-    res.status(201).json({ id: invitation.id, email, token, expiresAt: expiresAt.toISOString() })
+
+    const registrationUrl = `${PROVIDER_APP_URL}/register?token=${token}`
+    const school = await prisma.school.findUnique({ where: { id: req.user!.schoolId }, select: { name: true } })
+    const providerName = link.provider.name
+    const schoolName = school?.name || 'your school'
+
+    // Send the provider their registration link. The admin UI ALSO gets the link
+    // back in the response so they can copy it, in case email doesn't reach them.
+    await enqueueEmail(req.user!.schoolId, {
+      to: email,
+      subject: `You've been invited to manage ${providerName} on Wasil Connect`,
+      html: `
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#2D2225;">
+          <p style="font-size:16px;line-height:1.6;">Hello,</p>
+          <p style="font-size:16px;line-height:1.6;">${schoolName} has invited <strong>${providerName}</strong> to the Wasil Connect provider portal, where you can manage your activities, bookings and menus.</p>
+          <p style="font-size:16px;line-height:1.6;">Set up your account to get started:</p>
+          <p style="text-align:center;margin:28px 0;">
+            <a href="${registrationUrl}" style="display:inline-block;background-color:#7F0029;color:#ffffff;text-decoration:none;padding:14px 34px;border-radius:10px;font-weight:600;font-size:16px;">Set up your account</a>
+          </p>
+          <p style="font-size:13px;line-height:1.6;color:#7A6469;">If the button doesn't work, use this link:<br><a href="${registrationUrl}" style="color:#7F0029;">${registrationUrl}</a></p>
+          <p style="font-size:13px;line-height:1.6;color:#A8929A;">This invitation expires in ${INVITE_EXPIRY_DAYS} days.</p>
+        </div>`,
+      text: `${schoolName} has invited ${providerName} to the Wasil Connect provider portal.\n\nSet up your account: ${registrationUrl}\n\nThis invitation expires in ${INVITE_EXPIRY_DAYS} days.`,
+    })
+
+    res.status(201).json({ id: invitation.id, email, token, registrationUrl, expiresAt: expiresAt.toISOString() })
   } catch (error) {
     console.error('Error inviting provider user:', error)
     res.status(500).json({ error: 'Failed to create invitation' })

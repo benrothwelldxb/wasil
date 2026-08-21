@@ -184,7 +184,11 @@ function ProviderDetailModal({ id, onClose, onChanged }: { id: string; onClose: 
     }
   }
 
-  const inviteLink = lastInvite ? `${window.location.origin.replace(/admin/, 'provider')}/register?token=${lastInvite.token}` : ''
+  // Prefer the server-built registration link (from PROVIDER_APP_URL); fall back
+  // to deriving it from the admin origin only if the server didn't supply one.
+  const inviteLink = lastInvite
+    ? (lastInvite.registrationUrl || `${window.location.origin.replace(/admin/, 'provider')}/register?token=${lastInvite.token}`)
+    : ''
 
   return (
     <Modal title={data?.name || 'Provider'} onClose={onClose}>
@@ -238,7 +242,7 @@ function ProviderDetailModal({ id, onClose, onChanged }: { id: string; onClose: 
 
             {lastInvite && (
               <div className="mt-3 rounded-warm bg-warm-green/10 border border-warm-green/30 p-3">
-                <div className="text-xs font-semibold text-warm-text-primary mb-1">Registration link — share with {lastInvite.email}:</div>
+                <div className="text-xs font-semibold text-warm-text-primary mb-1">We've emailed {lastInvite.email} their registration link. You can also copy it:</div>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-xs bg-white rounded px-2 py-1.5 border border-warm-border break-all">{inviteLink}</code>
                   <button
