@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react'
 import { Plus, X, Pencil, Trash2, Calendar, Database, ChevronDown } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { TermDate, TermDateType } from '@wasil/shared'
+import { HubSyncBanner } from '../components/HubSyncBanner'
+import { HubChip } from '../components/HubChip'
 
 interface TermDateForm {
   term: number
@@ -194,6 +196,7 @@ export function TermDatesPage() {
 
   return (
     <div>
+      <HubSyncBanner noun="Term dates" onSynced={refetch} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Term Dates</h2>
@@ -382,6 +385,7 @@ export function TermDatesPage() {
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${typeConfig[td.type]?.badge || 'bg-gray-100 text-gray-700'}`}>
                             {typeConfig[td.type]?.label || td.type}
                           </span>
+                          {td.fromHub && <HubChip />}
                         </div>
                         {td.sublabel && <p className="text-xs text-slate-500 mt-0.5">{td.sublabel}</p>}
                         <div className="flex items-center gap-1 text-sm text-slate-500 mt-1">
@@ -390,14 +394,17 @@ export function TermDatesPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => handleEdit(td)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => setDeleteTarget(td)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {/* Hub-sourced rows are read-only (managed in Hub); hide edit/delete. */}
+                    {!td.fromHub && (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleEdit(td)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setDeleteTarget(td)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

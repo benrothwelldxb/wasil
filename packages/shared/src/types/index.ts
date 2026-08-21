@@ -363,6 +363,9 @@ export interface TermDate {
   color: string
   academicYear?: string | null
   schoolId: string
+  /** True when this row was mirrored from a Wasil Hub academic term — read-only
+   * in Connect (edit/delete in Hub). Manual rows are undefined/false. */
+  fromHub?: boolean
 }
 
 // Schedule types

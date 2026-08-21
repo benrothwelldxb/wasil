@@ -36,6 +36,7 @@ import {
   type HubClassTeacher,
 } from './hubMis.js'
 import { resyncCalendarForSchool, type CalendarSyncSummary } from './hubCalendarSync.js'
+import { syncTermDates, type TermDateSyncSummary } from './hubTermSync.js'
 
 /** The Connect school isn't linked to a Hub school — nothing to sync. */
 export class SchoolNotLinkedError extends Error {
@@ -78,6 +79,11 @@ export interface SyncSummary {
    * calendar sync was skipped (not linked / no scope) or threw (a calendar
    * failure must never break the roster sync). */
   calendar?: CalendarSyncSummary | null
+  /** Term-dates sync result, folded in after the roster upserts so the manual
+   * "Sync from Hub" button also refreshes the term calendar. Dormant-safe:
+   * `null` when the sync was skipped (school not linked) or threw (a term-date
+   * failure must never break the roster sync). */
+  termDates?: TermDateSyncSummary | null
 }
 
 /**
@@ -273,6 +279,18 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     calendar = null
   }
 
+  // --- Term-dates refresh --------------------------------------------------
+  // Fold the Hub term-dates sync in too, so the admin "Sync from Hub" button
+  // also mirrors (and prunes) the term calendar. Wrapped so a term-date failure
+  // can never fail the roster sync.
+  let termDates: TermDateSyncSummary | null = null
+  try {
+    termDates = await syncTermDates(schoolId)
+  } catch (err) {
+    console.error('[hubSync] term-dates sync failed (roster sync unaffected):', err)
+    termDates = null
+  }
+
   return {
     yearGroups: hubYearGroups.length,
     classes: hubClasses.length,
@@ -282,6 +300,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     parentLinks: parentLinkSummary,
     teacherAssignments,
     calendar,
+    termDates,
   }
 }
 

@@ -59,6 +59,8 @@ router.get('/', isAuthenticated, async (req, res) => {
       color: td.color,
       academicYear: td.academicYear || null,
       schoolId: td.schoolId,
+      // Hub-sourced rows (linked to a Hub term) are read-only in Connect.
+      fromHub: td.hubTermId != null,
     })))
   } catch (error) {
     console.error('Error fetching term dates:', error)
@@ -120,6 +122,11 @@ router.put('/:id', isAdmin, async (req, res) => {
 
     if (!existing) {
       return res.status(404).json({ error: 'Term date not found' })
+    }
+
+    // Hub-sourced rows are read-only in Connect — edit them in Wasil Hub.
+    if (existing.hubTermId != null) {
+      return res.status(400).json({ error: 'This term date is managed in Wasil Hub' })
     }
 
     const termDate = await prisma.termDate.update({
@@ -212,13 +219,20 @@ router.delete('/:id', isAdmin, async (req, res) => {
   try {
     const { id } = req.params
 
-    // Tenant guard: scoped delete can't remove another school's term dates.
-    const result = await prisma.termDate.deleteMany({
+    // Tenant guard: only ever resolves this school's rows.
+    const existing = await prisma.termDate.findFirst({
       where: { id, schoolId: req.user!.schoolId },
     })
-    if (result.count === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Term date not found' })
     }
+
+    // Hub-sourced rows are read-only in Connect — delete them in Wasil Hub.
+    if (existing.hubTermId != null) {
+      return res.status(400).json({ error: 'This term date is managed in Wasil Hub' })
+    }
+
+    await prisma.termDate.delete({ where: { id } })
 
     logAudit({ req, action: 'DELETE', resourceType: 'TERM_DATE', resourceId: id })
 

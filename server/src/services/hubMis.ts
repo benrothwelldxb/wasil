@@ -113,6 +113,19 @@ export interface HubGuardian {
   pupils: HubGuardianPupilLink[]
 }
 
+// Mirror of Hub's TermDTO (subset) — an academic term's boundaries. Connect
+// mirrors each into two read-only TermDate rows (a "term-start" + a "term-end").
+// `startDate`/`endDate` are `YYYY-MM-DD`; `name`/`academicYear` are returned
+// as-stored by Hub (e.g. "Autumn Term" / "2026/27").
+export interface HubTerm {
+  id: string
+  name: string
+  academicYear: string
+  startDate: string
+  endDate: string
+  isCurrent: boolean
+}
+
 // Mirror of Hub's SyncStatusDTO (subset) — the polling freshness signal.
 export interface HubSyncStatus {
   schoolId: string
@@ -210,6 +223,14 @@ export async function listPupils(
   if (opts.classId) params.set('classId', opts.classId)
   const { pupils } = await call<{ pupils: HubPupil[] }>(`/pupils?${params.toString()}`)
   return pupils
+}
+
+/** Academic terms for a Hub school (its term calendar). Connect mirrors each
+ * into a read-only pair of TermDate rows (term-start + term-end). */
+export async function listTerms(hubSchoolId: string): Promise<HubTerm[]> {
+  const params = new URLSearchParams({ schoolId: hubSchoolId })
+  const { terms } = await call<{ terms: HubTerm[] }>(`/terms?${params.toString()}`)
+  return terms
 }
 
 /** Staff for a Hub school (includes pending-invite rows: hubUserId === null). */

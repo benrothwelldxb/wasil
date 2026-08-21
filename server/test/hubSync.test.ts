@@ -31,6 +31,12 @@ vi.mock('../src/services/hubCalendarSync', () => ({
   resyncCalendarForSchool: vi.fn(),
 }))
 
+// The term-dates sync has its own suite; here we mock it to assert the roster
+// sync folds it in (and to keep this suite DB-free).
+vi.mock('../src/services/hubTermSync', () => ({
+  syncTermDates: vi.fn(),
+}))
+
 const {
   listYearGroups,
   listClasses,
@@ -39,8 +45,10 @@ const {
   listGuardians,
 } = await import('../src/services/hubMis')
 const { resyncCalendarForSchool } = await import('../src/services/hubCalendarSync')
+const { syncTermDates } = await import('../src/services/hubTermSync')
 const { syncSchoolFromHub, SchoolNotLinkedError } = await import('../src/services/hubSync')
 const mResyncCalendar = vi.mocked(resyncCalendarForSchool)
+const mSyncTermDates = vi.mocked(syncTermDates)
 
 const mYearGroups = vi.mocked(listYearGroups)
 const mClasses = vi.mocked(listClasses)
@@ -63,12 +71,20 @@ const CALENDAR_DORMANT = {
   cursor: null,
 }
 
+// A dormant term-dates sync result (the live state today: school not linked).
+const TERMDATES_DORMANT = {
+  skipped: true as const,
+  upserted: 0,
+  pruned: 0,
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 
   prismaMock.school.findUnique.mockResolvedValue(SCHOOL)
   prismaMock.school.update.mockResolvedValue(SCHOOL)
   mResyncCalendar.mockResolvedValue(CALENDAR_DORMANT)
+  mSyncTermDates.mockResolvedValue(TERMDATES_DORMANT)
 
   // Upserts echo back a Connect id derived from the Hub id so FK resolution is
   // observable (a class's create.yearGroupId must equal the yg upsert's id).
@@ -146,6 +162,7 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       parentLinks: { created: 0, skippedNoPupil: 0 },
       teacherAssignments: { created: 0, removed: 0, unresolved: 0 },
       calendar: CALENDAR_DORMANT,
+      termDates: TERMDATES_DORMANT,
     })
 
     // On success the school is marked fresh (and last-synced is stamped).
@@ -539,6 +556,32 @@ describe('syncSchoolFromHub — calendar refresh', () => {
     // Roster completed and the school was still marked fresh.
     expect(summary.pupils).toBe(1)
     expect(summary.calendar).toBeNull()
+    expect(prismaMock.school.update).toHaveBeenCalledWith({
+      where: { id: 'connect-school-1' },
+      data: { hubLastSyncedAt: expect.any(Date), hubDataStaleSince: null, lastHubSyncAt: expect.any(Date) },
+    })
+  })
+})
+
+describe('syncSchoolFromHub — term-dates refresh', () => {
+  it('invokes the term-dates sync (for the Connect school id) and folds its result into the summary', async () => {
+    const termResult = { skipped: false as const, upserted: 6, pruned: 1 }
+    mSyncTermDates.mockResolvedValue(termResult)
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(mSyncTermDates).toHaveBeenCalledTimes(1)
+    expect(mSyncTermDates).toHaveBeenCalledWith('connect-school-1')
+    expect(summary.termDates).toEqual(termResult)
+  })
+
+  it('a term-dates-sync failure never breaks the roster sync — summary.termDates is null, roster still fresh', async () => {
+    mSyncTermDates.mockRejectedValue(new Error('hub terms 500'))
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(summary.pupils).toBe(1)
+    expect(summary.termDates).toBeNull()
     expect(prismaMock.school.update).toHaveBeenCalledWith({
       where: { id: 'connect-school-1' },
       data: { hubLastSyncedAt: expect.any(Date), hubDataStaleSince: null, lastHubSyncAt: expect.any(Date) },

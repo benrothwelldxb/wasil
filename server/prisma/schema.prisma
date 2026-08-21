@@ -612,6 +612,10 @@ model TermDate {
   type         String    // "term-start", "term-end", "half-term", "public-holiday", "induction"
   color        String
   academicYear String?   // "2025-26", "2026-27" etc.
+  // Links a row to its Wasil Hub academic term (idempotent upsert + prune key).
+  // Null = a manually-created Connect row (half-term / public-holiday / induction),
+  // which stays fully editable and is never touched by the Hub term sync.
+  hubTermId    String?
   schoolId     String
   school       School    @relation(fields: [schoolId], references: [id])
 }
