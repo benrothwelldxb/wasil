@@ -749,6 +749,47 @@ export interface ParentStudentLinkInfo {
   teacherName?: string | null
 }
 
+// Parent-app weekly child timetable — Mon–Fri of a week for one child, sourced
+// live (read-only) from Wasil Hub. `hubAvailable:false` (empty `days`) means the
+// school hasn't published a timetable / isn't Hub-linked yet.
+export interface ChildTimetableBlock {
+  /** Stable per-block id (React key). */
+  id: string
+  /** Start time, HH:MM. */
+  start: string
+  /** End time, HH:MM. */
+  end: string
+  /** Block label, e.g. "Arabic A&B" (also shown for non-lesson blocks). */
+  label: string
+  /** Lesson subject + optional Hub colour; null for arrival/registration/break. */
+  subject: { name: string; color: string | null } | null
+  /** The block's teacher, when present. */
+  teacher: { firstName: string; lastName: string } | null
+  /** Room, when assigned. */
+  room: string | null
+  /** True for specialist blocks (Swimming, PE). */
+  specialist: boolean
+  /** Hub's block type, e.g. "LESSON" | "SPECIALIST" | "REGISTRATION". */
+  blockType: string
+}
+export interface ChildTimetableDay {
+  /** 1=Mon … 5=Fri. */
+  weekday: number
+  /** The day, YYYY-MM-DD. */
+  date: string
+  blocks: ChildTimetableBlock[]
+}
+export interface ChildTimetableWeek {
+  studentId: string
+  studentName: string
+  className: string
+  /** Monday of the week shown, YYYY-MM-DD (school timezone). */
+  weekOf: string
+  /** True when at least one weekday was answered by Hub. */
+  hubAvailable: boolean
+  days: ChildTimetableDay[]
+}
+
 export interface StudentListResponse {
   students: Student[]
   pagination: {

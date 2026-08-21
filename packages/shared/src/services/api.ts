@@ -92,6 +92,7 @@ import type {
   PaymentStatus,
   StudentReport,
   ReportUploadResult,
+  ChildTimetableWeek,
 } from '../types'
 
 const API_URL = config.apiUrl
@@ -2414,6 +2415,15 @@ export interface TimetableOverride {
 export const timetable = {
   today: () => fetchApi<TimetableTodayChild[]>('/api/timetable/today'),
   grid: () => fetchApi<TimetableGrid>('/api/timetable/grid'),
+  // Parent-app weekly child timetable (Mon–Fri) for one of the parent's own
+  // children, sourced live from Hub. `weekOf` (any day in the target week)
+  // defaults to the current week in the school timezone.
+  childWeek: (studentId: string, weekOf?: string) =>
+    fetchApi<ChildTimetableWeek>(
+      `/api/timetable/child/${encodeURIComponent(studentId)}/week${
+        weekOf ? `?weekOf=${encodeURIComponent(weekOf)}` : ''
+      }`,
+    ),
   // Admin-only this-week overrides (cancel / move / ad-hoc add).
   overrides: {
     list: (from: string, to: string) =>

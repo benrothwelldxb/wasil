@@ -17,6 +17,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { getClassDayCached } from '../services/timetableCache.js'
+import type { HubTimetableBlock } from '../services/hubMis.js'
 import { buildReminderResolver, subjectKeyOf, type ReminderItem } from '../services/timetableReminders.js'
 import {
   applyOverrides,
@@ -319,6 +320,151 @@ router.get('/grid', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error building timetable/grid:', error)
     res.status(500).json({ error: 'Failed to load timetable grid' })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// GET /api/timetable/child/:studentId/week?weekOf=YYYY-MM-DD   (parent)
+//
+// The parent-app weekly child timetable: Mon–Fri of the requested week for one
+// of the requester's own children, sourced live (read-only) from Hub's per-class
+// effective day. Reuses the same per-class-per-day cache as /today so siblings'
+// parents share one Hub call. Degrades gracefully — a day Hub can't answer comes
+// back with `blocks: []`; when Hub answers for no day, `hubAvailable:false` with
+// empty `days` (never a 500 on the dormant case).
+//
+// v1 shows the raw Hub effective blocks (the effective-day already folds A/B
+// weeks by date); the Connect this-week override layer is not composed here.
+// ---------------------------------------------------------------------------
+
+/** One timetable block as the parent app renders it. */
+interface ChildTimetableBlock {
+  id: string
+  start: string
+  end: string
+  label: string
+  subject: { name: string; color: string | null } | null
+  teacher: { firstName: string; lastName: string } | null
+  room: string | null
+  specialist: boolean
+  blockType: string
+}
+interface ChildTimetableDay {
+  weekday: number // 1=Mon … 5=Fri
+  date: string // YYYY-MM-DD
+  blocks: ChildTimetableBlock[]
+}
+export interface ChildTimetableWeek {
+  studentId: string
+  studentName: string
+  className: string
+  weekOf: string // Monday, YYYY-MM-DD
+  hubAvailable: boolean
+  days: ChildTimetableDay[]
+}
+
+/** Map a raw Hub block down to the parent-facing shape. */
+function toChildBlock(b: HubTimetableBlock): ChildTimetableBlock {
+  return {
+    id: b.id,
+    start: b.start,
+    end: b.end,
+    label: b.label,
+    subject: b.subject ? { name: b.subject.name, color: b.subject.color } : null,
+    teacher: b.teacher ? { firstName: b.teacher.firstName, lastName: b.teacher.lastName } : null,
+    room: b.room,
+    specialist: b.specialist,
+    blockType: b.block_type,
+  }
+}
+
+router.get('/child/:studentId/week', isAuthenticated, async (req, res) => {
+  try {
+    const { studentId } = req.params
+    const user = (await loadUserWithRelations(req.user!.id))!
+
+    // Resolve the requester's own children (studentLinks + legacy children),
+    // mirroring /today's resolution — this is the child-ownership check.
+    const entries: ChildEntry[] = []
+    const seen = new Set<string>()
+    for (const link of user.studentLinks ?? []) {
+      const s = link.student
+      if (!s?.classId || seen.has(s.id)) continue
+      seen.add(s.id)
+      entries.push({
+        studentId: s.id,
+        name: `${s.firstName} ${s.lastName}`.trim(),
+        className: s.class?.name ?? '',
+        classId: s.classId,
+      })
+    }
+    for (const child of user.children ?? []) {
+      if (!child.classId || seen.has(child.id)) continue
+      seen.add(child.id)
+      entries.push({
+        studentId: child.id,
+        name: child.name,
+        className: child.class?.name ?? '',
+        classId: child.classId,
+      })
+    }
+
+    const child = entries.find((e) => e.studentId === studentId)
+    if (!child) {
+      // Not one of the requester's children — don't reveal whether it exists.
+      return res.status(404).json({ error: 'Child not found' })
+    }
+
+    const [school, klass] = await Promise.all([
+      prisma.school.findUnique({
+        where: { id: req.user!.schoolId },
+        select: { hubSchoolId: true, timezone: true },
+      }),
+      prisma.class.findUnique({
+        where: { id: child.classId },
+        select: { hubClassId: true },
+      }),
+    ])
+
+    const tz = school?.timezone ?? 'UTC'
+    const rawWeekOf = req.query.weekOf
+    const weekOf =
+      typeof rawWeekOf === 'string' && DATE_RE.test(rawWeekOf) ? rawWeekOf : todayInTimezone(tz)
+    const { monday, dates } = weekdayDates(weekOf)
+
+    const hubClassId = klass?.hubClassId ?? null
+    const hubReady = !!process.env.HUB_SERVICE_TOKEN && !!school?.hubSchoolId && !!hubClassId
+
+    // Fetch each weekday's effective day (cache-coalesced). A day Hub can't
+    // answer (null / thrown) becomes an empty-block day; if no day answers at
+    // all, hubAvailable stays false and we return empty days.
+    let hubAvailable = false
+    const days: ChildTimetableDay[] = await Promise.all(
+      dates.map(async ({ weekday, date }): Promise<ChildTimetableDay> => {
+        if (!hubReady) return { weekday, date, blocks: [] }
+        try {
+          const day = await getClassDayCached(school!.hubSchoolId!, hubClassId!, date)
+          if (!day) return { weekday, date, blocks: [] }
+          hubAvailable = true
+          return { weekday, date, blocks: day.blocks.map(toChildBlock) }
+        } catch {
+          return { weekday, date, blocks: [] }
+        }
+      }),
+    )
+
+    const result: ChildTimetableWeek = {
+      studentId: child.studentId,
+      studentName: child.name,
+      className: child.className,
+      weekOf: monday,
+      hubAvailable,
+      days: hubAvailable ? days : [],
+    }
+    res.json(result)
+  } catch (error) {
+    console.error('Error building timetable/child week:', error)
+    res.status(500).json({ error: 'Failed to load timetable' })
   }
 })
 

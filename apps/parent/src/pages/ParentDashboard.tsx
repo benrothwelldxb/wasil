@@ -870,6 +870,15 @@ export function ParentDashboard() {
                       </div>
                     ))
                   ))}
+                  {scheduleOn && (
+                    <Link
+                      to="/timetable"
+                      className="flex items-center justify-center gap-1.5 mt-1 py-2 rounded-[14px] text-[13px] font-bold"
+                      style={{ backgroundColor: '#FFF0F3', color: '#C4506E' }}
+                    >
+                      {t('dashboard.viewTimetable', 'View full timetable')} &rarr;
+                    </Link>
+                  )}
                 </div>
               </div>
             )

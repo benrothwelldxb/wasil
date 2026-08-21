@@ -24,6 +24,7 @@ import {
   Target,
   UtensilsCrossed,
   ClipboardCheck,
+  CalendarDays,
 } from 'lucide-react'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
@@ -175,6 +176,9 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   }
   if (isEnabled('attendanceEnabled')) {
     schoolLife.push({ icon: ClipboardCheck, labelKey: 'nav.attendance', path: '/attendance' })
+  }
+  if (isEnabled('scheduleEnabled')) {
+    schoolLife.push({ icon: CalendarDays, labelKey: 'nav.timetable', path: '/timetable' })
   }
   if (hasActiveEca && isEnabled('ecaEnabled')) {
     schoolLife.push({ icon: Sparkles, labelKey: 'nav.activities', path: '/activities' })

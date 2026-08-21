@@ -142,12 +142,28 @@ export interface HubTimetableSubject {
   color: string | null
   isStatutory: boolean
 }
+/** A teacher on a block. Hub returns more (id, email) but Connect only reads the
+ * name for the parent-facing weekly timetable. */
+export interface HubTimetableTeacher {
+  firstName: string
+  lastName: string
+}
 export interface HubTimetableBlock {
+  /** Stable per-block id (used as a React key by the weekly-timetable view). */
+  id: string
   start: string
   end: string
   label: string
   /** null for a non-subject block (e.g. a break). */
   subject: HubTimetableSubject | null
+  /** The primary teacher for the block, or null when Hub has none. */
+  teacher: HubTimetableTeacher | null
+  /** All teachers on the block (may be empty). */
+  teachers: HubTimetableTeacher[]
+  /** Room name, or null when unassigned. */
+  room: string | null
+  /** A/B-week tag as Hub folds it, e.g. "ALL". */
+  week: string
   /** Specialist items (Swimming, PE) — Connect flags these for kit. */
   specialist: boolean
   block_type: string
