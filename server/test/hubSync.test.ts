@@ -37,6 +37,12 @@ vi.mock('../src/services/hubTermSync', () => ({
   syncTermDates: vi.fn(),
 }))
 
+// The ECA-term sync has its own suite; mock it to assert the roster sync folds
+// it in (and to keep this suite DB-free).
+vi.mock('../src/services/hubEcaTermSync', () => ({
+  syncEcaTerms: vi.fn(),
+}))
+
 const {
   listYearGroups,
   listClasses,
@@ -46,9 +52,11 @@ const {
 } = await import('../src/services/hubMis')
 const { resyncCalendarForSchool } = await import('../src/services/hubCalendarSync')
 const { syncTermDates } = await import('../src/services/hubTermSync')
+const { syncEcaTerms } = await import('../src/services/hubEcaTermSync')
 const { syncSchoolFromHub, SchoolNotLinkedError } = await import('../src/services/hubSync')
 const mResyncCalendar = vi.mocked(resyncCalendarForSchool)
 const mSyncTermDates = vi.mocked(syncTermDates)
+const mSyncEcaTerms = vi.mocked(syncEcaTerms)
 
 const mYearGroups = vi.mocked(listYearGroups)
 const mClasses = vi.mocked(listClasses)
@@ -78,6 +86,15 @@ const TERMDATES_DORMANT = {
   pruned: 0,
 }
 
+// A dormant ECA-term sync result (the live state today: school not linked).
+const ECATERMS_DORMANT = {
+  skipped: true as const,
+  created: 0,
+  updated: 0,
+  pruned: 0,
+  prunedSkippedNonEmpty: 0,
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 
@@ -85,6 +102,7 @@ beforeEach(() => {
   prismaMock.school.update.mockResolvedValue(SCHOOL)
   mResyncCalendar.mockResolvedValue(CALENDAR_DORMANT)
   mSyncTermDates.mockResolvedValue(TERMDATES_DORMANT)
+  mSyncEcaTerms.mockResolvedValue(ECATERMS_DORMANT)
 
   // Upserts echo back a Connect id derived from the Hub id so FK resolution is
   // observable (a class's create.yearGroupId must equal the yg upsert's id).
@@ -164,6 +182,7 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       teacherAssignments: { created: 0, removed: 0, unresolved: 0 },
       calendar: CALENDAR_DORMANT,
       termDates: TERMDATES_DORMANT,
+      ecaTerms: ECATERMS_DORMANT,
     })
 
     // On success the school is marked fresh (and last-synced is stamped).

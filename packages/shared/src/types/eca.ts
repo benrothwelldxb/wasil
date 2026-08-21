@@ -49,14 +49,20 @@ export interface EcaTerm {
   academicYear: string
   startDate: string
   endDate: string
-  registrationOpens: string
-  registrationCloses: string
+  // Null until the admin sets the registration window. Hub-sourced terms are
+  // created in DRAFT with no window; the admin fills these in.
+  registrationOpens: string | null
+  registrationCloses: string | null
   defaultBeforeSchoolStart?: string | null
   defaultBeforeSchoolEnd?: string | null
   defaultAfterSchoolStart?: string | null
   defaultAfterSchoolEnd?: string | null
   status: EcaTermStatus
   allocationRun: boolean
+  // True when the term was created from a Wasil Hub academic term. Hub owns its
+  // identity (name/dates); Connect owns the enrolment workflow. The admin UI
+  // shows a Hub chip and locks the name/dates for these.
+  fromHub?: boolean
   createdAt: string
   updatedAt: string
   // Counts for admin view

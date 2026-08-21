@@ -1173,14 +1173,21 @@ model EcaTerm {
   academicYear             String   // "2025/26"
   startDate                DateTime
   endDate                  DateTime
-  registrationOpens        DateTime
-  registrationCloses       DateTime
+  // Nullable: a Hub-sourced term is created in DRAFT with no registration
+  // window yet — the admin fills these in as part of the Connect workflow.
+  // Manual terms still supply them on create.
+  registrationOpens        DateTime?
+  registrationCloses       DateTime?
   defaultBeforeSchoolStart String?  // "07:30"
   defaultBeforeSchoolEnd   String?  // "08:15"
   defaultAfterSchoolStart  String?  // "15:30"
   defaultAfterSchoolEnd    String?  // "16:30"
   status                   EcaTermStatus @default(DRAFT)
   allocationRun            Boolean  @default(false)
+  // Set when this term was created from a Wasil Hub academic term. Hub owns the
+  // term's identity (name/dates); Connect owns the enrolment workflow (status,
+  // registration windows, session-time defaults). Null for manual terms.
+  hubTermId                String?
   activities               EcaActivity[]
   selections               EcaSelection[]
   allocations              EcaAllocation[]

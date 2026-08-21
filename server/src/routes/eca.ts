@@ -94,13 +94,16 @@ router.get('/terms', isAdmin, async (req, res) => {
 
     res.json(terms.map(t => ({
       ...t,
+      // Hub-sourced terms are identity-managed in Wasil Hub (name/dates); the
+      // admin UI shows a Hub chip and locks those fields (see routes below).
+      fromHub: t.hubTermId != null,
       activityCount: t._count.activities,
       selectionCount: t._count.selections,
       allocationCount: t._count.allocations,
       startDate: t.startDate.toISOString(),
       endDate: t.endDate.toISOString(),
-      registrationOpens: t.registrationOpens.toISOString(),
-      registrationCloses: t.registrationCloses.toISOString(),
+      registrationOpens: t.registrationOpens ? t.registrationOpens.toISOString() : null,
+      registrationCloses: t.registrationCloses ? t.registrationCloses.toISOString() : null,
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
     })))
@@ -150,10 +153,11 @@ router.post('/terms', isAdmin, async (req, res) => {
 
     res.status(201).json({
       ...term,
+      fromHub: term.hubTermId != null,
       startDate: term.startDate.toISOString(),
       endDate: term.endDate.toISOString(),
-      registrationOpens: term.registrationOpens.toISOString(),
-      registrationCloses: term.registrationCloses.toISOString(),
+      registrationOpens: term.registrationOpens ? term.registrationOpens.toISOString() : null,
+      registrationCloses: term.registrationCloses ? term.registrationCloses.toISOString() : null,
       createdAt: term.createdAt.toISOString(),
       updatedAt: term.updatedAt.toISOString(),
     })
@@ -198,10 +202,11 @@ router.get('/terms/:id', isAdmin, async (req, res) => {
 
     res.json({
       ...term,
+      fromHub: term.hubTermId != null,
       startDate: term.startDate.toISOString(),
       endDate: term.endDate.toISOString(),
-      registrationOpens: term.registrationOpens.toISOString(),
-      registrationCloses: term.registrationCloses.toISOString(),
+      registrationOpens: term.registrationOpens ? term.registrationOpens.toISOString() : null,
+      registrationCloses: term.registrationCloses ? term.registrationCloses.toISOString() : null,
       createdAt: term.createdAt.toISOString(),
       updatedAt: term.updatedAt.toISOString(),
       activities: term.activities.map(a => ({
@@ -230,6 +235,7 @@ router.put('/terms/:id', isAdmin, async (req, res) => {
     const { id } = req.params
     const {
       name,
+      termNumber,
       startDate,
       endDate,
       registrationOpens,
@@ -248,12 +254,20 @@ router.put('/terms/:id', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Term not found' })
     }
 
+    // Hub owns the identity (name/dates) of a Hub-sourced term. Strip/ignore
+    // any incoming identity fields for such terms and keep Hub's values — a
+    // re-sync would overwrite them anyway. Connect-owned WORKFLOW fields
+    // (termNumber, registration windows, session-time defaults) stay editable
+    // on Hub AND manual terms. Manual terms (hubTermId null) edit everything.
+    const isHubTerm = existing.hubTermId != null
+
     const term = await prisma.ecaTerm.update({
       where: { id },
       data: {
-        name: name ?? existing.name,
-        startDate: startDate ? new Date(startDate) : existing.startDate,
-        endDate: endDate ? new Date(endDate) : existing.endDate,
+        name: isHubTerm ? existing.name : (name ?? existing.name),
+        startDate: isHubTerm ? existing.startDate : (startDate ? new Date(startDate) : existing.startDate),
+        endDate: isHubTerm ? existing.endDate : (endDate ? new Date(endDate) : existing.endDate),
+        termNumber: termNumber ?? existing.termNumber,
         registrationOpens: registrationOpens ? new Date(registrationOpens) : existing.registrationOpens,
         registrationCloses: registrationCloses ? new Date(registrationCloses) : existing.registrationCloses,
         defaultBeforeSchoolStart: defaultBeforeSchoolStart ?? existing.defaultBeforeSchoolStart,
@@ -268,10 +282,11 @@ router.put('/terms/:id', isAdmin, async (req, res) => {
 
     res.json({
       ...term,
+      fromHub: term.hubTermId != null,
       startDate: term.startDate.toISOString(),
       endDate: term.endDate.toISOString(),
-      registrationOpens: term.registrationOpens.toISOString(),
-      registrationCloses: term.registrationCloses.toISOString(),
+      registrationOpens: term.registrationOpens ? term.registrationOpens.toISOString() : null,
+      registrationCloses: term.registrationCloses ? term.registrationCloses.toISOString() : null,
       createdAt: term.createdAt.toISOString(),
       updatedAt: term.updatedAt.toISOString(),
     })
@@ -293,6 +308,12 @@ router.delete('/terms/:id', isAdmin, async (req, res) => {
 
     if (!term) {
       return res.status(404).json({ error: 'Term not found' })
+    }
+
+    // Hub-sourced terms are managed in Wasil Hub — a re-sync would recreate a
+    // deleted one anyway, so block the delete and steer the admin to Hub.
+    if (term.hubTermId != null) {
+      return res.status(400).json({ error: 'This term is managed in Wasil Hub' })
     }
 
     await prisma.ecaTerm.delete({ where: { id } })
@@ -348,8 +369,10 @@ router.patch('/terms/:id/status', isAdmin, async (req, res) => {
 
     logAudit({ req, action: 'UPDATE', resourceType: 'ECA_TERM', resourceId: id, metadata: { name: term.name, status } })
 
-    // Send notification when registration opens
-    if (status === 'REGISTRATION_OPEN') {
+    // Send notification when registration opens. Only when a closing date is
+    // set (Hub terms start with no registration window until the admin fills
+    // one in via the term edit form).
+    if (status === 'REGISTRATION_OPEN' && term.registrationCloses) {
       sendEcaRegistrationOpenNotification({
         req,
         termId: id,
@@ -361,10 +384,11 @@ router.patch('/terms/:id/status', isAdmin, async (req, res) => {
 
     res.json({
       ...updated,
+      fromHub: updated.hubTermId != null,
       startDate: updated.startDate.toISOString(),
       endDate: updated.endDate.toISOString(),
-      registrationOpens: updated.registrationOpens.toISOString(),
-      registrationCloses: updated.registrationCloses.toISOString(),
+      registrationOpens: updated.registrationOpens ? updated.registrationOpens.toISOString() : null,
+      registrationCloses: updated.registrationCloses ? updated.registrationCloses.toISOString() : null,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     })
@@ -1496,8 +1520,8 @@ router.get('/parent/terms', isAuthenticated, async (req, res) => {
       ...t,
       startDate: t.startDate.toISOString(),
       endDate: t.endDate.toISOString(),
-      registrationOpens: t.registrationOpens.toISOString(),
-      registrationCloses: t.registrationCloses.toISOString(),
+      registrationOpens: t.registrationOpens ? t.registrationOpens.toISOString() : null,
+      registrationCloses: t.registrationCloses ? t.registrationCloses.toISOString() : null,
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
     })))
@@ -1663,8 +1687,8 @@ router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
       ...term,
       startDate: term.startDate.toISOString(),
       endDate: term.endDate.toISOString(),
-      registrationOpens: term.registrationOpens.toISOString(),
-      registrationCloses: term.registrationCloses.toISOString(),
+      registrationOpens: term.registrationOpens ? term.registrationOpens.toISOString() : null,
+      registrationCloses: term.registrationCloses ? term.registrationCloses.toISOString() : null,
       createdAt: term.createdAt.toISOString(),
       updatedAt: term.updatedAt.toISOString(),
       activities: activitiesWithEligibility,

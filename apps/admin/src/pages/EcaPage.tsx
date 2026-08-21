@@ -36,6 +36,8 @@ import type {
   YearGroup,
 } from '@wasil/shared'
 import { StudentSearchSelect } from '../components/StudentSearchSelect'
+import { HubChip } from '../components/HubChip'
+import { HubSyncBanner } from '../components/HubSyncBanner'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const TIME_SLOTS: { value: EcaTimeSlot; label: string }[] = [
@@ -273,8 +275,8 @@ export function EcaPage() {
       academicYear: term.academicYear,
       startDate: term.startDate.split('T')[0],
       endDate: term.endDate.split('T')[0],
-      registrationOpens: term.registrationOpens.split('T')[0],
-      registrationCloses: term.registrationCloses.split('T')[0],
+      registrationOpens: term.registrationOpens ? term.registrationOpens.split('T')[0] : '',
+      registrationCloses: term.registrationCloses ? term.registrationCloses.split('T')[0] : '',
       defaultBeforeSchoolStart: term.defaultBeforeSchoolStart || '07:30',
       defaultBeforeSchoolEnd: term.defaultBeforeSchoolEnd || '08:15',
       defaultAfterSchoolStart: term.defaultAfterSchoolStart || '14:20',
@@ -747,6 +749,9 @@ export function EcaPage() {
       {/* Terms List */}
       {activeTab === 'terms' && !selectedTermId && (
         <>
+          {(terms || []).some(t => t.fromHub) && (
+            <HubSyncBanner noun="Terms" onSynced={() => refetchTerms()} />
+          )}
           {(terms || []).length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
               <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
@@ -763,7 +768,10 @@ export function EcaPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
                       <div>
-                        <h3 className="font-semibold text-gray-900">{term.name}</h3>
+                        <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                          {term.name}
+                          {term.fromHub && <HubChip />}
+                        </h3>
                         <p className="text-sm text-gray-500">
                           {new Date(term.startDate).toLocaleDateString()} - {new Date(term.endDate).toLocaleDateString()}
                         </p>
@@ -802,7 +810,10 @@ export function EcaPage() {
                 <ChevronRight className="w-5 h-5 rotate-180" />
               </button>
               <div>
-                <h2 className="text-xl font-bold text-gray-900">{selectedTerm.name}</h2>
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  {selectedTerm.name}
+                  {selectedTerm.fromHub && <HubChip />}
+                </h2>
                 <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
                   <span>{new Date(selectedTerm.startDate).toLocaleDateString()} - {new Date(selectedTerm.endDate).toLocaleDateString()}</span>
                   <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${TERM_STATUS_COLORS[selectedTerm.status]}`}>
@@ -896,18 +907,26 @@ export function EcaPage() {
                   <span>Complete Term</span>
                 </button>
               )}
+              {/* Edit stays available for Hub terms — it's how the admin sets the
+                  registration window + session-time defaults (Connect workflow).
+                  Only the name/dates are locked inside the form. */}
               <button
                 onClick={() => handleEditTerm(selectedTerm)}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg"
+                title={selectedTerm.fromHub ? 'Edit registration window & session times (name/dates managed in Wasil Hub)' : 'Edit term'}
               >
                 <Pencil className="w-5 h-5" />
               </button>
-              <button
-                onClick={() => setDeleteConfirm({ type: 'term', id: selectedTerm.id, name: selectedTerm.name })}
-                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
+              {/* Hub-sourced terms can't be deleted here — they're managed in
+                  Wasil Hub (a re-sync would recreate them). */}
+              {!selectedTerm.fromHub && (
+                <button
+                  onClick={() => setDeleteConfirm({ type: 'term', id: selectedTerm.id, name: selectedTerm.name })}
+                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -916,11 +935,11 @@ export function EcaPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <p className="text-gray-500">Registration Opens</p>
-                <p className="font-medium">{new Date(selectedTerm.registrationOpens).toLocaleDateString()}</p>
+                <p className="font-medium">{selectedTerm.registrationOpens ? new Date(selectedTerm.registrationOpens).toLocaleDateString() : 'Not set'}</p>
               </div>
               <div>
                 <p className="text-gray-500">Registration Closes</p>
-                <p className="font-medium">{new Date(selectedTerm.registrationCloses).toLocaleDateString()}</p>
+                <p className="font-medium">{selectedTerm.registrationCloses ? new Date(selectedTerm.registrationCloses).toLocaleDateString() : 'Not set'}</p>
               </div>
               <div>
                 <p className="text-gray-500">Before School</p>
@@ -1251,6 +1270,15 @@ export function EcaPage() {
             </div>
 
             <form onSubmit={handleSubmitTerm} className="p-4 space-y-4">
+              {editingTerm?.fromHub && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-100 text-xs text-indigo-700">
+                  <HubChip />
+                  <span>
+                    This term's name and dates are managed in Wasil Hub and can't be edited here.
+                    Set the registration window and session times below to open registration.
+                  </span>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Term Name *</label>
                 <input
@@ -1258,8 +1286,9 @@ export function EcaPage() {
                   value={termForm.name}
                   onChange={(e) => setTermForm({ ...termForm, name: e.target.value })}
                   placeholder="e.g. Term 1 2025/26"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-500"
                   required
+                  disabled={editingTerm?.fromHub}
                 />
               </div>
 
@@ -1297,8 +1326,9 @@ export function EcaPage() {
                     type="date"
                     value={termForm.startDate}
                     onChange={(e) => setTermForm({ ...termForm, startDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-500"
                     required
+                    disabled={editingTerm?.fromHub}
                   />
                 </div>
                 <div>
@@ -1307,8 +1337,9 @@ export function EcaPage() {
                     type="date"
                     value={termForm.endDate}
                     onChange={(e) => setTermForm({ ...termForm, endDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-500"
                     required
+                    disabled={editingTerm?.fromHub}
                   />
                 </div>
               </div>

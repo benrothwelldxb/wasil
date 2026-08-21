@@ -37,6 +37,7 @@ import {
 } from './hubMis.js'
 import { resyncCalendarForSchool, type CalendarSyncSummary } from './hubCalendarSync.js'
 import { syncTermDates, type TermDateSyncSummary } from './hubTermSync.js'
+import { syncEcaTerms, type EcaTermSyncSummary } from './hubEcaTermSync.js'
 
 /** The Connect school isn't linked to a Hub school — nothing to sync. */
 export class SchoolNotLinkedError extends Error {
@@ -84,6 +85,11 @@ export interface SyncSummary {
    * `null` when the sync was skipped (school not linked) or threw (a term-date
    * failure must never break the roster sync). */
   termDates?: TermDateSyncSummary | null
+  /** ECA (after-school-club) term sync result, folded in after the roster
+   * upserts so the manual "Sync from Hub" button also creates an EcaTerm per
+   * Hub term. Dormant-safe: `null` when the sync was skipped (school not
+   * linked) or threw (an ECA-term failure must never break the roster sync). */
+  ecaTerms?: EcaTermSyncSummary | null
 }
 
 /**
@@ -293,6 +299,18 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     termDates = null
   }
 
+  // --- ECA-term refresh ----------------------------------------------------
+  // Create/refresh an EcaTerm per Hub term so the after-school-club workflow
+  // always has an open term. Wrapped so an ECA-term failure can never fail the
+  // roster sync.
+  let ecaTerms: EcaTermSyncSummary | null = null
+  try {
+    ecaTerms = await syncEcaTerms(schoolId)
+  } catch (err) {
+    console.error('[hubSync] ECA-term sync failed (roster sync unaffected):', err)
+    ecaTerms = null
+  }
+
   return {
     yearGroups: hubYearGroups.length,
     classes: hubClasses.length,
@@ -303,6 +321,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     teacherAssignments,
     calendar,
     termDates,
+    ecaTerms,
   }
 }
 
