@@ -148,6 +148,14 @@ export interface HubTimetableTeacher {
   firstName: string
   lastName: string
 }
+/** A room on a block. Hub returns this as an object ({ id, name, kind }); older
+ * builds documented it as a bare string. Accept both so a shape change on either
+ * side can't render an object into the parent app (React #31). */
+export interface HubTimetableRoom {
+  id?: string
+  name: string
+  kind?: string
+}
 export interface HubTimetableBlock {
   /** Stable per-block id (used as a React key by the weekly-timetable view). */
   id: string
@@ -160,8 +168,9 @@ export interface HubTimetableBlock {
   teacher: HubTimetableTeacher | null
   /** All teachers on the block (may be empty). */
   teachers: HubTimetableTeacher[]
-  /** Room name, or null when unassigned. */
-  room: string | null
+  /** The room, or null when unassigned. Hub sends an object; a bare string is
+   * tolerated. Normalise to a name before rendering (see toChildBlock). */
+  room: HubTimetableRoom | string | null
   /** A/B-week tag as Hub folds it, e.g. "ALL". */
   week: string
   /** Specialist items (Swimming, PE) — Connect flags these for kit. */

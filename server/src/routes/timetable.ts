@@ -363,6 +363,15 @@ export interface ChildTimetableWeek {
   days: ChildTimetableDay[]
 }
 
+/** Hub sends room as an object ({ id, name, kind }); older builds documented a
+ * bare string. Collapse either to a plain name so the parent app never receives
+ * an object where it renders a string (React #31 → blank timetable). */
+function roomName(room: HubTimetableBlock['room']): string | null {
+  if (!room) return null
+  if (typeof room === 'string') return room
+  return room.name ?? null
+}
+
 /** Map a raw Hub block down to the parent-facing shape. */
 function toChildBlock(b: HubTimetableBlock): ChildTimetableBlock {
   return {
@@ -372,7 +381,7 @@ function toChildBlock(b: HubTimetableBlock): ChildTimetableBlock {
     label: b.label,
     subject: b.subject ? { name: b.subject.name, color: b.subject.color } : null,
     teacher: b.teacher ? { firstName: b.teacher.firstName, lastName: b.teacher.lastName } : null,
-    room: b.room,
+    room: roomName(b.room),
     specialist: b.specialist,
     blockType: b.block_type,
   }
