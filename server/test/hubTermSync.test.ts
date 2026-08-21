@@ -61,7 +61,7 @@ describe('syncTermDates — upsert mapping', () => {
       label: 'Autumn Term starts',
       type: 'term-start',
       color: 'green',
-      academicYear: '2026/27',
+      academicYear: '2026-27',
       hubTermId: 'ht-1',
       schoolId: 'connect-school-1',
     })
@@ -74,7 +74,7 @@ describe('syncTermDates — upsert mapping', () => {
       label: 'Autumn Term ends',
       type: 'term-end',
       color: 'red',
-      academicYear: '2026/27',
+      academicYear: '2026-27',
       hubTermId: 'ht-1',
     })
     expect(endData.date).toEqual(new Date('2026-12-11'))

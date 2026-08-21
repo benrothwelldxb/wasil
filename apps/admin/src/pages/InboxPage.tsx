@@ -4,6 +4,29 @@ import * as api from '@wasil/shared'
 import type { ConversationListItem, ConversationDetail, ConversationMessageItem, SchoolContactInfo, MessageSearchResult } from '@wasil/shared'
 import type { Class } from '@wasil/shared'
 import { MessageSquare, Send, ArrowLeft, Plus, ChevronRight, Paperclip, Settings, X, BellOff, MoreHorizontal, Reply, Trash2, Search } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+
+// Render a message body as restricted, safe markdown — bold / italic / bullets
+// only (Desk's toolbar set), mirroring the parent app. react-markdown never
+// renders raw HTML; allowedElements + unwrapDisallowed drop anything else to
+// plain text. Inline styles restore list markers (Tailwind's reset strips them).
+const MD_ALLOWED = ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li']
+function MessageBody({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      allowedElements={MD_ALLOWED}
+      unwrapDisallowed
+      components={{
+        p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
+        ul: ({ children }) => <ul style={{ listStyle: 'disc', paddingLeft: '1.25em', margin: '0.25em 0' }}>{children}</ul>,
+        ol: ({ children }) => <ol style={{ listStyle: 'decimal', paddingLeft: '1.25em', margin: '0.25em 0' }}>{children}</ol>,
+        li: ({ children }) => <li style={{ margin: '0.1em 0' }}>{children}</li>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  )
+}
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
 
@@ -915,7 +938,7 @@ function ConversationThread({ conversationId, onBack }: { conversationId: string
                         wordBreak: 'break-word',
                       }}
                     >
-                      {msg.content}
+                      <MessageBody content={msg.content} />
                     </div>
                   )}
 

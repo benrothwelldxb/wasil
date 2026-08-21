@@ -73,7 +73,9 @@ export async function syncTermDates(connectSchoolId: string): Promise<TermDateSy
         date: row.date,
         type: row.type,
         color: row.color,
-        academicYear: t.academicYear,
+        // Hub sends "2026/27"; Connect's TermDate calendar (and the admin year
+        // selector) use the dashed form "2026-27" — normalise so rows match.
+        academicYear: t.academicYear.replace(/\//g, '-'),
         hubTermId: t.id,
       }
       // No unique constraint on (hubTermId, type) — find-then-write for idempotency.
