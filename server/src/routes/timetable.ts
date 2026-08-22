@@ -16,7 +16,8 @@ import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
 import { todayInTimezone } from '../services/dateTime.js'
-import { getClassDayCached } from '../services/timetableCache.js'
+import { getClassDayCached, getCalendarStructureCached } from '../services/timetableCache.js'
+import type { HubCalendarStructure } from '../services/hubMis.js'
 import type { HubTimetableBlock } from '../services/hubMis.js'
 import { buildReminderResolver, subjectKeyOf, type ReminderItem } from '../services/timetableReminders.js'
 import {
@@ -361,6 +362,41 @@ export interface ChildTimetableWeek {
   weekOf: string // Monday, YYYY-MM-DD
   hubAvailable: boolean
   days: ChildTimetableDay[]
+  // Term awareness: Hub's timetable pattern repeats every week regardless of
+  // term, so a holiday/half-term week would otherwise render a full timetable.
+  // `outOfTerm` is true when the viewed Mon–Fri falls entirely outside every
+  // teaching period; `resumeDate` (YYYY-MM-DD) is when lessons next start. Both
+  // are best-effort — if the calendar structure can't be read they stay
+  // false/null and the view behaves exactly as before (no banner).
+  outOfTerm: boolean
+  resumeDate: string | null
+}
+
+/** Out-of-term detection for one viewed week (weekMon..weekFri, YYYY-MM-DD).
+ * Teaching periods are the half-terms where a term has them (so half-term breaks
+ * also read as out of term), else the whole term. Date-string compare is safe
+ * for fixed-width YYYY-MM-DD. */
+export function computeTermStatus(
+  structure: HubCalendarStructure,
+  weekMon: string,
+  weekFri: string,
+): { outOfTerm: boolean; resumeDate: string | null } {
+  const periods = structure.terms.flatMap((t) =>
+    t.half_terms?.length
+      ? t.half_terms.map((h) => ({ starts_on: h.starts_on, ends_on: h.ends_on }))
+      : [{ starts_on: t.starts_on, ends_on: t.ends_on }],
+  )
+  if (periods.length === 0) return { outOfTerm: false, resumeDate: null }
+
+  const inTerm = periods.some((p) => p.starts_on <= weekFri && p.ends_on >= weekMon)
+  if (inTerm) return { outOfTerm: false, resumeDate: null }
+
+  const resumeDate =
+    periods
+      .filter((p) => p.starts_on > weekFri)
+      .map((p) => p.starts_on)
+      .sort((a, b) => a.localeCompare(b))[0] ?? null
+  return { outOfTerm: true, resumeDate }
 }
 
 /** Hub sends room as an object ({ id, name, kind }); older builds documented a
@@ -462,6 +498,23 @@ router.get('/child/:studentId/week', isAuthenticated, async (req, res) => {
       }),
     )
 
+    // Term awareness (best-effort): flag a viewed week that falls outside every
+    // teaching period. Any failure — no Hub token, no hubSchoolId, a Hub blip —
+    // falls back to the prior behaviour (no banner), never breaking the grid.
+    let outOfTerm = false
+    let resumeDate: string | null = null
+    if (process.env.HUB_SERVICE_TOKEN && school?.hubSchoolId) {
+      try {
+        const structure = await getCalendarStructureCached(school.hubSchoolId)
+        const weekFri = dates.length ? dates[dates.length - 1].date : monday
+        const status = computeTermStatus(structure, monday, weekFri)
+        outOfTerm = status.outOfTerm
+        resumeDate = status.resumeDate
+      } catch (err) {
+        console.error('Timetable term-status lookup failed (falling back to no banner):', err)
+      }
+    }
+
     const result: ChildTimetableWeek = {
       studentId: child.studentId,
       studentName: child.name,
@@ -469,6 +522,8 @@ router.get('/child/:studentId/week', isAuthenticated, async (req, res) => {
       weekOf: monday,
       hubAvailable,
       days: hubAvailable ? days : [],
+      outOfTerm,
+      resumeDate,
     }
     res.json(result)
   } catch (error) {

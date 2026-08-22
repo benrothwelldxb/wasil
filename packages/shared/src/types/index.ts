@@ -788,6 +788,13 @@ export interface ChildTimetableWeek {
   /** True when at least one weekday was answered by Hub. */
   hubAvailable: boolean
   days: ChildTimetableDay[]
+  /** True when the viewed week falls entirely outside every teaching period
+   * (holiday / half-term break). Best-effort: false if the calendar structure
+   * couldn't be read. */
+  outOfTerm: boolean
+  /** When lessons next resume (YYYY-MM-DD), or null. Only meaningful when
+   * `outOfTerm` is true. */
+  resumeDate: string | null
 }
 
 export interface StudentListResponse {

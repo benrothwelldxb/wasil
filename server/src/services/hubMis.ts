@@ -127,6 +127,29 @@ export interface HubTerm {
   isCurrent: boolean
 }
 
+// Hub's calendar STRUCTURE (distinct from /terms): the academic year with terms
+// and, within each term, the teaching half-terms. The gap between two half-terms
+// is a half-term break — so half-terms give finer "is school running this week"
+// resolution than whole terms. Dates are YYYY-MM-DD. (snake_case: this is the
+// raw /calendar/structure shape, kept verbatim.)
+export interface HubHalfTerm {
+  id: string
+  name: string
+  starts_on: string
+  ends_on: string
+}
+export interface HubStructureTerm {
+  id: string
+  name: string
+  starts_on: string
+  ends_on: string
+  half_terms?: HubHalfTerm[]
+}
+export interface HubCalendarStructure {
+  academic_year: { id: string; name: string; starts_on: string; ends_on: string }
+  terms: HubStructureTerm[]
+}
+
 // Mirror of Hub's SyncStatusDTO (subset) — the polling freshness signal.
 export interface HubSyncStatus {
   schoolId: string
@@ -257,6 +280,14 @@ export async function listTerms(hubSchoolId: string): Promise<HubTerm[]> {
   const params = new URLSearchParams({ schoolId: hubSchoolId })
   const { terms } = await call<{ terms: HubTerm[] }>(`/terms?${params.toString()}`)
   return terms
+}
+
+/** The school's calendar structure (academic year → terms → half-terms). Used to
+ * flag out-of-term weeks on the timetable. `academic_year_id` is omitted so Hub
+ * returns the current year. Permitted by the calendar:read:guardian scope. */
+export async function getCalendarStructure(hubSchoolId: string): Promise<HubCalendarStructure> {
+  const params = new URLSearchParams({ schoolId: hubSchoolId })
+  return call<HubCalendarStructure>(`/calendar/structure?${params.toString()}`)
 }
 
 /** Staff for a Hub school (includes pending-invite rows: hubUserId === null). */

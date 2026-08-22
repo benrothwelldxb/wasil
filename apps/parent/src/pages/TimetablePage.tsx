@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronLeft, ChevronRight, Clock, MapPin, User, CalendarDays } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, MapPin, User, CalendarDays, Sun } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useApi, useAuth } from '@wasil/shared'
 import * as api from '@wasil/shared'
@@ -179,6 +179,11 @@ export function TimetablePage() {
       {/* Body */}
       {isLoading ? (
         <WeekSkeleton />
+      ) : data?.outOfTerm ? (
+        // Hub's timetable pattern repeats every week, so a holiday/half-term week
+        // would otherwise render a full grid. Parent-facing: hide the grid and
+        // show only the notice, so it can't read as "school is on this week".
+        <OutOfTermNotice resumeDate={data.resumeDate} t={t} />
       ) : !data || !data.hubAvailable || data.days.length === 0 ? (
         <EmptyState t={t} />
       ) : (
@@ -345,6 +350,32 @@ function WeekSkeleton() {
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+function OutOfTermNotice({
+  resumeDate,
+  t,
+}: {
+  resumeDate: string | null
+  t: (key: string, fallback: string) => string
+}) {
+  const resume = resumeDate ? fmtDay(resumeDate) : null
+  return (
+    <div
+      className="p-8 text-center"
+      style={{ borderRadius: '22px', border: '1.5px solid #EAD9B0', backgroundColor: '#FFF9EC' }}
+    >
+      <Sun className="h-12 w-12 mx-auto mb-4" style={{ color: '#D79A2B' }} />
+      <p className="font-bold text-[15px]" style={{ color: '#7A5A12' }}>
+        {t('timetable.outOfTermTitle', 'Outside term time — no lessons this week')}
+      </p>
+      {resume && (
+        <p className="text-sm font-semibold mt-2" style={{ color: '#A07B2E' }}>
+          {t('timetable.outOfTermResume', 'Lessons resume')} {resume.weekday} {resume.dayMonth}
+        </p>
+      )}
     </div>
   )
 }
