@@ -15,6 +15,7 @@ import { initErrorReporting } from './services/sentry.js'
 
 import { configurePassport } from './middleware/passport.js'
 import authRoutes from './routes/auth.js'
+import publicTenantRoutes from './routes/publicTenant.js'
 import hubAuthRoutes from './routes/hubAuth.js'
 import hubSyncRoutes from './routes/hubSync.js'
 import hubWebhookRoutes from './routes/hubWebhook.js'
@@ -141,6 +142,8 @@ configurePassport()
 app.use('/auth', authRoutes)
 // Wasil Hub SSO exchange (GET/POST /auth/hub/exchange)
 app.use('/auth/hub', hubAuthRoutes)
+// Public, unauthenticated branding lookup for the multi-tenant login page.
+app.use('/api/public', publicTenantRoutes)
 app.use('/api/messages', messagesRoutes)
 app.use('/api/forms', formsRoutes)
 app.use('/api/events', eventsRoutes)

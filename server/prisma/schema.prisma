@@ -12,6 +12,10 @@ model School {
   id           String   @id @default(cuid())
   name         String   // "Victory Heights Primary School"
   shortName    String   // "VHPS"
+  // URL slug for branded multi-tenant login (e.g. "vhpscoa" → /vhpscoa or
+  // vhpscoa.wasilconnect.com). Nullable for now (Phase 0); Phase 2 provisioning
+  // will require it for every new school. Only the public branding lookup reads it.
+  slug         String?  @unique
   city         String
   academicYear String   @default("2025/26") // e.g., "2025/26"
   brandColor   String   @default("#7f0029")
