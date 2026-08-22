@@ -1,3 +1,7 @@
+// NOTE: Railway only rebuilds @wasil/admin when apps/admin/** changes, so a
+// packages/shared-only change (e.g. the httpOnly refresh-cookie / credentials
+// work) won't reach this app until an apps/admin file is touched. This rebuild
+// picks up that shared change so admins get the same durable 90-day session.
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
