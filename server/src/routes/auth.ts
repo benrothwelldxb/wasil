@@ -9,6 +9,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { generateAccessToken, generateRefreshToken, revokeRefreshToken, rotateRefreshToken } from '../services/jwt.js'
+import { setRefreshCookie, clearRefreshCookie, REFRESH_COOKIE_NAME } from '../services/refreshCookie.js'
 import { sendMagicLinkEmail, sendInvitationEmail, sendLoginCodeEmail } from '../services/email.js'
 import { logAudit } from '../services/audit.js'
 import { serializeUser } from '../services/serializers.js'
@@ -443,6 +444,7 @@ router.post('/exchange-code', validate(exchangeCodeSchema), (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired code' })
   }
 
+  setRefreshCookie(res, tokens.refreshToken)
   res.json(tokens)
 })
 
@@ -471,6 +473,7 @@ router.post('/demo-login', async (req, res) => {
     const accessToken = generateAccessToken(user)
     const refreshToken = await generateRefreshToken(user)
 
+    setRefreshCookie(res, refreshToken)
     res.json({
       user: serializeUser(user),
       accessToken,
@@ -546,6 +549,7 @@ router.post('/login', loginLimiter, emailLoginLimiter, validate(loginSchema), as
     const accessToken = generateAccessToken(user)
     const refreshToken = await generateRefreshToken(user)
 
+    setRefreshCookie(res, refreshToken)
     res.json({
       user: serializeUser(user),
       accessToken,
@@ -669,6 +673,7 @@ router.post('/code/verify', validate(codeVerifySchema), async (req, res) => {
         await prisma.user.update({ where: { id: testUser.id }, data: { lastLoginAt: new Date() } })
         const accessToken = generateAccessToken(testUser)
         const refreshToken = await generateRefreshToken(testUser)
+        setRefreshCookie(res, refreshToken)
         return res.json({ user: serializeUser(testUser), accessToken, refreshToken })
       }
       // Fall through: a test user who submitted the wrong code, or any non-test
@@ -745,6 +750,7 @@ router.post('/code/verify', validate(codeVerifySchema), async (req, res) => {
     const accessToken = generateAccessToken(user)
     const refreshToken = await generateRefreshToken(user)
 
+    setRefreshCookie(res, refreshToken)
     return res.json({
       user: serializeUser(user),
       accessToken,
@@ -1015,6 +1021,7 @@ router.post('/register', registerLimiter, registerPerEmailLimiter, validate(regi
     const accessToken = generateAccessToken(fullUser)
     const refreshToken = await generateRefreshToken(fullUser)
 
+    setRefreshCookie(res, refreshToken)
     res.json({
       user: serializeUser(fullUser),
       accessToken,
@@ -1155,6 +1162,7 @@ router.post('/magic-link/verify', magicLinkVerifyLimiter, async (req, res) => {
       const accessToken = generateAccessToken(user)
       const refreshToken = await generateRefreshToken(user)
 
+      setRefreshCookie(res, refreshToken)
       return res.json({
         user: serializeUser(user),
         accessToken,
@@ -1270,6 +1278,7 @@ router.post('/magic-link/verify', magicLinkVerifyLimiter, async (req, res) => {
       const accessToken = generateAccessToken(fullUser)
       const refreshToken = await generateRefreshToken(fullUser)
 
+      setRefreshCookie(res, refreshToken)
       return res.json({
         user: serializeUser(fullUser),
         accessToken,
@@ -1491,6 +1500,7 @@ router.post('/2fa/verify', twoFactorVerifyLimiter, validate(twoFactorVerifySchem
     const accessToken = generateAccessToken(user)
     const refreshToken = await generateRefreshToken(user)
 
+    setRefreshCookie(res, refreshToken)
     res.json({
       user: serializeUser(user),
       accessToken,
@@ -1548,6 +1558,7 @@ router.post('/2fa/recover', twoFactorRecoverLimiter, validate(twoFactorRecoverSc
     const accessToken = generateAccessToken(user)
     const refreshToken = await generateRefreshToken(user)
 
+    setRefreshCookie(res, refreshToken)
     res.json({
       user: serializeUser(user),
       accessToken,
@@ -1624,25 +1635,36 @@ router.get('/2fa/status', isAuthenticated, async (req, res) => {
 
 // Logout
 router.post('/logout', async (req, res) => {
-  const { refreshToken } = req.body
-  if (refreshToken) {
-    await revokeRefreshToken(refreshToken)
-  }
+  // Revoke whichever token the client presents — cookie and/or body.
+  const cookieToken = req.cookies?.[REFRESH_COOKIE_NAME]
+  const bodyToken = typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : undefined
+  if (cookieToken) await revokeRefreshToken(cookieToken)
+  if (bodyToken && bodyToken !== cookieToken) await revokeRefreshToken(bodyToken)
+  clearRefreshCookie(res)
   res.json({ message: 'Logged out successfully' })
 })
 
-// Token refresh
+// Token refresh. The token may arrive in the httpOnly cookie (the durable path,
+// esp. iOS where localStorage is evicted) or the JSON body (localStorage
+// clients). Rotation issues a fresh pair; we mirror it back into both the cookie
+// and the body so either client style stays authenticated.
 router.post('/token/refresh', async (req, res) => {
-  const { refreshToken } = req.body
-  if (!refreshToken) {
+  const cookieToken = req.cookies?.[REFRESH_COOKIE_NAME]
+  const bodyToken = typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : undefined
+  const presented = cookieToken || bodyToken
+  if (!presented) {
     return res.status(400).json({ error: 'Refresh token required' })
   }
 
-  const result = await rotateRefreshToken(refreshToken)
+  const result = await rotateRefreshToken(presented)
   if (!result) {
+    // The presented token is dead — clear any stale cookie so the browser stops
+    // resending it on every startup.
+    clearRefreshCookie(res)
     return res.status(401).json({ error: 'Invalid or expired refresh token' })
   }
 
+  setRefreshCookie(res, result.refreshToken)
   res.json(result)
 })
 

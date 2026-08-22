@@ -4,6 +4,7 @@
 import 'express-async-errors'
 import express from 'express'
 import cors from 'cors'
+import cookieParser from 'cookie-parser'
 import helmet from 'helmet'
 import passport from 'passport'
 import dotenv from 'dotenv'
@@ -127,6 +128,8 @@ app.use('/api/hub', hubWebhookRoutes)
 // bigger should go through multer (multipart upload).
 app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: true, limit: '1mb' }))
+// Parses the httpOnly refresh-token cookie (see services/refreshCookie.ts).
+app.use(cookieParser())
 
 // Passport initialization (OAuth strategies only, no sessions)
 app.use(passport.initialize())

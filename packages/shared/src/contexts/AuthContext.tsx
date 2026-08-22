@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { auth, TwoFactorRequiredError, setTokens, clearTokens, getRefreshToken, initTokenStorage } from '../services/api'
+import { auth, TwoFactorRequiredError, setTokens, clearTokens, initTokenStorage } from '../services/api'
 import type { User } from '../types'
 
 interface AuthContextType {
@@ -44,15 +44,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         // Ensure tokens are loaded from secure storage (Capacitor Preferences)
         await initTokenStorage()
-        // If we have a refresh token, try to get an access token first
-        const refreshToken = getRefreshToken()
-        if (refreshToken) {
-          const refreshed = await auth.refreshToken()
-          if (refreshed) {
-            const userData = await auth.me()
-            setUser(userData)
-            return
-          }
+        // Always attempt a refresh — even with no stored token. The refresh token
+        // may exist only in the httpOnly cookie (iOS/WebKit evicts localStorage),
+        // and the server 401s cleanly when there's nothing to refresh.
+        const refreshed = await auth.refreshToken()
+        if (refreshed) {
+          const userData = await auth.me()
+          setUser(userData)
+          return
         }
         setUser(null)
       } catch {

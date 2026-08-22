@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import prisma from './prisma.js'
+import { REFRESH_TOKEN_EXPIRY_DAYS } from './authConfig.js'
 
 if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET environment variable must be set')
 if (!process.env.JWT_REFRESH_SECRET) throw new Error('JWT_REFRESH_SECRET environment variable must be set')
@@ -8,7 +9,7 @@ const JWT_SECRET: string = process.env.JWT_SECRET
 const JWT_REFRESH_SECRET: string = process.env.JWT_REFRESH_SECRET
 
 const ACCESS_TOKEN_EXPIRY = '15m'
-const REFRESH_TOKEN_EXPIRY_DAYS = 30
+// Refresh-token lifetime lives in authConfig.ts (see there for why).
 
 interface AccessTokenPayload {
   userId: string

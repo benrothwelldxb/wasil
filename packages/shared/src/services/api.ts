@@ -192,7 +192,10 @@ let isRefreshing = false
 let refreshPromise: Promise<boolean> | null = null
 
 async function tryRefresh(): Promise<boolean> {
-  if (!refreshTokenValue) return false
+  // No early-out on a missing in-memory token: the refresh token may live only
+  // in the httpOnly cookie (iOS/WebKit evicts localStorage on a ~7-day cap).
+  // `credentials: 'include'` sends that cookie; the server 401s cleanly when
+  // neither the cookie nor the body carries a token.
   if (isRefreshing && refreshPromise) return refreshPromise
 
   isRefreshing = true
@@ -201,6 +204,7 @@ async function tryRefresh(): Promise<boolean> {
       const response = await fetch(`${API_URL}/auth/token/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ refreshToken: refreshTokenValue }),
       })
 
@@ -237,14 +241,19 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 
   let response = await fetch(`${API_URL}${url}`, {
     ...options,
+    // Send/receive the httpOnly refresh cookie (login/refresh set it; other
+    // requests just carry it harmlessly).
+    credentials: 'include',
     headers: {
       ...headers,
       ...options?.headers,
     },
   })
 
-  // On 401, try refresh and retry once
-  if (response.status === 401 && refreshTokenValue) {
+  // On 401, try refresh and retry once. Attempt even without an in-memory
+  // refresh token when we DID send an access token (hadAuth) — the refresh token
+  // may be cookie-only after an iOS storage eviction.
+  if (response.status === 401 && (refreshTokenValue || hadAuth)) {
     const refreshed = await tryRefresh()
     if (refreshed) {
       const retryHeaders: Record<string, string> = isFormData
@@ -256,6 +265,7 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 
       response = await fetch(`${API_URL}${url}`, {
         ...options,
+        credentials: 'include',
         headers: {
           ...retryHeaders,
           ...options?.headers,
