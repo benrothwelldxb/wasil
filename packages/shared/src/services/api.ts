@@ -313,6 +313,32 @@ export interface LoginResponse {
   twoFactorSessionToken?: string
 }
 
+// Public, unauthenticated school branding (multi-tenant login). `get` brands one
+// school's sign-in page from the URL slug; `list` powers the root school picker.
+export interface TenantBranding {
+  slug: string
+  name: string
+  shortName: string
+  city: string
+  brandColor: string
+  accentColor: string
+  logoUrl: string | null
+  logoIconUrl: string | null
+  tagline: string | null
+}
+export interface TenantSummary {
+  slug: string
+  name: string
+  shortName: string
+  city: string
+  brandColor: string
+  logoUrl: string | null
+}
+export const publicTenant = {
+  get: (slug: string) => fetchApi<TenantBranding>(`/api/public/tenant/${encodeURIComponent(slug)}`),
+  list: () => fetchApi<TenantSummary[]>('/api/public/tenants'),
+}
+
 // Auth
 export const auth = {
   me: () => fetchApi<User>('/auth/me'),

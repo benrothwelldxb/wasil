@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo } from 'react'
 import { useAuth } from './AuthContext'
+import { useTenant } from './TenantContext'
 import { config } from '../config'
 
 interface ThemeColors {
@@ -46,32 +47,58 @@ function createLightColor(hexColor: string): string {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuth()
+  const { tenant } = useTenant()
 
   const theme = useMemo<ThemeContextType>(() => {
-    if (!isAuthenticated || !user?.school) {
-      return defaultTheme
+    // Signed in: the parent's own school always wins.
+    if (isAuthenticated && user?.school) {
+      const school = user.school
+      const brandColor = school.brandColor || config.colors.burgundy
+      const accentColor = school.accentColor || config.colors.gold
+
+      return {
+        schoolName: school.name || config.defaultSchool.name,
+        shortName: school.shortName || config.defaultSchool.shortName,
+        city: school.city || config.defaultSchool.city,
+        tagline: school.tagline || 'Stay Connected',
+        logoUrl: school.logoUrl || '/school-logo.png',
+        logoIconUrl: school.logoIconUrl || config.defaultSchool.wasilIcon,
+        paymentUrl: school.paymentUrl || '',
+        colors: {
+          brandColor,
+          accentColor,
+          brandColorLight: createLightColor(brandColor),
+        },
+        isLoaded: true,
+      }
     }
 
-    const school = user.school
-    const brandColor = school.brandColor || config.colors.burgundy
-    const accentColor = school.accentColor || config.colors.gold
+    // Pre-login on a school subdomain (e.g. vhpscoa.wasilconnect.com): brand the
+    // sign-in page from the public tenant lookup.
+    if (tenant) {
+      const brandColor = tenant.brandColor || config.colors.burgundy
+      const accentColor = tenant.accentColor || config.colors.gold
 
-    return {
-      schoolName: school.name || config.defaultSchool.name,
-      shortName: school.shortName || config.defaultSchool.shortName,
-      city: school.city || config.defaultSchool.city,
-      tagline: school.tagline || 'Stay Connected',
-      logoUrl: school.logoUrl || '/school-logo.png',
-      logoIconUrl: school.logoIconUrl || config.defaultSchool.wasilIcon,
-      paymentUrl: school.paymentUrl || '',
-      colors: {
-        brandColor,
-        accentColor,
-        brandColorLight: createLightColor(brandColor),
-      },
-      isLoaded: true,
+      return {
+        schoolName: tenant.name || config.defaultSchool.name,
+        shortName: tenant.shortName || config.defaultSchool.shortName,
+        city: tenant.city || config.defaultSchool.city,
+        tagline: tenant.tagline || 'Stay Connected',
+        logoUrl: tenant.logoUrl || '/school-logo.png',
+        logoIconUrl: tenant.logoIconUrl || config.defaultSchool.wasilIcon,
+        paymentUrl: '',
+        colors: {
+          brandColor,
+          accentColor,
+          brandColorLight: createLightColor(brandColor),
+        },
+        isLoaded: true,
+      }
     }
-  }, [isAuthenticated, user?.school])
+
+    // Root/platform host, or unknown slug: default Wasil branding.
+    return defaultTheme
+  }, [isAuthenticated, user?.school, tenant])
 
   // Apply CSS variables when theme changes
   useEffect(() => {

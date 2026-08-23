@@ -18,6 +18,24 @@ const brandingLimiter = rateLimit({
   legacyHeaders: false,
 })
 
+// GET /api/public/tenants — every active school with a slug, minimal branding.
+// Powers the root school picker and the "how many schools exist" decision (1 →
+// auto-redirect, 2+ → show the picker). Only slugged, non-archived schools.
+router.get('/tenants', brandingLimiter, async (_req: Request, res: Response) => {
+  try {
+    const schools = await prisma.school.findMany({
+      where: { archived: false, slug: { not: null } },
+      select: { slug: true, name: true, shortName: true, city: true, brandColor: true, logoUrl: true },
+      orderBy: { name: 'asc' },
+    })
+    res.set('Cache-Control', 'public, max-age=300')
+    res.json(schools)
+  } catch (error) {
+    console.error('Public tenants list failed:', error)
+    res.status(500).json({ error: 'Failed to load schools' })
+  }
+})
+
 // GET /api/public/tenant/:slug — branding for one school by its URL slug.
 router.get('/tenant/:slug', brandingLimiter, async (req: Request, res: Response) => {
   try {

@@ -6,7 +6,7 @@ import request from 'supertest'
 // cosmetic fields by slug, 404 an unknown slug, and 404 an archived school
 // (same response as unknown — no existence signal), all without auth.
 const prismaMock = {
-  school: { findUnique: vi.fn() },
+  school: { findUnique: vi.fn(), findMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -71,5 +71,23 @@ describe('GET /api/public/tenant/:slug', () => {
     prismaMock.school.findUnique.mockResolvedValue({ ...VHPS, archived: true })
     const res = await request(app()).get('/api/public/tenant/vhpscoa')
     expect(res.status).toBe(404)
+  })
+})
+
+describe('GET /api/public/tenants', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('lists active slugged schools (minimal branding) for the picker', async () => {
+    prismaMock.school.findMany.mockResolvedValue([
+      { slug: 'vhpscoa', name: 'Victory Heights Primary School', shortName: 'VHPS COA', city: 'City of Arabia', brandColor: '#7f0029', logoUrl: null },
+    ])
+    const res = await request(app()).get('/api/public/tenants')
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveLength(1)
+    expect(res.body[0]).toMatchObject({ slug: 'vhpscoa', brandColor: '#7f0029' })
+    // Only active, slugged schools are queried.
+    expect(prismaMock.school.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { archived: false, slug: { not: null } } }),
+    )
   })
 })

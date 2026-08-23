@@ -15,6 +15,8 @@ export type { FormTemplate } from './templates/forms'
 // Contexts
 export { AuthProvider, useAuth } from './contexts/AuthContext'
 export { ThemeProvider, useTheme } from './contexts/ThemeContext'
+export { TenantProvider, useTenant } from './contexts/TenantContext'
+export { resolveTenantSlug } from './services/tenant'
 
 // Hooks
 export { useApi, useMutation } from './hooks/useApi'
