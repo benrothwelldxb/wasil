@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react'
 import { CalendarPlus, ChevronDown, ChevronUp, Info } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useApi } from '@wasil/shared'
-import { useAuth } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { TermDate } from '@wasil/shared'
 
@@ -30,9 +29,6 @@ const DOT_BG_COLORS: Record<string, string> = {
 }
 
 export function TermDatesPage() {
-  const { user } = useAuth()
-  const academicYear = user?.school?.academicYear || '2025/26'
-
   const { data: termDates, isLoading } = useApi<TermDate[]>(
     () => api.termDates.list(),
     []
@@ -44,7 +40,16 @@ export function TermDatesPage() {
     const match = y.match(/^(\d{4})/)
     return match ? match[1] : ''
   }
-  const currentStartYear = getStartYear(academicYear)
+
+  // Derive the CURRENT academic year from today's date (UAE year starts in
+  // August), NOT from the School.academicYear field — that field is set once and
+  // goes stale, which pushed a fully-published new year into the "next year"
+  // section every August. This matches the admin's getCurrentAcademicYear() so
+  // the two apps agree, and it rolls over automatically.
+  const now = new Date()
+  const currentStartYearNum = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1
+  const currentStartYear = String(currentStartYearNum)
+  const academicYear = `${currentStartYearNum}-${currentStartYearNum + 1}`
 
   // Split dates by academic year
   const currentYearDates = useMemo(() => {
