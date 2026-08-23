@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth, useApi } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { ConversationDetail, ConversationMessageItem } from '@wasil/shared'
-import { ArrowLeft, Send, Paperclip, Search, X, MoreVertical, Download, Reply, Trash2, UserPlus, LogOut, Users, UserCog } from 'lucide-react'
+import { ArrowLeft, Send, Paperclip, Search, X, MoreVertical, Download, Reply, Trash2, UserPlus, LogOut, Users, UserCog, Info } from 'lucide-react'
 import type { ConversationGuardiansResponse, ConversationStaffResponse } from '@wasil/shared'
 import ReactMarkdown from 'react-markdown'
 
@@ -121,6 +121,7 @@ export function ConversationPage() {
 
   // Header menu
   const [showHeaderMenu, setShowHeaderMenu] = useState(false)
+  const [addPeopleHintDismissed, setAddPeopleHintDismissed] = useState(false)
 
   // Co-guardian sharing + staff CC
   const [showShareModal, setShowShareModal] = useState(false)
@@ -424,9 +425,12 @@ export function ConversationPage() {
 
   return (
     <div className="fixed inset-0 bg-cream z-40 flex flex-col safe-area-top">
-      {/* Top bar */}
+      {/* Top bar. `relative z-30` lifts the header (and its ⋮ dropdown) above the
+          message rows below — each row is `position: relative`, so without this
+          the header's backdrop-filter stacking context paints *under* them and
+          the dropdown appears behind the messages. */}
       <div
-        className="shrink-0 flex items-center gap-3 px-4"
+        className="relative z-30 shrink-0 flex items-center gap-3 px-4"
         style={{
           paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
           paddingBottom: '12px',
@@ -533,7 +537,7 @@ export function ConversationPage() {
       {/* Search bar */}
       {showSearch && (
         <div
-          className="shrink-0 px-4 py-2 relative"
+          className="relative z-30 shrink-0 px-4 py-2"
           style={{
             background: 'rgba(255, 248, 244, 0.92)',
             borderBottom: '1px solid #F0E4E6',
@@ -592,6 +596,37 @@ export function ConversationPage() {
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
+        {/* New-thread affordance: point the parent at the ⋮ menu for adding a
+            co-guardian / school staff. Only while the thread is new (≤1 message)
+            and only if this user can actually add people. Dismissible. */}
+        {!isLoading && conversation && !addPeopleHintDismissed && (canManageSharing || canAddStaff)
+          && conversation.messages.length <= 1 && (
+          <div
+            className="mb-2 rounded-2xl px-3.5 py-2.5 flex items-start gap-2.5"
+            style={{ backgroundColor: '#FFF7EC', border: '1px solid #F3E4C4' }}
+          >
+            <Info className="w-4 h-4 mt-0.5 shrink-0" style={{ color: '#C79A3A' }} />
+            <p className="text-xs leading-relaxed flex-1" style={{ color: '#7A6469' }}>
+              {canAddStaff && canManageSharing ? (
+                <>Want to include someone else? Tap the <strong>⋮</strong> menu above to add a member of
+                  school staff, or to share this conversation with another registered parent/guardian.</>
+              ) : canAddStaff ? (
+                <>Want to include a teacher or other staff member? Tap the <strong>⋮</strong> menu above to
+                  add school staff.</>
+              ) : (
+                <>Want another registered parent/guardian on this conversation? Tap the <strong>⋮</strong> menu
+                  above to share it.</>
+              )}
+            </p>
+            <button
+              onClick={() => setAddPeopleHintDismissed(true)}
+              className="shrink-0 -mr-1"
+              aria-label="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" style={{ color: '#A8929A' }} />
+            </button>
+          </div>
+        )}
         {isLoading ? (
           <div className="space-y-3 pt-4">
             {[1, 2, 3].map(i => (
