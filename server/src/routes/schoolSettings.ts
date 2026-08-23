@@ -53,7 +53,18 @@ const SETTINGS_SELECT = {
   attendanceDigestEnabled: true,
   attendanceDigestTime: true,
   contactConfirmDays: true,
+  bottomNavItems: true,
 } as const
+
+// Valid parent bottom-nav catalog keys — mirrors the shared
+// PARENT_BOTTOM_NAV_CATALOG (kept inline so the server stays free of a frontend
+// dependency). At most three may be chosen (the bar has three middle slots).
+const BOTTOM_NAV_KEYS = [
+  'events', 'termDates', 'principalUpdates', 'attendance', 'timetable',
+  'activities', 'consultations', 'schoolServices', 'lunchMenu', 'clubs',
+  'messages', 'resources',
+] as const
+const MAX_BOTTOM_NAV_ITEMS = 3
 
 // GET /api/school-settings — any authenticated user can read settings for their school
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
@@ -104,6 +115,24 @@ router.patch('/', isAuthenticated, isAdmin, async (req: Request, res: Response) 
     }
     if (typeof body.contactConfirmDays === 'number' && Number.isInteger(body.contactConfirmDays) && body.contactConfirmDays >= 0 && body.contactConfirmDays <= 3650) {
       data.contactConfirmDays = body.contactConfirmDays
+    }
+    if (body.bottomNavItems !== undefined) {
+      // null resets to the app default; otherwise it's an ordered array of ≤3
+      // distinct known catalog keys. Anything else is a 400 (never store junk
+      // that the parent bar would silently drop).
+      if (body.bottomNavItems === null) {
+        data.bottomNavItems = null
+      } else if (Array.isArray(body.bottomNavItems)) {
+        const items = body.bottomNavItems
+        const allValid = items.every((k) => typeof k === 'string' && (BOTTOM_NAV_KEYS as readonly string[]).includes(k))
+        const distinct = new Set(items).size === items.length
+        if (!allValid || !distinct || items.length > MAX_BOTTOM_NAV_ITEMS) {
+          return res.status(400).json({ error: `bottomNavItems must be up to ${MAX_BOTTOM_NAV_ITEMS} distinct known keys` })
+        }
+        data.bottomNavItems = items
+      } else {
+        return res.status(400).json({ error: 'bottomNavItems must be an array or null' })
+      }
     }
 
     if (Object.keys(data).length === 0) {

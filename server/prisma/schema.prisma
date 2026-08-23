@@ -82,6 +82,12 @@ model School {
   // Days between prompts. 0 disables the prompt entirely.
   contactConfirmDays            Int     @default(180)
 
+  // The three middle items of the parent app's bottom tab bar (Home + these 3 +
+  // More are the five slots). A JSON array of catalog keys (see the shared
+  // PARENT_BOTTOM_NAV_CATALOG), e.g. ["events","activities","resources"]. Null =
+  // the app's default set. Only the parent bottom bar + admin settings read it.
+  bottomNavItems                Json?
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

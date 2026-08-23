@@ -1,22 +1,81 @@
 import React from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Home, Calendar, Star, BookOpen, MoreVertical } from 'lucide-react'
+import {
+  Home, MoreVertical, Calendar, CalendarDays, CalendarCheck, CalendarClock,
+  Megaphone, ClipboardCheck, Star, Sparkles, Clock, UtensilsCrossed,
+  MessageCircle, BookOpen, type LucideIcon,
+} from 'lucide-react'
+import { useApi } from '@wasil/shared'
+import {
+  PARENT_BOTTOM_NAV_CATALOG, DEFAULT_BOTTOM_NAV_KEYS, isNavItemAvailable,
+} from '@wasil/shared'
+import * as api from '@wasil/shared'
+import type { SchoolSettings, BottomNavKey } from '@wasil/shared'
 
 interface BottomTabBarProps {
   onMorePress: () => void
 }
 
-const tabs = [
-  { icon: Home, label: 'Home', path: '/' },
-  { icon: Calendar, label: 'Events', path: '/events' },
-  { icon: Star, label: 'Activities', path: '/activities' },
-  { icon: BookOpen, label: 'Resources', path: '/resources' },
-  { icon: MoreVertical, label: 'More', path: null },
-] as const
+// One icon per catalog destination — kept here (not in the shared catalog) so the
+// shared package stays free of a lucide dependency.
+const NAV_ICONS: Record<BottomNavKey, LucideIcon> = {
+  events: Calendar,
+  termDates: CalendarDays,
+  principalUpdates: Megaphone,
+  attendance: ClipboardCheck,
+  timetable: CalendarClock,
+  activities: Star,
+  consultations: CalendarCheck,
+  schoolServices: Clock,
+  lunchMenu: UtensilsCrossed,
+  clubs: Sparkles,
+  messages: MessageCircle,
+  resources: BookOpen,
+}
+
+type Tab = { icon: LucideIcon; label: string; path: string | null }
+
+// Resolve the three middle tabs from the school's saved choice, honouring module
+// toggles: keep the admin's order, drop anything whose module is off, then
+// backfill toward three from the default set so the bar never looks half-empty.
+function resolveMiddleTabs(settings: SchoolSettings | null | undefined): Tab[] {
+  const flags = settings // SchoolSettings extends SchoolModuleFlags
+  const isOn = (key: BottomNavKey) => {
+    const item = PARENT_BOTTOM_NAV_CATALOG.find(i => i.key === key)
+    if (!item) return false
+    // Before settings load, assume available (matches the app's default bar).
+    return flags ? isNavItemAvailable(item, flags) : true
+  }
+
+  const chosen = (settings?.bottomNavItems && settings.bottomNavItems.length > 0)
+    ? settings.bottomNavItems
+    : DEFAULT_BOTTOM_NAV_KEYS
+
+  const keys: BottomNavKey[] = []
+  const add = (k: BottomNavKey) => { if (!keys.includes(k) && isOn(k) && keys.length < 3) keys.push(k) }
+  chosen.forEach(add)
+  // Backfill to three: prefer the defaults, then anything else available.
+  if (keys.length < 3) DEFAULT_BOTTOM_NAV_KEYS.forEach(add)
+  if (keys.length < 3) PARENT_BOTTOM_NAV_CATALOG.forEach(i => add(i.key))
+
+  return keys.map(k => {
+    const item = PARENT_BOTTOM_NAV_CATALOG.find(i => i.key === k)!
+    return { icon: NAV_ICONS[k], label: item.label, path: item.path }
+  })
+}
 
 export function BottomTabBar({ onMorePress }: BottomTabBarProps) {
   const location = useLocation()
   const navigate = useNavigate()
+  // One fetch per session (the bar stays mounted across route changes). Falls
+  // back to the default bar while loading or if the request fails.
+  const { data: settings } = useApi<SchoolSettings>(() => api.schoolSettings.get(), [])
+
+  const tabs: Tab[] = [
+    { icon: Home, label: 'Home', path: '/' },
+    ...resolveMiddleTabs(settings),
+    { icon: MoreVertical, label: 'More', path: null },
+  ]
 
   const isActive = (path: string | null) => {
     if (path === null) return false

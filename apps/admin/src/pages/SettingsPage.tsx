@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Save, Mail, Clock, Globe, Phone, FlaskConical, Copy, Trash2, RefreshCw, AlertTriangle, Check } from 'lucide-react'
-import { useToast, api } from '@wasil/shared'
-import type { SchoolSettings, SchoolModuleFlag, TestAccountInfo } from '@wasil/shared'
+import { useToast, api, PARENT_BOTTOM_NAV_CATALOG, DEFAULT_BOTTOM_NAV_KEYS, isNavItemAvailable } from '@wasil/shared'
+import type { SchoolSettings, SchoolModuleFlag, TestAccountInfo, BottomNavKey } from '@wasil/shared'
 
 interface ModuleGroup {
   label: string
@@ -299,8 +299,72 @@ export function SettingsPage() {
         ))}
       </section>
 
+      <BottomNavSection settings={settings} onChange={keys => updateField('bottomNavItems', keys)} />
+
       <TestAccountsSection />
     </div>
+  )
+}
+
+// Parent app bottom tab bar: Home and More are fixed; the admin picks the three
+// middle items here. Only modules that are currently enabled are offered, and a
+// destination can't be chosen twice. Empty slots are allowed (the parent bar
+// backfills from its default set).
+function BottomNavSection({ settings, onChange }: { settings: SchoolSettings; onChange: (keys: BottomNavKey[]) => void }) {
+  const available = PARENT_BOTTOM_NAV_CATALOG.filter(item => isNavItemAvailable(item, settings))
+  const selected = (settings.bottomNavItems && settings.bottomNavItems.length > 0)
+    ? settings.bottomNavItems
+    : DEFAULT_BOTTOM_NAV_KEYS
+  const slots: (BottomNavKey | '')[] = [0, 1, 2].map(i => selected[i] ?? '')
+  const labelFor = (key: string) => PARENT_BOTTOM_NAV_CATALOG.find(i => i.key === key)?.label ?? key
+
+  const changeSlot = (index: number, key: string) => {
+    const next: (BottomNavKey | '')[] = [...slots]
+    next[index] = (key || '') as BottomNavKey | ''
+    // A destination can only sit in one slot — clear it from any other.
+    if (key) for (let j = 0; j < next.length; j++) if (j !== index && next[j] === key) next[j] = ''
+    onChange(next.filter((k): k is BottomNavKey => !!k))
+  }
+
+  return (
+    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div>
+        <h2 className="text-sm font-bold text-slate-700">Parent app bottom bar</h2>
+        <p className="text-xs text-slate-500 mt-1">
+          The parent app's bottom bar has five slots: <strong>Home</strong> and <strong>More</strong> are
+          fixed; choose the three in between. Only enabled modules can be chosen; leave a slot as
+          "Default" to use the app's default for it.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[0, 1, 2].map(i => {
+          const current = slots[i]
+          // Offer available items not already used in another slot (plus the current one).
+          const options = available.filter(item => item.key === current || !slots.some((s, j) => j !== i && s === item.key))
+          return (
+            <div key={i}>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Slot {i + 1}</label>
+              <select
+                value={current}
+                onChange={e => changeSlot(i, e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pink-200"
+              >
+                <option value="">Default</option>
+                {options.map(item => (
+                  <option key={item.key} value={item.key}>{labelFor(item.key)}</option>
+                ))}
+              </select>
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex items-center gap-2 pt-1 text-xs text-slate-400">
+        <span className="font-semibold text-slate-500">Preview:</span>
+        <span>Home</span>
+        {slots.map((s, i) => <span key={i}>· {s ? labelFor(s) : '—'}</span>)}
+        <span>· More</span>
+      </div>
+    </section>
   )
 }
 

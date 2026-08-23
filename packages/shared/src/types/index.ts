@@ -1645,6 +1645,55 @@ export interface SchoolSettings extends SchoolModuleFlags {
   attendanceDigestEnabled: boolean
   attendanceDigestTime: string | null // HH:MM
   contactConfirmDays: number // days between contact-details prompts; 0 disables
+  // The three middle items of the parent app's bottom tab bar (Home + these 3 +
+  // More). Ordered catalog keys (see PARENT_BOTTOM_NAV_CATALOG). null = default.
+  bottomNavItems: BottomNavKey[] | null
+}
+
+// ── Parent bottom-nav configuration ─────────────────────────────────────────
+// The admin picks which three destinations sit in the parent app's bottom tab
+// bar (Home and More are fixed). One catalog, shared by the admin picker and the
+// parent bar, so the two never drift. `moduleFlag` gates availability: a single
+// flag, or an array meaning "available if ANY is on" (e.g. Resources aggregates
+// four modules). Keep keys stable — they're persisted on School.bottomNavItems.
+export type BottomNavKey =
+  | 'events' | 'termDates' | 'principalUpdates' | 'attendance' | 'timetable'
+  | 'activities' | 'consultations' | 'schoolServices' | 'lunchMenu' | 'clubs'
+  | 'messages' | 'resources'
+
+export interface ParentNavCatalogItem {
+  key: BottomNavKey
+  path: string
+  label: string // short label for the bar / admin picker (English default)
+  moduleFlag: SchoolModuleFlag | SchoolModuleFlag[]
+}
+
+export const PARENT_BOTTOM_NAV_CATALOG: ParentNavCatalogItem[] = [
+  { key: 'events', path: '/events', label: 'Calendar', moduleFlag: 'eventsEnabled' },
+  { key: 'termDates', path: '/term-dates', label: 'Term Dates', moduleFlag: 'termDatesEnabled' },
+  { key: 'principalUpdates', path: '/principal-updates', label: 'Updates', moduleFlag: 'weeklyUpdatesEnabled' },
+  { key: 'attendance', path: '/attendance', label: 'Attendance', moduleFlag: 'attendanceEnabled' },
+  { key: 'timetable', path: '/timetable', label: 'Timetable', moduleFlag: 'scheduleEnabled' },
+  { key: 'activities', path: '/activities', label: 'Activities', moduleFlag: 'ecaEnabled' },
+  { key: 'consultations', path: '/consultations', label: 'Consult', moduleFlag: 'consultationsEnabled' },
+  { key: 'schoolServices', path: '/school-services', label: 'Services', moduleFlag: 'schoolServicesEnabled' },
+  { key: 'lunchMenu', path: '/lunch-menu', label: 'Lunch', moduleFlag: 'lunchMenuEnabled' },
+  { key: 'clubs', path: '/clubs', label: 'Clubs', moduleFlag: 'ecaEnabled' },
+  { key: 'messages', path: '/inbox', label: 'Messages', moduleFlag: 'inboxEnabled' },
+  { key: 'resources', path: '/resources', label: 'Resources', moduleFlag: ['policiesEnabled', 'filesEnabled', 'linksEnabled', 'knowledgeBaseEnabled'] },
+]
+
+/** The default three middle items when a school hasn't customised its bottom nav. */
+export const DEFAULT_BOTTOM_NAV_KEYS: BottomNavKey[] = ['events', 'activities', 'resources']
+
+/** All catalog keys — the server's validation allowlist mirror. */
+export const BOTTOM_NAV_KEYS: BottomNavKey[] = PARENT_BOTTOM_NAV_CATALOG.map((i) => i.key)
+
+/** Is a catalog item available given the school's module flags? A single flag
+ * must be on; an array (aggregate hub like Resources) needs ANY one on. */
+export function isNavItemAvailable(item: ParentNavCatalogItem, flags: SchoolModuleFlags): boolean {
+  const f = item.moduleFlag
+  return Array.isArray(f) ? f.some((k) => !!flags[k]) : !!flags[f]
 }
 
 export interface ContactPrompt {
