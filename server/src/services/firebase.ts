@@ -1,5 +1,12 @@
 import admin from 'firebase-admin'
 
+// Notification branding. The web icon is a root-relative path served by the
+// parent app (where the FCM service worker runs), so it's the same asset every
+// tenant ships and needs no absolute origin. BRAND_COLOR tints the small icon on
+// native Android.
+const NOTIFICATION_ICON = '/icon-192.png'
+const BRAND_COLOR = '#C4506E'
+
 let firebaseApp: admin.app.App | null = null
 
 export async function initFirebase(): Promise<boolean> {
@@ -89,6 +96,8 @@ export async function sendPushNotification(
       notification: {
         sound: 'default',
         channelId: 'wasil_notifications',
+        // Brand tint for the small icon on native Android.
+        color: BRAND_COLOR,
       },
     },
     apns: {
@@ -97,6 +106,16 @@ export async function sendPushNotification(
           sound: 'default',
           badge: 1,
         },
+      },
+    },
+    // Web push (browser / installed PWA). Without an explicit icon the FCM SW
+    // auto-displays a generic (unbranded) notification — so point it at the app
+    // icon. Paths are root-relative and resolve against the parent app's origin
+    // where the FCM service worker runs (same asset every tenant ships).
+    webpush: {
+      headers: { Urgency: 'high' },
+      notification: {
+        icon: NOTIFICATION_ICON,
       },
     },
   }

@@ -51,7 +51,7 @@ messaging.onBackgroundMessage((payload) => {
   const title = (payload.data && payload.data.title) || 'Wasil'
   const options = {
     body: (payload.data && payload.data.body) || '',
-    icon: '/logo.png',
+    icon: '/icon-192.png',
     badge: '/logo.png',
     data: payload.data || {},
   }
