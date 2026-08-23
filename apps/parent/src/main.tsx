@@ -6,6 +6,9 @@ import { AuthProvider, TenantProvider, ThemeProvider, SessionExpiredModal, Conta
 import App from './App'
 import './index.css'
 import './i18n'
+// Side-effect import: attaches the `beforeinstallprompt` listener at startup so
+// the install prompt is captured even if it fires before login (see installState).
+import './services/installState'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

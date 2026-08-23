@@ -89,7 +89,8 @@
     "formDaysRemaining": "Form requiring your input — {{days}} day(s) remaining",
     "completed": "Completed",
     "wholeSchool": "Whole School",
-    "payNow": "Pay Now"
+    "payNow": "Pay Now",
+    "installApp": "Install app"
   },
   "events": {
     "title": "Calendar",

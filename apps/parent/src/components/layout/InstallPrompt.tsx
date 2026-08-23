@@ -1,42 +1,26 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { Download, X } from 'lucide-react'
+import { useInstallState } from '../../services/installState'
 
 const DISMISSED_KEY = 'wasil-install-dismissed'
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
-}
-
-function isStandalone(): boolean {
-  if (typeof window === 'undefined') return false
-  return (
-    window.matchMedia?.('(display-mode: standalone)').matches ||
-    // iOS Safari exposes this instead of the display-mode media query.
-    (window.navigator as unknown as { standalone?: boolean }).standalone === true
-  )
-}
-
-function isIos(): boolean {
-  if (typeof navigator === 'undefined') return false
-  return /iphone|ipad|ipod/i.test(navigator.userAgent)
-}
 
 /**
  * Post-login "install this app" nudge for the parent PWA. Web-only — this
  * component is mounted inside AppLayout, which only renders once a parent is
  * authenticated, so it never shows on the login/register screens.
  *
- * - Android/Chrome: captures `beforeinstallprompt`, shows an "Install app"
- *   button that triggers the native install prompt.
- * - iOS Safari: there's no `beforeinstallprompt` API, so we show a one-line
- *   hint instead ("tap Share, then Add to Home Screen").
- * - Hidden entirely once already installed/standalone, and dismissal is
- *   remembered in localStorage so it doesn't nag on every visit.
+ * - Android/Chrome: shows an "Install" button that triggers the native prompt.
+ * - iOS Safari: there's no install API, so we show a one-line hint instead
+ *   ("tap Share, then Add to Home Screen").
+ * - Hidden once already installed/standalone. Dismissal is remembered in
+ *   localStorage so the BANNER doesn't nag — but install stays reachable from the
+ *   menu (Side menu → "Install app"), so a first "no" is never final.
+ *
+ * The `beforeinstallprompt` event is captured centrally in services/installState
+ * (shared with the menu entry), not by this component.
  */
 export function InstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
-  const [showIosHint, setShowIosHint] = useState(false)
+  const { isStandalone, isIos, canPrompt, promptInstall } = useInstallState()
   const [dismissed, setDismissed] = useState(() => {
     try {
       return localStorage.getItem(DISMISSED_KEY) === 'true'
@@ -45,26 +29,8 @@ export function InstallPrompt() {
     }
   })
 
-  useEffect(() => {
-    if (dismissed || isStandalone()) return
-
-    if (isIos()) {
-      setShowIosHint(true)
-      return
-    }
-
-    const handler = (event: Event) => {
-      event.preventDefault()
-      setDeferredPrompt(event as BeforeInstallPromptEvent)
-    }
-    window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [dismissed])
-
   const dismiss = () => {
     setDismissed(true)
-    setDeferredPrompt(null)
-    setShowIosHint(false)
     try {
       localStorage.setItem(DISMISSED_KEY, 'true')
     } catch {
@@ -73,14 +39,13 @@ export function InstallPrompt() {
   }
 
   const handleInstall = async () => {
-    if (!deferredPrompt) return
-    await deferredPrompt.prompt()
-    await deferredPrompt.userChoice
-    setDeferredPrompt(null)
+    await promptInstall()
     dismiss()
   }
 
-  if (dismissed || (!deferredPrompt && !showIosHint)) return null
+  // Show the banner only when there's something to offer and it hasn't been
+  // dismissed: a native prompt (Android) or the iOS manual hint.
+  if (dismissed || isStandalone || (!canPrompt && !isIos)) return null
 
   return (
     <div
@@ -94,12 +59,12 @@ export function InstallPrompt() {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-900">Install the app</p>
         <p className="text-xs text-gray-500">
-          {deferredPrompt
+          {canPrompt
             ? 'Add Wasil to your home screen for quick access.'
             : 'Tap Share, then "Add to Home Screen".'}
         </p>
       </div>
-      {deferredPrompt && (
+      {canPrompt && (
         <button
           onClick={handleInstall}
           className="flex-shrink-0 text-sm font-semibold text-white bg-burgundy rounded-warm-btn px-3 py-2"

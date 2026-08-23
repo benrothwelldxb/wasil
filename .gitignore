@@ -26,5 +26,11 @@ apps/parent/android/local.properties
 apps/parent/android/app/wasil-release.keystore
 apps/parent/android/app/signing.properties
 
+# Secrets — Firebase service-account keys / any service account JSON. These grant
+# server-side send + admin access; they belong in env vars, never in the repo.
+*firebase-adminsdk*.json
+*serviceAccount*.json
+service-account*.json
+
 # Agent worktrees (transient)
 .claude/worktrees/
