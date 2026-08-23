@@ -14,11 +14,13 @@ vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
 vi.mock('../src/services/hubMis', () => ({
   listTerms: vi.fn(),
+  getCalendarStructure: vi.fn(),
 }))
 
-const { listTerms } = await import('../src/services/hubMis')
+const { listTerms, getCalendarStructure } = await import('../src/services/hubMis')
 const { syncTermDates } = await import('../src/services/hubTermSync')
 const mListTerms = vi.mocked(listTerms)
+const mGetStructure = vi.mocked(getCalendarStructure)
 
 const SCHOOL = { id: 'connect-school-1', hubSchoolId: 'hub-school-1' }
 
@@ -38,6 +40,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   process.env.HUB_SERVICE_TOKEN = 'wsk_test'
   prismaMock.school.findUnique.mockResolvedValue(SCHOOL)
+  // Default: no half-term structure (whole-term-only schools). Tests override.
+  mGetStructure.mockResolvedValue({ terms: [] } as any)
   // Default: no existing row → create path. Individual tests override.
   prismaMock.termDate.findFirst.mockResolvedValue(null)
   prismaMock.termDate.create.mockResolvedValue({ id: 'td-new' })
@@ -146,6 +150,76 @@ describe('syncTermDates — prune', () => {
     const where = prismaMock.termDate.deleteMany.mock.calls[0][0].where
     // hubTermId non-null guard ensures manual (null) rows are structurally excluded.
     expect(where.hubTermId).toEqual({ not: null })
+  })
+})
+
+describe('syncTermDates — half-term breaks', () => {
+  it('creates a half-term break row for the gap between two half-terms (school week, amber, tied to the synced term)', async () => {
+    mListTerms.mockResolvedValue([term()]) // Autumn Term ht-1, 2026-08-31..2026-12-11
+    mGetStructure.mockResolvedValue({
+      academic_year: { id: 'ay', name: '2026-27', starts_on: '2026-08-31', ends_on: '2027-07-10' },
+      terms: [
+        {
+          id: 'struct-autumn', name: 'Autumn', starts_on: '2026-08-31', ends_on: '2026-12-11',
+          half_terms: [
+            { id: 'a1', name: 'Autumn 1', starts_on: '2026-08-31', ends_on: '2026-10-16' },
+            { id: 'a2', name: 'Autumn 2', starts_on: '2026-10-26', ends_on: '2026-12-11' },
+          ],
+        },
+      ],
+    } as any)
+
+    const summary = await syncTermDates('connect-school-1')
+
+    // 2 whole-term rows + 1 half-term break row.
+    expect(summary.upserted).toBe(3)
+    const breakCall = prismaMock.termDate.create.mock.calls.find((c: any) => c[0].data.type === 'half-term')
+    expect(breakCall).toBeTruthy()
+    const d = breakCall![0].data
+    expect(d).toMatchObject({
+      term: 1,
+      termName: 'Autumn Term',
+      type: 'half-term',
+      color: 'amber',
+      label: 'October Half-Term',
+      academicYear: '2026-27',
+      // The /terms id (matched by date overlap), NOT the structure term id.
+      hubTermId: 'ht-1',
+      schoolId: 'connect-school-1',
+    })
+    // Trimmed onto the school week (Mon–Fri) and a valid range.
+    const startDow = d.date.getUTCDay(), endDow = d.endDate.getUTCDay()
+    expect(startDow).toBeGreaterThanOrEqual(1); expect(startDow).toBeLessThanOrEqual(5)
+    expect(endDow).toBeGreaterThanOrEqual(1); expect(endDow).toBeLessThanOrEqual(5)
+    expect(d.date.getTime()).toBeLessThanOrEqual(d.endDate.getTime())
+
+    // Stale Hub half-term rows pruned, keyed off the ids we just wrote.
+    const htPrune = prismaMock.termDate.deleteMany.mock.calls.find((c: any) => c[0].where.type === 'half-term')
+    expect(htPrune![0].where).toMatchObject({
+      schoolId: 'connect-school-1', type: 'half-term', hubTermId: { not: null }, id: { notIn: ['td-new'] },
+    })
+  })
+
+  it("skips breaks (keeps whole-term rows) when the calendar structure can't be read", async () => {
+    mListTerms.mockResolvedValue([term()])
+    mGetStructure.mockRejectedValue(new Error('no calendar scope'))
+
+    const summary = await syncTermDates('connect-school-1')
+
+    expect(summary.upserted).toBe(2) // whole-term rows only
+    expect(prismaMock.termDate.create.mock.calls.some((c: any) => c[0].data.type === 'half-term')).toBe(false)
+  })
+
+  it('ignores a term with a single half-term (no gap → no break)', async () => {
+    mListTerms.mockResolvedValue([term()])
+    mGetStructure.mockResolvedValue({
+      terms: [{ id: 's', starts_on: '2026-08-31', ends_on: '2026-12-11', half_terms: [
+        { id: 'a1', starts_on: '2026-08-31', ends_on: '2026-12-11' },
+      ] }],
+    } as any)
+
+    const summary = await syncTermDates('connect-school-1')
+    expect(summary.upserted).toBe(2)
   })
 })
 
