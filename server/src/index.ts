@@ -114,8 +114,25 @@ app.use(
 app.use(helmet())
 
 // Middleware
+// CORS allows: the explicit list in CORS_ORIGIN (localhost/capacitor/etc.) PLUS
+// any https `*.wasilconnect.com` subdomain — so per-school tenant subdomains
+// (vhpscoa.wasilconnect.com, …) are permitted without editing the env on every
+// new school (multi-tenant Phase 1). credentials:true reflects the specific
+// origin (required for the httpOnly refresh cookie).
+const CORS_STATIC = (process.env.CORS_ORIGIN || 'http://localhost:3000')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+const CORS_WASILCONNECT = /^https:\/\/([a-z0-9-]+\.)?wasilconnect\.com$/i
 app.use(cors({
-  origin: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(','),
+  origin: (origin, callback) => {
+    // Non-browser clients (mobile app, curl, server-to-server) send no Origin.
+    if (!origin) return callback(null, true)
+    if (CORS_STATIC.includes(origin) || CORS_WASILCONNECT.test(origin)) {
+      return callback(null, true)
+    }
+    return callback(null, false)
+  },
   credentials: true,
 }))
 // Wasil Hub webhook receiver — MUST be mounted before express.json() because
