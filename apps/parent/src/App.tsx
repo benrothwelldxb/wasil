@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom'
-import { useAuth, LoadingScreen, api, useApi } from '@wasil/shared'
+import { useAuth, useTenant, LoadingScreen, api, useApi } from '@wasil/shared'
 import type { KnowledgeCategory, KnowledgeArticle } from '@wasil/shared'
 import { useTranslation } from 'react-i18next'
 import { loadLanguage } from './i18n'
@@ -13,6 +13,7 @@ import { SideMenu } from './components/layout/SideMenu'
 import { InstallPrompt } from './components/layout/InstallPrompt'
 import { NotificationOptIn } from './components/layout/NotificationOptIn'
 import { LoginView } from './components/LoginView'
+import { RootLanding } from './components/RootLanding'
 import { RegisterPage } from './pages/RegisterPage'
 import { ParentDashboard } from './pages/ParentDashboard'
 import { TermDatesPage } from './pages/TermDatesPage'
@@ -176,6 +177,7 @@ function MagicLinkCallback() {
 
 export default function App() {
   const { isLoading, isAuthenticated, user } = useAuth()
+  const { slug } = useTenant()
   const { i18n } = useTranslation()
   const pushInitialized = useRef(false)
 
@@ -219,6 +221,13 @@ export default function App() {
     if (!isAuthenticated || !user) return
     ensureWebPushRegistered()
   }, [isAuthenticated, user])
+
+  // Root/platform host (no school in the URL): this app is just a router — show
+  // the school picker, or auto-redirect to the single school's subdomain. School
+  // subdomains (slug present) fall through to the normal app below.
+  if (!slug) {
+    return <RootLanding />
+  }
 
   if (isLoading) {
     return <LoadingScreen />
