@@ -213,11 +213,17 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
     sections.push({ label: 'My Child', items: myChild })
   }
 
-  // Resources & Settings
-  const other: MenuItem[] = [
-    { icon: BookOpen, labelKey: 'nav.resources', path: '/resources' },
-    { icon: Settings, labelKey: 'nav.notificationSettings', path: '/notifications/settings' },
-  ]
+  // Resources & Settings. The Resources hub aggregates policies, files, links and
+  // the knowledge base — so it only appears if at least one of those modules is
+  // enabled (otherwise it'd open to an empty page).
+  const resourcesEnabled =
+    isEnabled('policiesEnabled') || isEnabled('filesEnabled') ||
+    isEnabled('linksEnabled') || isEnabled('knowledgeBaseEnabled')
+  const other: MenuItem[] = []
+  if (resourcesEnabled) {
+    other.push({ icon: BookOpen, labelKey: 'nav.resources', path: '/resources' })
+  }
+  other.push({ icon: Settings, labelKey: 'nav.notificationSettings', path: '/notifications/settings' })
   if (user.role === 'SUPER_ADMIN') {
     other.push({ icon: Shield, labelKey: 'nav.superAdmin', path: '/super-admin' })
   }

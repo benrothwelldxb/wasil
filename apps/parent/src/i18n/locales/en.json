@@ -16,7 +16,7 @@
   "nav": {
     "menu": "Menu",
     "home": "Home",
-    "eventsCalendar": "Events Calendar",
+    "eventsCalendar": "Calendar",
     "attendance": "Attendance",
     "timetable": "Timetable",
     "termDates": "Term Dates",
@@ -92,7 +92,7 @@
     "payNow": "Pay Now"
   },
   "events": {
-    "title": "Events Calendar",
+    "title": "Calendar",
     "subtitle": "Upcoming school events and activities",
     "allEvents": "All Events",
     "noEvents": "No upcoming events.",
