@@ -9,7 +9,7 @@ declare global {
       id: string
       email: string
       name: string
-      role: 'PARENT' | 'STAFF' | 'ADMIN' | 'SUPER_ADMIN'
+      role: 'PARENT' | 'STAFF' | 'ADMIN' | 'SUPER_ADMIN' | 'ILSA'
       schoolId: string
       preferredLanguage: string
     }

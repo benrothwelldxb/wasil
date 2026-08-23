@@ -126,6 +126,8 @@ describe('GET /api/partner/inbox/summary', () => {
     expect(prismaMock.conversation.count).toHaveBeenCalledWith({
       where: {
         staffId: 'staff-9',
+        // STAFF-typed threads only — an ILSA's private threads never count here.
+        kind: 'STAFF',
         archivedByStaff: false,
         messages: { some: { senderId: { not: 'staff-9' }, readAt: null, deletedAt: null } },
       },
@@ -289,8 +291,10 @@ describe('GET /api/partner/inbox/threads', () => {
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff'))
     expect(res.status).toBe(200)
     const where = prismaMock.conversation.findMany.mock.calls[0][0].where
-    // Non-admin: own non-archived threads OR threads they've been CC'd on.
+    // Non-admin: own non-archived threads OR threads they've been CC'd on —
+    // STAFF-typed only (ILSA threads excluded).
     expect(where).toEqual({
+      kind: 'STAFF',
       OR: [
         { staffId: 'staff-1', archivedByStaff: false },
         { participants: { some: { userId: 'staff-1', role: 'STAFF', archivedAt: null } } },
@@ -351,7 +355,7 @@ describe('GET /api/partner/inbox/threads', () => {
     prismaMock.conversation.findMany.mockResolvedValue([])
     await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-admin'))
     const where = prismaMock.conversation.findMany.mock.calls[0][0].where
-    expect(where).toEqual({ archivedByStaff: false, schoolId: 'sch-1' })
+    expect(where).toEqual({ kind: 'STAFF', archivedByStaff: false, schoolId: 'sch-1' })
   })
 
   it('class_id maps a Hub class id to a Connect class id and filters by student', async () => {
@@ -391,9 +395,11 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     prismaMock.conversation.findFirst.mockResolvedValue(null)
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-x?hub_user_id=hu-staff'))
     expect(res.status).toBe(404)
-    // Gate: own thread OR a thread they're a participant of (no admin branch for plain staff).
+    // Gate: STAFF-typed, own thread OR a thread they're a participant of (no
+    // admin branch for plain staff). `kind: 'STAFF'` keeps ILSA threads unseen.
     expect(prismaMock.conversation.findFirst.mock.calls[0][0].where).toEqual({
       id: 'c-x',
+      kind: 'STAFF',
       OR: [{ staffId: 'staff-1' }, { participants: { some: { userId: 'staff-1' } } }],
     })
     expect(prismaMock.conversationMessage.updateMany).not.toHaveBeenCalled()
@@ -412,6 +418,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     expect(res.status).toBe(200)
     expect(prismaMock.conversation.findFirst.mock.calls[0][0].where).toEqual({
       id: 'c-1',
+      kind: 'STAFF',
       OR: [{ staffId: 'admin-1' }, { participants: { some: { userId: 'admin-1' } } }, { schoolId: 'sch-1' }],
     })
   })
@@ -604,7 +611,7 @@ describe('POST /api/partner/inbox/threads', () => {
       select: { id: true },
     })
     expect(prismaMock.conversation.create).toHaveBeenCalledWith({
-      data: { schoolId: 'sch-1', parentId: 'p-1', staffId: 'staff-1', studentId: null, schoolContactId: null },
+      data: { schoolId: 'sch-1', parentId: 'p-1', staffId: 'staff-1', studentId: null, schoolContactId: null, kind: 'STAFF' },
     })
   })
 
@@ -616,7 +623,7 @@ describe('POST /api/partner/inbox/threads', () => {
     prismaMock.conversation.create.mockResolvedValue({ id: 'c-new' })
     const res = await auth(request(makeApp()).post('/api/partner/inbox/threads')).send({ hub_user_id: 'hu-staff', studentId: 'stu-1' })
     expect(res.status).toBe(200)
-    expect(prismaMock.parentStudentLink.findFirst).toHaveBeenCalledWith({ where: { studentId: 'stu-1' }, select: { userId: true } })
+    expect(prismaMock.parentStudentLink.findFirst).toHaveBeenCalledWith({ where: { studentId: 'stu-1' }, select: { userId: true }, orderBy: { createdAt: 'asc' } })
     expect(prismaMock.conversation.create.mock.calls[0][0].data.studentId).toBe('stu-1')
   })
 

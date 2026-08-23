@@ -18,6 +18,7 @@ import { createHash, createHmac, timingSafeEqual } from 'crypto'
 import prisma from '../services/prisma.js'
 import { invalidateSchool } from '../services/timetableCache.js'
 import { resyncCalendarForSchool } from '../services/hubCalendarSync.js'
+import { syncIlsasForSchool } from '../services/hubIlsaSync.js'
 
 const router = Router()
 
@@ -99,6 +100,24 @@ router.post('/webhook', raw({ type: '*/*' }), async (req: Request, res: Response
           console.error('[hubWebhook] proposal-approved resync failed', s.id, err),
         )
       }
+    }
+    return res.json({ ok: true })
+  }
+
+  // An ILSA (Learning Support Assistant) link changed in Hub — (re)provision the
+  // ILSA user + reconcile the IlsaLink so a new link opens messaging access and
+  // an unlink/deactivate revokes it (+ removes the parent-side contact) while
+  // retaining thread history. Best-effort background resync per linked school;
+  // dormant-safe (a no-op when the service token / ILSA endpoint isn't live).
+  if (event && event.startsWith('ilsa.')) {
+    const linked = await prisma.school.findMany({
+      where: { hubSchoolId },
+      select: { id: true },
+    })
+    for (const s of linked) {
+      syncIlsasForSchool(s.id).catch((err) =>
+        console.error('[hubWebhook] ilsa resync failed', s.id, err),
+      )
     }
     return res.json({ ok: true })
   }

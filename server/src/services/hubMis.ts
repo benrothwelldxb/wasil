@@ -114,6 +114,23 @@ export interface HubGuardian {
   pupils: HubGuardianPupilLink[]
 }
 
+// Mirror of Hub's ILSA DTO (subset). An ILSA is a 1:1 Learning Support Assistant
+// engaged by a single pupil's parent — Hub owns the identity and the ILSA↔pupil
+// link. `id` is the Hub user id (correlates to `User.hubUserId`); `pupilId` is a
+// Hub pupil id (correlates to `Student.hubPupilId`) — the ONE pupil this ILSA is
+// scoped to. `active` is false once Hub unlinks/deactivates the ILSA; Connect
+// mirrors that into `IlsaLink.active` to cut off messaging + parent visibility.
+// `email` is null for an ILSA Hub holds no address for — such an ILSA can't back
+// a Connect login and is skipped by the sync (same rule as guardians/staff).
+export interface HubIlsa {
+  id: string            // Hub user id → Connect User.hubUserId
+  firstName: string
+  lastName: string
+  email: string | null
+  pupilId: string       // Hub pupil id → Connect Student.hubPupilId (the one pupil)
+  active: boolean
+}
+
 // Mirror of Hub's TermDTO (subset) — an academic term's boundaries. Connect
 // mirrors each into two read-only TermDate rows (a "term-start" + a "term-end").
 // `startDate`/`endDate` are `YYYY-MM-DD`; `name`/`academicYear` are returned
@@ -307,6 +324,18 @@ export async function listGuardians(hubSchoolId: string): Promise<HubGuardian[]>
     `/guardians?${params.toString()}`,
   )
   return guardians
+}
+
+/** ILSAs (1:1 Learning Support Assistants) for a Hub school, each with the ONE
+ * pupil it is scoped to. Connect provisions each as a role-ILSA user and mirrors
+ * the pupil link into IlsaLink (see hubIlsaSync). Hub returns both active and
+ * recently-deactivated ILSAs so Connect can flip `IlsaLink.active` on unlink
+ * without losing the row. Returns [] on a Hub 404 (ILSA endpoint not deployed to
+ * this school yet) so Connect is dormant-safe until the Hub slice lands. */
+export async function listIlsas(hubSchoolId: string): Promise<HubIlsa[]> {
+  const params = new URLSearchParams({ schoolId: hubSchoolId })
+  const body = await callAllow404<{ ilsas: HubIlsa[] }>(`/ilsas?${params.toString()}`)
+  return body?.ilsas ?? []
 }
 
 /** When did each MIS entity-type last change for this school? Polling fallback

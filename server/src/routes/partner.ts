@@ -48,10 +48,14 @@ function markdownToSafeHtml(md: string): string {
 
 // A resolved staff/admin actor, shaped exactly like `req.user`, so we can reuse
 // the native inbox logic against a partner (Desk) request. `hub_user_id` maps to
-// `User.hubUserId` (the Hub SSO identity link). Parents can NEVER be resolved
-// here — Desk is a staff-facing surface — so a parent id is treated as "not
-// found" and the caller returns 403.
+// `User.hubUserId` (the Hub SSO identity link). Only STAFF/ADMIN/SUPER_ADMIN
+// resolve here — Desk is a staff-facing surface — so a PARENT or ILSA id is
+// treated as "not found" and the staff-only callers return 403. (An ILSA is a
+// distinct, pupil-scoped actor; it must NEVER slip through the staff resolver, or
+// it would gain the staff recipient picker / broadcast / group surfaces.)
 type StaffActor = { id: string; role: string; schoolId: string; name: string }
+
+const STAFF_ELIGIBLE_ROLES = ['STAFF', 'ADMIN', 'SUPER_ADMIN']
 
 async function resolveStaffActor(hubUserId: string): Promise<StaffActor | null> {
   if (!hubUserId) return null
@@ -59,8 +63,43 @@ async function resolveStaffActor(hubUserId: string): Promise<StaffActor | null> 
     where: { hubUserId },
     select: { id: true, role: true, schoolId: true, name: true },
   })
-  if (!u || u.role === 'PARENT') return null
+  if (!u || !STAFF_ELIGIBLE_ROLES.includes(u.role)) return null
   return { id: u.id, role: u.role, schoolId: u.schoolId, name: u.name }
+}
+
+// A resolved ILSA actor — an ILSA-role user scoped to exactly ONE pupil via an
+// ACTIVE IlsaLink. An ILSA with no active link (never linked, or Hub-deactivated)
+// resolves to null, which cuts off all messaging access (deliverable #5). v1 has
+// exactly one link per ILSA; if several ever exist we take the first active one.
+type IlsaActor = { id: string; schoolId: string; name: string; studentId: string; hubPupilId: string }
+
+async function resolveIlsaActor(hubUserId: string): Promise<IlsaActor | null> {
+  if (!hubUserId) return null
+  const u = await prisma.user.findUnique({
+    where: { hubUserId },
+    select: { id: true, role: true, schoolId: true, name: true },
+  })
+  if (!u || u.role !== 'ILSA') return null
+  const link = await prisma.ilsaLink.findFirst({
+    where: { userId: u.id, active: true },
+    select: { studentId: true, hubPupilId: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  if (!link) return null
+  return { id: u.id, schoolId: u.schoolId, name: u.name, studentId: link.studentId, hubPupilId: link.hubPupilId }
+}
+
+// The unified actor for the shared inbox routes: a partner request is EITHER a
+// staff/admin actor OR an ILSA actor (role is exclusive — a user is one or the
+// other, never both). A parent / unknown / deactivated-ILSA id → null → 403.
+type Actor = { kind: 'STAFF'; staff: StaffActor } | { kind: 'ILSA'; ilsa: IlsaActor }
+
+async function resolveActor(hubUserId: string): Promise<Actor | null> {
+  const staff = await resolveStaffActor(hubUserId)
+  if (staff) return { kind: 'STAFF', staff }
+  const ilsa = await resolveIlsaActor(hubUserId)
+  if (ilsa) return { kind: 'ILSA', ilsa }
+  return null
 }
 
 function isAdminActor(actor: StaffActor): boolean {
@@ -69,11 +108,15 @@ function isAdminActor(actor: StaffActor): boolean {
 
 // Gate a per-thread action to the actor's own thread, or — for admins — any
 // thread in their school. Deliberately staff-oriented (no `parentId` branch):
-// the actor is always staff here. A non-matching thread must 404, never 403, so
-// we don't reveal that a thread exists to a staff member who can't see it.
+// the actor is always staff here. `kind: 'STAFF'` EXCLUDES ILSA threads — even
+// from an admin's school-wide branch — so a private parent↔ILSA thread is never
+// reachable through the staff inbox (ADR 0006 #2; oversight is the only path). A
+// non-matching thread must 404, never 403, so we don't reveal that a thread
+// exists to a staff member who can't see it.
 function staffThreadWhere(id: string, actor: StaffActor) {
   return {
     id,
+    kind: 'STAFF',
     OR: [
       { staffId: actor.id },
       // A CC'd staff member (a STAFF-role participant) may open and reply to the
@@ -82,6 +125,42 @@ function staffThreadWhere(id: string, actor: StaffActor) {
       ...(isAdminActor(actor) ? [{ schoolId: actor.schoolId }] : []),
     ],
   }
+}
+
+// Gate a per-thread action to an ILSA's OWN private thread: the thread must be
+// theirs (staffId slot) AND typed ILSA. The teacher↔parent thread (kind STAFF) is
+// therefore invisible to the ILSA, and this same filter can never match another
+// ILSA's thread. 404 on a miss (never reveal existence).
+function ilsaThreadWhere(id: string, actor: IlsaActor) {
+  return { id, kind: 'ILSA', staffId: actor.id }
+}
+
+/** The requester's Connect user id, whichever actor kind. */
+function actorUserId(actor: Actor): string {
+  return actor.kind === 'STAFF' ? actor.staff.id : actor.ilsa.id
+}
+
+/** The per-thread gate for the acting party — staff (own/CC/admin, STAFF-typed)
+ * or ILSA (own, ILSA-typed). Both 404 on a miss without leaking existence. */
+function threadWhereForActor(id: string, actor: Actor) {
+  return actor.kind === 'STAFF' ? staffThreadWhere(id, actor.staff) : ilsaThreadWhere(id, actor.ilsa)
+}
+
+/** A student's PRIMARY guardian (first ParentStudentLink) as a same-school
+ * PARENT user id, or null. The single point both the staff and ILSA start-thread
+ * paths resolve the parent by, so every studentId round-trips the same way. */
+async function resolvePrimaryGuardianId(studentId: string, schoolId: string): Promise<string | null> {
+  const link = await prisma.parentStudentLink.findFirst({
+    where: { studentId },
+    select: { userId: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  if (!link) return null
+  const parentUser = await prisma.user.findFirst({
+    where: { id: link.userId, schoolId, role: 'PARENT' },
+    select: { id: true },
+  })
+  return parentUser?.id ?? null
 }
 
 // Unread inbox summary for one staff member, addressed by their Hub user id
@@ -108,6 +187,9 @@ router.get('/inbox/summary', requirePartner, async (req, res) => {
     const unread = await prisma.conversation.count({
       where: {
         staffId: staff.id,
+        // STAFF threads only — an ILSA's private threads never count toward a
+        // staff/teacher unread badge (and this endpoint is staff-facing).
+        kind: 'STAFF',
         archivedByStaff: false,
         messages: {
           some: { senderId: { not: staff.id }, readAt: null, deletedAt: null },
@@ -211,43 +293,123 @@ router.get('/attendance/today', requirePartner, async (req, res) => {
 
 // ============================================================================
 // Partner inbox — Desk hosts the 1:1 parent↔staff inbox; Connect stays the
-// system of record. All four routes resolve a staff/admin `actor` from a Hub
-// user id and reuse the native inbox logic against it. Responses carry DISPLAY
-// NAMES ONLY — never parent email/phone, never pupil DOB/UPN/medical/other PII.
+// system of record. Each route resolves an `actor` from a Hub user id — either a
+// staff/admin actor OR a pupil-scoped ILSA actor (ADR 0006). For an ILSA the
+// SAME routes operate ONLY on their private, ILSA-typed thread(s) for their one
+// pupil, so Desk's generic client reuses them with no change. Responses carry
+// DISPLAY NAMES ONLY — never parent email/phone, never pupil DOB/UPN/other PII.
 // ============================================================================
+
+// The include used by both list routes — mirror it across staff + ILSA so the
+// mapper below is shared.
+const THREAD_LIST_INCLUDE = {
+  parent: { select: { name: true } },
+  student: {
+    select: {
+      firstName: true,
+      lastName: true,
+      class: { select: { name: true, hubClassId: true } },
+    },
+  },
+  participants: { select: { userId: true, role: true, lastReadAt: true } },
+} as const
+
+// Shape one conversation row into a Desk thread-list item. `actorId` is the
+// requester (staff, CC'd staff, or ILSA) and drives the unread computation.
+type ThreadRowMessages = { messages: { readAt: Date | null; createdAt: Date }[] }
+function mapThreadItem(
+  c: {
+    id: string
+    staffId: string
+    parent: { name: string }
+    student: { firstName: string; lastName: string; class: { name: string; hubClassId: string | null } | null } | null
+    lastMessageText: string | null
+    lastMessageAt: Date
+    participants: { userId: string; role: string; lastReadAt: Date | null }[]
+  } & ThreadRowMessages,
+  actorId: string,
+) {
+  // A CC'd staff member (a STAFF participant who is NOT the primary staff) reads
+  // via their own participant row: unread = inbound newer than their lastReadAt
+  // (null ⇒ all inbound). The primary staff / ILSA / admin keep the two-party
+  // ConversationMessage.readAt model unchanged.
+  const myPart = c.participants.find((p) => p.userId === actorId && p.role === 'STAFF')
+  const useParticipant = !!myPart && c.staffId !== actorId
+  const unread = useParticipant
+    ? c.messages.filter((m) => (myPart!.lastReadAt ? m.createdAt > myPart!.lastReadAt : true)).length
+    : c.messages.filter((m) => m.readAt === null).length
+  return {
+    id: c.id,
+    parentName: c.parent.name,
+    studentName: c.student ? `${c.student.firstName} ${c.student.lastName}`.trim() : null,
+    hubClassId: c.student?.class?.hubClassId ?? null,
+    className: c.student?.class?.name ?? null,
+    lastMessageText: c.lastMessageText,
+    lastMessageAt: c.lastMessageAt.toISOString(),
+    unread,
+    // Number of additional CO-GUARDIANS this thread is shared with (STAFF CCs
+    // are excluded — they are not co-guardians). 0 = ordinary 1-to-1.
+    sharedCount: c.participants.filter((p) => p.role !== 'STAFF').length,
+    // True when the actor is on this thread as a CC'd staff member rather than
+    // the primary teacher — lets Desk badge "you're CC'd on this". Always false
+    // for an ILSA (they are always the primary party on their own thread).
+    ccd: useParticipant,
+  }
+}
 
 // 1. List the actor's inbox threads (mirrors GET /staff/conversations).
 //
 //   GET /api/partner/inbox/threads?hub_user_id=<Hub user id>[&class_id=<Hub class id>]
 //
-// Admins see every non-archived thread in their school; other staff see only
-// their own. `class_id` is an optional Hub class id, resolved to a Connect class
-// and used to filter by the thread's student. An unknown class → empty list.
+// Staff/admin: admins see every non-archived STAFF thread in their school; other
+// staff see only their own (+ CCs). `class_id` (optional Hub class id) filters by
+// the thread's student; an unknown class → empty list.
+// ILSA: sees ONLY their private (ILSA-typed) thread(s) for their one pupil —
+// `class_id` is ignored (they are single-pupil-scoped). ILSA threads are excluded
+// from every staff branch above via `kind: 'STAFF'`.
 router.get('/inbox/threads', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
-    const actor = await resolveStaffActor(hubUserId)
+    const actor = await resolveActor(hubUserId)
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
-    const isAdmin = isAdminActor(actor)
-    const where: Record<string, unknown> = {}
+    // --- ILSA: their own ILSA-typed threads only ---------------------------
+    if (actor.kind === 'ILSA') {
+      const conversations = await prisma.conversation.findMany({
+        where: { staffId: actor.ilsa.id, kind: 'ILSA' },
+        include: {
+          ...THREAD_LIST_INCLUDE,
+          messages: {
+            where: { senderId: { not: actor.ilsa.id }, deletedAt: null },
+            select: { readAt: true, createdAt: true },
+          },
+        },
+        orderBy: { lastMessageAt: 'desc' },
+      })
+      return res.json({ threads: conversations.map((c) => mapThreadItem(c, actor.ilsa.id)) })
+    }
+
+    // --- Staff/admin: unchanged, but STAFF-typed threads only --------------
+    const staff = actor.staff
+    const isAdmin = isAdminActor(staff)
+    const where: Record<string, unknown> = { kind: 'STAFF' }
     if (isAdmin) {
       // Admin: whole school, unchanged.
-      where.schoolId = actor.schoolId
+      where.schoolId = staff.schoolId
       where.archivedByStaff = false
     } else {
       // Non-admin: their OWN threads PLUS any thread they've been CC'd on as a
       // STAFF participant (their own participant archivedAt drives archive).
       where.OR = [
-        { staffId: actor.id, archivedByStaff: false },
-        { participants: { some: { userId: actor.id, role: 'STAFF', archivedAt: null } } },
+        { staffId: staff.id, archivedByStaff: false },
+        { participants: { some: { userId: staff.id, role: 'STAFF', archivedAt: null } } },
       ]
     }
 
     const classIdParam = typeof req.query.class_id === 'string' ? req.query.class_id.trim() : ''
     if (classIdParam) {
       const cls = await prisma.class.findFirst({
-        where: { hubClassId: classIdParam, schoolId: actor.schoolId },
+        where: { hubClassId: classIdParam, schoolId: staff.schoolId },
         select: { id: true },
       })
       // Unknown / unmapped class → no threads (rather than an unfiltered list).
@@ -258,52 +420,16 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
     const conversations = await prisma.conversation.findMany({
       where,
       include: {
-        parent: { select: { name: true } },
-        student: {
-          select: {
-            firstName: true,
-            lastName: true,
-            class: { select: { name: true, hubClassId: true } },
-          },
-        },
+        ...THREAD_LIST_INCLUDE,
         messages: {
-          where: { senderId: { not: actor.id }, deletedAt: null },
+          where: { senderId: { not: staff.id }, deletedAt: null },
           select: { readAt: true, createdAt: true },
         },
-        participants: { select: { userId: true, role: true, lastReadAt: true } },
       },
       orderBy: { lastMessageAt: 'desc' },
     })
 
-    const threads = conversations.map((c) => {
-      // A CC'd staff member (a STAFF participant who is NOT the primary staff)
-      // reads via their own participant row: unread = inbound newer than their
-      // lastReadAt (null ⇒ all inbound). The primary staff (and admins) keep the
-      // two-party ConversationMessage.readAt model unchanged.
-      const myPart = c.participants.find((p) => p.userId === actor.id && p.role === 'STAFF')
-      const useParticipant = !!myPart && c.staffId !== actor.id
-      const unread = useParticipant
-        ? c.messages.filter((m) => (myPart!.lastReadAt ? m.createdAt > myPart!.lastReadAt : true)).length
-        : c.messages.filter((m) => m.readAt === null).length
-      return {
-        id: c.id,
-        parentName: c.parent.name,
-        studentName: c.student ? `${c.student.firstName} ${c.student.lastName}`.trim() : null,
-        hubClassId: c.student?.class?.hubClassId ?? null,
-        className: c.student?.class?.name ?? null,
-        lastMessageText: c.lastMessageText,
-        lastMessageAt: c.lastMessageAt.toISOString(),
-        unread,
-        // Number of additional CO-GUARDIANS this thread is shared with (STAFF CCs
-        // are excluded — they are not co-guardians). 0 = ordinary 1-to-1.
-        sharedCount: c.participants.filter((p) => p.role !== 'STAFF').length,
-        // True when the actor is on this thread as a CC'd staff member rather than
-        // the primary teacher — lets Desk badge "you're CC'd on this".
-        ccd: useParticipant,
-      }
-    })
-
-    res.json({ threads })
+    res.json({ threads: conversations.map((c) => mapThreadItem(c, staff.id)) })
   } catch (error) {
     console.error('Error building partner inbox threads:', error)
     res.status(500).json({ error: 'internal_error' })
@@ -313,17 +439,19 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
 // 2. Read one thread with its messages (mirrors GET /conversations/:id incl. the
 // mark-inbound-read side-effect). Soft-deleted messages are EXCLUDED entirely —
 // Desk gets a curated, display-only shape (names only; no reactions / replyTo /
-// avatars / readAt). A thread the actor can't see → 404.
+// avatars / readAt). A thread the actor can't see → 404. For an ILSA actor the
+// gate is their own ILSA-typed thread; a teacher↔parent (STAFF) thread 404s.
 router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
-    const actor = await resolveStaffActor(hubUserId)
+    const actor = await resolveActor(hubUserId)
     if (!actor) return res.status(403).json({ error: 'forbidden' })
+    const aId = actorUserId(actor)
 
     const { id } = req.params
 
     const conversation = await prisma.conversation.findFirst({
-      where: staffThreadWhere(id, actor),
+      where: threadWhereForActor(id, actor),
       include: {
         parent: { select: { name: true } },
         student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } },
@@ -345,16 +473,16 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
 
     // Mark-read side-effect. A CC'd staff member (a STAFF participant who is NOT
     // the primary staff) stamps their OWN participant lastReadAt; the primary
-    // staff (and admins) keep the two-party ConversationMessage.readAt model.
-    const myPart = conversation.participants.find((p) => p.userId === actor.id && p.role === 'STAFF')
-    if (myPart && conversation.staffId !== actor.id) {
+    // staff / admin / ILSA keep the two-party ConversationMessage.readAt model.
+    const myPart = conversation.participants.find((p) => p.userId === aId && p.role === 'STAFF')
+    if (myPart && conversation.staffId !== aId) {
       await prisma.conversationParticipant.update({
         where: { id: myPart.id },
         data: { lastReadAt: new Date() },
       })
     } else {
       await prisma.conversationMessage.updateMany({
-        where: { conversationId: id, senderId: { not: actor.id }, readAt: null },
+        where: { conversationId: id, senderId: { not: aId }, readAt: null },
         data: { readAt: new Date() },
       })
     }
@@ -369,17 +497,17 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
         className: conversation.student?.class?.name ?? null,
         // Co-guardian sharing: names of additional guardians this thread is shared
         // with (empty when it's an ordinary 1-to-1 thread). STAFF CCs are excluded
-        // — they are not co-guardians. Staff-facing so a teacher can see which
-        // (separated) parents can read their replies.
+        // — they are not co-guardians. On an ILSA thread these are the pupil's
+        // other guardian(s); there are never STAFF CCs on one.
         sharedWith: conversation.participants.filter((p) => p.role !== 'STAFF').map((p) => p.user.name),
         // Names of additional staff CC'd onto this thread (empty on an ordinary
-        // thread). Lets Desk show the primary teacher who else can see/reply.
+        // thread, and always empty on an ILSA thread — no teacher is ever on one).
         ccStaff: conversation.participants.filter((p) => p.role === 'STAFF').map((p) => p.user.name),
       },
       messages: conversation.messages.map((m) => ({
         id: m.id,
         senderName: m.sender.name,
-        mine: m.senderId === actor.id,
+        mine: m.senderId === aId,
         content: m.content,
         sentAt: m.createdAt.toISOString(),
         attachments: m.attachments.map((a) => ({
@@ -396,16 +524,19 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
   }
 })
 
-// 3. Send a staff message in a thread (mirrors POST /conversations/:id/messages).
+// 3. Send a message in a thread (mirrors POST /conversations/:id/messages).
 // Attachments must be PRE-HOSTED URLs (Desk can't call the staff-JWT upload
-// route). Runs the same recipient fan-out — a Notification row + FCM push to the
-// parent (respecting mutedByParent). The sender is staff, so there is no
-// parent→teacher email branch.
+// route). Runs the same recipient fan-out — a Notification row + FCM push to
+// every OTHER party (respecting mute). The sender is staff or ILSA (never a
+// parent here), so there is no parent→teacher email branch. For an ILSA the
+// gate is their own ILSA-typed thread, and the fan-out reaches only the pupil's
+// guardian(s) on it — never any teacher (a teacher is never a party to one).
 router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
   try {
     const { hub_user_id, content, attachments } = req.body ?? {}
-    const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '')
+    const actor = await resolveActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '')
     if (!actor) return res.status(403).json({ error: 'forbidden' })
+    const aId = actorUserId(actor)
 
     const { id } = req.params
     if (!content || !content.trim()) {
@@ -413,7 +544,7 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
     }
 
     const conversation = await prisma.conversation.findFirst({
-      where: staffThreadWhere(id, actor),
+      where: threadWhereForActor(id, actor),
       include: {
         parent: { select: { id: true, name: true } },
         staff: { select: { id: true, name: true } },
@@ -427,7 +558,7 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
     }
 
     const message = await prisma.conversationMessage.create({
-      data: { conversationId: id, senderId: actor.id, content: content.trim() },
+      data: { conversationId: id, senderId: aId, content: content.trim() },
     })
 
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {
@@ -457,12 +588,12 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
     // flags for the primary parent/staff, participant.mutedAt for added ones).
     // The sender's display name is the primary staff name unless the sender is a
     // CC'd staff participant, in which case it's the actor's own name.
-    const senderIsPrimaryStaff = conversation.staffId === actor.id
+    const senderIsPrimaryStaff = conversation.staffId === aId
     const senderDisplayName = senderIsPrimaryStaff
       ? (conversation.schoolContact
           ? `${conversation.staff.name} (via ${conversation.schoolContact.name})`
           : conversation.staff.name)
-      : actor.name
+      : actor.kind === 'STAFF' ? actor.staff.name : actor.ilsa.name
 
     const recipients: Array<{ userId: string; muted: boolean }> = [
       { userId: conversation.parentId, muted: conversation.mutedByParent },
@@ -473,7 +604,7 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
     }
     const seenRecipients = new Set<string>()
     const dedupedRecipients = recipients.filter((r) => {
-      if (r.userId === actor.id || seenRecipients.has(r.userId)) return false
+      if (r.userId === aId || seenRecipients.has(r.userId)) return false
       seenRecipients.add(r.userId)
       return true
     })
@@ -527,34 +658,72 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
 })
 
 // 4. Find-or-create a thread between the actor and a parent (mirrors POST
-// /staff/conversations). The parent is identified directly (parentId) or via a
-// student (first ParentStudentLink). Re-opening un-archives the actor's side.
+// /staff/conversations). Re-opening un-archives the actor's side.
+//   • Staff: parent is identified directly (parentId) or via a student (first
+//     ParentStudentLink). The thread is STAFF-typed.
+//   • ILSA: `studentId` is forced to the ILSA's ONE linked pupil (any other →
+//     403 — an ILSA can never reach a different pupil's guardian). The thread is
+//     ILSA-typed, with the pupil's PRIMARY guardian as the parent party. Other
+//     guardians join only via the existing opt-in co-guardian sharing (mirrors
+//     the teacher model's separated-guardian safeguard), or by starting their own
+//     thread with the ILSA from the parent app.
 router.post('/inbox/threads', requirePartner, async (req, res) => {
   try {
     const { hub_user_id, studentId, parentId } = req.body ?? {}
-    const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '')
+    const actor = await resolveActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '')
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
+    // --- ILSA: pinned to their one pupil, ILSA-typed thread ----------------
+    if (actor.kind === 'ILSA') {
+      const ilsa = actor.ilsa
+      if (studentId && studentId !== ilsa.studentId) {
+        // The ILSA tried to open a thread about a pupil that isn't theirs.
+        return res.status(403).json({ error: 'forbidden' })
+      }
+      const guardianId = await resolvePrimaryGuardianId(ilsa.studentId, ilsa.schoolId)
+      if (!guardianId) return res.status(400).json({ error: 'could not resolve parent' })
+
+      const existing = await prisma.conversation.findFirst({
+        where: {
+          parentId: guardianId,
+          staffId: ilsa.id,
+          studentId: ilsa.studentId,
+          schoolContactId: null,
+          kind: 'ILSA',
+        },
+      })
+      if (existing) {
+        if (existing.archivedByStaff) {
+          await prisma.conversation.update({ where: { id: existing.id }, data: { archivedByStaff: false } })
+        }
+        return res.json({ id: existing.id })
+      }
+
+      const conversation = await prisma.conversation.create({
+        data: {
+          schoolId: ilsa.schoolId,
+          parentId: guardianId,
+          staffId: ilsa.id,
+          studentId: ilsa.studentId,
+          schoolContactId: null,
+          kind: 'ILSA',
+        },
+      })
+      return res.json({ id: conversation.id })
+    }
+
+    // --- Staff: unchanged, STAFF-typed -------------------------------------
+    const staff = actor.staff
     // Resolve the parent, verifying they are a same-school PARENT either way.
     let resolvedParentId: string | null = null
     if (parentId) {
       const parentUser = await prisma.user.findFirst({
-        where: { id: parentId, schoolId: actor.schoolId, role: 'PARENT' },
+        where: { id: parentId, schoolId: staff.schoolId, role: 'PARENT' },
         select: { id: true },
       })
       if (parentUser) resolvedParentId = parentUser.id
     } else if (studentId) {
-      const link = await prisma.parentStudentLink.findFirst({
-        where: { studentId },
-        select: { userId: true },
-      })
-      if (link) {
-        const parentUser = await prisma.user.findFirst({
-          where: { id: link.userId, schoolId: actor.schoolId, role: 'PARENT' },
-          select: { id: true },
-        })
-        if (parentUser) resolvedParentId = parentUser.id
-      }
+      resolvedParentId = await resolvePrimaryGuardianId(studentId, staff.schoolId)
     }
 
     if (!resolvedParentId) {
@@ -564,9 +733,10 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
     const existing = await prisma.conversation.findFirst({
       where: {
         parentId: resolvedParentId,
-        staffId: actor.id,
+        staffId: staff.id,
         studentId: studentId || null,
         schoolContactId: null,
+        kind: 'STAFF',
       },
     })
 
@@ -582,11 +752,12 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
 
     const conversation = await prisma.conversation.create({
       data: {
-        schoolId: actor.schoolId,
+        schoolId: staff.schoolId,
         parentId: resolvedParentId,
-        staffId: actor.id,
+        staffId: staff.id,
         studentId: studentId || null,
         schoolContactId: null,
+        kind: 'STAFF',
       },
     })
 
@@ -612,15 +783,46 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
 router.get('/inbox/recipients', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
-    const actor = await resolveStaffActor(hubUserId)
+    const actor = await resolveActor(hubUserId)
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
+    // --- ILSA: exactly the ONE linked pupil, whatever `scope` says ---------
+    if (actor.kind === 'ILSA') {
+      const student = await prisma.student.findFirst({
+        where: { id: actor.ilsa.studentId, schoolId: actor.ilsa.schoolId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          class: { select: { name: true } },
+          parentLinks: {
+            select: { user: { select: { name: true } } },
+            orderBy: { createdAt: 'asc' },
+            take: 1,
+          },
+        },
+      })
+      // Link points at a pupil we can't load (e.g. mid-unlink) → empty, not error.
+      const recipients = student
+        ? [{
+            studentId: student.id,
+            studentName: `${student.firstName} ${student.lastName}`.trim(),
+            className: student.class?.name ?? null,
+            parentName: student.parentLinks[0]?.user?.name ?? null,
+          }]
+        : []
+      res.set('Cache-Control', 'private, max-age=30')
+      return res.json({ recipients })
+    }
+
+    // --- Staff: assigned-class pupils (own) or whole school ----------------
+    const staff = actor.staff
     const scope = req.query.scope === 'school' ? 'school' : 'own'
 
     let classFilter: { classId: { in: string[] } } | undefined
     if (scope === 'own') {
       const assignments = await prisma.staffClassAssignment.findMany({
-        where: { userId: actor.id, class: { schoolId: actor.schoolId } },
+        where: { userId: staff.id, class: { schoolId: staff.schoolId } },
         select: { classId: true },
       })
       const classIds = assignments.map((a) => a.classId)
@@ -633,7 +835,7 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
       // Always hard-scoped to the actor's school — scope=school never crosses it.
       // Test Students are hidden from the Desk recipient picker (delivery via
       // class fan-out is unaffected; this is only the staff-facing chooser).
-      where: { schoolId: actor.schoolId, isTest: false, ...(classFilter ?? {}) },
+      where: { schoolId: staff.schoolId, isTest: false, ...(classFilter ?? {}) },
       select: {
         id: true,
         firstName: true,
@@ -659,6 +861,126 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
     res.json({ recipients })
   } catch (error) {
     console.error('Error building partner inbox recipients:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// ============================================================================
+// Passive school oversight of parent↔ILSA threads (ADR 0006, #4). This is the
+// ONLY path by which a school ever sees an ILSA conversation — a retrieval route
+// for the safeguarding/admin role, NOT a live inbox and NOT routine surveillance.
+// Every access is AUDITED (an ILSA_THREAD AuditLog row). Retained history is
+// returned even for DEACTIVATED ILSAs (their threads persist through the school's
+// retention window); each thread is flagged with whether its ILSA is still active.
+// ============================================================================
+
+//   GET /api/partner/oversight/ilsa-threads?hub_user_id=<admin>&pupil_id=<hubPupilId>
+//     [&school_id=<Hub school id | Connect id>]
+//
+// `hub_user_id` MUST resolve to an ADMIN/SUPER_ADMIN in the pupil's school (the
+// safeguarding role + the audit actor); any other actor → 403. `pupil_id` is a
+// Hub pupil id, resolved to a same-school Student. Unknown pupil → 404. Optional
+// `school_id` is a cross-check; if it resolves to a different school than the
+// admin's, → 403 (never serve cross-school). Display-only shape (names only).
+router.get('/oversight/ilsa-threads', requirePartner, async (req, res) => {
+  try {
+    const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
+    const actor = await resolveStaffActor(hubUserId)
+    // Only a school admin / safeguarding lead may retrieve ILSA threads.
+    if (!actor || !isAdminActor(actor)) return res.status(403).json({ error: 'forbidden' })
+
+    const pupilHubId = typeof req.query.pupil_id === 'string' ? req.query.pupil_id.trim() : ''
+    if (!pupilHubId) return res.status(400).json({ error: 'pupil_id required' })
+
+    // Optional school_id cross-check — never serve outside the admin's own school.
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (schoolIdParam) {
+      const school = await prisma.school.findFirst({
+        where: { OR: [{ hubSchoolId: schoolIdParam }, { id: schoolIdParam }] },
+        select: { id: true },
+      })
+      if (!school || school.id !== actor.schoolId) return res.status(403).json({ error: 'forbidden' })
+    }
+
+    const pupil = await prisma.student.findFirst({
+      where: { hubPupilId: pupilHubId, schoolId: actor.schoolId },
+      select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } },
+    })
+    if (!pupil) return res.status(404).json({ error: 'not_found' })
+
+    // Every retained parent↔ILSA thread for this pupil (deactivated ILSAs incl.).
+    const threads = await prisma.conversation.findMany({
+      where: { schoolId: actor.schoolId, kind: 'ILSA', studentId: pupil.id },
+      include: {
+        parent: { select: { name: true } },
+        staff: { select: { id: true, name: true } }, // the ILSA (staff-side slot)
+        participants: { select: { role: true, user: { select: { name: true } } } },
+        messages: {
+          where: { deletedAt: null },
+          include: { sender: { select: { name: true } }, attachments: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: { lastMessageAt: 'desc' },
+    })
+
+    // Which of this pupil's ILSAs are still actively linked (vs deactivated but
+    // retained) — one query, mapped per thread by the ILSA's user id.
+    const activeLinks = await prisma.ilsaLink.findMany({
+      where: { studentId: pupil.id, active: true },
+      select: { userId: true },
+    })
+    const activeIlsaIds = new Set(activeLinks.map((l) => l.userId))
+
+    // AUDIT the access — who looked, at whose threads, how many, when. Framed as
+    // "created an access record" to fit the CREATE/UPDATE/DELETE audit vocabulary.
+    await prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        userName: actor.name,
+        action: 'CREATE',
+        resourceType: 'ILSA_THREAD',
+        resourceId: pupil.id,
+        metadata: {
+          event: 'OVERSIGHT_ACCESS',
+          pupilHubId,
+          threadCount: threads.length,
+        },
+        schoolId: actor.schoolId,
+        ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+      },
+    })
+
+    res.json({
+      pupil: {
+        studentName: `${pupil.firstName} ${pupil.lastName}`.trim(),
+        className: pupil.class?.name ?? null,
+      },
+      threads: threads.map((c) => ({
+        id: c.id,
+        ilsaName: c.staff.name,
+        // The ILSA is still actively linked (vs deactivated but retained).
+        ilsaActive: activeIlsaIds.has(c.staffId),
+        guardianName: c.parent.name,
+        // Additional guardians the thread was shared with (co-guardians only).
+        sharedWith: c.participants.filter((p) => p.role !== 'STAFF').map((p) => p.user.name),
+        createdAt: c.createdAt.toISOString(),
+        lastMessageAt: c.lastMessageAt.toISOString(),
+        messages: c.messages.map((m) => ({
+          id: m.id,
+          senderName: m.sender.name,
+          // ILSA vs guardian, by whether the sender is the thread's ILSA party.
+          senderRole: m.senderId === c.staffId ? 'ILSA' : 'GUARDIAN',
+          content: m.content,
+          sentAt: m.createdAt.toISOString(),
+          attachments: m.attachments.map((a) => ({
+            name: a.fileName, url: a.fileUrl, type: a.fileType, size: a.fileSize,
+          })),
+        })),
+      })),
+    })
+  } catch (error) {
+    console.error('Error building partner ILSA oversight:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })

@@ -153,6 +153,10 @@ router.get('/conversations', isAuthenticated, async (req, res) => {
       const muted = isPrimary ? c.mutedByParent : myParticipant?.mutedAt != null
       return {
         id: c.id,
+        // Thread kind: "STAFF" (teacher/office) or "ILSA" (private parent↔ILSA).
+        // Lets the parent app badge an ILSA thread + label its counterpart as the
+        // "Learning Support Assistant" rather than a teacher.
+        kind: c.kind,
         staffId: c.staffId,
         staffName: c.staff.name,
         staffAvatarUrl: c.staff.avatarUrl,
@@ -191,7 +195,10 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
           { parentId: user.id },
           ...(user.role !== 'PARENT' ? [{ staffId: user.id }] : []),
           { participants: { some: { userId: user.id } } },
-          ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
+          // Admin school-wide override is limited to STAFF threads — a private
+          // parent↔ILSA thread is reachable by an admin ONLY via the audited
+          // oversight route, never the native inbox (ADR 0006, #2/#4).
+          ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId, kind: 'STAFF' }] : []),
         ],
       },
       include: {
@@ -253,6 +260,8 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
 
     res.json({
       id: conversation.id,
+      // "STAFF" or "ILSA" — lets the parent app badge/label the thread's kind.
+      kind: conversation.kind,
       parentId: conversation.parentId,
       parentName: conversation.parent.name,
       parentAvatarUrl: conversation.parent.avatarUrl,
@@ -295,15 +304,41 @@ router.post('/conversations', isAuthenticated, async (req, res) => {
       return res.status(400).json({ error: 'staffId is required' })
     }
 
-    // Verify staff is in same school
-    const staffUser = await prisma.user.findFirst({
-      where: { id: staffId, schoolId: user.schoolId, role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] } },
+    // The counterpart is either a staff member OR the pupil's ILSA (a role-ILSA
+    // user the parent may start a PRIVATE thread with). Resolve the target and
+    // decide the thread `kind`. A parent may never open an ILSA thread for a
+    // pupil that isn't theirs, nor with a deactivated ILSA.
+    const targetUser = await prisma.user.findFirst({
+      where: { id: staffId, schoolId: user.schoolId },
+      select: { id: true, role: true },
     })
-    if (!staffUser) {
-      return res.status(400).json({ error: 'Invalid staff member' })
+    if (!targetUser) {
+      return res.status(400).json({ error: 'Invalid recipient' })
     }
 
-    // Verify student belongs to parent (if provided)
+    let kind: 'STAFF' | 'ILSA'
+    if (['STAFF', 'ADMIN', 'SUPER_ADMIN'].includes(targetUser.role)) {
+      kind = 'STAFF'
+    } else if (targetUser.role === 'ILSA') {
+      // ILSA thread: require a student the parent guardians AND an ACTIVE link
+      // between that ILSA and that exact pupil.
+      if (!studentId) {
+        return res.status(400).json({ error: 'studentId is required to message a Learning Support Assistant' })
+      }
+      const link = await prisma.ilsaLink.findFirst({
+        where: { userId: staffId, studentId, active: true },
+        select: { id: true },
+      })
+      if (!link) {
+        return res.status(400).json({ error: 'Invalid Learning Support Assistant for this pupil' })
+      }
+      kind = 'ILSA'
+    } else {
+      return res.status(400).json({ error: 'Invalid recipient' })
+    }
+
+    // Verify student belongs to parent (if provided). Always enforced above for
+    // an ILSA thread; here it also covers a staff thread that names a student.
     if (studentId) {
       const link = await prisma.parentStudentLink.findFirst({
         where: { userId: user.id, studentId },
@@ -320,6 +355,7 @@ router.post('/conversations', isAuthenticated, async (req, res) => {
         staffId,
         studentId: studentId || null,
         schoolContactId: schoolContactId || null,
+        kind,
       },
     })
 
@@ -341,6 +377,7 @@ router.post('/conversations', isAuthenticated, async (req, res) => {
         staffId,
         studentId: studentId || null,
         schoolContactId: schoolContactId || null,
+        kind,
       },
     })
 
@@ -363,7 +400,10 @@ function participantWhere(id: string, user: Express.User) {
       { parentId: user.id },
       { staffId: user.id },
       { participants: { some: { userId: user.id } } },
-      ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
+      // Admin school-wide override is limited to STAFF threads — an admin acts on
+      // a parent↔ILSA thread ONLY via the audited oversight route (read-only),
+      // never by posting/archiving/muting through the native inbox.
+      ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId, kind: 'STAFF' }] : []),
     ],
   }
 }
@@ -1069,7 +1109,10 @@ router.get('/conversations/:id/search', isAuthenticated, async (req, res) => {
           { parentId: user.id },
           ...(user.role !== 'PARENT' ? [{ staffId: user.id }] : []),
           { participants: { some: { userId: user.id } } },
-          ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
+          // Admin school-wide override is limited to STAFF threads — a private
+          // parent↔ILSA thread is reachable by an admin ONLY via the audited
+          // oversight route, never the native inbox (ADR 0006, #2/#4).
+          ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId, kind: 'STAFF' }] : []),
         ],
       },
     })
@@ -1229,7 +1272,10 @@ router.get('/conversations/:id/export', isAuthenticated, async (req, res) => {
           { parentId: user.id },
           ...(user.role !== 'PARENT' ? [{ staffId: user.id }] : []),
           { participants: { some: { userId: user.id } } },
-          ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId }] : []),
+          // Admin school-wide override is limited to STAFF threads — a private
+          // parent↔ILSA thread is reachable by an admin ONLY via the audited
+          // oversight route, never the native inbox (ADR 0006, #2/#4).
+          ...(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? [{ schoolId: user.schoolId, kind: 'STAFF' }] : []),
         ],
       },
       include: {
@@ -1376,6 +1422,31 @@ router.get('/contacts/available', isAuthenticated, async (req, res) => {
 
     const children = childrenInfo
 
+    // ILSA (Learning Support Assistant) contacts — an ILSA is 1:1 with a single
+    // pupil and engaged by that pupil's parent, so a guardian sees ONLY the
+    // ILSA(s) actively linked to their OWN child (ADR 0006, #3). Deactivated
+    // links are excluded (revokes visibility). Labelled + shaped distinctly from
+    // teachers so the app can render them as a separate, clearly-marked group.
+    const childStudentIds = childrenInfo.map(c => c.studentId)
+    const ilsaLinks = childStudentIds.length > 0
+      ? await prisma.ilsaLink.findMany({
+          where: { studentId: { in: childStudentIds }, active: true },
+          include: { user: { select: { id: true, name: true, avatarUrl: true } } },
+        })
+      : []
+    const ilsas = ilsaLinks.map(l => {
+      const child = childrenInfo.find(c => c.studentId === l.studentId)
+      return {
+        id: l.user.id,
+        name: l.user.name,
+        avatarUrl: l.user.avatarUrl,
+        // The label the parent app must show — visually distinct from teachers.
+        roleLabel: 'Learning Support Assistant',
+        studentId: l.studentId,
+        studentName: child?.studentName ?? null,
+      }
+    })
+
     res.json({
       teachers: Array.from(teacherMap.values()),
       schoolContacts: schoolContacts.map(sc => ({
@@ -1388,6 +1459,7 @@ router.get('/contacts/available', isAuthenticated, async (req, res) => {
         warnBeforeMessaging: sc.warnBeforeMessaging,
         warningMessage: sc.warningMessage,
       })),
+      ilsas,
       children,
     })
   } catch (error) {
@@ -1408,7 +1480,9 @@ router.get('/staff/conversations', isStaff, async (req, res) => {
 
     const isAdminUser = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
 
-    const where: Record<string, unknown> = {}
+    // STAFF-typed threads only — a private parent↔ILSA thread never appears in any
+    // staff/teacher/admin inbox (ADR 0006, #2). ANDed with the OR/admin branches.
+    const where: Record<string, unknown> = { kind: 'STAFF' }
 
     if (isAdminUser) {
       // Admin: whole school, primary two-party read model, own archive flag.

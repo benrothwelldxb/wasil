@@ -122,6 +122,7 @@ model School {
   // Inbox relations
   schoolContacts      SchoolContact[]
   conversations       Conversation[]
+  ilsaLinks           IlsaLink[]
   // Cafeteria
   cafeteriaMenus      CafeteriaMenu[]
   cafeteriaCategories CafeteriaCategory[]
@@ -273,6 +274,9 @@ model User {
   // Inbox relations
   conversationsAsParent    Conversation[] @relation("ConversationsAsParent")
   conversationsAsStaff     Conversation[] @relation("ConversationsAsStaff")
+  // ILSA scope link (present only for role ILSA — the pupil this assistant may
+  // message the guardian(s) of). One row for v1.
+  ilsaLinks                IlsaLink[]     @relation("IlsaActor")
   conversationParticipations ConversationParticipant[] @relation("ConversationParticipations")
   sentConversationMessages ConversationMessage[] @relation("SentConversationMessages")
   schoolContactAssignments SchoolContact[] @relation("SchoolContactAssignments")
@@ -304,6 +308,12 @@ enum Role {
   STAFF
   ADMIN
   SUPER_ADMIN
+  // A Learning Support Assistant — a 1:1 assistant engaged + paid by a single
+  // pupil's parent, NOT a school employee. Deliberately NOT staff-eligible: an
+  // ILSA never enters Connect via the staff Hub SSO handoff, never appears in
+  // staff inbox/contact/broadcast surfaces, and is resolved only as a
+  // pupil-scoped messaging actor (see IlsaLink + partner.ts resolveActor).
+  ILSA
 }
 
 // Children linked to parents (deprecated - use Student + ParentStudentLink)
@@ -345,6 +355,8 @@ model Student {
 
   // Inbox relations
   conversations   Conversation[]
+  // ILSA scope links (the ILSA(s) assigned to this pupil for messaging).
+  ilsaLinks       IlsaLink[]
   // Inclusion relations
   ieps            StudentIep[]
   // Report card relations
@@ -941,6 +953,9 @@ enum AuditResourceType {
   ATTENDANCE
   ATTENDANCE_REQUEST
   USER
+  // A school safeguarding/admin actor accessed the retained parent↔ILSA
+  // thread(s) for a pupil via the passive oversight route (ADR 0006, #4).
+  ILSA_THREAD
 }
 
 model AuditLog {
@@ -1768,6 +1783,15 @@ model Conversation {
   student          Student? @relation(fields: [studentId], references: [id])
   schoolContactId  String?
   schoolContact    SchoolContact? @relation(fields: [schoolContactId], references: [id])
+  // Thread typing — the mechanism that keeps the two channels from ever sharing
+  // a thread (ADR 0006, deliverable #2). "STAFF" = the ordinary teacher/office ↔
+  // parent thread (the `staffId` party is a STAFF/ADMIN user). "ILSA" = a private
+  // parent↔ILSA thread (the `staffId` party is an ILSA-role user). Every
+  // STAFF-actor inbox query filters `kind: "STAFF"` so an ILSA thread is invisible
+  // to the class teacher AND to a school-wide admin inbox; the ILSA only ever
+  // resolves against `kind: "ILSA"` threads for their one pupil. ILSA threads are
+  // surfaced to the school ONLY via the audited oversight route.
+  kind             String   @default("STAFF")
   lastMessageAt    DateTime @default(now())
   lastMessageText  String?
   archivedByParent Boolean  @default(false)
@@ -1784,6 +1808,8 @@ model Conversation {
   @@index([parentId, archivedByParent, lastMessageAt])
   @@index([staffId, archivedByStaff, lastMessageAt])
   @@index([schoolId])
+  // Oversight retrieval reads ILSA threads for one pupil in a school.
+  @@index([schoolId, kind, studentId])
 }
 
 // Additional-participants layer over a Conversation. Phase 1: OPT-IN co-guardian
@@ -1858,6 +1884,38 @@ model ConversationAttachment {
   fileType  String
   fileSize  Int
   createdAt DateTime @default(now())
+}
+
+// An ILSA (Learning Support Assistant) resolved as a messaging actor scoped to
+// exactly ONE pupil (ADR 0006). An ILSA is engaged + paid by the pupil's parent
+// — NOT a school employee. Hub owns the identity and the ILSA↔pupil link; Connect
+// mirrors that link HERE so that:
+//   • runtime messaging is a local lookup (no live Hub call on every send/list);
+//   • a Hub unlink/deactivate revokes messaging access AND removes the parent-side
+//     contact visibility by flipping `active=false` — while the Conversation +
+//     messages are RETAINED for the school's oversight/retention window.
+// `user` is the ILSA's Connect account (role ILSA). One row per (ilsa, pupil);
+// v1 provisions exactly one pupil per ILSA, but the shape allows many later.
+model IlsaLink {
+  id            String    @id @default(cuid())
+  schoolId      String
+  school        School    @relation(fields: [schoolId], references: [id])
+  userId        String    // the ILSA's Connect User (role ILSA)
+  user          User      @relation("IlsaActor", fields: [userId], references: [id])
+  studentId     String    // the ONE linked pupil (Connect Student id)
+  student       Student   @relation(fields: [studentId], references: [id])
+  hubPupilId    String    // Hub pupil id — the oversight lookup key (?pupil_id=)
+  // Lifecycle: a Hub unlink/deactivate flips this to false (+ stamps
+  // deactivatedAt). Inactive links resolve to NO actor (messaging cut off) and
+  // drop out of the parent-side contact surface; thread history is untouched.
+  active        Boolean   @default(true)
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, studentId])
+  @@index([schoolId, active])
+  @@index([studentId, active])
 }
 
 // ============================================
