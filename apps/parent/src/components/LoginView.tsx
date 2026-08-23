@@ -399,9 +399,8 @@ export function LoginView() {
         </p>
 
         {defaultSchool.showWasilBranding && (
-          <div className="mt-3 flex items-center justify-center gap-1.5">
-            <span className="text-[10px]" style={{ color: '#c0b5b8' }}>Powered by</span>
-            <img src={defaultSchool.wasilLogoGrey} alt="Wasil" className="h-3 w-auto opacity-40" />
+          <div className="mt-3.5 flex items-center justify-center">
+            <img src="/connect-by-wasil.png" alt="Connect by Wasil" className="h-4 w-auto opacity-45" />
           </div>
         )}
       </div>
