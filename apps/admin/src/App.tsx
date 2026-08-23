@@ -34,7 +34,17 @@ import { AdminCafeteriaPage } from './pages/CafeteriaPage'
 import { AttendancePage } from './pages/AttendancePage'
 import { SettingsPage } from './pages/SettingsPage'
 
-const PARENT_APP_URL = import.meta.env.VITE_PARENT_URL || 'http://localhost:3000'
+// Bounce target for a parent account that lands on the admin app. Prefer the
+// build-time VITE_PARENT_URL, but when we're served from a *.wasilconnect.com
+// host, default to the live parent app rather than localhost — a missing build
+// var must never send a real user to http://localhost:3000 in production.
+function defaultParentUrl(): string {
+  if (typeof window !== 'undefined' && /(^|\.)wasilconnect\.com$/i.test(window.location.hostname)) {
+    return 'https://app.wasilconnect.com'
+  }
+  return 'http://localhost:3000'
+}
+const PARENT_APP_URL = import.meta.env.VITE_PARENT_URL || defaultParentUrl()
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 // Wasil Hub SSO — staff sign in at Hub and are launched into this admin app via
