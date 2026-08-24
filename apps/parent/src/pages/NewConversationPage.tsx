@@ -56,12 +56,14 @@ export function NewConversationPage() {
     startContactConversation(contact)
   }
 
-  // Group teachers by child
+  // Group teachers by child. The list covers both the class teacher(s) and the
+  // specialists who take the class (PE, music, Arabic …) — the latter carry a
+  // `roleLabel` of what they teach, and sort after the class teachers.
   const childTeachers = new Map<string, {
     studentId: string
     studentName: string
     className: string
-    teachers: Array<{ id: string; name: string; avatarUrl: string | null }>
+    teachers: Array<{ id: string; name: string; avatarUrl: string | null; roleLabel?: string }>
   }>()
 
   if (data) {
@@ -74,15 +76,19 @@ export function NewConversationPage() {
           studentId: child.studentId,
           studentName: child.studentName,
           className: child.className,
-          teachers: teachers.map(t => ({ id: t.id, name: t.name, avatarUrl: t.avatarUrl })),
+          teachers: [...teachers]
+            .sort((a, b) => Number(!!a.roleLabel) - Number(!!b.roleLabel))
+            .map(t => ({ id: t.id, name: t.name, avatarUrl: t.avatarUrl, roleLabel: t.roleLabel })),
         })
       }
     }
   }
 
   // Flatten to (teacher, child) redirect candidates for the deflection notice.
+  // CLASS teachers only — the notice points at "your child's class teacher", so
+  // a specialist (PE, music …) is never the one we redirect to.
   const teacherCandidates = Array.from(childTeachers.values()).flatMap(group =>
-    group.teachers.map(t => ({
+    group.teachers.filter(t => !t.roleLabel).map(t => ({
       teacherId: t.id,
       teacherName: t.name,
       studentId: group.studentId,
@@ -157,7 +163,9 @@ export function NewConversationPage() {
                       <p className="text-sm font-medium" style={{ color: '#2D2225' }}>
                         {teacher.name}
                       </p>
-                      <p className="text-xs" style={{ color: '#A8929A' }}>Class Teacher</p>
+                      <p className="text-xs" style={{ color: '#A8929A' }}>
+                        {teacher.roleLabel || 'Class Teacher'}
+                      </p>
                     </div>
                     <User className="w-4 h-4 shrink-0" style={{ color: '#D0C5C8' }} />
                   </button>

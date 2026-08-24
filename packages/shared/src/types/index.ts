@@ -1384,6 +1384,10 @@ export interface AvailableContactsResponse {
     name: string
     avatarUrl: string | null
     classes: Array<{ id: string; name: string }>
+    /** The sub-line to show under the name. Absent for a class teacher (the app
+     * falls back to "Class Teacher"); for a specialist read off the class
+     * timetable it's what they teach, e.g. "PE · Swimming". */
+    roleLabel?: string
   }>
   schoolContacts: Array<{
     id: string

@@ -5,6 +5,8 @@ import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../mid
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload } from '../services/uploadValidation.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
+import { teachingStaffForClasses, timetableLookupPossible } from '../services/classTeachingStaff.js'
+import { todayInTimezone } from '../services/dateTime.js'
 
 const router = Router()
 
@@ -916,9 +918,12 @@ async function parentChildrenClassIds(parentUserId: string): Promise<string[]> {
 }
 
 // The bounded set of staff a parent may contact / CC: teachers assigned to one
-// of their children's classes (StaffClassAssignment) PLUS the assignees of the
-// school's published (non-archived) SchoolContacts. Deduped by userId, each with
-// a display name. Mirrors the same two sources as `/contacts/available`.
+// of their children's classes (StaffClassAssignment), the specialists who take
+// those classes on the published timetable, PLUS the assignees of the school's
+// published (non-archived) SchoolContacts. Deduped by userId, each with a
+// display name. Mirrors the same three sources as `/contacts/available` — the
+// two lists must stay identical, or a parent could see a contact they then
+// can't CC (or vice versa).
 async function contactableStaff(parentUserId: string, schoolId: string): Promise<Array<{ userId: string; name: string }>> {
   const classIds = await parentChildrenClassIds(parentUserId)
   const byId = new Map<string, string>()
@@ -928,6 +933,31 @@ async function contactableStaff(parentUserId: string, schoolId: string): Promise
       select: { userId: true, user: { select: { name: true } } },
     })
     for (const a of assignments) byId.set(a.userId, a.user.name)
+
+    // Specialist teachers, off the class timetable. Best-effort: a Hub blip
+    // narrows the set back to class teachers rather than failing the request.
+    try {
+      const school = await prisma.school.findUnique({
+        where: { id: schoolId },
+        select: { hubSchoolId: true, timezone: true },
+      })
+      if (timetableLookupPossible(school?.hubSchoolId)) {
+        const classRows = await prisma.class.findMany({
+          where: { id: { in: classIds } },
+          select: { id: true, hubClassId: true },
+        })
+        const specialists = await teachingStaffForClasses(
+          schoolId,
+          classRows.map(c => ({ classId: c.id, hubClassId: c.hubClassId })),
+          { hubSchoolId: school?.hubSchoolId ?? null, today: todayInTimezone(school?.timezone ?? 'UTC') },
+        )
+        for (const list of specialists.values()) {
+          for (const s of list) byId.set(s.userId, s.name)
+        }
+      }
+    } catch (error) {
+      console.error('Specialist-teacher lookup failed (contactable set unaffected):', error)
+    }
   }
   const contacts = await prisma.schoolContact.findMany({
     where: { schoolId, archived: false },
@@ -1396,7 +1426,9 @@ router.get('/contacts/available', isAuthenticated, async (req, res) => {
       : []
 
     // Group by teacher
-    const teacherMap = new Map<string, { id: string; name: string; avatarUrl: string | null; classes: Array<{ id: string; name: string }> }>()
+    // `roleLabel` is the sub-line the app shows under the name: absent for a
+    // class teacher (the app's default), the subjects taught for a specialist.
+    const teacherMap = new Map<string, { id: string; name: string; avatarUrl: string | null; classes: Array<{ id: string; name: string }>; roleLabel?: string }>()
     for (const sa of staffAssignments) {
       const existing = teacherMap.get(sa.userId)
       if (existing) {
@@ -1409,6 +1441,57 @@ router.get('/contacts/available', isAuthenticated, async (req, res) => {
           classes: [{ id: sa.class.id, name: sa.class.name }],
         })
       }
+    }
+
+    // Specialist teachers — PE, music, Arabic, Islamic … take the class but
+    // aren't its class teacher, so Hub never lists them in `teachers[]` and they
+    // never reach StaffClassAssignment. Read them off the class's published
+    // timetable instead (shared cache, see services/classTeachingStaff.ts) and
+    // fold them into the same per-child group, labelled with what they teach.
+    // Entirely best-effort: any failure leaves the contact list as it was.
+    try {
+      const school = await prisma.school.findUnique({
+        where: { id: user.schoolId },
+        select: { hubSchoolId: true, timezone: true },
+      })
+      if (timetableLookupPossible(school?.hubSchoolId) && classIds.length > 0) {
+        const classRows = await prisma.class.findMany({
+          where: { id: { in: classIds } },
+          select: { id: true, name: true, hubClassId: true },
+        })
+        const specialistsByClass = await teachingStaffForClasses(
+          user.schoolId,
+          classRows.map(c => ({ classId: c.id, hubClassId: c.hubClassId })),
+          {
+            hubSchoolId: school?.hubSchoolId ?? null,
+            today: todayInTimezone(school?.timezone ?? 'UTC'),
+            excludeUserIds: new Set(teacherMap.keys()),
+          },
+        )
+        for (const cls of classRows) {
+          for (const s of specialistsByClass.get(cls.id) ?? []) {
+            const existing = teacherMap.get(s.userId)
+            if (existing) {
+              // Teaches more than one of this parent's children.
+              if (!existing.classes.some(c => c.id === cls.id)) {
+                existing.classes.push({ id: cls.id, name: cls.name })
+              }
+              continue
+            }
+            teacherMap.set(s.userId, {
+              id: s.userId,
+              name: s.name,
+              avatarUrl: s.avatarUrl,
+              classes: [{ id: cls.id, name: cls.name }],
+              // What they teach, in place of the "Class Teacher" label. Capped so
+              // a teacher who takes six subjects doesn't overflow the row.
+              roleLabel: s.subjects.slice(0, 3).join(' · ') || 'Specialist Teacher',
+            })
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Specialist-teacher lookup failed (contacts unaffected):', error)
     }
 
     // Get school contacts
