@@ -38,6 +38,17 @@ function fmtDay(dateISO: string) {
   }
 }
 
+// ── Islamic / Enrichment ─────────────────────────────────────────────────────
+// Hub publishes one block for the slot, named for the Islamic strand. Only
+// Muslim pupils take it; the rest are in Enrichment at the same time — and the
+// timetable is per-CLASS, so we can't know which of the two a given child sits
+// in. Rather than mislabel it, we mark the block with an asterisk and explain
+// it once beneath the week. Matches "Islamic", "Islamic Studies", "Islamic
+// Education" — whatever the school names it.
+function isIslamicBlock(name: string | null | undefined): boolean {
+  return !!name && /\bislamic\b/i.test(name)
+}
+
 // ── Colour handling ───────────────────────────────────────────────────────────
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 // A stable warm-neutral palette used when Hub gives no subject colour.
@@ -96,6 +107,16 @@ export function TimetablePage() {
   const { data, isLoading } = useApi<ChildTimetableWeek | null>(
     () => (activeChildId ? api.timetable.childWeek(activeChildId, weekOf) : Promise.resolve(null)),
     [activeChildId, weekOf],
+  )
+
+  // Does this week actually contain an Islamic block? The footnote only earns
+  // its place when it does.
+  const hasIslamicBlock = useMemo(
+    () =>
+      (data?.days ?? []).some((d) =>
+        d.blocks.some((b) => isIslamicBlock(b.subject?.name ?? b.label)),
+      ),
+    [data],
   )
 
   const today = todayISO()
@@ -239,10 +260,25 @@ export function TimetablePage() {
             )
           })}
 
-          {/* Footer note */}
-          <p className="text-[12px] font-medium text-center pt-1" style={{ color: '#C0B2B6' }}>
-            {t('timetable.footer', "From your school's timetable — managed in Wasil Hub")}
-          </p>
+          {/* Notes — the asterisk explainer (only when the week has such a
+              block), then the standing caveat that the published week is the
+              usual pattern, not a promise. */}
+          <div className="pt-1 space-y-1">
+            {hasIslamicBlock && (
+              <p className="text-[12px] font-medium text-center" style={{ color: '#8A797E' }}>
+                {t(
+                  'timetable.islamicNote',
+                  '* Islamic is for Muslim pupils. Children who don’t take it are in Enrichment at the same time.',
+                )}
+              </p>
+            )}
+            <p className="text-[12px] font-medium text-center" style={{ color: '#C0B2B6' }}>
+              {t(
+                'timetable.footer',
+                'This timetable is indicative — the school day doesn’t always run exactly as shown.',
+              )}
+            </p>
+          </div>
         </div>
       )}
     </div>
@@ -291,6 +327,15 @@ function BlockRow({ block, first }: { block: ChildTimetableBlock; first: boolean
             style={{ color: isLesson ? '#2D2225' : '#8A797E' }}
           >
             {title}
+            {isIslamicBlock(title) && (
+              <span
+                className="align-super text-[11px] font-bold ml-0.5"
+                style={{ color: '#8A797E' }}
+                aria-hidden="true"
+              >
+                *
+              </span>
+            )}
           </span>
           {block.specialist && (
             <span
