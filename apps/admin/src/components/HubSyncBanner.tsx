@@ -21,6 +21,21 @@ function summarizeSync(summary: HubSyncSummary): string {
   if (summary.staff.created) parts.push(`${summary.staff.created} staff added`)
   if (summary.staff.updated) parts.push(`${summary.staff.updated} staff updated`)
 
+  // Parents, spelled out — `fetched` is what Hub sent, and the breakdown says
+  // where any shortfall went. Without this the Parents page count could sit
+  // below Hub's roster with nothing on screen explaining why: a guardian Hub
+  // holds no email for can't become a Connect login (User.email is required and
+  // unique), and one whose email already belongs to a staff account is linked
+  // onto it rather than added as a parent.
+  const g = summary.guardians
+  if (g?.fetched) {
+    const detail: string[] = []
+    if (g.created) detail.push(`${g.created} added`)
+    if (g.linked) detail.push(`${g.linked} linked to existing`)
+    if (g.skippedNoEmail) detail.push(`${g.skippedNoEmail} skipped, no email`)
+    parts.push(`${g.fetched} parent${g.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
+  }
+
   if (parts.length === 0) return 'Synced from Hub — no changes'
   return `Synced from Hub — ${parts.join(', ')}`
 }
