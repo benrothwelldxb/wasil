@@ -177,7 +177,7 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       classes: 1,
       pupils: 1,
       staff: { created: 0, updated: 0 },
-      guardians: { created: 0, linked: 0, skippedNoEmail: 0 },
+      guardians: { fetched: 0, created: 0, linked: 0, skippedNoEmail: 0 },
       parentLinks: { created: 0, skippedNoPupil: 0 },
       teacherAssignments: { created: 0, removed: 0, unresolved: 0 },
       calendar: CALENDAR_DORMANT,
@@ -316,7 +316,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
       update: {},
     })
 
-    expect(summary.guardians).toEqual({ created: 1, linked: 0, skippedNoEmail: 0 })
+    expect(summary.guardians).toEqual({ fetched: 1, created: 1, linked: 0, skippedNoEmail: 0 })
     expect(summary.parentLinks).toEqual({ created: 1, skippedNoPupil: 0 })
   })
 
@@ -374,7 +374,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
       update: {},
     })
 
-    expect(summary.guardians).toEqual({ created: 0, linked: 1, skippedNoEmail: 0 })
+    expect(summary.guardians).toEqual({ fetched: 1, created: 0, linked: 1, skippedNoEmail: 0 })
   })
 
   it('skips a guardian with a null email (counted, no user or link written)', async () => {
@@ -385,7 +385,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
 
     expect(prismaMock.user.create).not.toHaveBeenCalled()
     expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
-    expect(summary.guardians).toEqual({ created: 0, linked: 0, skippedNoEmail: 1 })
+    expect(summary.guardians).toEqual({ fetched: 1, created: 0, linked: 0, skippedNoEmail: 1 })
     expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 0 })
   })
 
@@ -401,7 +401,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
     // User is still created, but the unresolved pupil link is skipped.
     expect(prismaMock.user.create).toHaveBeenCalledTimes(1)
     expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
-    expect(summary.guardians).toEqual({ created: 1, linked: 0, skippedNoEmail: 0 })
+    expect(summary.guardians).toEqual({ fetched: 1, created: 1, linked: 0, skippedNoEmail: 0 })
     expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 1 })
   })
 
@@ -413,7 +413,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
     expect(prismaMock.user.create).not.toHaveBeenCalled()
     expect(prismaMock.user.update).not.toHaveBeenCalled()
     expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
-    expect(summary.guardians).toEqual({ created: 0, linked: 0, skippedNoEmail: 0 })
+    expect(summary.guardians).toEqual({ fetched: 0, created: 0, linked: 0, skippedNoEmail: 0 })
     expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 0 })
   })
 })

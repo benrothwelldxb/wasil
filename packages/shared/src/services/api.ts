@@ -2491,7 +2491,7 @@ export interface HubSyncSummary {
   classes: number
   pupils: number
   staff: { created: number; updated: number }
-  guardians: { created: number; linked: number; skippedNoEmail: number }
+  guardians: { fetched: number; created: number; linked: number; skippedNoEmail: number }
   parentLinks: { created: number; skippedNoPupil: number }
   teacherAssignments: { created: number; removed: number; unresolved: number }
 }

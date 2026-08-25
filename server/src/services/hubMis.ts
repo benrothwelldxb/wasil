@@ -314,16 +314,95 @@ export async function listStaff(hubSchoolId: string): Promise<HubStaff[]> {
   return staff
 }
 
+/** Hard stop on the guardian paging loop — a backstop against a Hub that keeps
+ * answering with fresh rows forever, not a real limit (50 × a 200-row page is
+ * 10,000 guardians). */
+const MAX_GUARDIAN_PAGES = 50
+
+/** The paging conventions we're willing to try, in order. Hub's contract isn't
+ * documented on our side, so rather than hard-code a guess we probe: the style
+ * that actually returns rows we haven't seen is the one we then page with. The
+ * winning style is logged, so prod tells us the real contract. */
+const PAGE_STYLES: Array<{ name: string; build: (pageSize: number, page: number) => Record<string, string> }> = [
+  { name: 'limit/offset', build: (size, page) => ({ limit: String(size), offset: String(size * page) }) },
+  { name: 'page/pageSize', build: (size, page) => ({ page: String(page + 1), pageSize: String(size) }) },
+]
+
 /** Guardians (parents/carers) for a Hub school, with their pupil links. Each
  * link's `pupilId` is a Hub pupil id; sync resolves it to a Connect Student via
- * `Student.hubPupilId`. Hub currently returns 0 guardians for every school, so
- * this endpoint is a no-op in practice until guardian data lands upstream. */
+ * `Student.hubPupilId`.
+ *
+ * Hub answers this endpoint one PAGE at a time (observed: a flat 200 rows for a
+ * school with more guardians than that), so we keep asking until it stops giving
+ * us anyone new. Deliberately conservative, because the paging contract isn't
+ * pinned on our side:
+ *   * the FIRST request is exactly what it always was — no params — so a Hub
+ *     that returns everything in one go behaves precisely as before;
+ *   * a page that errors (e.g. Hub rejects the params) is swallowed: we keep the
+ *     rows we already have rather than failing the whole roster sync;
+ *   * pages are deduped by guardian id, and a style that adds nobody new is
+ *     abandoned — so a Hub that IGNORES paging params costs a couple of wasted
+ *     requests instead of looping forever.
+ * The net effect is never worse than the single-page behaviour it replaces. */
 export async function listGuardians(hubSchoolId: string): Promise<HubGuardian[]> {
-  const params = new URLSearchParams({ schoolId: hubSchoolId })
-  const { guardians } = await call<{ guardians: HubGuardian[] }>(
-    `/guardians?${params.toString()}`,
-  )
-  return guardians
+  const fetchPage = async (extra: Record<string, string> = {}): Promise<HubGuardian[]> => {
+    const params = new URLSearchParams({ schoolId: hubSchoolId, ...extra })
+    const { guardians } = await call<{ guardians: HubGuardian[] }>(`/guardians?${params.toString()}`)
+    return guardians
+  }
+
+  const first = await fetchPage()
+  if (first.length === 0) return first
+
+  const pageSize = first.length
+  const all = [...first]
+  const seen = new Set(all.map((g) => g.id))
+
+  /** Append a page's new rows; returns how many were actually new. */
+  const absorb = (rows: HubGuardian[]): number => {
+    let fresh = 0
+    for (const g of rows) {
+      if (seen.has(g.id)) continue
+      seen.add(g.id)
+      all.push(g)
+      fresh++
+    }
+    return fresh
+  }
+
+  // Probe each style with its page 2 until one gives us someone new.
+  let style: (typeof PAGE_STYLES)[number] | null = null
+  let lastLength = 0
+  for (const candidate of PAGE_STYLES) {
+    try {
+      const rows = await fetchPage(candidate.build(pageSize, 1))
+      if (absorb(rows) > 0) {
+        style = candidate
+        lastLength = rows.length
+        console.log(`[hubMis] guardians: paging with ${candidate.name} (page size ${pageSize})`)
+        break
+      }
+    } catch (err) {
+      console.warn(`[hubMis] guardians: ${candidate.name} paging rejected by Hub:`, err)
+    }
+  }
+  // Nothing paged — either Hub sent everything already, or it ignores/refuses
+  // every style we know. Either way, what we have is what there is.
+  if (!style || lastLength < pageSize) return all
+
+  for (let page = 2; page < MAX_GUARDIAN_PAGES; page++) {
+    let rows: HubGuardian[]
+    try {
+      rows = await fetchPage(style.build(pageSize, page))
+    } catch (err) {
+      console.warn(`[hubMis] guardians: page ${page} failed; keeping ${all.length} fetched so far:`, err)
+      break
+    }
+    if (absorb(rows) === 0) break
+    if (rows.length < pageSize) break // a short page is the last page
+  }
+
+  return all
 }
 
 /** ILSAs (1:1 Learning Support Assistants) for a Hub school, each with the ONE

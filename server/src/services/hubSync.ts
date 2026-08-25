@@ -60,11 +60,16 @@ export interface SyncSummary {
   pupils: number
   /** Staff, split by whether the Connect user was created or updated/linked. */
   staff: { created: number; updated: number }
-  /** Guardians provisioned as Connect PARENT users. `created` = brand-new
+  /** Guardians provisioned as Connect PARENT users. `fetched` = how many Hub
+   * returned (across all pages) — the number to compare against Hub's own
+   * guardian count when parents appear to be missing; `created` = brand-new
    * accounts; `linked` = a pre-existing same-email user we attached the
    * hubGuardianId to (role untouched); `skippedNoEmail` = guardians Hub holds
-   * no email for, which can't become a login and are skipped. */
-  guardians: { created: number; linked: number; skippedNoEmail: number }
+   * no email for, which can't become a login and are skipped. `created +
+   * linked + skippedNoEmail` always equals `fetched`, so the two ways parents
+   * go missing — Hub not sending them, or Hub sending them without an email —
+   * are told apart at a glance. */
+  guardians: { fetched: number; created: number; linked: number; skippedNoEmail: number }
   /** Parent↔student links. `created` counts links upserted this run;
    * `skippedNoPupil` counts guardian→pupil edges whose Hub pupil isn't synced
    * into Connect yet (no matching Student.hubPupilId). */
@@ -183,10 +188,11 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   // Provision each Hub guardian as a Connect PARENT user and link it to its
   // children. Runs after pupils so every Student.hubPupilId already exists to
   // resolve links. Idempotent (keyed on hubGuardianId + the ParentStudentLink
-  // unique). DORMANT: Hub returns 0 guardians today, so this is a clean no-op
-  // (all-zero summary, no writes) until guardian data lands upstream.
+  // unique). Hub pages this feed — `listGuardians` walks every page — and the
+  // summary reports `fetched` alongside the outcomes so a short roster is
+  // attributable to Hub's data rather than to this pass.
   const hubGuardians = await listGuardians(hubSchoolId)
-  const guardianSummary = { created: 0, linked: 0, skippedNoEmail: 0 }
+  const guardianSummary = { fetched: hubGuardians.length, created: 0, linked: 0, skippedNoEmail: 0 }
   const parentLinkSummary = { created: 0, skippedNoPupil: 0 }
   for (const g of hubGuardians) {
     const userId = await upsertGuardian(g, schoolId, guardianSummary)
