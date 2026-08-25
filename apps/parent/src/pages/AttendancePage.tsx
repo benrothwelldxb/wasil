@@ -20,8 +20,13 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 const REASON_OPTIONS = ['Illness', 'Medical Appointment', 'Family', 'Other']
 
+// The device's LOCAL date, not the UTC one. `toISOString()` is UTC, so in a
+// UTC+ timezone (the school is UTC+4) every evening after 8pm it returns
+// YESTERDAY — an absence filed at 9pm for "today" would be stamped with the
+// previous day and then be missing from today's register and from Desk.
 function todayString() {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function formatDate(dateStr: string) {

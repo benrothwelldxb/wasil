@@ -55,8 +55,12 @@ function formatDateTime(dateStr: string) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+// The viewer's LOCAL date, not the UTC one. `toISOString()` is UTC, so in a
+// UTC+ timezone (the school is UTC+4) every evening after 8pm it returns
+// YESTERDAY — the digest would open on the wrong day.
 function todayString() {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // ── Take Attendance Tab ──────────────────────────────────────
