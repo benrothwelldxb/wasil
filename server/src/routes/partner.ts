@@ -261,7 +261,9 @@ router.get('/inbox/summary', requirePartner, async (req, res) => {
 //   GET /api/partner/attendance/today?school_id=<Hub school id>[&date=YYYY-MM-DD]
 //
 // `school_id` is resolved against the Hub school link (falls back to a Connect
-// school id). `date` defaults to today in the school's timezone. Returns every
+// school id). `date` defaults to today in the school's timezone. Each row's `id`
+// is its AttendanceRequest id — the handle for POST /attendance/:id/review, so
+// reception can approve from Desk without switching to Connect. Returns every
 // AttendanceRequest whose window covers `date` — i.e. `startDate <= date <=
 // coalesce(endDate, startDate)` (the string dates are YYYY-MM-DD, so a
 // lexicographic compare is correct). Each row carries only denormalised display
@@ -301,6 +303,8 @@ router.get('/attendance/today', requirePartner, async (req, res) => {
         ],
       },
       select: {
+        // The AttendanceRequest id — what POST /attendance/:id/review targets.
+        id: true,
         type: true,
         reason: true,
         notes: true,
@@ -320,6 +324,7 @@ router.get('/attendance/today', requirePartner, async (req, res) => {
     })
 
     const absences = rows.map((r) => ({
+      id: r.id,
       studentName: `${r.student.firstName} ${r.student.lastName}`.trim(),
       hubClassId: r.student.class?.hubClassId ?? null,
       className: r.student.class?.name ?? null,
@@ -336,6 +341,108 @@ router.get('/attendance/today', requirePartner, async (req, res) => {
     res.json({ date, absences })
   } catch (error) {
     console.error('Error building partner attendance/today:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// Approve or decline one parent-reported absence, from Desk's front-office
+// screen — reception sees the absence on /attendance/today and acts on it there
+// rather than switching to Connect.
+//
+//   POST /api/partner/attendance/:id/review
+//   { hub_user_id, status: "APPROVED" | "DECLINED", review_notes? }
+//   → 200 { id, status, reviewedBy, reviewedAt }
+//
+// `:id` is the row id from /attendance/today. `hub_user_id` is the staff member
+// doing the reviewing — resolved the same way as every other partner route, so
+// reception and office staff qualify on SCHOOL MEMBERSHIP, not job title (ADR
+// 0004). Desk gates the button to its own roles on top of that.
+//
+// Mirrors the native PATCH /attendance/requests/:id exactly, including the side
+// effect that matters: an APPROVED absence writes EXCUSED attendance records
+// across its date range, so the register and the digest agree with the decision.
+// A request from another school 404s (never 403 — don't confirm it exists).
+router.post('/attendance/:id/review', requirePartner, async (req, res) => {
+  try {
+    const { hub_user_id, status, review_notes } = req.body ?? {}
+    const actor = await resolveStaffActor(
+      typeof hub_user_id === 'string' ? hub_user_id.trim() : '',
+      schoolHintOf(req),
+    )
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    if (status !== 'APPROVED' && status !== 'DECLINED') {
+      return res.status(400).json({ error: 'status must be APPROVED or DECLINED' })
+    }
+    const reviewNotes =
+      typeof review_notes === 'string' && review_notes.trim() ? review_notes.trim() : null
+
+    // School-scoped lookup — the actor's school, resolved from their own Connect
+    // record, is the only school they can ever review for.
+    const request = await prisma.attendanceRequest.findFirst({
+      where: { id: req.params.id, schoolId: actor.schoolId },
+      select: { id: true, studentId: true, type: true, startDate: true, endDate: true, reason: true },
+    })
+    if (!request) return res.status(404).json({ error: 'not_found' })
+
+    const updated = await prisma.attendanceRequest.update({
+      where: { id: request.id },
+      data: { status, reviewedById: actor.id, reviewedAt: new Date(), reviewNotes },
+      select: { id: true, status: true, reviewedAt: true },
+    })
+
+    // An approved ABSENCE marks the register EXCUSED for every day it covers —
+    // the same loop the native route runs, so both paths leave identical state.
+    if (status === 'APPROVED' && request.type === 'ABSENCE') {
+      const end = request.endDate || request.startDate
+      for (
+        let cursor = new Date(`${request.startDate}T00:00:00.000Z`);
+        cursor.toISOString().slice(0, 10) <= end;
+        cursor.setUTCDate(cursor.getUTCDate() + 1)
+      ) {
+        const date = cursor.toISOString().slice(0, 10)
+        await prisma.attendanceRecord.upsert({
+          where: { studentId_date: { studentId: request.studentId, date } },
+          create: {
+            studentId: request.studentId,
+            schoolId: actor.schoolId,
+            date,
+            status: 'EXCUSED',
+            notes: `Approved absence: ${request.reason}`,
+            markedById: actor.id,
+          },
+          update: {
+            status: 'EXCUSED',
+            notes: `Approved absence: ${request.reason}`,
+            markedById: actor.id,
+          },
+        })
+      }
+    }
+
+    // Audit with the RESOLVED actor — a partner request carries no `req.user`,
+    // so the shared logAudit helper can't be used here.
+    await prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        userName: actor.name,
+        action: 'UPDATE',
+        resourceType: 'ATTENDANCE_REQUEST',
+        resourceId: request.id,
+        metadata: { status, reviewNotes, via: 'partner' },
+        schoolId: actor.schoolId,
+        ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+      },
+    })
+
+    res.json({
+      id: updated.id,
+      status: updated.status,
+      reviewedBy: actor.name,
+      reviewedAt: updated.reviewedAt?.toISOString() ?? null,
+    })
+  } catch (error) {
+    console.error('Error reviewing partner attendance request:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })
