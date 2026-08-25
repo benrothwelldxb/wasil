@@ -80,8 +80,12 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-cream flex flex-col">
       <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen(!menuOpen)} />
       <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
+      {/* overflow-x-hidden: WebKit (every iOS browser, Chrome included) will
+          honour a child's intrinsic width and let the page scroll sideways where
+          Blink shrinks it instead. Nothing here is meant to scroll horizontally
+          — wide content scrolls inside its own container — so clamp the shell. */}
       <main
-        className="max-w-7xl mx-auto px-5 flex-1 w-full"
+        className="max-w-7xl mx-auto px-5 flex-1 w-full overflow-x-hidden"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 76px)', paddingBottom: '100px' }}
       >
         {children}

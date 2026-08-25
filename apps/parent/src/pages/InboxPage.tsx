@@ -89,11 +89,13 @@ export function InboxPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold" style={{ color: '#2D2225' }}>Inbox</h1>
+      <div className="flex items-center justify-between gap-3 min-w-0">
+        <h1 className="text-xl font-bold truncate" style={{ color: '#2D2225' }}>Inbox</h1>
+        {/* shrink-0 + nowrap: the label must not be squeezed into a second line,
+            and must not push the row past the viewport on a narrow screen. */}
         <button
           onClick={() => navigate('/inbox/new')}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-full text-white text-sm font-semibold"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-full text-white text-sm font-semibold shrink-0 whitespace-nowrap"
           style={{ backgroundColor: '#C4506E' }}
         >
           <Plus className="w-4 h-4" />
@@ -135,7 +137,7 @@ export function InboxPage() {
           {conversations.map(conv => (
             <div key={conv.id} className="relative">
               <div
-                className="w-full text-left bg-white rounded-[22px] p-4 flex items-center gap-3 transition-all"
+                className="w-full max-w-full text-left bg-white rounded-[22px] p-4 flex items-center gap-3 overflow-hidden transition-all"
                 style={{
                   border: conv.unreadCount > 0 ? '1.5px solid #C4506E20' : '1px solid #F0E4E6',
                 }}

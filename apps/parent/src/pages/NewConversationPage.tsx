@@ -223,12 +223,19 @@ export function NewConversationPage() {
 
       {/* Deflection notice before messaging a high-traffic contact */}
       {pendingContact && (
+        // Centred, never a bottom sheet: anchored to the bottom, the LAST button
+        // ("Continue to …") fell under the tab bar and the home indicator, so the
+        // one choice the notice exists to offer was the one you couldn't reach.
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-5"
+          style={{ backgroundColor: 'rgba(45, 34, 37, 0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
           onClick={() => setPendingContact(null)}
         >
           <div
-            className="bg-white rounded-[24px] w-full max-w-sm p-6 space-y-4"
+            className="bg-white rounded-[24px] w-full max-w-sm p-6 space-y-4 overflow-y-auto"
+            style={{ maxHeight: 'calc(100vh - 6rem)' }}
+            role="dialog"
+            aria-modal="true"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3">

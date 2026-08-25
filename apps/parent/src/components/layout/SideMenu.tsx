@@ -33,6 +33,7 @@ import { useTheme } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { ParentGroupInfo, SchoolSettings } from '@wasil/shared'
 import { useInstallState } from '../../services/installState'
+import { InstallDialog } from './InstallDialog'
 
 interface SideMenuProps {
   open: boolean
@@ -544,50 +545,14 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
     </div>
 
     {/* iOS "Add to Home Screen" instructions — shown when there's no native
-        install prompt (iPhone/iPad, where Safari has no install API). */}
+        install prompt (iPhone/iPad, where Safari has no install API). Same
+        centred dialog the post-login nudge uses, so both read identically. */}
     {showIosInstall && (
-      <div
-        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40 p-4"
-        onClick={() => setShowIosInstall(false)}
-      >
-        <div
-          className="bg-white rounded-2xl w-full max-w-sm p-5"
-          role="dialog"
-          aria-label="Install instructions"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#FFF0F3' }}>
-              <Download className="w-5 h-5" style={{ color: '#C4506E' }} />
-            </div>
-            <div className="flex-1">
-              <h2 className="text-base font-bold" style={{ color: '#2D2225' }}>Install the app</h2>
-              <p className="text-xs" style={{ color: '#A8929A' }}>Add Wasil to your home screen</p>
-            </div>
-            <button onClick={() => setShowIosInstall(false)} aria-label="Close" className="w-8 h-8 flex items-center justify-center" style={{ color: '#A8929A' }}>
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <ol className="space-y-3 mt-4">
-            <li className="flex items-start gap-3">
-              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: '#F5EEF0', color: '#C4506E' }}>1</span>
-              <span className="text-sm flex items-center gap-1.5 flex-wrap" style={{ color: '#2D2225' }}>
-                Tap the Share button
-                <Share className="w-4 h-4 inline" style={{ color: '#C4506E' }} />
-                in Safari’s toolbar.
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: '#F5EEF0', color: '#C4506E' }}>2</span>
-              <span className="text-sm" style={{ color: '#2D2225' }}>Scroll down and choose <strong>“Add to Home Screen”</strong>.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: '#F5EEF0', color: '#C4506E' }}>3</span>
-              <span className="text-sm" style={{ color: '#2D2225' }}>Tap <strong>Add</strong> — Wasil appears on your home screen.</span>
-            </li>
-          </ol>
-        </div>
-      </div>
+      <InstallDialog
+        canPrompt={false}
+        onInstall={() => setShowIosInstall(false)}
+        onClose={() => setShowIosInstall(false)}
+      />
     )}
     </>
   )
