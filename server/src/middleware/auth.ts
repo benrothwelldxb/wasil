@@ -42,6 +42,9 @@ export interface UserWithRelations extends Express.User {
       firstName: string
       lastName: string
       classId: string
+      /** Hub pupil id — present on Hub-synced pupils, null on Connect-only ones.
+       * The whole Student row is selected, so this is always populated. */
+      hubPupilId?: string | null
       class: {
         id: string
         name: string

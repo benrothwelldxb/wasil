@@ -216,6 +216,51 @@ export interface HubTimetableBlock {
   /** Specialist items (Swimming, PE) — Connect flags these for kit. */
   specialist: boolean
   block_type: string
+  /** Which eligibility STREAM this lesson belongs to, when a school has tagged
+   * its restricted subjects in Hub ("Shown to" = Muslim pupils only / Arabic A
+   * pupils only). `null`/absent = everyone. The CLASS view (which Connect reads)
+   * returns every stream unfiltered, so a parent-facing view must resolve each
+   * slot itself — see services/timetableEligibility.ts. */
+  audience?: TimetableAudience
+}
+
+/** The streams Hub tags a lesson with. `null` (or absent) = the whole class. */
+export type TimetableAudience =
+  | 'ARABIC_A'
+  | 'ARABIC_NON_A'
+  | 'ISLAMIC'
+  | 'NON_ISLAMIC'
+  | null
+
+/** A pupil's streaming flags, as Hub's GUARDIAN day view reports them. Sourced
+ * from the pupil import (`religion`, `arabic_language`). Absent/unknown reads as
+ * false, which is fail-closed: an unknown pupil never sees a restricted lesson. */
+export interface PupilEligibility {
+  arabicA?: boolean
+  muslim?: boolean
+}
+
+/** One child inside the guardian day view. */
+export interface HubGuardianChild {
+  pupilId: string
+  firstName?: string
+  lastName?: string
+  class?: { id: string; name: string } | null
+  eligibility?: PupilEligibility | null
+  blocks?: HubTimetableBlock[]
+}
+
+/** Hub's GUARDIAN-scoped day view: every child of one guardian, with blocks
+ * already filtered to each child's eligibility. Connect reads it for the
+ * `eligibility` flags (the class view carries the richer blocks — teacher, room
+ * — that the parent timetable renders). */
+export interface HubGuardianDay {
+  version_id?: string
+  state_hash?: string | null
+  date?: string
+  week_label?: 'A' | 'B' | null
+  guardianId?: string
+  children?: HubGuardianChild[]
 }
 export interface HubClassDay {
   version_id: string
@@ -457,6 +502,23 @@ export async function listIlsas(hubSchoolId: string): Promise<HubIlsa[]> {
   const params = new URLSearchParams({ schoolId: hubSchoolId })
   const body = await callAllow404<{ ilsas: HubIlsa[] }>(`/ilsas?${params.toString()}`)
   return body?.ilsas ?? []
+}
+
+/** Hub's guardian-scoped day view — the parent-facing timetable, already
+ * filtered per child by eligibility. Addressed by Hub guardian id OR guardian
+ * email (Connect holds both: `User.hubGuardianId` and `User.email`). Returns
+ * `null` on a 404 (no published timetable for that date, or a guardian Hub
+ * doesn't know), so callers degrade instead of failing. */
+export async function getGuardianDay(
+  hubSchoolId: string,
+  guardian: { guardianId?: string | null; guardianEmail?: string | null },
+  date: string,
+): Promise<HubGuardianDay | null> {
+  const params = new URLSearchParams({ schoolId: hubSchoolId, date })
+  if (guardian.guardianId) params.set('guardian_id', guardian.guardianId)
+  else if (guardian.guardianEmail) params.set('guardian_email', guardian.guardianEmail)
+  else return null
+  return callAllow404<HubGuardianDay>(`/timetable/effective/day?${params.toString()}`)
 }
 
 /** When did each MIS entity-type last change for this school? Polling fallback

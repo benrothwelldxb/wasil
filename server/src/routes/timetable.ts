@@ -18,6 +18,12 @@ import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/a
 import { todayInTimezone } from '../services/dateTime.js'
 import { getClassDayCached, getCalendarStructureCached } from '../services/timetableCache.js'
 import { computeTermStatus } from '../services/timetableTerms.js'
+import {
+  hasStreamedBlocks,
+  resolveBlocksForPupil,
+  eligibilityForPupil,
+  guardianKeyFor,
+} from '../services/timetableEligibility.js'
 // Re-exported for the tests that pin this helper (and any route-level caller).
 export { computeTermStatus }
 import type { HubCalendarStructure } from '../services/hubMis.js'
@@ -37,6 +43,10 @@ interface ChildEntry {
   className: string
   /** Connect Class id — resolved to a Hub class id below. */
   classId: string
+  /** Hub pupil id, when this child came from Hub. Identifies the child in the
+   * guardian day view, which is where their eligibility flags live. Null for a
+   * legacy `Child` row, which simply never streams. */
+  hubPupilId?: string | null
 }
 
 export interface TimetableTodayChild {
@@ -63,6 +73,7 @@ router.get('/today', isAuthenticated, async (req, res) => {
         name: `${s.firstName} ${s.lastName}`.trim(),
         className: s.class?.name ?? '',
         classId: s.classId,
+        hubPupilId: s.hubPupilId ?? null,
       })
     }
     for (const child of user.children ?? []) {
@@ -135,33 +146,55 @@ router.get('/today', isAuthenticated, async (req, res) => {
     ]
 
     // If Hub isn't reachable (no token / school not linked) everyone gets []
-    // — a graceful fallback, not a 500.
-    const itemsByHubClass = new Map<string, ReminderItem[]>()
+    // — a graceful fallback, not a 500. One fetch per class, shared by siblings.
+    const blocksByHubClass = new Map<string, HubTimetableBlock[]>()
     const hubReady = !!process.env.HUB_SERVICE_TOKEN && !!school?.hubSchoolId
     if (hubReady) {
       await Promise.all(
         distinctHubClassIds.map(async (hubClassId) => {
           try {
             const day = await getClassDayCached(school!.hubSchoolId!, hubClassId, date)
-            itemsByHubClass.set(hubClassId, resolver.remindersForBlocks(day?.blocks ?? []))
+            blocksByHubClass.set(hubClassId, day?.blocks ?? [])
           } catch {
             // A per-class Hub failure shouldn't sink the whole response.
-            itemsByHubClass.set(hubClassId, [])
+            blocksByHubClass.set(hubClassId, [])
           }
         }),
       )
     }
 
-    const result: TimetableTodayChild[] = entries.map((e) => {
-      const hubClassId = hubClassByConnectId.get(e.classId) ?? null
-      const baseItems = hubClassId ? itemsByHubClass.get(hubClassId) ?? [] : []
-      return {
-        studentId: e.studentId,
-        name: e.name,
-        className: e.className,
-        items: applyOverrides(baseItems, overridesByClass.get(e.classId) ?? [], resolver),
-      }
-    })
+    // Eligibility streaming: at a tagged slot the class day holds BOTH lessons
+    // (e.g. Islamic and Enrichment), so reminders must be distilled from the
+    // child's own resolved day — two siblings in one class can differ. Only
+    // reached when the school has actually tagged something.
+    const streamed = [...blocksByHubClass.values()].some(hasStreamedBlocks)
+    const guardian = streamed ? await guardianKeyFor(req.user!.id) : null
+
+    const result: TimetableTodayChild[] = await Promise.all(
+      entries.map(async (e) => {
+        const hubClassId = hubClassByConnectId.get(e.classId) ?? null
+        let blocks = hubClassId ? blocksByHubClass.get(hubClassId) ?? [] : []
+        if (guardian && hasStreamedBlocks(blocks)) {
+          const flags = await eligibilityForPupil(
+            school!.hubSchoolId!,
+            guardian,
+            e.hubPupilId ?? null,
+            date,
+          )
+          if (flags) blocks = resolveBlocksForPupil(blocks, flags)
+        }
+        return {
+          studentId: e.studentId,
+          name: e.name,
+          className: e.className,
+          items: applyOverrides(
+            resolver.remindersForBlocks(blocks),
+            overridesByClass.get(e.classId) ?? [],
+            resolver,
+          ),
+        }
+      }),
+    )
 
     res.json(result)
   } catch (error) {
@@ -352,6 +385,9 @@ interface ChildTimetableBlock {
   room: string | null
   specialist: boolean
   blockType: string
+  /** The eligibility stream this lesson belongs to, for display only — the day
+   * is already resolved to the child. Null = the whole class. */
+  audience?: string | null
 }
 interface ChildTimetableDay {
   weekday: number // 1=Mon … 5=Fri
@@ -373,6 +409,10 @@ export interface ChildTimetableWeek {
   // false/null and the view behaves exactly as before (no banner).
   outOfTerm: boolean
   resumeDate: string | null
+  /** True when the week was resolved to this child's eligibility flags. False
+   * when nothing is streamed, or the flags couldn't be read — in which case a
+   * tagged slot may still carry the whole class's lessons. */
+  streamResolved: boolean
 }
 
 /** Hub sends room as an object ({ id, name, kind }); older builds documented a
@@ -396,6 +436,7 @@ function toChildBlock(b: HubTimetableBlock): ChildTimetableBlock {
     room: roomName(b.room),
     specialist: b.specialist,
     blockType: b.block_type,
+    audience: b.audience ?? null,
   }
 }
 
@@ -417,6 +458,7 @@ router.get('/child/:studentId/week', isAuthenticated, async (req, res) => {
         name: `${s.firstName} ${s.lastName}`.trim(),
         className: s.class?.name ?? '',
         classId: s.classId,
+        hubPupilId: s.hubPupilId ?? null,
       })
     }
     for (const child of user.children ?? []) {
@@ -460,19 +502,45 @@ router.get('/child/:studentId/week', isAuthenticated, async (req, res) => {
     // answer (null / thrown) becomes an empty-block day; if no day answers at
     // all, hubAvailable stays false and we return empty days.
     let hubAvailable = false
-    const days: ChildTimetableDay[] = await Promise.all(
-      dates.map(async ({ weekday, date }): Promise<ChildTimetableDay> => {
-        if (!hubReady) return { weekday, date, blocks: [] }
-        try {
-          const day = await getClassDayCached(school!.hubSchoolId!, hubClassId!, date)
-          if (!day) return { weekday, date, blocks: [] }
-          hubAvailable = true
-          return { weekday, date, blocks: day.blocks.map(toChildBlock) }
-        } catch {
-          return { weekday, date, blocks: [] }
-        }
-      }),
-    )
+    const rawDays: Array<{ weekday: number; date: string; blocks: HubTimetableBlock[] }> =
+      await Promise.all(
+        dates.map(async ({ weekday, date }) => {
+          if (!hubReady) return { weekday, date, blocks: [] as HubTimetableBlock[] }
+          try {
+            const day = await getClassDayCached(school!.hubSchoolId!, hubClassId!, date)
+            if (!day) return { weekday, date, blocks: [] as HubTimetableBlock[] }
+            hubAvailable = true
+            return { weekday, date, blocks: day.blocks }
+          } catch {
+            return { weekday, date, blocks: [] as HubTimetableBlock[] }
+          }
+        }),
+      )
+
+    // Eligibility streaming (Hub "Shown to" tagging): the CLASS view returns
+    // every stream, so a tagged slot holds both the restricted lesson and the
+    // alternative. Resolve the week down to what THIS child takes. Untagged
+    // school → nothing to resolve and no extra Hub call; flags unreadable →
+    // shown unresolved, exactly as before streaming existed.
+    let streamResolved = false
+    if (rawDays.some((d) => hasStreamedBlocks(d.blocks))) {
+      const flags = await eligibilityForPupil(
+        school!.hubSchoolId!,
+        await guardianKeyFor(req.user!.id),
+        child.hubPupilId ?? null,
+        monday,
+      )
+      if (flags) {
+        for (const day of rawDays) day.blocks = resolveBlocksForPupil(day.blocks, flags)
+        streamResolved = true
+      }
+    }
+
+    const days: ChildTimetableDay[] = rawDays.map(({ weekday, date, blocks }) => ({
+      weekday,
+      date,
+      blocks: blocks.map(toChildBlock),
+    }))
 
     // Term awareness (best-effort): flag a viewed week that falls outside every
     // teaching period. Any failure — no Hub token, no hubSchoolId, a Hub blip —
@@ -500,6 +568,7 @@ router.get('/child/:studentId/week', isAuthenticated, async (req, res) => {
       days: hubAvailable ? days : [],
       outOfTerm,
       resumeDate,
+      streamResolved,
     }
     res.json(result)
   } catch (error) {

@@ -133,6 +133,7 @@ describe('GET /api/timetable/child/:studentId/week', () => {
         room: null,
         specialist: false,
         blockType: 'REGISTRATION',
+        audience: null,
       },
       {
         id: 'blk-arabic',
@@ -144,6 +145,7 @@ describe('GET /api/timetable/child/:studentId/week', () => {
         room: 'Room 3',
         specialist: true,
         blockType: 'SPECIALIST',
+        audience: null,
       },
     ])
   })

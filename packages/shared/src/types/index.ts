@@ -771,6 +771,11 @@ export interface ChildTimetableBlock {
   specialist: boolean
   /** Hub's block type, e.g. "LESSON" | "SPECIALIST" | "REGISTRATION". */
   blockType: string
+  /** The eligibility STREAM this lesson belongs to when the school tags
+   * restricted subjects in Hub ("ISLAMIC", "ARABIC_A", …); null = the whole
+   * class. The week is already resolved to this child, so it's for display
+   * (an icon, a label), never for filtering. */
+  audience?: string | null
 }
 export interface ChildTimetableDay {
   /** 1=Mon … 5=Fri. */
@@ -795,6 +800,12 @@ export interface ChildTimetableWeek {
   /** When lessons next resume (YYYY-MM-DD), or null. Only meaningful when
    * `outOfTerm` is true. */
   resumeDate: string | null
+  /** True when the week was resolved to THIS child's eligibility — i.e. the
+   * school streams a subject (Islamic, Arabic A) and we know the child's flags,
+   * so each slot already shows the one lesson they take. False means the week is
+   * unstreamed (or the flags couldn't be read), and a slot may still show the
+   * shared lesson for the whole class. */
+  streamResolved: boolean
 }
 
 export interface StudentListResponse {
