@@ -326,7 +326,40 @@ const MAX_GUARDIAN_PAGES = 50
 const PAGE_STYLES: Array<{ name: string; build: (pageSize: number, page: number) => Record<string, string> }> = [
   { name: 'limit/offset', build: (size, page) => ({ limit: String(size), offset: String(size * page) }) },
   { name: 'page/pageSize', build: (size, page) => ({ page: String(page + 1), pageSize: String(size) }) },
+  { name: 'limit/skip', build: (size, page) => ({ limit: String(size), skip: String(size * page) }) },
+  { name: 'page/per_page', build: (size, page) => ({ page: String(page + 1), per_page: String(size) }) },
+  { name: 'take/skip', build: (size, page) => ({ take: String(size), skip: String(size * page) }) },
 ]
+
+/** Does a first page LOOK like a cap rather than the whole truth? A round page
+ * (200, 250, 500 …) is the signature of a server-side limit; an arbitrary count
+ * is almost certainly everyone there is. Only a suspicious count is worth
+ * spending probe requests on — a school with 137 guardians does zero extra work. */
+function looksCapped(count: number): boolean {
+  return count >= 100 && count % 50 === 0
+}
+
+/** Anything Hub sends alongside `guardians` — `total`, `hasMore`, `nextCursor`,
+ * a `pagination` object — is the contract telling us how to ask for the rest.
+ * We don't consume it (we don't know the shape), but we log it once so the next
+ * sync in prod reveals it instead of us guessing at query params forever. */
+function logEnvelope(envelope: Record<string, unknown>, rowCount: number): void {
+  const extras = Object.keys(envelope).filter((k) => k !== 'guardians')
+  if (extras.length === 0) {
+    console.log(
+      `[hubMis] guardians: Hub sent ${rowCount} rows and no pagination metadata ` +
+        `(envelope keys: guardians only) — if the school has more, Hub is capping silently`,
+    )
+    return
+  }
+  const detail = extras
+    .map((k) => {
+      const v = envelope[k]
+      return `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`
+    })
+    .join(' ')
+  console.log(`[hubMis] guardians: ${rowCount} rows, envelope also carried ${detail}`)
+}
 
 /** Guardians (parents/carers) for a Hub school, with their pupil links. Each
  * link's `pupilId` is a Hub pupil id; sync resolves it to a Connect Student via
@@ -345,14 +378,23 @@ const PAGE_STYLES: Array<{ name: string; build: (pageSize: number, page: number)
  *     requests instead of looping forever.
  * The net effect is never worse than the single-page behaviour it replaces. */
 export async function listGuardians(hubSchoolId: string): Promise<HubGuardian[]> {
+  let firstEnvelope: Record<string, unknown> = {}
   const fetchPage = async (extra: Record<string, string> = {}): Promise<HubGuardian[]> => {
     const params = new URLSearchParams({ schoolId: hubSchoolId, ...extra })
-    const { guardians } = await call<{ guardians: HubGuardian[] }>(`/guardians?${params.toString()}`)
-    return guardians
+    const envelope = await call<Record<string, unknown> & { guardians: HubGuardian[] }>(
+      `/guardians?${params.toString()}`,
+    )
+    if (Object.keys(firstEnvelope).length === 0) firstEnvelope = envelope
+    return envelope.guardians ?? []
   }
 
   const first = await fetchPage()
+  logEnvelope(firstEnvelope, first.length)
   if (first.length === 0) return first
+
+  // A page that isn't a suspiciously round number is everyone Hub has — don't
+  // spend requests probing for a page 2 that cannot exist.
+  if (!looksCapped(first.length)) return first
 
   const pageSize = first.length
   const all = [...first]

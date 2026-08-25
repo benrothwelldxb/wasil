@@ -73,91 +73,133 @@ describe('hubMis.listGuardians', () => {
 // the pages, and every stopping condition below must hold, because Hub's paging
 // contract isn't pinned on our side.
 describe('hubMis.listGuardians — paging', () => {
-  const page = (ids: string[]) => ({
-    guardians: ids.map(id => ({ id, firstName: 'G', lastName: id, email: `${id}@x.com`, phone: null, pupils: [] })),
+  const PAGE = 200
+  /** `count` guardians whose ids start at `start` — a realistic full page. */
+  const page = (start: number, count: number = PAGE) => ({
+    guardians: Array.from({ length: count }, (_, i) => ({
+      id: `g${start + i}`,
+      firstName: 'G',
+      lastName: String(start + i),
+      email: `g${start + i}@x.com`,
+      phone: null,
+      pupils: [],
+    })),
   })
+  const ids = (rows: Array<{ id: string }>) => rows.map(r => r.id)
 
   it('walks every page until a short one, and returns them all', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(OK(page(['a', 'b'])))
-      .mockResolvedValueOnce(OK(page(['c', 'd'])))
-      .mockResolvedValueOnce(OK(page(['e'])))
+      .mockResolvedValueOnce(OK(page(0)))
+      .mockResolvedValueOnce(OK(page(PAGE)))
+      .mockResolvedValueOnce(OK(page(PAGE * 2, 5)))
     vi.stubGlobal('fetch', fetchMock)
 
     const guardians = await listGuardians('hub-school-1')
 
-    expect(guardians.map(g => g.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
-    // Page 1 is the untouched original request; the rest carry limit/offset.
+    expect(guardians).toHaveLength(PAGE * 2 + 5)
+    expect(ids(guardians)[0]).toBe('g0')
+    expect(ids(guardians).at(-1)).toBe(`g${PAGE * 2 + 4}`)
+    // Page 1 is the untouched original request; the rest carry paging params.
     expect(fetchMock.mock.calls[0][0]).toBe('https://hub.test/api/v1/guardians?schoolId=hub-school-1')
     expect(fetchMock.mock.calls[1][0]).toBe(
-      'https://hub.test/api/v1/guardians?schoolId=hub-school-1&limit=2&offset=2',
+      'https://hub.test/api/v1/guardians?schoolId=hub-school-1&limit=200&offset=200',
     )
     expect(fetchMock.mock.calls[2][0]).toBe(
-      'https://hub.test/api/v1/guardians?schoolId=hub-school-1&limit=2&offset=4',
+      'https://hub.test/api/v1/guardians?schoolId=hub-school-1&limit=200&offset=400',
     )
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not probe at all when the first page is not a round number', async () => {
+    // 137 is nobody's page size — that's simply every guardian the school has.
+    const fetchMock = vi.fn().mockResolvedValue(OK(page(0, 137)))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await listGuardians('hub-school-1')).toHaveLength(137)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('stops (does not loop) when Hub ignores the paging params and re-serves page 1', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(OK(page(['a', 'b'])))
+    const fetchMock = vi.fn().mockResolvedValue(OK(page(0)))
     vi.stubGlobal('fetch', fetchMock)
 
     const guardians = await listGuardians('hub-school-1')
 
-    expect(guardians.map(g => g.id)).toEqual(['a', 'b'])
+    expect(guardians).toHaveLength(PAGE)
     // Page 1 + one probe per known style, then it gives up. No loop.
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(1 + 5)
   })
 
-  it('falls back to the page/pageSize style when limit/offset yields nothing new', async () => {
+  it('falls back to a later style when the first yields nothing new', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(OK(page(['a', 'b'])))       // page 1
-      .mockResolvedValueOnce(OK(page(['a', 'b'])))       // limit/offset ignored
-      .mockResolvedValueOnce(OK(page(['c', 'd'])))       // page/pageSize works
-      .mockResolvedValueOnce(OK(page(['e'])))            // …and pages on
+      .mockResolvedValueOnce(OK(page(0)))        // page 1
+      .mockResolvedValueOnce(OK(page(0)))        // limit/offset ignored
+      .mockResolvedValueOnce(OK(page(PAGE)))     // page/pageSize works
+      .mockResolvedValueOnce(OK(page(PAGE * 2, 3)))
     vi.stubGlobal('fetch', fetchMock)
 
-    expect((await listGuardians('hub-school-1')).map(g => g.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(await listGuardians('hub-school-1')).toHaveLength(PAGE * 2 + 3)
     expect(fetchMock.mock.calls[2][0]).toBe(
-      'https://hub.test/api/v1/guardians?schoolId=hub-school-1&page=2&pageSize=2',
+      'https://hub.test/api/v1/guardians?schoolId=hub-school-1&page=2&pageSize=200',
     )
     expect(fetchMock.mock.calls[3][0]).toBe(
-      'https://hub.test/api/v1/guardians?schoolId=hub-school-1&page=3&pageSize=2',
+      'https://hub.test/api/v1/guardians?schoolId=hub-school-1&page=3&pageSize=200',
     )
   })
 
-  it('tries the next style when Hub rejects the first outright', async () => {
+  it('tries the next style when Hub rejects one outright', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(OK(page(['a', 'b'])))
+      .mockResolvedValueOnce(OK(page(0)))
       .mockResolvedValueOnce({ ok: false, status: 400, text: async () => 'unknown parameter: offset', statusText: 'Bad Request' })
-      .mockResolvedValueOnce(OK(page(['c'])))
+      .mockResolvedValueOnce(OK(page(PAGE, 7)))
     vi.stubGlobal('fetch', fetchMock)
 
-    expect((await listGuardians('hub-school-1')).map(g => g.id)).toEqual(['a', 'b', 'c'])
+    expect(await listGuardians('hub-school-1')).toHaveLength(PAGE + 7)
   })
 
   it('keeps what it has when a later page errors, instead of failing the sync', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(OK(page(['a', 'b'])))   // page 1
-      .mockResolvedValueOnce(OK(page(['c', 'd'])))   // probe succeeds, paging adopted
+      .mockResolvedValueOnce(OK(page(0)))     // page 1
+      .mockResolvedValueOnce(OK(page(PAGE)))  // probe succeeds, paging adopted
       .mockResolvedValueOnce({ ok: false, status: 502, text: async () => 'boom', statusText: 'Bad Gateway' })
     vi.stubGlobal('fetch', fetchMock)
 
-    expect((await listGuardians('hub-school-1')).map(g => g.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(await listGuardians('hub-school-1')).toHaveLength(PAGE * 2)
   })
 
   it('drops duplicates across overlapping pages', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(OK(page(['a', 'b'])))
-      .mockResolvedValueOnce(OK(page(['b', 'c'])))
-      .mockResolvedValueOnce(OK(page(['c'])))
+      .mockResolvedValueOnce(OK(page(0)))            // g0…g199
+      .mockResolvedValueOnce(OK(page(PAGE - 50)))    // g150…g349 — 50 overlap
+      .mockResolvedValueOnce(OK(page(PAGE * 2, 1)))
     vi.stubGlobal('fetch', fetchMock)
 
-    expect((await listGuardians('hub-school-1')).map(g => g.id)).toEqual(['a', 'b', 'c'])
+    const guardians = await listGuardians('hub-school-1')
+    expect(new Set(ids(guardians)).size).toBe(guardians.length) // no dupes
+    expect(guardians).toHaveLength(351)
   })
 
   it('a first page that errors still throws (a broken feed is not an empty one)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom', statusText: 'err' }))
     await expect(listGuardians('hub-school-1')).rejects.toThrow(/500/)
+  })
+
+  it('logs whatever Hub sends alongside the rows — the paging contract we are missing', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(OK({ ...page(0, 137), total: 512, hasMore: true })))
+
+    await listGuardians('hub-school-1')
+
+    expect(log.mock.calls.flat().join(' ')).toContain('total=512')
+    expect(log.mock.calls.flat().join(' ')).toContain('hasMore=true')
+  })
+
+  it('says so explicitly when Hub sends no pagination metadata at all', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(OK(page(0))))
+
+    await listGuardians('hub-school-1')
+
+    expect(log.mock.calls.flat().join(' ')).toContain('no pagination metadata')
   })
 })
