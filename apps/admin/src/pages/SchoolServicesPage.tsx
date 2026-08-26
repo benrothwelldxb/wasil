@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  Plus, Edit2, Trash2, Users, Check, Clock, RefreshCw,
+  Plus, Edit2, Trash2, Users, Check, Clock, RefreshCw, MoreHorizontal,
 } from 'lucide-react'
 import { useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type {
@@ -158,6 +158,20 @@ export function SchoolServicesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>({ ...emptyForm })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isConfirmingAll, setIsConfirmingAll] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Dismiss the row menu on any click outside it — otherwise it survives a
+  // click meant for the row underneath.
+  useEffect(() => {
+    if (!openMenuId) return
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [openMenuId])
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
 
   const { data: services, refetch, isLoading } = useApi<SchoolService[]>(() => api.schoolServices.list(), [])
@@ -275,6 +289,9 @@ export function SchoolServicesPage() {
       await api.schoolServices.updateStatus(id, status)
       refetch()
       if (selectedId === id) loadDetail(id)
+      // Confirm what it became — a silent transition left you re-reading the
+      // pill to check whether the click had registered.
+      toast.success(`Now ${STATUS_LABELS[status].toLowerCase()}`)
     } catch (error) {
       toast.error(`Failed to update status: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
@@ -298,14 +315,44 @@ export function SchoolServicesPage() {
     }
   }
 
+  // Confirming a full list is one action to the user, so it reports as one:
+  // all requests go at once, partial failure is counted rather than swallowed,
+  // and the button shows it's working. Previously these were awaited one by one
+  // with no feedback — a long silent pause that could half-fail unnoticed.
   const confirmAllPending = async () => {
-    if (!detail?.registrations) return
+    if (!detail?.registrations || isConfirmingAll) return
     const pending = detail.registrations.filter((r) => r.status === 'PENDING')
-    for (const reg of pending) {
-      await api.schoolServices.updateRegistrationStatus(reg.id, 'CONFIRMED')
+    if (pending.length === 0) return
+
+    setIsConfirmingAll(true)
+    try {
+      const results = await Promise.allSettled(
+        pending.map((reg) => api.schoolServices.updateRegistrationStatus(reg.id, 'CONFIRMED')),
+      )
+      const failed = results.filter((r) => r.status === 'rejected').length
+      if (failed === 0) {
+        toast.success(`Confirmed ${pending.length} registration${pending.length === 1 ? '' : 's'}`)
+      } else if (failed === pending.length) {
+        toast.error('Could not confirm any registrations — please try again')
+      } else {
+        // Say exactly how many stuck: the reloaded list shows which.
+        toast.error(`Confirmed ${pending.length - failed} of ${pending.length} — ${failed} failed`)
+      }
+    } finally {
+      // Reload either way: on partial failure the list must show what actually
+      // changed, not what we hoped would.
+      if (selectedId) await loadDetail(selectedId)
+      setIsConfirmingAll(false)
     }
-    if (selectedId) loadDetail(selectedId)
   }
+
+  // What still stands between this form and a save. Drives both the disabled
+  // state and the message beside the button, so the two can't disagree.
+  const missingFields = [
+    ...(form.name.trim() ? [] : ['a name']),
+    ...(form.days.length > 0 ? [] : ['at least one day']),
+    ...(form.startTime && form.endTime ? [] : ['a start and end time']),
+  ]
 
   const toggleDay = (day: string) => {
     setForm((f) => ({
@@ -390,33 +437,60 @@ export function SchoolServicesPage() {
                     <td className="px-4 py-3 text-center">
                       <CapacityCell registered={s.registeredCount || 0} capacity={s.capacity} />
                     </td>
+                    {/* One target, not four. The row itself opens the service, so
+                        stacking a transition button, an edit pencil and a delete
+                        bin beside it made every row a small minefield — and only
+                        the FIRST transition was offered, quietly stranding a
+                        second legitimate next state (e.g. "Revert to Draft").
+                        Everything available now lives in one menu. */}
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-2">
-                        {/* Primary action — first available transition */}
-                        {(STATUS_TRANSITIONS[s.status] || []).slice(0, 1).map((t) => (
-                          <button
-                            key={t.next}
-                            onClick={() => handleStatusChange(s.id, t.next)}
-                            className={transitionBtn(t.cls)}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
+                      <div className="relative inline-block">
                         <button
-                          onClick={() => openEdit(s)}
+                          onClick={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
                           className="p-1.5 rounded-warm-btn hover:bg-slate-100 text-warm-text-tertiary hover:text-warm-text-secondary"
-                          title="Edit"
+                          aria-label={`Actions for ${s.name}`}
+                          aria-haspopup="menu"
+                          aria-expanded={openMenuId === s.id}
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <MoreHorizontal className="w-4 h-4" />
                         </button>
-                        {s.status === 'DRAFT' && (
-                          <button
-                            onClick={() => setShowDeleteConfirm(s.id)}
-                            className="p-1.5 rounded-warm-btn hover:bg-red-50 text-warm-error"
-                            title="Delete"
+
+                        {openMenuId === s.id && (
+                          <div
+                            ref={menuRef}
+                            role="menu"
+                            className="absolute right-0 top-9 z-20 min-w-[200px] warm-card py-1.5 shadow-lg text-left"
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                            {(STATUS_TRANSITIONS[s.status] || []).map((t) => (
+                              <button
+                                key={t.next}
+                                role="menuitem"
+                                onClick={() => { setOpenMenuId(null); handleStatusChange(s.id, t.next) }}
+                                className="w-full text-left px-3.5 py-2 text-sm font-semibold text-warm-text-primary hover:bg-slate-50"
+                              >
+                                {t.label}
+                              </button>
+                            ))}
+                            {(STATUS_TRANSITIONS[s.status] || []).length > 0 && (
+                              <div className="my-1 border-t border-warm-border" />
+                            )}
+                            <button
+                              role="menuitem"
+                              onClick={() => { setOpenMenuId(null); openEdit(s) }}
+                              className="w-full text-left px-3.5 py-2 text-sm text-warm-text-secondary hover:bg-slate-50 flex items-center gap-2"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" /> Edit details
+                            </button>
+                            {s.status === 'DRAFT' && (
+                              <button
+                                role="menuitem"
+                                onClick={() => { setOpenMenuId(null); setShowDeleteConfirm(s.id) }}
+                                className="w-full text-left px-3.5 py-2 text-sm text-warm-error hover:bg-red-50 flex items-center gap-2"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Delete draft
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -525,9 +599,11 @@ export function SchoolServicesPage() {
                 {(detail.pendingCount || 0) > 0 && (
                   <button
                     onClick={confirmAllPending}
-                    className="flex items-center gap-1.5 rounded-warm-btn bg-warm-green text-white text-xs font-bold px-3 py-1.5"
+                    disabled={isConfirmingAll}
+                    className="flex items-center gap-1.5 rounded-warm-btn bg-warm-green text-white text-xs font-bold px-3 py-1.5 disabled:opacity-60"
                   >
-                    <Check className="w-3.5 h-3.5" /> Confirm All Pending
+                    <Check className="w-3.5 h-3.5" />
+                    {isConfirmingAll ? 'Confirming…' : `Confirm All Pending (${detail.pendingCount})`}
                   </button>
                 )}
               </div>
@@ -876,11 +952,12 @@ export function SchoolServicesPage() {
         </div>
       </div>
 
-      {/* Save */}
-      <div className="flex items-center gap-2 mt-6">
+      {/* Save. A disabled button that won't say why is a dead end — name what's
+          still missing, in the order the form asks for it. */}
+      <div className="flex items-center gap-3 mt-6">
         <button
           onClick={handleSave}
-          disabled={isSubmitting || !form.name || form.days.length === 0}
+          disabled={isSubmitting || missingFields.length > 0}
           className="rounded-warm-btn bg-brand text-white font-semibold px-6 py-2.5 text-sm disabled:opacity-60"
         >
           {isSubmitting ? 'Saving…' : editingId ? 'Save Changes' : 'Create Service'}
@@ -891,6 +968,11 @@ export function SchoolServicesPage() {
         >
           Cancel
         </button>
+        {missingFields.length > 0 && (
+          <p className="text-sm text-warm-text-tertiary">
+            Still needed: {missingFields.join(' and ')}.
+          </p>
+        )}
       </div>
     </div>
   )
