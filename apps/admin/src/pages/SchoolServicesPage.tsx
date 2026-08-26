@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
-  Plus, Edit2, Trash2, ChevronDown, ChevronRight, Users, Check,
-  Clock, DollarSign, X, RefreshCw,
+  Plus, Edit2, Trash2, Users, Check, Clock, RefreshCw,
 } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
+import { useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type {
-  SchoolService, SchoolServiceWithStats, ServiceRegistration,
+  SchoolService, SchoolServiceWithStats,
   ServiceStatus, RegistrationStatus, PaymentStatus, Class, YearGroup,
 } from '@wasil/shared'
 
@@ -20,28 +19,102 @@ const STATUS_LABELS: Record<ServiceStatus, string> = {
   ARCHIVED: 'Archived',
 }
 
-const STATUS_COLORS: Record<ServiceStatus, string> = {
-  DRAFT: '#9CA3AF',
-  PUBLISHED: '#5B6EC4',
-  REGISTRATION_OPEN: '#2D8B4E',
-  REGISTRATION_CLOSED: '#C47A20',
-  ACTIVE: '#2D8B4E',
-  ARCHIVED: '#7A6469',
+// Tinted pills (soft background + coloured text) like EcaPage's term badges —
+// solid badges with white text shouted over everything else on the page.
+const STATUS_PILL: Record<ServiceStatus, string> = {
+  DRAFT: 'bg-slate-100 text-warm-text-secondary',
+  PUBLISHED: 'bg-blue-100 text-blue-700',
+  REGISTRATION_OPEN: 'bg-green-100 text-green-700',
+  REGISTRATION_CLOSED: 'bg-yellow-100 text-yellow-700',
+  ACTIVE: 'bg-green-100 text-green-700',
+  ARCHIVED: 'bg-slate-100 text-warm-text-tertiary',
 }
 
-const STATUS_TRANSITIONS: Record<ServiceStatus, { next: ServiceStatus; label: string; color: string }[]> = {
-  DRAFT: [{ next: 'PUBLISHED', label: 'Publish', color: '#5B6EC4' }],
-  PUBLISHED: [{ next: 'REGISTRATION_OPEN', label: 'Open Registration', color: '#2D8B4E' }, { next: 'DRAFT', label: 'Revert to Draft', color: '#9CA3AF' }],
-  REGISTRATION_OPEN: [{ next: 'REGISTRATION_CLOSED', label: 'Close Registration', color: '#C47A20' }],
-  REGISTRATION_CLOSED: [{ next: 'ACTIVE', label: 'Mark Active', color: '#2D8B4E' }, { next: 'REGISTRATION_OPEN', label: 'Reopen Registration', color: '#5B6EC4' }],
-  ACTIVE: [{ next: 'ARCHIVED', label: 'Archive', color: '#7A6469' }],
+// The lifecycle's forward move gets a filled button; reversals get an outline,
+// so the natural next step always reads first.
+const STATUS_TRANSITIONS: Record<ServiceStatus, { next: ServiceStatus; label: string; cls: string }[]> = {
+  DRAFT: [{ next: 'PUBLISHED', label: 'Publish', cls: 'bg-warm-blue text-white' }],
+  PUBLISHED: [
+    { next: 'REGISTRATION_OPEN', label: 'Open Registration', cls: 'bg-warm-green text-white' },
+    { next: 'DRAFT', label: 'Revert to Draft', cls: 'border border-warm-border text-warm-text-secondary hover:bg-slate-50' },
+  ],
+  REGISTRATION_OPEN: [{ next: 'REGISTRATION_CLOSED', label: 'Close Registration', cls: 'bg-yellow-600 text-white' }],
+  REGISTRATION_CLOSED: [
+    { next: 'ACTIVE', label: 'Mark Active', cls: 'bg-warm-green text-white' },
+    { next: 'REGISTRATION_OPEN', label: 'Reopen Registration', cls: 'border border-warm-border text-warm-text-secondary hover:bg-slate-50' },
+  ],
+  ACTIVE: [{ next: 'ARCHIVED', label: 'Archive', cls: 'border border-warm-border text-warm-text-secondary hover:bg-slate-50' }],
   ARCHIVED: [],
 }
 
-const PAYMENT_LABELS: Record<PaymentStatus, string> = { UNPAID: 'Unpaid', PAID: 'Paid', PARTIAL: 'Partial', WAIVED: 'Waived' }
-const PAYMENT_COLORS: Record<PaymentStatus, string> = { UNPAID: '#C47A20', PAID: '#2D8B4E', PARTIAL: '#C47A20', WAIVED: '#7A6469' }
-const REG_STATUS_LABELS: Record<RegistrationStatus, string> = { PENDING: 'Pending', CONFIRMED: 'Confirmed', WAITLISTED: 'Waitlisted', CANCELLED: 'Cancelled' }
-const REG_STATUS_COLORS: Record<RegistrationStatus, string> = { PENDING: '#9CA3AF', CONFIRMED: '#2D8B4E', WAITLISTED: '#C47A20', CANCELLED: '#DC2626' }
+const transitionBtn = (cls: string) =>
+  `px-3 py-1.5 text-xs font-bold rounded-warm-btn whitespace-nowrap transition-colors ${cls}`
+
+// Inline selects keep their coloured text so state still scans in the table.
+const REG_STATUS_TEXT: Record<RegistrationStatus, string> = {
+  PENDING: 'text-warm-text-secondary',
+  CONFIRMED: 'text-green-700',
+  WAITLISTED: 'text-yellow-700',
+  CANCELLED: 'text-warm-error',
+}
+const PAYMENT_TEXT: Record<PaymentStatus, string> = {
+  UNPAID: 'text-yellow-700',
+  PAID: 'text-green-700',
+  PARTIAL: 'text-yellow-700',
+  WAIVED: 'text-warm-text-tertiary',
+}
+
+// Shared field recipe — same as ProvidersPage forms.
+const inputCls = 'w-full rounded-warm-btn border border-warm-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30'
+const labelCls = 'block text-sm font-semibold text-warm-text-primary mb-1.5'
+const subLabelCls = 'block text-xs font-semibold text-warm-text-secondary mb-1'
+const chipCls = (selected: boolean) =>
+  `px-3 py-1.5 rounded-warm-btn text-xs font-semibold border transition-colors ${
+    selected ? 'bg-brand text-white border-transparent' : 'border-warm-border text-warm-text-secondary hover:bg-slate-50'
+  }`
+const outlineBtn = 'flex items-center gap-2 rounded-warm-btn border border-warm-border px-3 py-2 text-sm font-semibold text-warm-text-secondary hover:bg-slate-50'
+const thCls = 'text-left px-4 py-3 font-semibold text-warm-text-secondary'
+
+function StatusPill({ status }: { status: ServiceStatus }) {
+  return (
+    <span className={`text-xs px-2.5 py-1 rounded-full font-semibold whitespace-nowrap ${STATUS_PILL[status]}`}>
+      {STATUS_LABELS[status]}
+    </span>
+  )
+}
+
+function DayPills({ days }: { days?: string[] | null }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {(days || []).map((d) => (
+        <span key={d} className="text-xs px-2 py-0.5 bg-slate-100 rounded-full text-warm-text-secondary">
+          {d.slice(0, 3)}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// Count plus a slim capacity bar so fullness reads at a glance —
+// green while there's room, amber once full. No bar when unlimited.
+function CapacityCell({ registered, capacity }: { registered: number; capacity?: number | null }) {
+  return (
+    <div className="inline-flex flex-col items-center">
+      <div>
+        <span className="font-bold text-warm-text-primary">{registered}</span>
+        {capacity ? <span className="text-xs text-warm-text-tertiary"> / {capacity}</span> : null}
+      </div>
+      {capacity ? (
+        <div className="mt-1 h-1 w-16 rounded-full bg-slate-100 overflow-hidden">
+          <div
+            className={`h-full rounded-full ${registered >= capacity ? 'bg-warm-amber' : 'bg-warm-green'}`}
+            style={{ width: `${Math.min(100, Math.round((registered / capacity) * 100))}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 type ViewMode = 'list' | 'detail' | 'form'
 
@@ -79,7 +152,6 @@ const emptyForm: FormState = {
 }
 
 export function SchoolServicesPage() {
-  const theme = useTheme()
   const toast = useToast()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -260,71 +332,63 @@ export function SchoolServicesPage() {
     }))
   }
 
-  // LIST VIEW
+  // ─── List ──────────────────────────────────────────────────────────────────
   if (viewMode === 'list') {
     return (
-      <div>
+      <div className="max-w-5xl">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">School Services</h1>
-            <p className="text-sm text-gray-500 mt-1">Manage wraparound care and clubs</p>
+            <h1 className="text-2xl font-extrabold text-warm-text-primary">School Services</h1>
+            <p className="text-warm-text-secondary mt-1">Manage wraparound care and clubs</p>
           </div>
           <button
             onClick={openCreate}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-white font-medium text-sm"
-            style={{ backgroundColor: theme.colors.brandColor }}
+            className="flex items-center gap-2 rounded-warm-btn bg-brand text-white font-semibold px-4 py-2.5 text-sm"
           >
             <Plus className="w-4 h-4" /> Add Service
           </button>
         </div>
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading...</div>
+          <div className="text-warm-text-tertiary text-sm">Loading…</div>
         ) : !services || services.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            <p>No school services yet. Create one to get started.</p>
+          <div className="warm-card p-10 text-center">
+            <Clock className="h-8 w-8 text-warm-text-tertiary mx-auto mb-3" />
+            <p className="text-warm-text-secondary text-sm">No school services yet. Create one to get started.</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="warm-card overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-slate-50 border-b border-warm-border">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Service</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Days</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Time</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">Registered</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
+                  <th className={thCls}>Service</th>
+                  <th className={thCls}>Schedule</th>
+                  <th className={thCls}>Status</th>
+                  <th className={`${thCls} text-center`}>Registered</th>
+                  <th className={`${thCls} text-right`}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {services.map((s) => (
-                  <tr key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openDetail(s.id)}>
+                  <tr
+                    key={s.id}
+                    className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50 cursor-pointer"
+                    onClick={() => openDetail(s.id)}
+                  >
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{s.name}</p>
-                      {s.description && <p className="text-xs text-gray-500 truncate max-w-xs">{s.description}</p>}
+                      <p className="font-semibold text-warm-text-primary">{s.name}</p>
+                      {s.description && <p className="text-xs text-warm-text-tertiary truncate max-w-xs">{s.description}</p>}
+                    </td>
+                    {/* Days + time share a column — they answer one question: when does it run? */}
+                    <td className="px-4 py-3">
+                      <DayPills days={s.days} />
+                      <p className="text-xs text-warm-text-tertiary mt-1">{s.startTime} – {s.endTime}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {(s.days || []).map((d) => (
-                          <span key={d} className="text-xs px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">
-                            {d.slice(0, 3)}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{s.startTime} - {s.endTime}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className="text-xs px-2.5 py-1 rounded-full font-medium text-white"
-                        style={{ backgroundColor: STATUS_COLORS[s.status] }}
-                      >
-                        {STATUS_LABELS[s.status]}
-                      </span>
+                      <StatusPill status={s.status} />
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className="font-medium">{s.registeredCount || 0}</span>
-                      {s.capacity && <span className="text-gray-400">/{s.capacity}</span>}
+                      <CapacityCell registered={s.registeredCount || 0} capacity={s.capacity} />
                     </td>
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-2">
@@ -333,15 +397,14 @@ export function SchoolServicesPage() {
                           <button
                             key={t.next}
                             onClick={() => handleStatusChange(s.id, t.next)}
-                            className="px-3 py-1.5 text-xs font-bold rounded-lg text-white whitespace-nowrap"
-                            style={{ backgroundColor: t.color }}
+                            className={transitionBtn(t.cls)}
                           >
                             {t.label}
                           </button>
                         ))}
                         <button
                           onClick={() => openEdit(s)}
-                          className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+                          className="p-1.5 rounded-warm-btn hover:bg-slate-100 text-warm-text-tertiary hover:text-warm-text-secondary"
                           title="Edit"
                         >
                           <Edit2 className="w-4 h-4" />
@@ -349,7 +412,7 @@ export function SchoolServicesPage() {
                         {s.status === 'DRAFT' && (
                           <button
                             onClick={() => setShowDeleteConfirm(s.id)}
-                            className="p-1.5 rounded hover:bg-red-50 text-red-500"
+                            className="p-1.5 rounded-warm-btn hover:bg-red-50 text-warm-error"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -378,62 +441,76 @@ export function SchoolServicesPage() {
     )
   }
 
-  // DETAIL VIEW
+  // ─── Detail ────────────────────────────────────────────────────────────────
   if (viewMode === 'detail' && selectedId) {
     const registrations = detail?.registrations || []
     const nonCancelled = registrations.filter((r) => r.status !== 'CANCELLED')
     const nextStatuses = detail ? STATUS_TRANSITIONS[detail.status] || [] : []
 
     return (
-      <div>
-        <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={() => { setViewMode('list'); setDetail(null) }}
-            className="text-sm text-gray-500 hover:text-gray-700"
-          >
-            &larr; Back
-          </button>
-          <h1 className="text-2xl font-bold text-gray-900">{detail?.name || 'Loading...'}</h1>
+      <div className="max-w-5xl">
+        <button
+          onClick={() => { setViewMode('list'); setDetail(null) }}
+          className="text-sm font-semibold text-brand mb-3"
+        >
+          ← All services
+        </button>
+
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-extrabold text-warm-text-primary">{detail?.name || 'Loading…'}</h1>
+              {detail && <StatusPill status={detail.status} />}
+            </div>
+            {detail && (
+              <p className="text-sm text-warm-text-secondary mt-1">
+                {(detail.days || []).map((d) => d.slice(0, 3)).join(', ')} · {detail.startTime} – {detail.endTime}
+                {detail.location ? ` · ${detail.location}` : ''}
+                {detail.staffName ? ` · ${detail.staffName}` : ''}
+              </p>
+            )}
+          </div>
           {detail && (
-            <span
-              className="text-xs px-2.5 py-1 rounded-full font-medium text-white"
-              style={{ backgroundColor: STATUS_COLORS[detail.status] }}
-            >
-              {STATUS_LABELS[detail.status]}
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <button onClick={() => openEdit(detail)} className={outlineBtn}>
+                <Edit2 className="w-3.5 h-3.5" /> Edit
+              </button>
+              <button onClick={() => loadDetail(selectedId)} className={outlineBtn}>
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </button>
+            </div>
           )}
         </div>
 
         {detailLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading...</div>
+          <div className="text-warm-text-tertiary text-sm">Loading…</div>
         ) : detail ? (
           <div className="space-y-6">
-            {/* Stats */}
+            {/* Stats — Registered folds in capacity so fullness reads without hunting */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               {[
-                { label: 'Registered', value: detail.registeredCount, color: '#5B6EC4' },
-                { label: 'Confirmed', value: detail.confirmedCount || 0, color: '#2D8B4E' },
-                { label: 'Pending', value: detail.pendingCount || 0, color: '#9CA3AF' },
-                { label: 'Paid', value: detail.paidCount || 0, color: '#2D8B4E' },
-                { label: 'Unpaid', value: detail.unpaidCount || 0, color: '#C47A20' },
+                { label: 'Registered', value: detail.capacity ? `${detail.registeredCount} / ${detail.capacity}` : detail.registeredCount, cls: 'text-warm-blue' },
+                { label: 'Confirmed', value: detail.confirmedCount || 0, cls: 'text-warm-green' },
+                { label: 'Pending', value: detail.pendingCount || 0, cls: 'text-warm-text-secondary' },
+                { label: 'Paid', value: detail.paidCount || 0, cls: 'text-warm-green' },
+                { label: 'Unpaid', value: detail.unpaidCount || 0, cls: 'text-yellow-600' },
               ].map((stat) => (
-                <div key={stat.label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                  <p className="text-2xl font-bold" style={{ color: stat.color }}>{stat.value}</p>
-                  <p className="text-xs text-gray-500 mt-1">{stat.label}</p>
+                <div key={stat.label} className="warm-card p-4 text-center">
+                  <p className={`text-2xl font-extrabold ${stat.cls}`}>{stat.value}</p>
+                  <p className="text-xs text-warm-text-tertiary mt-1">{stat.label}</p>
                 </div>
               ))}
             </div>
 
             {/* Status controls */}
             {nextStatuses.length > 0 && (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-500">Change status:</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-warm-text-tertiary">Move to:</span>
                 {nextStatuses.map((t) => (
                   <button
                     key={t.next}
                     onClick={() => handleStatusChange(detail.id, t.next)}
-                    className="px-3 py-1.5 text-xs font-bold rounded-lg text-white"
-                    style={{ backgroundColor: t.color }}
+                    className={transitionBtn(t.cls)}
                   >
                     {t.label}
                   </button>
@@ -441,77 +518,56 @@ export function SchoolServicesPage() {
               </div>
             )}
 
-            {/* Actions */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => openEdit(detail)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                <Edit2 className="w-3.5 h-3.5" /> Edit
-              </button>
-              {(detail.pendingCount || 0) > 0 && (
-                <button
-                  onClick={confirmAllPending}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg text-white"
-                  style={{ backgroundColor: '#2D8B4E' }}
-                >
-                  <Check className="w-3.5 h-3.5" /> Confirm All Pending
-                </button>
-              )}
-              <button
-                onClick={() => loadDetail(selectedId)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
-              </button>
-            </div>
-
-            {/* Registrations table */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-                <h3 className="font-semibold text-gray-700">Registrations ({nonCancelled.length})</h3>
+            {/* Registrations — confirm-all lives with the list it acts on */}
+            <div className="warm-card overflow-hidden">
+              <div className="px-4 py-3 border-b border-warm-border bg-slate-50 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-warm-text-primary">Registrations · {nonCancelled.length}</h3>
+                {(detail.pendingCount || 0) > 0 && (
+                  <button
+                    onClick={confirmAllPending}
+                    className="flex items-center gap-1.5 rounded-warm-btn bg-warm-green text-white text-xs font-bold px-3 py-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" /> Confirm All Pending
+                  </button>
+                )}
               </div>
               {nonCancelled.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">No registrations yet</div>
+                <div className="p-10 text-center">
+                  <Users className="h-8 w-8 text-warm-text-tertiary mx-auto mb-3" />
+                  <p className="text-warm-text-secondary text-sm">No registrations yet</p>
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-200">
+                    <thead className="bg-slate-50 border-b border-warm-border">
                       <tr>
-                        <th className="text-left px-4 py-2 font-medium text-gray-600">Student</th>
-                        <th className="text-left px-4 py-2 font-medium text-gray-600">Class</th>
-                        <th className="text-left px-4 py-2 font-medium text-gray-600">Parent</th>
-                        <th className="text-left px-4 py-2 font-medium text-gray-600">Days</th>
-                        <th className="text-left px-4 py-2 font-medium text-gray-600">Status</th>
-                        <th className="text-left px-4 py-2 font-medium text-gray-600">Payment</th>
-                        <th className="text-left px-4 py-2 font-medium text-gray-600">Notes</th>
-                        <th className="text-left px-4 py-2 font-medium text-gray-600">Date</th>
+                        <th className={thCls}>Student</th>
+                        <th className={thCls}>Class</th>
+                        <th className={thCls}>Parent</th>
+                        <th className={thCls}>Days</th>
+                        <th className={thCls}>Status</th>
+                        <th className={thCls}>Payment</th>
+                        <th className={thCls}>Notes</th>
+                        <th className={thCls}>Date</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody>
                       {nonCancelled.map((reg) => (
-                        <tr key={reg.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-2 font-medium text-gray-900">{reg.studentName}</td>
-                          <td className="px-4 py-2 text-gray-600">{reg.className}</td>
-                          <td className="px-4 py-2">
-                            <p className="text-gray-900">{reg.parentName}</p>
-                            <p className="text-xs text-gray-400">{reg.parentEmail}</p>
+                        <tr key={reg.id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50">
+                          <td className="px-4 py-2.5 font-semibold text-warm-text-primary">{reg.studentName}</td>
+                          <td className="px-4 py-2.5 text-warm-text-secondary">{reg.className}</td>
+                          <td className="px-4 py-2.5">
+                            <p className="text-warm-text-primary">{reg.parentName}</p>
+                            <p className="text-xs text-warm-text-tertiary">{reg.parentEmail}</p>
                           </td>
-                          <td className="px-4 py-2">
-                            <div className="flex flex-wrap gap-1">
-                              {(reg.days || []).map((d) => (
-                                <span key={d} className="text-xs px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">
-                                  {d.slice(0, 3)}
-                                </span>
-                              ))}
-                            </div>
+                          <td className="px-4 py-2.5">
+                            <DayPills days={reg.days} />
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2.5">
                             <select
                               value={reg.status}
                               onChange={(e) => handleRegStatusChange(reg.id, e.target.value as RegistrationStatus)}
-                              className="text-xs px-2 py-1 rounded border border-gray-200 font-medium"
-                              style={{ color: REG_STATUS_COLORS[reg.status] }}
+                              className={`text-xs px-2 py-1 rounded-warm-btn border border-warm-border bg-white font-semibold ${REG_STATUS_TEXT[reg.status]}`}
                             >
                               <option value="PENDING">Pending</option>
                               <option value="CONFIRMED">Confirmed</option>
@@ -519,12 +575,11 @@ export function SchoolServicesPage() {
                               <option value="CANCELLED">Cancelled</option>
                             </select>
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2.5">
                             <select
                               value={reg.paymentStatus}
                               onChange={(e) => handlePaymentChange(reg.id, e.target.value as PaymentStatus)}
-                              className="text-xs px-2 py-1 rounded border border-gray-200 font-medium"
-                              style={{ color: PAYMENT_COLORS[reg.paymentStatus] }}
+                              className={`text-xs px-2 py-1 rounded-warm-btn border border-warm-border bg-white font-semibold ${PAYMENT_TEXT[reg.paymentStatus]}`}
                             >
                               <option value="UNPAID">Unpaid</option>
                               <option value="PAID">Paid</option>
@@ -532,10 +587,10 @@ export function SchoolServicesPage() {
                               <option value="WAIVED">Waived</option>
                             </select>
                           </td>
-                          <td className="px-4 py-2 text-gray-500 text-xs max-w-[150px] truncate" title={reg.notes || ''}>
+                          <td className="px-4 py-2.5 text-warm-text-tertiary text-xs max-w-[150px] truncate" title={reg.notes || ''}>
                             {reg.notes || '-'}
                           </td>
-                          <td className="px-4 py-2 text-gray-500 text-xs">
+                          <td className="px-4 py-2.5 text-warm-text-tertiary text-xs">
                             {new Date(reg.createdAt).toLocaleDateString()}
                           </td>
                         </tr>
@@ -551,147 +606,175 @@ export function SchoolServicesPage() {
     )
   }
 
-  // FORM VIEW (Create / Edit)
+  // ─── Form (create / edit) ──────────────────────────────────────────────────
+  // One card per topic instead of one long wall of fields, so the admin can
+  // see at a glance what the form covers and where they are in it.
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() => setViewMode('list')}
-          className="text-sm text-gray-500 hover:text-gray-700"
-        >
-          &larr; Back
-        </button>
-        <h1 className="text-2xl font-bold text-gray-900">
-          {editingId ? 'Edit Service' : 'Create Service'}
-        </h1>
-      </div>
+    <div className="max-w-3xl">
+      <button onClick={() => setViewMode('list')} className="text-sm font-semibold text-brand mb-3">
+        ← All services
+      </button>
+      <h1 className="text-2xl font-extrabold text-warm-text-primary mb-6">
+        {editingId ? 'Edit Service' : 'Create Service'}
+      </h1>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-3xl space-y-5">
-        {/* Name */}
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Service Name *</label>
-          <input
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            placeholder="Early Bird Club"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          />
-        </div>
-
-        {/* Description */}
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Short Description</label>
-          <input
-            value={form.description}
-            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            placeholder="Supervised morning care before school starts"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          />
-        </div>
-
-        {/* Details */}
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Details</label>
-          <textarea
-            value={form.details}
-            onChange={(e) => setForm((f) => ({ ...f, details: e.target.value }))}
-            placeholder="Longer description of what's included..."
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none"
-          />
-        </div>
-
-        {/* Days */}
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block">Days *</label>
-          <div className="flex flex-wrap gap-2">
-            {ALL_DAYS.map((day) => (
-              <button
-                key={day}
-                onClick={() => toggleDay(day)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  form.days.includes(day)
-                    ? 'text-white border-transparent'
-                    : 'text-gray-600 border-gray-200 hover:bg-gray-50'
-                }`}
-                style={form.days.includes(day) ? { backgroundColor: theme.colors.brandColor } : undefined}
-              >
-                {day}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Times */}
-        <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-4">
+        {/* Basics */}
+        <div className="warm-card p-5 space-y-4">
+          <h2 className="text-sm font-bold text-warm-text-primary">Basics</h2>
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Start Time *</label>
+            <label className={labelCls}>Service Name *</label>
             <input
-              type="time"
-              value={form.startTime}
-              onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Early Bird Club"
+              className={inputCls}
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">End Time *</label>
+            <label className={labelCls}>Short Description</label>
             <input
-              type="time"
-              value={form.endTime}
-              onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="Supervised morning care before school starts"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Details</label>
+            <textarea
+              value={form.details}
+              onChange={(e) => setForm((f) => ({ ...f, details: e.target.value }))}
+              placeholder="Longer description of what's included..."
+              rows={3}
+              className={`${inputCls} resize-none`}
             />
           </div>
         </div>
 
-        {/* Costs */}
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block">Pricing</label>
+        {/* Schedule & logistics */}
+        <div className="warm-card p-5 space-y-4">
+          <h2 className="text-sm font-bold text-warm-text-primary">Schedule &amp; Logistics</h2>
+          <div>
+            <label className={labelCls}>Days *</label>
+            <div className="flex flex-wrap gap-2">
+              {ALL_DAYS.map((day) => (
+                <button key={day} onClick={() => toggleDay(day)} className={chipCls(form.days.includes(day))}>
+                  {day}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Start Time *</label>
+              <input
+                type="time"
+                value={form.startTime}
+                onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>End Time *</label>
+              <input
+                type="time"
+                value={form.endTime}
+                onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
+                className={inputCls}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Service Starts</label>
+              <input
+                type="date"
+                value={form.serviceStarts}
+                onChange={(e) => setForm((f) => ({ ...f, serviceStarts: e.target.value }))}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Service Ends</label>
+              <input
+                type="date"
+                value={form.serviceEnds}
+                onChange={(e) => setForm((f) => ({ ...f, serviceEnds: e.target.value }))}
+                className={inputCls}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Location</label>
+              <input
+                value={form.location}
+                onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+                placeholder="Main Hall"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Staff Name</label>
+              <input
+                value={form.staffName}
+                onChange={(e) => setForm((f) => ({ ...f, staffName: e.target.value }))}
+                placeholder="Ms. Smith"
+                className={inputCls}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Pricing & payment */}
+        <div className="warm-card p-5 space-y-4">
+          <h2 className="text-sm font-bold text-warm-text-primary">Pricing &amp; Payment</h2>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Per Session</label>
+              <label className={subLabelCls}>Per Session</label>
               <input
                 value={form.costPerSession}
                 onChange={(e) => setForm((f) => ({ ...f, costPerSession: e.target.value }))}
                 placeholder="5.00"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Per Week</label>
+              <label className={subLabelCls}>Per Week</label>
               <input
                 value={form.costPerWeek}
                 onChange={(e) => setForm((f) => ({ ...f, costPerWeek: e.target.value }))}
                 placeholder="20.00"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Per Term</label>
+              <label className={subLabelCls}>Per Term</label>
               <input
                 value={form.costPerTerm}
                 onChange={(e) => setForm((f) => ({ ...f, costPerTerm: e.target.value }))}
                 placeholder="150.00"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className={inputCls}
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 mt-2">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Cost Description (free text)</label>
+              <label className={subLabelCls}>Cost Description (free text)</label>
               <input
                 value={form.costDescription}
                 onChange={(e) => setForm((f) => ({ ...f, costDescription: e.target.value }))}
                 placeholder="55 AED per session"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Currency</label>
+              <label className={subLabelCls}>Currency</label>
               <select
                 value={form.currency}
                 onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className={`${inputCls} bg-white`}
               >
                 <option value="AED">AED</option>
                 <option value="GBP">GBP (&pound;)</option>
@@ -700,181 +783,114 @@ export function SchoolServicesPage() {
               </select>
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-2">
+          <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="costIsFrom"
               checked={form.costIsFrom}
               onChange={(e) => setForm((f) => ({ ...f, costIsFrom: e.target.checked }))}
-              className="rounded border-gray-300"
+              className="rounded border-warm-border"
             />
-            <label htmlFor="costIsFrom" className="text-xs text-gray-600">
+            <label htmlFor="costIsFrom" className="text-xs text-warm-text-secondary">
               Display as "from" price (e.g. "from 55 AED/session")
             </label>
           </div>
+          <div>
+            <label className={labelCls}>Payment Method</label>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { value: '', label: 'Not specified' },
+                { value: 'ONLINE', label: 'Online Payment' },
+                { value: 'CASH_ONLY', label: 'Cash Only' },
+                { value: 'FREE', label: 'Free' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, paymentMethod: opt.value }))}
+                  className={`px-3 py-2 rounded-warm-btn text-xs font-semibold text-center transition-colors ${
+                    form.paymentMethod === opt.value
+                      ? 'bg-brand text-white'
+                      : 'bg-slate-100 text-warm-text-secondary hover:bg-slate-200'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {(form.paymentMethod === 'ONLINE' || form.paymentUrl) && (
+              <div className="mt-3">
+                <label className={subLabelCls}>Payment Link (PayHub, Zenda, Stripe, etc.)</label>
+                <input
+                  value={form.paymentUrl}
+                  onChange={(e) => setForm((f) => ({ ...f, paymentUrl: e.target.value }))}
+                  placeholder="https://pay.example.com/service-name"
+                  className={inputCls}
+                />
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Payment */}
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block">Payment Method</label>
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { value: '', label: 'Not specified' },
-              { value: 'ONLINE', label: 'Online Payment' },
-              { value: 'CASH_ONLY', label: 'Cash Only' },
-              { value: 'FREE', label: 'Free' },
-            ].map(opt => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setForm(f => ({ ...f, paymentMethod: opt.value }))}
-                className="px-3 py-2 rounded-lg text-xs font-semibold text-center transition-colors"
-                style={
-                  form.paymentMethod === opt.value
-                    ? { backgroundColor: theme.colors.brandColor, color: '#FFFFFF' }
-                    : { backgroundColor: '#F1F5F9', color: '#64748B' }
-                }
-              >
-                {opt.label}
-              </button>
-            ))}
+        {/* Capacity & eligibility */}
+        <div className="warm-card p-5 space-y-4">
+          <h2 className="text-sm font-bold text-warm-text-primary">Capacity &amp; Eligibility</h2>
+          <div>
+            <label className={labelCls}>Capacity (leave blank for unlimited)</label>
+            <input
+              value={form.capacity}
+              onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))}
+              placeholder="20"
+              type="number"
+              className={`${inputCls} max-w-xs`}
+            />
           </div>
-          {(form.paymentMethod === 'ONLINE' || form.paymentUrl) && (
-            <div className="mt-2">
-              <label className="text-xs text-gray-500 mb-1 block">Payment Link (PayHub, Zenda, Stripe, etc.)</label>
-              <input
-                value={form.paymentUrl}
-                onChange={(e) => setForm((f) => ({ ...f, paymentUrl: e.target.value }))}
-                placeholder="https://pay.example.com/service-name"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              />
+          {yearGroups && yearGroups.length > 0 && (
+            <div>
+              <label className={labelCls}>
+                Eligible Year Groups <span className="text-warm-text-tertiary font-normal">(leave empty for all)</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {yearGroups.map((yg) => (
+                  <button key={yg.id} onClick={() => toggleYear(yg.name)} className={chipCls(form.eligibleYears.includes(yg.name))}>
+                    {yg.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {classes && classes.length > 0 && (
+            <div>
+              <label className={labelCls}>
+                Eligible Classes <span className="text-warm-text-tertiary font-normal">(leave empty for all)</span>
+              </label>
+              <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+                {classes.map((c) => (
+                  <button key={c.id} onClick={() => toggleClass(c.name)} className={chipCls(form.eligibleClasses.includes(c.name))}>
+                    {c.name}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Capacity */}
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Capacity (leave blank for unlimited)</label>
-          <input
-            value={form.capacity}
-            onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))}
-            placeholder="20"
-            type="number"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm max-w-xs"
-          />
-        </div>
-
-        {/* Eligible Year Groups */}
-        {yearGroups && yearGroups.length > 0 && (
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-2 block">
-              Eligible Year Groups <span className="text-gray-400 font-normal">(leave empty for all)</span>
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {yearGroups.map((yg) => (
-                <button
-                  key={yg.id}
-                  onClick={() => toggleYear(yg.name)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                    form.eligibleYears.includes(yg.name)
-                      ? 'text-white border-transparent'
-                      : 'text-gray-600 border-gray-200 hover:bg-gray-50'
-                  }`}
-                  style={form.eligibleYears.includes(yg.name) ? { backgroundColor: theme.colors.brandColor } : undefined}
-                >
-                  {yg.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Eligible Classes */}
-        {classes && classes.length > 0 && (
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-2 block">
-              Eligible Classes <span className="text-gray-400 font-normal">(leave empty for all)</span>
-            </label>
-            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
-              {classes.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => toggleClass(c.name)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                    form.eligibleClasses.includes(c.name)
-                      ? 'text-white border-transparent'
-                      : 'text-gray-600 border-gray-200 hover:bg-gray-50'
-                  }`}
-                  style={form.eligibleClasses.includes(c.name) ? { backgroundColor: theme.colors.brandColor } : undefined}
-                >
-                  {c.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Location + Staff */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Location</label>
-            <input
-              value={form.location}
-              onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-              placeholder="Main Hall"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Staff Name</label>
-            <input
-              value={form.staffName}
-              onChange={(e) => setForm((f) => ({ ...f, staffName: e.target.value }))}
-              placeholder="Ms. Smith"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-        </div>
-
-        {/* Service dates */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Service Starts</label>
-            <input
-              type="date"
-              value={form.serviceStarts}
-              onChange={(e) => setForm((f) => ({ ...f, serviceStarts: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Service Ends</label>
-            <input
-              type="date"
-              value={form.serviceEnds}
-              onChange={(e) => setForm((f) => ({ ...f, serviceEnds: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-        </div>
-
-        {/* Save */}
-        <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
-          <button
-            onClick={handleSave}
-            disabled={isSubmitting || !form.name || form.days.length === 0}
-            className="px-6 py-2 rounded-lg text-white font-medium text-sm disabled:opacity-50"
-            style={{ backgroundColor: theme.colors.brandColor }}
-          >
-            {isSubmitting ? 'Saving...' : editingId ? 'Save Changes' : 'Create Service'}
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className="px-6 py-2 rounded-lg text-gray-600 font-medium text-sm border border-gray-300 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-        </div>
+      {/* Save */}
+      <div className="flex items-center gap-2 mt-6">
+        <button
+          onClick={handleSave}
+          disabled={isSubmitting || !form.name || form.days.length === 0}
+          className="rounded-warm-btn bg-brand text-white font-semibold px-6 py-2.5 text-sm disabled:opacity-60"
+        >
+          {isSubmitting ? 'Saving…' : editingId ? 'Save Changes' : 'Create Service'}
+        </button>
+        <button
+          onClick={() => setViewMode('list')}
+          className="rounded-warm-btn border border-warm-border px-5 py-2.5 text-sm font-semibold text-warm-text-secondary hover:bg-slate-50"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   )
