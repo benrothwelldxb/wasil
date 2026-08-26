@@ -962,6 +962,10 @@ enum AuditResourceType {
   // A school safeguarding/admin actor accessed the retained parent↔ILSA
   // thread(s) for a pupil via the passive oversight route (ADR 0006, #4).
   ILSA_THREAD
+  // An admin looked at staff↔parent threads beyond their own, via the partner
+  // inbox's explicit `?scope=school` audit sweep. Oversight is a deliberate,
+  // logged act — not the default inbox view.
+  CONVERSATION
 }
 
 model AuditLog {

@@ -26,6 +26,7 @@ const prismaMock = {
   group: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   studentGroupLink: { createMany: vi.fn(), deleteMany: vi.fn() },
   yearGroup: { findFirst: vi.fn() },
+  auditLog: { create: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -350,12 +351,45 @@ describe('GET /api/partner/inbox/threads', () => {
     )
   })
 
-  it('admins are scoped to their school, not a single staffId', async () => {
+  // Oversight is an audit measure, not the default view: an admin's Desk inbox
+  // shows THEIR threads, and the whole school only when they ask for it.
+  it('an admin sees only their own threads by default', async () => {
     prismaMock.user.findUnique.mockResolvedValue(ADMIN)
     prismaMock.conversation.findMany.mockResolvedValue([])
     await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-admin'))
     const where = prismaMock.conversation.findMany.mock.calls[0][0].where
-    expect(where).toEqual({ kind: 'STAFF', archivedByStaff: false, schoolId: 'sch-1' })
+    expect(where).toEqual({
+      kind: 'STAFF',
+      OR: [
+        { staffId: 'admin-1', archivedByStaff: false },
+        { participants: { some: { userId: 'admin-1', role: 'STAFF', archivedAt: null } } },
+      ],
+    })
+    expect(prismaMock.auditLog.create).not.toHaveBeenCalled()
+  })
+
+  it('scope=school gives an admin the whole school — and writes an audit row', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(ADMIN)
+    prismaMock.conversation.findMany.mockResolvedValue([])
+    await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-admin&scope=school'))
+    expect(prismaMock.conversation.findMany.mock.calls[0][0].where).toEqual({
+      kind: 'STAFF', archivedByStaff: false, schoolId: 'sch-1',
+    })
+    expect(prismaMock.auditLog.create.mock.calls[0][0].data).toMatchObject({
+      userId: 'admin-1', resourceType: 'CONVERSATION', schoolId: 'sch-1',
+      metadata: { event: 'ADMIN_INBOX_AUDIT', view: 'list' },
+    })
+  })
+
+  it('scope=school does nothing for a non-admin — no widening, no audit row', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    prismaMock.conversation.findMany.mockResolvedValue([])
+    await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff&scope=school'))
+    expect(prismaMock.conversation.findMany.mock.calls[0][0].where.OR).toEqual([
+      { staffId: 'staff-1', archivedByStaff: false },
+      { participants: { some: { userId: 'staff-1', role: 'STAFF', archivedAt: null } } },
+    ])
+    expect(prismaMock.auditLog.create).not.toHaveBeenCalled()
   })
 
   it('class_id maps a Hub class id to a Connect class id and filters by student', async () => {
@@ -405,21 +439,42 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     expect(prismaMock.conversationMessage.updateMany).not.toHaveBeenCalled()
   })
 
-  it('an admin in the same school may read via the schoolId branch', async () => {
+  it("an admin opening someone else's thread needs the audit scope", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(ADMIN)
+    prismaMock.conversation.findFirst.mockResolvedValue(null)
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-1?hub_user_id=hu-admin'))
+    expect(res.status).toBe(404)
+    // Own/CC only — no school-wide branch by default.
+    expect(prismaMock.conversation.findFirst.mock.calls[0][0].where).toEqual({
+      id: 'c-1',
+      kind: 'STAFF',
+      OR: [{ staffId: 'admin-1' }, { participants: { some: { userId: 'admin-1' } } }],
+    })
+  })
+
+  it('scope=school lets an admin read it, logs the access, and marks NOTHING read', async () => {
     prismaMock.user.findUnique.mockResolvedValue(ADMIN)
     prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c-1',
+      staffId: 'someone-else',
       parent: { name: 'Dad' },
       student: { firstName: 'A', lastName: 'K', class: { name: '1A' } },
       participants: [],
       messages: [],
     })
-    const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-1?hub_user_id=hu-admin'))
+    const res = await auth(
+      request(makeApp()).get('/api/partner/inbox/threads/c-1?hub_user_id=hu-admin&scope=school'),
+    )
     expect(res.status).toBe(200)
     expect(prismaMock.conversation.findFirst.mock.calls[0][0].where).toEqual({
-      id: 'c-1',
-      kind: 'STAFF',
-      OR: [{ staffId: 'admin-1' }, { participants: { some: { userId: 'admin-1' } } }, { schoolId: 'sch-1' }],
+      id: 'c-1', kind: 'STAFF', schoolId: 'sch-1',
+    })
+    // The teacher whose thread it is keeps their unread state.
+    expect(prismaMock.conversationMessage.updateMany).not.toHaveBeenCalled()
+    expect(prismaMock.conversationParticipant.update).not.toHaveBeenCalled()
+    expect(prismaMock.auditLog.create.mock.calls[0][0].data).toMatchObject({
+      userId: 'admin-1', resourceType: 'CONVERSATION', resourceId: 'c-1',
+      metadata: { event: 'ADMIN_INBOX_AUDIT', view: 'thread' },
     })
   })
 

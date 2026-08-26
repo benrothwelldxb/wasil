@@ -147,17 +147,62 @@ function schoolHintOf(req: Request): string | null {
   return fromBody || null
 }
 
+/** An ADMIN asking to look beyond their own threads — `?scope=school`.
+ *
+ * Admin oversight of the staff inbox is an AUDIT MEASURE, used when there's a
+ * reason, not a permanent view: a principal who sees every parent↔teacher
+ * conversation by default can't find their own, and a thread addressed to a
+ * class teacher looks misdelivered to them. So it has to be asked for
+ * explicitly, it's logged every time, and it is READ-ONLY — replying still
+ * requires being the thread's staff or CC'd onto it.
+ */
+function wantsSchoolAudit(req: Request, actor: StaffActor): boolean {
+  return req.query.scope === 'school' && isAdminActor(actor)
+}
+
+/** Record an admin looking at threads that aren't theirs. Framed as "created an
+ * access record" to fit the CREATE/UPDATE/DELETE audit vocabulary, matching the
+ * ILSA oversight route. Never blocks the read. */
+async function auditInboxAccess(
+  req: Request,
+  actor: StaffActor,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        userName: actor.name,
+        action: 'CREATE',
+        resourceType: 'CONVERSATION',
+        resourceId: (detail.threadId as string) ?? actor.schoolId,
+        metadata: { event: 'ADMIN_INBOX_AUDIT', ...detail },
+        schoolId: actor.schoolId,
+        ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+      },
+    })
+  } catch (err) {
+    console.error('Failed to record admin inbox audit access:', err)
+  }
+}
+
 function isAdminActor(actor: StaffActor): boolean {
   return actor.role === 'ADMIN' || actor.role === 'SUPER_ADMIN'
 }
 
-// Gate a per-thread action to the actor's own thread, or — for admins — any
-// thread in their school. Deliberately staff-oriented (no `parentId` branch):
-// the actor is always staff here. `kind: 'STAFF'` EXCLUDES ILSA threads — even
-// from an admin's school-wide branch — so a private parent↔ILSA thread is never
-// reachable through the staff inbox (ADR 0006 #2; oversight is the only path). A
-// non-matching thread must 404, never 403, so we don't reveal that a thread
-// exists to a staff member who can't see it.
+// Gate a per-thread action to the actor's OWN thread — their own or one they've
+// been CC'd on. Admins get no school-wide branch HERE: Desk is a working inbox,
+// and a principal seeing every parent↔teacher conversation in it made their own
+// threads impossible to find, and made a thread addressed to a class teacher
+// look as though it had been misdelivered to them. School-wide oversight still
+// exists, in the two places it belongs — Connect's own admin inbox, and the
+// audited /oversight/ilsa-threads route.
+//
+// Deliberately staff-oriented (no `parentId` branch): the actor is always staff
+// here. `kind: 'STAFF'` EXCLUDES ILSA threads, so a private parent↔ILSA thread
+// is never reachable through the staff inbox (ADR 0006 #2). A non-matching
+// thread must 404, never 403, so we don't reveal that a thread exists to a staff
+// member who can't see it.
 function staffThreadWhere(id: string, actor: StaffActor) {
   return {
     id,
@@ -167,7 +212,6 @@ function staffThreadWhere(id: string, actor: StaffActor) {
       // A CC'd staff member (a STAFF-role participant) may open and reply to the
       // thread, exactly like the primary staff.
       { participants: { some: { userId: actor.id } } },
-      ...(isAdminActor(actor) ? [{ schoolId: actor.schoolId }] : []),
     ],
   }
 }
@@ -545,17 +589,21 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
       return res.json({ threads: conversations.map((c) => mapThreadItem(c, actor.ilsa.id)) })
     }
 
-    // --- Staff/admin: unchanged, but STAFF-typed threads only --------------
+    // --- Staff: their OWN threads, admins included -------------------------
+    // Every staff member — principal included — sees the threads they're part
+    // of: their own, plus any they've been CC'd on as a STAFF participant
+    // (their own participant archivedAt drives archive). Admins used to get the
+    // whole school here; in a working inbox that buried their own conversations
+    // among everyone else's. Oversight lives in Connect's admin inbox instead.
     const staff = actor.staff
-    const isAdmin = isAdminActor(staff)
     const where: Record<string, unknown> = { kind: 'STAFF' }
-    if (isAdmin) {
-      // Admin: whole school, unchanged.
+    const auditing = wantsSchoolAudit(req, staff)
+    if (auditing) {
+      // Explicit admin audit sweep — logged, and only ever STAFF-typed threads
+      // (a private parent↔ILSA thread stays out; ADR 0006 #2).
       where.schoolId = staff.schoolId
       where.archivedByStaff = false
     } else {
-      // Non-admin: their OWN threads PLUS any thread they've been CC'd on as a
-      // STAFF participant (their own participant archivedAt drives archive).
       where.OR = [
         { staffId: staff.id, archivedByStaff: false },
         { participants: { some: { userId: staff.id, role: 'STAFF', archivedAt: null } } },
@@ -585,6 +633,9 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
       orderBy: { lastMessageAt: 'desc' },
     })
 
+    if (auditing) {
+      await auditInboxAccess(req, staff, { view: 'list', threadCount: conversations.length })
+    }
     res.json({ threads: conversations.map((c) => mapThreadItem(c, staff.id)) })
   } catch (error) {
     console.error('Error building partner inbox threads:', error)
@@ -606,8 +657,15 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
 
     const { id } = req.params
 
+    // An admin may open a thread that isn't theirs ONLY by asking for the audit
+    // scope explicitly, and it's logged. Everything else stays own/CC.
+    const auditing = actor.kind === 'STAFF' && wantsSchoolAudit(req, actor.staff)
+    const where = auditing
+      ? { id, kind: 'STAFF', schoolId: actor.staff.schoolId }
+      : threadWhereForActor(id, actor)
+
     const conversation = await prisma.conversation.findFirst({
-      where: threadWhereForActor(id, actor),
+      where,
       include: {
         parent: { select: { name: true } },
         student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } },
@@ -627,11 +685,26 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
       return res.status(404).json({ error: 'not_found' })
     }
 
+    if (auditing && actor.kind === 'STAFF') {
+      await auditInboxAccess(req, actor.staff, {
+        view: 'thread',
+        threadId: conversation.id,
+        messageCount: conversation.messages.length,
+      })
+    }
+
     // Mark-read side-effect. A CC'd staff member (a STAFF participant who is NOT
     // the primary staff) stamps their OWN participant lastReadAt; the primary
     // staff / admin / ILSA keep the two-party ConversationMessage.readAt model.
+    //
+    // An audit read marks NOTHING: the teacher whose thread it is must not have
+    // their unread state changed by someone else looking, and an admin who never
+    // owned the thread has no read state to keep.
     const myPart = conversation.participants.find((p) => p.userId === aId && p.role === 'STAFF')
-    if (myPart && conversation.staffId !== aId) {
+    const ownThread = conversation.staffId === aId || !!myPart
+    if (auditing && !ownThread) {
+      // read-only
+    } else if (myPart && conversation.staffId !== aId) {
       await prisma.conversationParticipant.update({
         where: { id: myPart.id },
         data: { lastReadAt: new Date() },
