@@ -2345,6 +2345,128 @@ export const providers = {
     fetchApi<ProviderInviteResult>(`/api/providers/${id}/invitations`, { method: 'POST', body: JSON.stringify({ email }) }),
 }
 
+// ─── Provider portal, driven by the school's own admin ───────────────────────
+// The same routes the provider's self-service portal uses (`/api/provider-portal`),
+// with `provider_id` naming which provider the admin is acting on. The server
+// authorises that against a ProviderSchoolLink to the admin's own school. Same
+// records either way — a provider signing in later inherits whatever the school
+// set up, and edits it themselves from then on.
+export interface ProviderPortalProfile {
+  provider: {
+    id: string
+    name: string
+    type: string
+    status: string
+    logoUrl: string | null
+    contactEmail: string | null
+    contactPhone: string | null
+    schools: Array<{ id: string; name: string; shortName?: string | null }>
+  }
+  me: { id: string; name: string; email: string; lastLoginAt: string | null } | null
+  actingAsAdmin?: boolean
+}
+export interface ProviderPortalTerm {
+  id: string
+  name: string
+  schoolId: string
+  schoolName?: string
+}
+export interface ProviderPortalActivity {
+  id: string
+  name: string
+  description: string | null
+  dayOfWeek: number
+  timeSlot: 'BEFORE_SCHOOL' | 'AFTER_SCHOOL'
+  location: string | null
+  maxCapacity: number | null
+  cost: number | null
+  costDescription: string | null
+  paymentUrl: string | null
+  isActive: boolean
+  isCancelled: boolean
+  isPublished: boolean
+  ecaTermId: string
+  termName?: string
+  schoolName?: string
+}
+export interface ProviderPortalMenuItem {
+  id?: string
+  dayOfWeek: number
+  mealType?: 'LUNCH' | 'BREAKFAST' | 'SNACK'
+  name: string
+  description?: string | null
+  price?: number | null
+  dietaryTags?: string[]
+  allergens?: string[]
+}
+export interface ProviderPortalMenu {
+  id: string
+  schoolId: string
+  weekOf: string
+  title: string | null
+  isPublished: boolean
+  items?: ProviderPortalMenuItem[]
+}
+
+export const providerPortalAdmin = {
+  profile: (providerId: string) =>
+    fetchApi<ProviderPortalProfile>(`/api/provider-portal/profile?provider_id=${providerId}`),
+  updateProfile: (
+    providerId: string,
+    data: { providerName?: string; contactEmail?: string | null; contactPhone?: string | null; logoUrl?: string | null },
+  ) =>
+    fetchApi<{ message: string }>(`/api/provider-portal/profile?provider_id=${providerId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  terms: (providerId: string) =>
+    fetchApi<ProviderPortalTerm[]>(`/api/provider-portal/terms?provider_id=${providerId}`),
+
+  activities: (providerId: string) =>
+    fetchApi<ProviderPortalActivity[]>(`/api/provider-portal/activities?provider_id=${providerId}`),
+  createActivity: (providerId: string, data: Record<string, unknown>) =>
+    fetchApi<ProviderPortalActivity>(`/api/provider-portal/activities?provider_id=${providerId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateActivity: (providerId: string, id: string, data: Record<string, unknown>) =>
+    fetchApi<ProviderPortalActivity>(`/api/provider-portal/activities/${id}?provider_id=${providerId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteActivity: (providerId: string, id: string) =>
+    fetchApi<{ message: string }>(`/api/provider-portal/activities/${id}?provider_id=${providerId}`, {
+      method: 'DELETE',
+    }),
+
+  menus: (providerId: string) =>
+    fetchApi<ProviderPortalMenu[]>(`/api/provider-portal/menus?provider_id=${providerId}`),
+  menu: (providerId: string, id: string) =>
+    fetchApi<ProviderPortalMenu>(`/api/provider-portal/menus/${id}?provider_id=${providerId}`),
+  createMenu: (
+    providerId: string,
+    data: { schoolId: string; weekOf: string; title?: string | null; items?: ProviderPortalMenuItem[] },
+  ) =>
+    fetchApi<ProviderPortalMenu>(`/api/provider-portal/menus?provider_id=${providerId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateMenu: (
+    providerId: string,
+    id: string,
+    data: { title?: string | null; isPublished?: boolean; items?: ProviderPortalMenuItem[] },
+  ) =>
+    fetchApi<ProviderPortalMenu>(`/api/provider-portal/menus/${id}?provider_id=${providerId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteMenu: (providerId: string, id: string) =>
+    fetchApi<{ message: string }>(`/api/provider-portal/menus/${id}?provider_id=${providerId}`, {
+      method: 'DELETE',
+    }),
+}
+
 // ─── Paid provider-run clubs (parent-facing) ─────────────────────────────────
 export interface ClubStudent { id: string; name: string; className: string | null }
 export interface ClubActivity {
@@ -2515,6 +2637,7 @@ export default {
   messages,
   forms,
   providers,
+  providerPortalAdmin,
   clubs,
   timetable,
   events,

@@ -20,6 +20,11 @@ declare global {
         id: string
         providerId: string
       }
+      /** True when a school ADMIN is acting on a provider through the portal
+       * routes (see requireProviderOrSchoolAdmin). `providerUser.id` is then the
+       * ADMIN's user id, not a ProviderUser — so any handler touching the
+       * signed-in provider person must branch on this. */
+      providerActingAdmin?: boolean
     }
   }
 }
@@ -173,6 +178,51 @@ export function isSuperAdmin(req: Request, res: Response, next: NextFunction) {
  * ProviderUser and its Provider are still active, and attaches req.providerUser.
  * Every provider route MUST scope its queries by req.providerUser.providerId.
  */
+/**
+ * The provider portal, reachable by the PROVIDER or by the school's own ADMIN.
+ *
+ * A school needs to set a provider up — profile, clubs, menus — before handing
+ * them the keys, and to fix things afterwards without waiting on them. Rather
+ * than duplicate fifteen handlers behind an admin guard (two code paths that
+ * would drift), an admin acts on ONE named provider through the same routes:
+ *
+ *   ?provider_id=<id>   (or provider_id in the body)
+ *
+ * The provider must belong to the admin's OWN school — that check is the whole
+ * security boundary here, so it is not optional and not caller-supplied.
+ * `req.providerActingAdmin` marks the request so the few handlers that touch the
+ * signed-in PROVIDER USER (their personal name, the bookings audit trail) don't
+ * mistake an admin for one.
+ */
+export async function requireProviderOrSchoolAdmin(req: Request, res: Response, next: NextFunction) {
+  const providerIdParam =
+    (typeof req.query.provider_id === 'string' && req.query.provider_id.trim()) ||
+    (typeof (req.body as Record<string, unknown> | undefined)?.provider_id === 'string' &&
+      ((req.body as Record<string, string>).provider_id || '').trim()) ||
+    ''
+
+  // No provider_id → this is an ordinary provider session; unchanged behaviour.
+  if (!providerIdParam) return requireProvider(req, res, next)
+
+  // With one, authenticate as a Connect admin instead.
+  return isAdmin(req, res, async () => {
+    const admin = req.user!
+    // A provider serves many schools (ProviderSchoolLink), so "mine" means a
+    // link to THIS admin's school — never the provider row alone.
+    const link = await prisma.providerSchoolLink.findFirst({
+      where: { providerId: providerIdParam, schoolId: admin.schoolId },
+      select: { providerId: true },
+    })
+    // Unknown, or another school's — same answer either way, so admins can't
+    // probe for provider ids outside their school.
+    if (!link) return res.status(404).json({ error: 'Provider not found' })
+
+    req.providerUser = { id: admin.id, providerId: link.providerId }
+    req.providerActingAdmin = true
+    next()
+  })
+}
+
 export async function requireProvider(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization
   if (!authHeader?.startsWith('Bearer ')) {

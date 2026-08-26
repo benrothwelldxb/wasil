@@ -2,7 +2,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { z } from 'zod'
 import prisma from '../services/prisma.js'
-import { requireProvider } from '../middleware/auth.js'
+import { requireProviderOrSchoolAdmin } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload } from '../services/uploadValidation.js'
@@ -12,12 +12,13 @@ import { notifyClubBookingPaid } from '../services/clubNotify.js'
 const logoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024 } })
 const LOGO_MIMES = ['image/png', 'image/jpeg', 'image/webp']
 
-// Provider self-service portal. Every route is guarded by requireProvider and
-// scoped to req.providerUser.providerId — a provider can only ever read or
+// Provider self-service portal. Every route is guarded by
+// requireProviderOrSchoolAdmin and scoped to req.providerUser.providerId — a
+// provider can only ever read or
 // mutate its own record.
 const router = Router()
 
-router.use(requireProvider)
+router.use(requireProviderOrSchoolAdmin)
 
 const updateProfileSchema = z.object({
   providerName: z.string().min(1).optional(),
@@ -134,14 +135,19 @@ function serializeActivity(a: {
 router.get('/profile', async (req, res) => {
   try {
     const { id: providerUserId, providerId } = req.providerUser!
+    // Acting as a school admin there IS no provider person — `me` is the
+    // signed-in PROVIDER's own record, so it's simply absent.
+    const actingAdmin = req.providerActingAdmin === true
     const [provider, me] = await Promise.all([
       prisma.provider.findUnique({
         where: { id: providerId },
         include: { schoolLinks: { include: { school: { select: { id: true, name: true, shortName: true } } } } },
       }),
-      prisma.providerUser.findUnique({ where: { id: providerUserId }, select: { id: true, name: true, email: true, lastLoginAt: true } }),
+      actingAdmin
+        ? Promise.resolve(null)
+        : prisma.providerUser.findUnique({ where: { id: providerUserId }, select: { id: true, name: true, email: true, lastLoginAt: true } }),
     ])
-    if (!provider || !me) return res.status(404).json({ error: 'Profile not found' })
+    if (!provider || (!me && !actingAdmin)) return res.status(404).json({ error: 'Profile not found' })
 
     res.json({
       provider: {
@@ -154,7 +160,11 @@ router.get('/profile', async (req, res) => {
         contactPhone: provider.contactPhone,
         schools: provider.schoolLinks.map(l => ({ id: l.school.id, name: l.school.name, shortName: l.school.shortName })),
       },
-      me: { id: me.id, name: me.name, email: me.email, lastLoginAt: me.lastLoginAt?.toISOString() || null },
+      me: me
+        ? { id: me.id, name: me.name, email: me.email, lastLoginAt: me.lastLoginAt?.toISOString() || null }
+        : null,
+      // Lets the client label the session honestly ("editing as the school").
+      actingAsAdmin: actingAdmin,
     })
   } catch (error) {
     console.error('Provider profile error:', error)
@@ -179,7 +189,10 @@ router.patch('/profile', validate(updateProfileSchema), async (req, res) => {
         },
       })
     }
-    if (displayName !== undefined) {
+    // `displayName` is the signed-in provider person's OWN name. An admin editing
+    // the organisation must never rename a provider's staff member, so it's
+    // ignored rather than applied to the admin's own user row.
+    if (displayName !== undefined && req.providerActingAdmin !== true) {
       await prisma.providerUser.update({ where: { id: providerUserId }, data: { name: displayName } })
     }
 
@@ -339,12 +352,22 @@ router.get('/bookings', async (req, res) => {
       orderBy: { createdAt: 'desc' },
     })
 
-    // Audit trail: record that this provider viewed booking data, and how much
-    // of it included parent contact details (PII shared with an outside party).
+    // Audit trail: record who viewed booking data, and how much of it included
+    // parent contact details (PII shared with an outside party). A school admin
+    // acting on the provider is logged as the ADMIN they are — never as a
+    // provider user, which would misattribute the access.
     const withContact = bookings.filter(b => shareBySchool.get(b.schoolId)).length
+    const actingAdmin = req.providerActingAdmin === true
     logger.info(
-      { providerId, providerUserId: req.providerUser!.id, bookingsViewed: bookings.length, contactShared: withContact },
-      'provider viewed club bookings',
+      {
+        providerId,
+        ...(actingAdmin
+          ? { adminUserId: req.providerUser!.id, actingAsAdmin: true }
+          : { providerUserId: req.providerUser!.id }),
+        bookingsViewed: bookings.length,
+        contactShared: withContact,
+      },
+      actingAdmin ? 'school admin viewed provider club bookings' : 'provider viewed club bookings',
     )
 
     res.json(bookings.map(b => {

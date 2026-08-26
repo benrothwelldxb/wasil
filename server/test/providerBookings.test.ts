@@ -13,7 +13,10 @@ const prismaMock = {
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/middleware/auth', () => ({
-  requireProvider: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  // The portal router now mounts requireProviderOrSchoolAdmin (a provider
+  // session OR the school's admin acting on one). These suites exercise the
+  // provider path, so the stub injects a provider exactly as before.
+  requireProviderOrSchoolAdmin: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     ;(req as express.Request & { providerUser?: { id: string; providerId: string } }).providerUser = { id: 'pu-1', providerId: 'prov-1' }
     next()
   },

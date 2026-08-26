@@ -1,7 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, useApi, useToast } from '@wasil/shared'
-import type { ProviderSummary, ProviderDetail, ProviderInviteResult } from '@wasil/shared'
-import { Building2, Copy, Plus, UserPlus, X } from 'lucide-react'
+import type {
+  ProviderSummary, ProviderDetail, ProviderInviteResult,
+  ProviderPortalActivity, ProviderPortalMenu, ProviderPortalTerm,
+} from '@wasil/shared'
+import { Building2, Copy, Plus, Trash2, UserPlus, X } from 'lucide-react'
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 const TYPE_LABEL: Record<string, string> = { ECA: 'Extra-curricular', CATERING: 'Catering' }
 
@@ -139,10 +144,13 @@ function CreateProviderModal({ onClose, onCreated }: { onClose: () => void; onCr
   )
 }
 
+type TabKey = 'access' | 'details' | 'clubs' | 'menus'
+
 function ProviderDetailModal({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
   const [data, setData] = useState<ProviderDetail | null>(null)
   const [loadError, setLoadError] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
+  const [tab, setTab] = useState<TabKey>('access')
   const [lastInvite, setLastInvite] = useState<ProviderInviteResult | null>(null)
   const toast = useToast()
 
@@ -190,11 +198,45 @@ function ProviderDetailModal({ id, onClose, onChanged }: { id: string; onClose: 
     ? (lastInvite.registrationUrl || `${window.location.origin.replace(/admin/, 'provider')}/register?token=${lastInvite.token}`)
     : ''
 
+  // Which tabs make sense for this provider. A school can set up and edit
+  // everything a provider would manage themselves — the same records, through
+  // the same routes — so a provider is presentable to parents before they've
+  // ever signed in, and fixable afterwards without waiting on them.
+  const tabs: Array<{ key: TabKey; label: string }> = [
+    { key: 'access', label: 'Access' },
+    { key: 'details', label: 'Details' },
+    ...(data?.type !== 'CATERING' ? [{ key: 'clubs' as TabKey, label: 'Clubs' }] : []),
+    ...(data?.type !== 'ECA' ? [{ key: 'menus' as TabKey, label: 'Menus' }] : []),
+  ]
+
   return (
     <Modal title={data?.name || 'Provider'} onClose={onClose}>
       {loadError && <p className="text-sm text-warm-error">Failed to load provider.</p>}
       {data && (
         <div className="space-y-5">
+          <div className="flex gap-1 border-b border-warm-border -mt-1">
+            {tabs.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px ${
+                  tab === t.key
+                    ? 'border-brand text-brand'
+                    : 'border-transparent text-warm-text-tertiary hover:text-warm-text-secondary'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'details' && <ProviderDetailsTab providerId={id} onSaved={onChanged} />}
+          {tab === 'clubs' && <ProviderClubsTab providerId={id} />}
+          {tab === 'menus' && <ProviderMenusTab providerId={id} />}
+        </div>
+      )}
+      {data && tab === 'access' && (
+        <div className="space-y-5 mt-5">
           {/* Governance toggles */}
           <div className="space-y-2">
             <ToggleRow
@@ -265,6 +307,332 @@ function ProviderDetailModal({ id, onClose, onChanged }: { id: string; onClose: 
         </div>
       )}
     </Modal>
+  )
+}
+
+// ─── Details: the provider's own profile, edited by the school ───────────────
+function ProviderDetailsTab({ providerId, onSaved }: { providerId: string; onSaved: () => void }) {
+  const toast = useToast()
+  const [form, setForm] = useState({ providerName: '', contactEmail: '', contactPhone: '' })
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    api.providerPortalAdmin.profile(providerId)
+      .then(p => {
+        setForm({
+          providerName: p.provider.name,
+          contactEmail: p.provider.contactEmail || '',
+          contactPhone: p.provider.contactPhone || '',
+        })
+        setLoaded(true)
+      })
+      .catch(() => toast.error('Failed to load provider details'))
+  }, [providerId])
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await api.providerPortalAdmin.updateProfile(providerId, {
+        providerName: form.providerName.trim(),
+        contactEmail: form.contactEmail.trim() || null,
+        contactPhone: form.contactPhone.trim() || null,
+      })
+      onSaved()
+      toast.success('Details saved')
+    } catch {
+      toast.error('Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!loaded) return <p className="text-sm text-warm-text-tertiary">Loading…</p>
+
+  return (
+    <form onSubmit={save} className="space-y-3">
+      <Field label="Provider name" value={form.providerName} onChange={v => setForm({ ...form, providerName: v })} required />
+      <Field label="Contact email" type="email" value={form.contactEmail} onChange={v => setForm({ ...form, contactEmail: v })} />
+      <Field label="Contact phone" value={form.contactPhone} onChange={v => setForm({ ...form, contactPhone: v })} />
+      <p className="text-xs text-warm-text-tertiary">
+        These are the provider's own details, shown to parents. When the provider signs in they see and can edit exactly this.
+      </p>
+      <button type="submit" disabled={saving} className="rounded-warm-btn bg-brand text-white font-semibold px-4 py-2 text-sm disabled:opacity-60">
+        {saving ? 'Saving…' : 'Save details'}
+      </button>
+    </form>
+  )
+}
+
+// ─── Clubs: the activities this provider runs ────────────────────────────────
+function ProviderClubsTab({ providerId }: { providerId: string }) {
+  const toast = useToast()
+  const [activities, setActivities] = useState<ProviderPortalActivity[] | null>(null)
+  const [terms, setTerms] = useState<ProviderPortalTerm[]>([])
+  const [adding, setAdding] = useState(false)
+  const [form, setForm] = useState({ ecaTermId: '', name: '', dayOfWeek: 1, timeSlot: 'AFTER_SCHOOL', location: '', cost: '', maxCapacity: '' })
+
+  const load = () =>
+    Promise.all([api.providerPortalAdmin.activities(providerId), api.providerPortalAdmin.terms(providerId)])
+      .then(([a, t]) => {
+        setActivities(a)
+        setTerms(t)
+        setForm(f => ({ ...f, ecaTermId: f.ecaTermId || t[0]?.id || '' }))
+      })
+      .catch(() => toast.error('Failed to load clubs'))
+  useEffect(() => { load() }, [providerId])
+
+  const create = async (e: FormEvent) => {
+    e.preventDefault()
+    try {
+      await api.providerPortalAdmin.createActivity(providerId, {
+        ecaTermId: form.ecaTermId,
+        name: form.name.trim(),
+        dayOfWeek: form.dayOfWeek,
+        timeSlot: form.timeSlot,
+        location: form.location.trim() || null,
+        cost: form.cost ? Number(form.cost) : null,
+        maxCapacity: form.maxCapacity ? Number(form.maxCapacity) : null,
+      })
+      setForm({ ...form, name: '', location: '', cost: '', maxCapacity: '' })
+      setAdding(false)
+      await load()
+      toast.success('Club added — publish it when you\u2019re ready')
+    } catch {
+      toast.error('Failed to add club')
+    }
+  }
+
+  const togglePublish = async (a: ProviderPortalActivity) => {
+    try {
+      await api.providerPortalAdmin.updateActivity(providerId, a.id, { isPublished: !a.isPublished })
+      await load()
+    } catch {
+      toast.error('Failed to update')
+    }
+  }
+
+  const remove = async (a: ProviderPortalActivity) => {
+    if (!window.confirm(`Delete "${a.name}"? This cannot be undone.`)) return
+    try {
+      await api.providerPortalAdmin.deleteActivity(providerId, a.id)
+      await load()
+    } catch {
+      toast.error('Failed to delete — a club with bookings cannot be removed')
+    }
+  }
+
+  if (!activities) return <p className="text-sm text-warm-text-tertiary">Loading…</p>
+
+  return (
+    <div className="space-y-3">
+      {activities.length === 0 && !adding && (
+        <p className="text-sm text-warm-text-tertiary">No clubs yet. Add the first one below.</p>
+      )}
+
+      <div className="space-y-1.5">
+        {activities.map(a => (
+          <div key={a.id} className="flex items-center justify-between gap-3 rounded-warm border border-warm-border px-3 py-2.5">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-warm-text-primary truncate">{a.name}</div>
+              <div className="text-xs text-warm-text-tertiary truncate">
+                {DAYS[a.dayOfWeek]} · {a.timeSlot === 'AFTER_SCHOOL' ? 'After school' : 'Before school'}
+                {a.location ? ` · ${a.location}` : ''}
+                {a.cost != null ? ` · ${a.cost}` : ''}
+                {a.termName ? ` · ${a.termName}` : ''}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => togglePublish(a)}
+                className={`text-xs font-semibold rounded-full px-2.5 py-1 ${
+                  a.isPublished ? 'bg-warm-green/15 text-warm-green' : 'bg-warm-border/60 text-warm-text-secondary'
+                }`}
+              >
+                {a.isPublished ? 'Visible to parents' : 'Draft'}
+              </button>
+              <button onClick={() => remove(a)} className="p-1.5 rounded-warm text-warm-text-tertiary hover:text-warm-error" aria-label="Delete club">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {adding ? (
+        <form onSubmit={create} className="space-y-3 rounded-warm border border-warm-border p-3">
+          <Select label="Term" value={form.ecaTermId} onChange={v => setForm({ ...form, ecaTermId: v })}
+            options={terms.map(t => ({ value: t.id, label: t.schoolName ? `${t.name} · ${t.schoolName}` : t.name }))} />
+          <Field label="Club name" value={form.name} onChange={v => setForm({ ...form, name: v })} required />
+          <div className="grid grid-cols-2 gap-2">
+            <Select label="Day" value={String(form.dayOfWeek)} onChange={v => setForm({ ...form, dayOfWeek: Number(v) })}
+              options={DAYS.map((d, i) => ({ value: String(i), label: d }))} />
+            <Select label="When" value={form.timeSlot} onChange={v => setForm({ ...form, timeSlot: v })}
+              options={[{ value: 'AFTER_SCHOOL', label: 'After school' }, { value: 'BEFORE_SCHOOL', label: 'Before school' }]} />
+          </div>
+          <Field label="Location" value={form.location} onChange={v => setForm({ ...form, location: v })} />
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Cost" type="number" value={form.cost} onChange={v => setForm({ ...form, cost: v })} />
+            <Field label="Capacity" type="number" value={form.maxCapacity} onChange={v => setForm({ ...form, maxCapacity: v })} />
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={!form.ecaTermId} className="rounded-warm-btn bg-brand text-white font-semibold px-4 py-2 text-sm disabled:opacity-60">Add club</button>
+            <button type="button" onClick={() => setAdding(false)} className="rounded-warm-btn border border-warm-border px-4 py-2 text-sm">Cancel</button>
+          </div>
+          {terms.length === 0 && (
+            <p className="text-xs text-warm-error">No open ECA term for this provider's schools — create one first under ECA.</p>
+          )}
+        </form>
+      ) : (
+        <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-sm font-semibold text-brand">
+          <Plus className="h-4 w-4" /> Add a club
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── Menus: weekly catering menus ────────────────────────────────────────────
+function ProviderMenusTab({ providerId }: { providerId: string }) {
+  const toast = useToast()
+  const [menus, setMenus] = useState<ProviderPortalMenu[] | null>(null)
+  const [schools, setSchools] = useState<Array<{ id: string; name: string }>>([])
+  const [adding, setAdding] = useState(false)
+  const [form, setForm] = useState({ schoolId: '', weekOf: '', title: '' })
+
+  const load = () =>
+    Promise.all([api.providerPortalAdmin.menus(providerId), api.providerPortalAdmin.profile(providerId)])
+      .then(([m, p]) => {
+        setMenus(m)
+        setSchools(p.provider.schools.map(s => ({ id: s.id, name: s.name })))
+        setForm(f => ({ ...f, schoolId: f.schoolId || p.provider.schools[0]?.id || '' }))
+      })
+      .catch(() => toast.error('Failed to load menus'))
+  useEffect(() => { load() }, [providerId])
+
+  const create = async (e: FormEvent) => {
+    e.preventDefault()
+    try {
+      await api.providerPortalAdmin.createMenu(providerId, {
+        schoolId: form.schoolId,
+        weekOf: form.weekOf,
+        title: form.title.trim() || null,
+      })
+      setForm({ ...form, weekOf: '', title: '' })
+      setAdding(false)
+      await load()
+      toast.success('Menu created')
+    } catch {
+      toast.error('Failed to create menu')
+    }
+  }
+
+  const togglePublish = async (m: ProviderPortalMenu) => {
+    try {
+      await api.providerPortalAdmin.updateMenu(providerId, m.id, { isPublished: !m.isPublished })
+      await load()
+    } catch {
+      toast.error('Failed to update')
+    }
+  }
+
+  const remove = async (m: ProviderPortalMenu) => {
+    if (!window.confirm('Delete this menu? This cannot be undone.')) return
+    try {
+      await api.providerPortalAdmin.deleteMenu(providerId, m.id)
+      await load()
+    } catch {
+      toast.error('Failed to delete')
+    }
+  }
+
+  if (!menus) return <p className="text-sm text-warm-text-tertiary">Loading…</p>
+
+  return (
+    <div className="space-y-3">
+      {menus.length === 0 && !adding && (
+        <p className="text-sm text-warm-text-tertiary">No menus yet. Add a week below.</p>
+      )}
+
+      <div className="space-y-1.5">
+        {menus.map(m => (
+          <div key={m.id} className="flex items-center justify-between gap-3 rounded-warm border border-warm-border px-3 py-2.5">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-warm-text-primary truncate">{m.title || `Week of ${m.weekOf}`}</div>
+              <div className="text-xs text-warm-text-tertiary">
+                Week of {m.weekOf}{m.items?.length ? ` · ${m.items.length} items` : ' · no items yet'}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => togglePublish(m)}
+                className={`text-xs font-semibold rounded-full px-2.5 py-1 ${
+                  m.isPublished ? 'bg-warm-green/15 text-warm-green' : 'bg-warm-border/60 text-warm-text-secondary'
+                }`}
+              >
+                {m.isPublished ? 'Visible to parents' : 'Draft'}
+              </button>
+              <button onClick={() => remove(m)} className="p-1.5 rounded-warm text-warm-text-tertiary hover:text-warm-error" aria-label="Delete menu">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {adding ? (
+        <form onSubmit={create} className="space-y-3 rounded-warm border border-warm-border p-3">
+          <Select label="School" value={form.schoolId} onChange={v => setForm({ ...form, schoolId: v })}
+            options={schools.map(s => ({ value: s.id, label: s.name }))} />
+          <Field label="Week beginning (Monday)" type="date" value={form.weekOf} onChange={v => setForm({ ...form, weekOf: v })} required />
+          <Field label="Title (optional)" value={form.title} onChange={v => setForm({ ...form, title: v })} />
+          <div className="flex gap-2">
+            <button type="submit" disabled={!form.schoolId} className="rounded-warm-btn bg-brand text-white font-semibold px-4 py-2 text-sm disabled:opacity-60">Create menu</button>
+            <button type="button" onClick={() => setAdding(false)} className="rounded-warm-btn border border-warm-border px-4 py-2 text-sm">Cancel</button>
+          </div>
+        </form>
+      ) : (
+        <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-sm font-semibold text-brand">
+          <Plus className="h-4 w-4" /> Add a menu week
+        </button>
+      )}
+    </div>
+  )
+}
+
+function Field({ label, value, onChange, type = 'text', required = false }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string; required?: boolean
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold text-warm-text-secondary">{label}</span>
+      <input
+        type={type}
+        required={required}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="mt-1 w-full rounded-warm-btn border border-warm-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+      />
+    </label>
+  )
+}
+
+function Select({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void; options: Array<{ value: string; label: string }>
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold text-warm-text-secondary">{label}</span>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="mt-1 w-full rounded-warm-btn border border-warm-border px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"
+      >
+        {options.length === 0 && <option value="">—</option>}
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </label>
   )
 }
 
