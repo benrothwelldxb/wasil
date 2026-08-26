@@ -48,6 +48,98 @@ interface SendNotificationParams {
   target: NotificationTarget
 }
 
+interface SendStaffNotificationParams {
+  schoolId: string
+  type: string
+  title: string
+  body: string
+  resourceType?: string
+  resourceId?: string
+  data?: Record<string, unknown>
+  /** Which staff to reach. Defaults to the school office (ADMIN/SUPER_ADMIN). */
+  roles?: string[]
+}
+
+/**
+ * Notify STAFF — never parents.
+ *
+ * `sendNotification` above resolves an audience of PARENTS and nothing else:
+ * every branch of its target resolution ends in parent user ids. A caller that
+ * wanted "the school office" and reached for `targetClass: 'Whole School'`
+ * therefore broadcast to every parent in the school. That is exactly how a
+ * parent came to receive another family's absence request, naming both the
+ * submitting parent and their child.
+ *
+ * So staff notifications get their own function with no target vocabulary to
+ * misuse: an explicit role list, resolved against this school only. Parents are
+ * unreachable from here by construction — `PARENT` and `ILSA` are refused even
+ * if passed in.
+ */
+export async function sendStaffNotification({
+  schoolId,
+  type,
+  title,
+  body,
+  resourceType,
+  resourceId,
+  data,
+  roles = ['ADMIN', 'SUPER_ADMIN'],
+}: SendStaffNotificationParams): Promise<void> {
+  try {
+    // Hard floor: a parent or an ILSA can never be an audience here, whatever
+    // the caller asks for.
+    const staffRoles = roles.filter((r) => r === 'STAFF' || r === 'ADMIN' || r === 'SUPER_ADMIN')
+    if (staffRoles.length === 0) return
+
+    const staff = await prisma.user.findMany({
+      where: { schoolId, role: { in: staffRoles as never } },
+      select: { id: true },
+    })
+    const staffIds = staff.map((u) => u.id)
+    if (staffIds.length === 0) return
+
+    await prisma.notification.createMany({
+      data: staffIds.map((userId) => ({
+        userId,
+        type,
+        title,
+        body,
+        resourceType: resourceType || null,
+        resourceId: resourceId || null,
+        data: data ? JSON.parse(JSON.stringify(data)) : undefined,
+        schoolId,
+      })),
+    })
+
+    const deviceTokens = await prisma.deviceToken.findMany({
+      where: { userId: { in: staffIds } },
+      select: { token: true },
+    })
+    if (deviceTokens.length > 0) {
+      await enqueuePush(schoolId, {
+        tokens: deviceTokens.map((dt) => dt.token),
+        title,
+        body,
+        data: {
+          type,
+          ...(resourceType && { resourceType }),
+          ...(resourceId && { resourceId }),
+          ...(data &&
+            Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)]))),
+        },
+      })
+    }
+  } catch (error) {
+    console.error('Failed to send staff notification:', error)
+  }
+}
+
+/**
+ * Notify PARENTS. Every target below resolves to parent user ids — there is no
+ * staff branch and never was, so `targetClass: 'Whole School'` means "every
+ * parent in the school", NOT "everyone". For a staff audience use
+ * `sendStaffNotification`.
+ */
 export async function sendNotification({ req, type, title, body, resourceType, resourceId, data, target }: SendNotificationParams): Promise<void> {
   try {
     const { targetClass, classId, yearGroupId, groupId, schoolId } = target

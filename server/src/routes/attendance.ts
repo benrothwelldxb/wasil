@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import prisma from '../services/prisma.js'
 import { isAdmin, isStaff, isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
-import { sendNotification } from '../services/notify.js'
+import { sendStaffNotification } from '../services/notify.js'
 import { generateDailyRegistersHtml } from '../services/attendanceRegisterPdf.js'
 import { buildDigestData, sendDigestForSchool } from '../services/attendanceDigest.js'
 import { todayForSchool } from '../services/dateTime.js'
@@ -649,18 +649,20 @@ router.post('/request', isAuthenticated, async (req: Request, res: Response) => 
       },
     })
 
-    // Notify school admins
-    sendNotification({
-      req,
+    // Notify the school office — STAFF ONLY.
+    //
+    // This previously called sendNotification with `targetClass: 'Whole School'`,
+    // which resolves to every PARENT in the school (that function has no staff
+    // branch at all). Every absence request was therefore pushed to the whole
+    // parent body, naming the submitting parent and their child. Staff
+    // notifications now go through a function that cannot reach a parent.
+    sendStaffNotification({
+      schoolId: user.schoolId,
       type: 'ATTENDANCE_REQUEST',
       title: 'New Attendance Request',
       body: `${user.name} submitted a ${type.toLowerCase().replace('_', ' ')} request for ${link.student.firstName} ${link.student.lastName}`,
       resourceType: 'ATTENDANCE_REQUEST',
       resourceId: request.id,
-      target: {
-        targetClass: 'Whole School',
-        schoolId: user.schoolId,
-      },
     })
 
     res.json({
