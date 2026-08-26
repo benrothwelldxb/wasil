@@ -2420,6 +2420,17 @@ export const providerPortalAdmin = {
       body: JSON.stringify(data),
     }),
 
+  // Multipart — fetchApi drops the JSON content-type when the body is FormData
+  // and lets the browser set the boundary.
+  uploadLogo: (providerId: string, file: File) => {
+    const form = new FormData()
+    form.append('logo', file)
+    return fetchApi<{ logoUrl: string }>(`/api/provider-portal/logo?provider_id=${providerId}`, {
+      method: 'POST',
+      body: form,
+    })
+  },
+
   terms: (providerId: string) =>
     fetchApi<ProviderPortalTerm[]>(`/api/provider-portal/terms?provider_id=${providerId}`),
 

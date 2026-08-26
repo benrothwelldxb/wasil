@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, useApi, useToast } from '@wasil/shared'
 import type {
   ProviderSummary, ProviderDetail, ProviderInviteResult,
-  ProviderPortalActivity, ProviderPortalMenu, ProviderPortalTerm,
+  ProviderPortalActivity, ProviderPortalMenu, ProviderPortalMenuItem, ProviderPortalTerm,
 } from '@wasil/shared'
 import { Building2, Copy, Plus, Trash2, UserPlus, X } from 'lucide-react'
 
@@ -314,6 +314,8 @@ function ProviderDetailModal({ id, onClose, onChanged }: { id: string; onClose: 
 function ProviderDetailsTab({ providerId, onSaved }: { providerId: string; onSaved: () => void }) {
   const toast = useToast()
   const [form, setForm] = useState({ providerName: '', contactEmail: '', contactPhone: '' })
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -325,10 +327,30 @@ function ProviderDetailsTab({ providerId, onSaved }: { providerId: string; onSav
           contactEmail: p.provider.contactEmail || '',
           contactPhone: p.provider.contactPhone || '',
         })
+        setLogoUrl(p.provider.logoUrl)
         setLoaded(true)
       })
       .catch(() => toast.error('Failed to load provider details'))
   }, [providerId])
+
+  const pickLogo = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // so re-picking the same file still fires
+    if (!file) return
+    setUploading(true)
+    try {
+      const { logoUrl: url } = await api.providerPortalAdmin.uploadLogo(providerId, file)
+      setLogoUrl(url)
+      onSaved()
+      toast.success('Logo updated')
+    } catch {
+      // The server sniffs magic bytes, not just the extension — a renamed file
+      // is rejected there rather than stored.
+      toast.error('Failed to upload — use a PNG or JPG image')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const save = async (e: FormEvent) => {
     e.preventDefault()
@@ -352,6 +374,20 @@ function ProviderDetailsTab({ providerId, onSaved }: { providerId: string; onSav
 
   return (
     <form onSubmit={save} className="space-y-3">
+      {/* Logo — uploaded on pick, not on save: it's a file, and the server
+          stores it and returns the URL immediately. */}
+      <div className="flex items-center gap-3">
+        <div className="h-14 w-14 rounded-warm border border-warm-border bg-white flex items-center justify-center overflow-hidden shrink-0">
+          {logoUrl
+            ? <img src={logoUrl} alt="" className="h-full w-full object-contain" />
+            : <Building2 className="h-6 w-6 text-warm-text-tertiary" />}
+        </div>
+        <label className="text-sm font-semibold text-brand cursor-pointer">
+          {uploading ? 'Uploading…' : logoUrl ? 'Replace logo' : 'Upload logo'}
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={pickLogo} disabled={uploading} className="hidden" />
+        </label>
+      </div>
+
       <Field label="Provider name" value={form.providerName} onChange={v => setForm({ ...form, providerName: v })} required />
       <Field label="Contact email" type="email" value={form.contactEmail} onChange={v => setForm({ ...form, contactEmail: v })} />
       <Field label="Contact phone" value={form.contactPhone} onChange={v => setForm({ ...form, contactPhone: v })} />
@@ -499,6 +535,7 @@ function ProviderMenusTab({ providerId }: { providerId: string }) {
   const [menus, setMenus] = useState<ProviderPortalMenu[] | null>(null)
   const [schools, setSchools] = useState<Array<{ id: string; name: string }>>([])
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)
   const [form, setForm] = useState({ schoolId: '', weekOf: '', title: '' })
 
   const load = () =>
@@ -549,6 +586,16 @@ function ProviderMenusTab({ providerId }: { providerId: string }) {
 
   if (!menus) return <p className="text-sm text-warm-text-tertiary">Loading…</p>
 
+  if (editing) {
+    return (
+      <MenuItemsEditor
+        providerId={providerId}
+        menuId={editing}
+        onBack={() => { setEditing(null); load() }}
+      />
+    )
+  }
+
   return (
     <div className="space-y-3">
       {menus.length === 0 && !adding && (
@@ -558,12 +605,12 @@ function ProviderMenusTab({ providerId }: { providerId: string }) {
       <div className="space-y-1.5">
         {menus.map(m => (
           <div key={m.id} className="flex items-center justify-between gap-3 rounded-warm border border-warm-border px-3 py-2.5">
-            <div className="min-w-0">
+            <button onClick={() => setEditing(m.id)} className="min-w-0 text-left flex-1">
               <div className="text-sm font-semibold text-warm-text-primary truncate">{m.title || `Week of ${m.weekOf}`}</div>
               <div className="text-xs text-warm-text-tertiary">
-                Week of {m.weekOf}{m.items?.length ? ` · ${m.items.length} items` : ' · no items yet'}
+                Week of {m.weekOf}{m.items?.length ? ` · ${m.items.length} items` : ' · no items yet'} · edit the food
               </div>
-            </div>
+            </button>
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => togglePublish(m)}
@@ -597,6 +644,113 @@ function ProviderMenusTab({ providerId }: { providerId: string }) {
           <Plus className="h-4 w-4" /> Add a menu week
         </button>
       )}
+    </div>
+  )
+}
+
+// ─── One week's food ─────────────────────────────────────────────────────────
+// The server REPLACES a menu's items wholesale on save (delete + recreate), so
+// this edits the whole week as one list and sends all of it.
+function MenuItemsEditor({ providerId, menuId, onBack }: { providerId: string; menuId: string; onBack: () => void }) {
+  const toast = useToast()
+  const [menu, setMenu] = useState<ProviderPortalMenu | null>(null)
+  const [items, setItems] = useState<ProviderPortalMenuItem[]>([])
+  const [title, setTitle] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    api.providerPortalAdmin.menu(providerId, menuId)
+      .then(m => {
+        setMenu(m)
+        setTitle(m.title || '')
+        setItems((m.items ?? []).map(i => ({ ...i, allergens: i.allergens ?? [], dietaryTags: i.dietaryTags ?? [] })))
+      })
+      .catch(() => toast.error('Failed to load menu'))
+  }, [providerId, menuId])
+
+  const setItem = (idx: number, patch: Partial<ProviderPortalMenuItem>) =>
+    setItems(prev => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)))
+
+  const addItem = () =>
+    setItems(prev => [...prev, { dayOfWeek: 1, mealType: 'LUNCH', name: '', description: '', price: null, allergens: [], dietaryTags: [] }])
+
+  const save = async () => {
+    const cleaned = items
+      .filter(i => i.name.trim())
+      .map(i => ({
+        dayOfWeek: i.dayOfWeek,
+        mealType: i.mealType || 'LUNCH',
+        name: i.name.trim(),
+        description: i.description?.trim() || null,
+        price: i.price === null || i.price === undefined || Number.isNaN(i.price) ? null : Number(i.price),
+        allergens: (i.allergens ?? []).filter(Boolean),
+        dietaryTags: (i.dietaryTags ?? []).filter(Boolean),
+      }))
+    setSaving(true)
+    try {
+      await api.providerPortalAdmin.updateMenu(providerId, menuId, { title: title.trim() || null, items: cleaned })
+      toast.success('Menu saved')
+      onBack()
+    } catch {
+      toast.error('Failed to save menu')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!menu) return <p className="text-sm text-warm-text-tertiary">Loading…</p>
+
+  return (
+    <div className="space-y-3">
+      <button onClick={onBack} className="text-sm font-semibold text-brand">← All menus</button>
+      <div className="text-xs text-warm-text-tertiary">Week of {menu.weekOf}</div>
+
+      <Field label="Title (optional)" value={title} onChange={setTitle} />
+
+      <div className="space-y-2">
+        {items.length === 0 && <p className="text-sm text-warm-text-tertiary">No dishes yet — add the first below.</p>}
+        {items.map((it, idx) => (
+          <div key={idx} className="rounded-warm border border-warm-border p-3 space-y-2">
+            <div className="flex items-start gap-2">
+              <div className="flex-1 grid grid-cols-2 gap-2">
+                <Select label="Day" value={String(it.dayOfWeek)} onChange={v => setItem(idx, { dayOfWeek: Number(v) })}
+                  options={DAYS.map((d, i) => ({ value: String(i), label: d }))} />
+                <Select label="Meal" value={it.mealType || 'LUNCH'} onChange={v => setItem(idx, { mealType: v as 'LUNCH' | 'BREAKFAST' | 'SNACK' })}
+                  options={[{ value: 'BREAKFAST', label: 'Breakfast' }, { value: 'LUNCH', label: 'Lunch' }, { value: 'SNACK', label: 'Snack' }]} />
+              </div>
+              <button
+                onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))}
+                className="mt-5 p-1.5 rounded-warm text-warm-text-tertiary hover:text-warm-error"
+                aria-label="Remove dish"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+            <Field label="Dish" value={it.name} onChange={v => setItem(idx, { name: v })} />
+            <Field label="Description (optional)" value={it.description ?? ''} onChange={v => setItem(idx, { description: v })} />
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Price" type="number" value={it.price == null ? '' : String(it.price)}
+                onChange={v => setItem(idx, { price: v === '' ? null : Number(v) })} />
+              <Field label="Allergens (comma separated)" value={(it.allergens ?? []).join(', ')}
+                onChange={v => setItem(idx, { allergens: v.split(',').map(t => t.trim()).filter(Boolean) })} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button onClick={addItem} className="flex items-center gap-1.5 text-sm font-semibold text-brand">
+        <Plus className="h-4 w-4" /> Add a dish
+      </button>
+
+      <div className="flex gap-2 pt-1">
+        <button onClick={save} disabled={saving} className="rounded-warm-btn bg-brand text-white font-semibold px-4 py-2 text-sm disabled:opacity-60">
+          {saving ? 'Saving…' : 'Save menu'}
+        </button>
+        <button onClick={onBack} className="rounded-warm-btn border border-warm-border px-4 py-2 text-sm">Cancel</button>
+      </div>
+      <p className="text-xs text-warm-text-tertiary">
+        Dishes with no name are dropped on save. Saving replaces the whole week, which is how the provider portal stores it too.
+      </p>
     </div>
   )
 }
