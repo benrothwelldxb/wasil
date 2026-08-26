@@ -3,6 +3,7 @@ import prisma from '../services/prisma.js'
 import { isAdmin, isStaff, isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { sendStaffNotification } from '../services/notify.js'
+import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
 import { generateDailyRegistersHtml } from '../services/attendanceRegisterPdf.js'
 import { buildDigestData, sendDigestForSchool } from '../services/attendanceDigest.js'
 import { todayForSchool } from '../services/dateTime.js'
@@ -371,6 +372,22 @@ router.patch('/requests/:id', isStaff, async (req: Request, res: Response) => {
         current.setDate(current.getDate() + 1)
       }
     }
+
+    // Tell the parent — in the app, on their phone, and by email. Until this
+    // existed a decision was invisible to them unless they went looking.
+    await notifyAttendanceReviewed({
+      requestId: updated.id,
+      schoolId: user.schoolId,
+      parentId: updated.parentId,
+      // Optional-chained on purpose: the decision is already saved, so nothing
+      // in ASSEMBLING the message may throw and fail the review after the fact.
+      studentName: `${updated.student?.firstName ?? ''} ${updated.student?.lastName ?? ''}`.trim() || 'your child',
+      type: updated.type,
+      startDate: updated.startDate,
+      endDate: updated.endDate,
+      status,
+      reviewNotes: updated.reviewNotes,
+    })
 
     logAudit({
       req,

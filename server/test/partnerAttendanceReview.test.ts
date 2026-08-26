@@ -17,6 +17,8 @@ const prismaMock = {
   attendanceRecord: { upsert: vi.fn() },
   auditLog: { create: vi.fn() },
   ilsaLink: { findFirst: vi.fn() },
+  notification: { create: vi.fn() },
+  deviceToken: { findMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/services/firebase', () => ({ sendPushNotification: vi.fn(), removeInvalidTokens: vi.fn() }))
@@ -41,10 +43,12 @@ const RECEPTION = { id: 'u-reception', role: 'STAFF', schoolId: 'sch-1', name: '
 const REQ = {
   id: 'ar-1',
   studentId: 'stu-1',
+  parentId: 'parent-1',
   type: 'ABSENCE',
   startDate: '2026-08-25',
   endDate: null,
   reason: 'illness',
+  student: { firstName: 'Ada', lastName: 'Koy' },
 }
 
 beforeEach(() => {
@@ -58,6 +62,9 @@ beforeEach(() => {
   })
   prismaMock.attendanceRecord.upsert.mockResolvedValue({})
   prismaMock.auditLog.create.mockResolvedValue({})
+  prismaMock.notification.create.mockResolvedValue({})
+  prismaMock.deviceToken.findMany.mockResolvedValue([])
+  prismaMock.school.findFirst.mockResolvedValue({ id: 'sch-1', timezone: 'Asia/Dubai' })
 })
 
 describe('GET /api/partner/attendance/today', () => {

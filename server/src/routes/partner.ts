@@ -18,6 +18,7 @@ import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { sendNotification } from '../services/notify.js'
+import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload } from '../services/uploadValidation.js'
@@ -512,7 +513,11 @@ router.post('/attendance/:id/review', requirePartner, async (req, res) => {
     // record, is the only school they can ever review for.
     const request = await prisma.attendanceRequest.findFirst({
       where: { id: req.params.id, schoolId: actor.schoolId },
-      select: { id: true, studentId: true, type: true, startDate: true, endDate: true, reason: true },
+      select: {
+        id: true, studentId: true, parentId: true, type: true,
+        startDate: true, endDate: true, reason: true,
+        student: { select: { firstName: true, lastName: true } },
+      },
     })
     if (!request) return res.status(404).json({ error: 'not_found' })
 
@@ -550,6 +555,22 @@ router.post('/attendance/:id/review', requirePartner, async (req, res) => {
         })
       }
     }
+
+    // Tell the parent — identical wording and channels whether the decision was
+    // made here or in Connect's own staff app.
+    await notifyAttendanceReviewed({
+      requestId: request.id,
+      schoolId: actor.schoolId,
+      parentId: request.parentId,
+      // Optional-chained on purpose: the decision is already saved, so nothing
+      // in ASSEMBLING the message may throw and fail the review after the fact.
+      studentName: `${request.student?.firstName ?? ''} ${request.student?.lastName ?? ''}`.trim() || 'your child',
+      type: request.type,
+      startDate: request.startDate,
+      endDate: request.endDate,
+      status,
+      reviewNotes,
+    })
 
     // Audit with the RESOLVED actor — a partner request carries no `req.user`,
     // so the shared logAudit helper can't be used here.
