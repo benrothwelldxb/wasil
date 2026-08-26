@@ -389,6 +389,93 @@ router.get('/attendance/today', requirePartner, async (req, res) => {
   }
 })
 
+// The ahead-of-schedule queue: absences a parent has PLANNED but that haven't
+// started yet, so the front office can review them before the day arrives.
+//
+//   GET /api/partner/attendance/requests?school_id=<Hub school id | Connect id>
+//   → { requests: [ … ] }
+//
+// /attendance/today is windowed to one date, so a request whose startDate is
+// still in the future never surfaces there — a holiday booked three weeks out
+// was invisible to Desk until the morning it began. This is the complement:
+// PENDING and starting AFTER today, ordered soonest-first. The two lists are
+// disjoint by construction (`>` today, not `>=`), so a same-day pending request
+// belongs to /today alone and can never appear twice.
+//
+// Each row carries the same fields /today does, plus `createdAt` so Desk can
+// show how long a parent has been waiting. `id` is the AttendanceRequest id —
+// the same handle POST /attendance/:id/review takes, so reviewing works
+// identically from either list. Unknown school → empty list, not an error.
+router.get('/attendance/requests', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) {
+      return res.status(400).json({ error: 'school_id required' })
+    }
+
+    // Accept the Hub school id (Desk's world) or a Connect school id.
+    const school = await prisma.school.findFirst({
+      where: { OR: [{ hubSchoolId: schoolIdParam }, { id: schoolIdParam }] },
+      select: { id: true, timezone: true },
+    })
+    if (!school) return res.json({ requests: [] })
+
+    // "Future" is measured in the school's own day, not the server's.
+    const today = todayInTimezone(school.timezone ?? 'UTC')
+
+    const rows = await prisma.attendanceRequest.findMany({
+      where: {
+        schoolId: school.id,
+        status: 'PENDING',
+        // Dates are YYYY-MM-DD strings, so a lexicographic compare is correct.
+        startDate: { gt: today },
+        // Test Students stay out of Desk-facing lists, exactly as on /today.
+        student: { isTest: false },
+      },
+      select: {
+        id: true,
+        type: true,
+        reason: true,
+        notes: true,
+        startDate: true,
+        endDate: true,
+        time: true,
+        status: true,
+        createdAt: true,
+        student: {
+          select: {
+            firstName: true,
+            lastName: true,
+            class: { select: { name: true, hubClassId: true } },
+          },
+        },
+      },
+      orderBy: { startDate: 'asc' },
+    })
+
+    const requests = rows.map((r) => ({
+      id: r.id,
+      studentName: `${r.student.firstName} ${r.student.lastName}`.trim(),
+      hubClassId: r.student.class?.hubClassId ?? null,
+      className: r.student.class?.name ?? null,
+      type: r.type,
+      reason: r.reason,
+      notes: r.notes,
+      startDate: r.startDate,
+      endDate: r.endDate,
+      time: r.time,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
+    }))
+
+    res.set('Cache-Control', 'private, max-age=30')
+    res.json({ requests })
+  } catch (error) {
+    console.error('Error building partner attendance requests:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 // Approve or decline one parent-reported absence, from Desk's front-office
 // screen — reception sees the absence on /attendance/today and acts on it there
 // rather than switching to Connect.

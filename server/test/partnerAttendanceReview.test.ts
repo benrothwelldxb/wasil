@@ -79,6 +79,106 @@ describe('GET /api/partner/attendance/today', () => {
   })
 })
 
+// The ahead-of-schedule queue: planned absences the front office reviews BEFORE
+// the day. /today is windowed to a single date, so these were invisible to Desk
+// until the morning they began.
+describe('GET /api/partner/attendance/requests', () => {
+  const ROW = {
+    id: 'ar-9',
+    type: 'ABSENCE',
+    reason: 'family',
+    notes: 'Travelling',
+    startDate: '2026-08-31',
+    endDate: '2026-09-11',
+    time: null,
+    status: 'PENDING',
+    createdAt: new Date('2026-08-24T06:30:00.000Z'),
+    student: { firstName: 'Ada', lastName: 'Koy', class: { name: 'FS2 Yellow', hubClassId: 'hc-9' } },
+  }
+  const get = (qs = 'school_id=sch-1') =>
+    auth(request(makeApp()).get(`/api/partner/attendance/requests?${qs}`))
+
+  beforeEach(() => {
+    prismaMock.school.findFirst.mockResolvedValue({ id: 'sch-1', timezone: 'Asia/Dubai' })
+    prismaMock.attendanceRequest.findMany.mockResolvedValue([ROW])
+  })
+
+  it('lists a future PENDING request with the same shape as /today, plus createdAt', async () => {
+    const res = await get()
+
+    expect(res.status).toBe(200)
+    expect(res.body.requests).toEqual([{
+      id: 'ar-9',
+      studentName: 'Ada Koy',
+      hubClassId: 'hc-9',
+      className: 'FS2 Yellow',
+      type: 'ABSENCE',
+      reason: 'family',
+      notes: 'Travelling',
+      startDate: '2026-08-31',
+      endDate: '2026-09-11',
+      time: null,
+      status: 'PENDING',
+      createdAt: '2026-08-24T06:30:00.000Z',
+    }])
+  })
+
+  it('asks only for PENDING requests starting AFTER the school day, soonest first', async () => {
+    await get()
+    const call = prismaMock.attendanceRequest.findMany.mock.calls[0][0]
+    expect(call.where).toMatchObject({
+      schoolId: 'sch-1',
+      status: 'PENDING',
+      student: { isTest: false },
+    })
+    // Strictly greater-than: a request starting TODAY belongs to /today, so the
+    // two lists can never show the same row twice.
+    expect(call.where.startDate.gt).toBeTruthy()
+    expect(call.where.startDate.gte).toBeUndefined()
+    expect(call.orderBy).toEqual({ startDate: 'asc' })
+  })
+
+  it('measures "future" in the school timezone, not the server one', async () => {
+    prismaMock.school.findFirst.mockResolvedValue({ id: 'sch-1', timezone: 'Pacific/Kiritimati' })
+    await get()
+    const kiribatiToday = prismaMock.attendanceRequest.findMany.mock.calls[0][0].where.startDate.gt
+
+    vi.clearAllMocks()
+    prismaMock.partnerToken.findUnique.mockResolvedValue({ id: 'pt-1', name: 'desk', revokedAt: null })
+    prismaMock.partnerToken.update.mockResolvedValue({})
+    prismaMock.school.findFirst.mockResolvedValue({ id: 'sch-1', timezone: 'Pacific/Niue' })
+    prismaMock.attendanceRequest.findMany.mockResolvedValue([])
+    await get()
+    const niueToday = prismaMock.attendanceRequest.findMany.mock.calls[0][0].where.startDate.gt
+
+    // A day either side of the date line — the cutoff must differ.
+    expect(kiribatiToday).not.toBe(niueToday)
+  })
+
+  it('accepts a Hub school id as well as a Connect one', async () => {
+    await get('school_id=hub-sch-1')
+    expect(prismaMock.school.findFirst.mock.calls[0][0].where).toEqual({
+      OR: [{ hubSchoolId: 'hub-sch-1' }, { id: 'hub-sch-1' }],
+    })
+  })
+
+  it('400s without school_id, and answers empty for a school we do not host', async () => {
+    const missing = await auth(request(makeApp()).get('/api/partner/attendance/requests'))
+    expect(missing.status).toBe(400)
+
+    prismaMock.school.findFirst.mockResolvedValue(null)
+    const unknown = await get('school_id=not-ours')
+    expect(unknown.status).toBe(200)
+    expect(unknown.body).toEqual({ requests: [] })
+    expect(prismaMock.attendanceRequest.findMany).not.toHaveBeenCalled()
+  })
+
+  it('401s without a partner token', async () => {
+    const res = await request(makeApp()).get('/api/partner/attendance/requests?school_id=sch-1')
+    expect(res.status).toBe(401)
+  })
+})
+
 describe('POST /api/partner/attendance/:id/review', () => {
   const review = (body: Record<string, unknown>) =>
     auth(request(makeApp()).post('/api/partner/attendance/ar-1/review')).send(body)
