@@ -390,8 +390,8 @@ router.get('/attendance/today', requirePartner, async (req, res) => {
   }
 })
 
-// The ahead-of-schedule queue: absences a parent has PLANNED but that haven't
-// started yet, so the front office can review them before the day arrives.
+// Everything ahead of schedule: absences a parent has PLANNED but that haven't
+// started yet — the ones still to review, and the ones already agreed.
 //
 //   GET /api/partner/attendance/requests?school_id=<Hub school id | Connect id>
 //   → { requests: [ … ] }
@@ -399,9 +399,15 @@ router.get('/attendance/today', requirePartner, async (req, res) => {
 // /attendance/today is windowed to one date, so a request whose startDate is
 // still in the future never surfaces there — a holiday booked three weeks out
 // was invisible to Desk until the morning it began. This is the complement:
-// PENDING and starting AFTER today, ordered soonest-first. The two lists are
-// disjoint by construction (`>` today, not `>=`), so a same-day pending request
-// belongs to /today alone and can never appear twice.
+// starting AFTER today, ordered soonest-first.
+//
+// Two statuses, because Desk renders two sections from one call: PENDING is the
+// review queue (Approve/Decline), APPROVED is the read-only "upcoming absences"
+// list — knowing who is already booked out next week is as useful to the front
+// office as knowing what still needs deciding. DECLINED and expired are dropped;
+// nobody acts on those. `status` per row tells Desk which section a row belongs
+// to. The two lists stay disjoint by construction (`>` today, not `>=`), so a
+// same-day request belongs to /today alone and can never appear twice.
 //
 // Each row carries the same fields /today does, plus `createdAt` so Desk can
 // show how long a parent has been waiting. `id` is the AttendanceRequest id —
@@ -427,7 +433,8 @@ router.get('/attendance/requests', requirePartner, async (req, res) => {
     const rows = await prisma.attendanceRequest.findMany({
       where: {
         schoolId: school.id,
-        status: 'PENDING',
+        // PENDING = still to review, APPROVED = already agreed and coming up.
+        status: { in: ['PENDING', 'APPROVED'] },
         // Dates are YYYY-MM-DD strings, so a lexicographic compare is correct.
         startDate: { gt: today },
         // Test Students stay out of Desk-facing lists, exactly as on /today.

@@ -86,9 +86,10 @@ describe('GET /api/partner/attendance/today', () => {
   })
 })
 
-// The ahead-of-schedule queue: planned absences the front office reviews BEFORE
-// the day. /today is windowed to a single date, so these were invisible to Desk
-// until the morning they began.
+// Everything ahead of schedule: planned absences that haven't started yet.
+// /today is windowed to a single date, so these were invisible to Desk until the
+// morning they began. Desk renders two sections from this one call — PENDING as
+// the review queue, APPROVED as read-only "upcoming".
 describe('GET /api/partner/attendance/requests', () => {
   const ROW = {
     id: 'ar-9',
@@ -130,14 +131,17 @@ describe('GET /api/partner/attendance/requests', () => {
     }])
   })
 
-  it('asks only for PENDING requests starting AFTER the school day, soonest first', async () => {
+  it('asks for still-to-review AND already-approved, starting AFTER the school day', async () => {
     await get()
     const call = prismaMock.attendanceRequest.findMany.mock.calls[0][0]
     expect(call.where).toMatchObject({
       schoolId: 'sch-1',
-      status: 'PENDING',
+      // Both sections Desk renders. DECLINED is deliberately absent — nobody
+      // acts on a refusal, and it would clutter the upcoming list.
+      status: { in: ['PENDING', 'APPROVED'] },
       student: { isTest: false },
     })
+    expect(call.where.status.in).not.toContain('DECLINED')
     // Strictly greater-than: a request starting TODAY belongs to /today, so the
     // two lists can never show the same row twice.
     expect(call.where.startDate.gt).toBeTruthy()
@@ -160,6 +164,18 @@ describe('GET /api/partner/attendance/requests', () => {
 
     // A day either side of the date line — the cutoff must differ.
     expect(kiribatiToday).not.toBe(niueToday)
+  })
+
+  it('returns approved upcoming rows alongside pending ones, each flagged by status', async () => {
+    prismaMock.attendanceRequest.findMany.mockResolvedValue([
+      { ...ROW, id: 'ar-9', status: 'PENDING' },
+      { ...ROW, id: 'ar-10', status: 'APPROVED', startDate: '2026-09-05' },
+    ])
+    const res = await get()
+    expect(res.body.requests.map((r: { id: string; status: string }) => [r.id, r.status])).toEqual([
+      ['ar-9', 'PENDING'],
+      ['ar-10', 'APPROVED'],
+    ])
   })
 
   it('accepts a Hub school id as well as a Connect one', async () => {
