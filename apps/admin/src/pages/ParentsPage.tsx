@@ -11,6 +11,88 @@ const PARENT_APP_URL =
   import.meta.env.VITE_PARENT_URL ||
   (window.location.hostname.includes('localhost') ? 'http://localhost:3000' : 'https://app.wasilconnect.com')
 
+const loginUrlFor = (email: string) => `${PARENT_APP_URL}/login?email=${encodeURIComponent(email)}`
+
+/** Free text into HTML — parent names and school-entered values go in here. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+/**
+ * A self-contained sheet of slips: its own HTML, its own CSS, QRs inlined as
+ * data URLs. No app, no bundle, no network — so nothing of the admin interface
+ * can leak onto the paper, and each class can start its own page.
+ *
+ * The layout is a two-column grid per slip, with the QR in a fixed-width cell.
+ * On the page this replaced, the code sat in a flex child that could be squeezed
+ * under the QR — a 6-digit code with wide letter-spacing has nowhere to wrap, so
+ * it overlapped instead of reflowing.
+ */
+function slipsDocument(
+  groups: Array<[string, ClassSignInCode[]]>,
+  qrByEmail: Map<string, string>,
+): string {
+  const slips = (codes: ClassSignInCode[]) =>
+    codes
+      .map(c => {
+        const qr = qrByEmail.get(c.email)
+        return `
+          <article class="slip">
+            <div class="details">
+              <p class="cls">${escapeHtml([...new Set(c.children.map(ch => ch.className).filter(Boolean))].join(' · ') || 'School')}</p>
+              <p class="parent">${escapeHtml(c.parentName || 'Parent')}</p>
+              <p class="children">${escapeHtml(c.children.map(ch => ch.name).join(' & '))}</p>
+              <p class="label">Sign in with</p>
+              <p class="email">${escapeHtml(c.email)}</p>
+              <p class="label">Your code</p>
+              <p class="code">${escapeHtml(c.code)}</p>
+              <p class="note">Works once. Scan to open the app with your email filled in.</p>
+            </div>
+            <div class="qr">${qr ? `<img src="${qr}" alt="" width="132" height="132" />` : ''}</div>
+          </article>`
+      })
+      .join('')
+
+  const sections = groups
+    .map(
+      ([className, codes], idx) => `
+        <section class="${idx > 0 ? 'page-break' : ''}">
+          <h2>${escapeHtml(className)} <span>${codes.length} slip${codes.length === 1 ? '' : 's'}</span></h2>
+          <div class="grid">${slips(codes)}</div>
+        </section>`,
+    )
+    .join('')
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" />
+  <title>Sign-in slips</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 16px; color: #1f2937; }
+    h2 { font-size: 15px; margin: 0 0 10px; }
+    h2 span { font-weight: 500; color: #6b7280; font-size: 12px; margin-left: 6px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    /* Two columns, the QR in a fixed cell: the code can never be squeezed under it. */
+    .slip { display: grid; grid-template-columns: 1fr 140px; gap: 12px; align-items: start;
+            border: 1px solid #9ca3af; border-radius: 10px; padding: 12px; break-inside: avoid; page-break-inside: avoid; }
+    .details { min-width: 0; }
+    .qr { width: 132px; }
+    .qr img { display: block; width: 132px; height: 132px; }
+    .cls { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; margin: 0; }
+    .parent { font-size: 15px; font-weight: 800; margin: 2px 0 0; }
+    .children { font-size: 11px; color: #6b7280; margin: 1px 0 8px; }
+    .label { font-size: 10px; font-weight: 700; color: #4b5563; margin: 6px 0 0; }
+    .email { font-size: 12px; font-weight: 600; margin: 1px 0 0; word-break: break-all; }
+    .code { font-size: 24px; font-weight: 800; letter-spacing: .16em; margin: 1px 0 0; }
+    .note { font-size: 10px; color: #6b7280; margin: 6px 0 0; line-height: 1.35; }
+    .page-break { break-before: page; page-break-before: always; }
+    @page { margin: 12mm; }
+  </style></head>
+  <body>${sections}</body></html>`
+}
+
+
 type Tab = 'invitations' | 'parents' | 'signInCodes'
 
 export function ParentsPage() {
@@ -747,10 +829,7 @@ function SignInCodesTab() {
   const [isMinting, setIsMinting] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState(false)
   const [confirmRevokeAll, setConfirmRevokeAll] = useState(false)
-  // Which class the next print run covers. null = all of them, one class per
-  // sheet; a class name = just that class, which is how you get a separate PDF
-  // per class rather than one long document to carve up afterwards.
-  const [printScope, setPrintScope] = useState<string | null>(null)
+  const [isPreparing, setIsPreparing] = useState(false)
 
   const mint = async () => {
     if (!classId) return
@@ -804,14 +883,47 @@ function SignInCodesTab() {
   }
   const classGroups = [...byClass.entries()]
 
-  // Print one class, or all of them. The scope has to be applied before the
-  // dialogue opens, so we render, then print on the next frame.
-  const printClass = (className: string | null) => {
-    setPrintScope(className)
-    window.setTimeout(() => {
-      window.print()
-      setPrintScope(null)
-    }, 60)
+  // Print into a WINDOW OF ITS OWN rather than styling this page for print.
+  // Hiding the app for print sounds simpler than it is: the sidebar is
+  // position:fixed, and fixed elements are exactly where print visibility rules
+  // stop behaving the same way across browsers — which is how a slip sheet ended
+  // up with a sidebar down the side of it. A document that never contained the
+  // app can't print the app, and it makes "just this class" a matter of what we
+  // put in the document rather than what we hope the printer ignores.
+  const printSlips = async (className: string | null) => {
+    if (!batch) return
+    const groups = classGroups.filter(([name]) => className === null || name === className)
+    if (groups.length === 0) return
+
+    setIsPreparing(true)
+    try {
+      // QRs as data URLs — the new document has no bundler and no network.
+      const qrByEmail = new Map<string, string>()
+      await Promise.all(
+        groups.flatMap(([, codes]) => codes).map(async c => {
+          try {
+            qrByEmail.set(c.email, await QRCode.toDataURL(loginUrlFor(c.email), { width: 132, margin: 0 }))
+          } catch {
+            qrByEmail.set(c.email, '')
+          }
+        }),
+      )
+
+      const win = window.open('', '_blank', 'width=900,height=1000')
+      if (!win) {
+        toast.error('Your browser blocked the print window — allow pop-ups for this site and try again')
+        return
+      }
+      win.document.write(slipsDocument(groups, qrByEmail))
+      win.document.close()
+      // Let the QR images decode before the dialogue opens, or they print blank.
+      win.setTimeout(() => {
+        win.focus()
+        win.print()
+      }, 250)
+    } finally {
+      setIsPreparing(false)
+    }
   }
 
   return (
@@ -872,8 +984,9 @@ function SignInCodesTab() {
           </button>
           {batch && (
             <>
-              <button onClick={() => printClass(null)} className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                <Printer className="h-4 w-4" /> Print all ({classGroups.length} class{classGroups.length === 1 ? '' : 'es'})
+              <button onClick={() => printSlips(null)} className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <Printer className="h-4 w-4" />
+                {isPreparing ? 'Preparing…' : `Print all (${classGroups.length} class${classGroups.length === 1 ? '' : 'es'})`}
               </button>
               <button onClick={() => setConfirmRevoke(true)} className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50">
                 <XCircle className="h-4 w-4" /> Revoke these codes
@@ -889,8 +1002,9 @@ function SignInCodesTab() {
         </div>
 
         <p className="text-xs text-slate-500">
-          <strong>Print all</strong> starts each class on a fresh sheet, so one PDF splits into per-class
-          stacks. For a separate file per class, use <strong>Print just this class</strong> and save each one.
+          Printing opens a separate window containing only the slips. <strong>Print all</strong> starts each
+          class on a fresh page; <strong>Print just this class</strong> gives you one file per class. Allow
+          pop-ups for this site if nothing opens.
         </p>
         <p className="text-xs text-slate-500">
           A code is single-use and replaces any earlier one for that parent. If a parent asks the app to
@@ -907,11 +1021,12 @@ function SignInCodesTab() {
             </h4>
           </div>
 
-          <div className="print-root space-y-8">
+          {/* On-screen preview only. Printing opens its own document (see
+              printSlips), so nothing here needs print styling. */}
+          <div className="space-y-8">
             {classGroups
-              .filter(([className]) => printScope === null || printScope === className)
               .map(([className, codes], idx) => (
-                <section key={className} className={idx > 0 ? 'print-page-break' : undefined}>
+                <section key={className}>
                   <div className="flex items-center justify-between mb-3">
                     <h5 className="text-sm font-extrabold text-slate-900">
                       {className}
@@ -920,13 +1035,13 @@ function SignInCodesTab() {
                       </span>
                     </h5>
                     <button
-                      onClick={() => printClass(className)}
+                      onClick={() => printSlips(className)}
                       className="print:hidden flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
                     >
                       <Printer className="h-3.5 w-3.5" /> Print just this class
                     </button>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:grid-cols-2 print:gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {codes.map(c => <Slip key={c.email} entry={c} />)}
                   </div>
                 </section>
@@ -982,7 +1097,7 @@ function SignInCodesTab() {
 // that's quick. Deliberately NOT carrying the code itself into a URL.
 function Slip({ entry }: { entry: ClassSignInCode }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const loginUrl = `${PARENT_APP_URL}/login?email=${encodeURIComponent(entry.email)}`
+  const loginUrl = loginUrlFor(entry.email)
 
   useEffect(() => {
     if (!canvasRef.current) return
@@ -994,22 +1109,25 @@ function Slip({ entry }: { entry: ClassSignInCode }) {
   const classes = [...new Set(entry.children.map(c => c.className).filter(Boolean))].join(' · ')
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 print-keep-together print:border-slate-400">
+    <div className="bg-white rounded-xl border border-slate-200 p-4">
       <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{classes || 'School'}</p>
       <p className="text-base font-extrabold text-slate-900 mt-0.5">{entry.parentName}</p>
       <p className="text-xs text-slate-500">{entry.children.map(c => c.name).join(' & ')}</p>
 
-      <div className="flex items-start gap-4 mt-3">
-        <div className="flex-1 min-w-0">
+      {/* A fixed cell for the QR, not a flex child that can be squeezed: a
+          6-digit code with wide letter-spacing has nowhere to wrap, so when the
+          column narrowed it overlapped the QR instead of reflowing. */}
+      <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: '1fr 128px' }}>
+        <div className="min-w-0">
           <p className="text-[11px] font-semibold text-slate-600">Sign in with</p>
           <p className="text-sm font-semibold text-slate-900 break-all">{entry.email}</p>
           <p className="text-[11px] font-semibold text-slate-600 mt-2">Your code</p>
-          <p className="text-[26px] font-extrabold tracking-[0.2em] text-slate-900 leading-tight">{entry.code}</p>
+          <p className="text-[24px] font-extrabold tracking-[0.16em] text-slate-900 leading-tight">{entry.code}</p>
           <p className="text-[11px] text-slate-500 mt-1 leading-snug">
             Works once. Scan to open the app with your email filled in.
           </p>
         </div>
-        <canvas ref={canvasRef} className="shrink-0" />
+        <canvas ref={canvasRef} className="w-[120px] h-[120px]" />
       </div>
     </div>
   )

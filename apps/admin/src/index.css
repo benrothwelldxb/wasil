@@ -63,36 +63,11 @@ body {
 }
 
 /* ── Printing ────────────────────────────────────────────────────────────────
-   Printing a page of an admin app otherwise means printing the app: sidebar,
-   sticky header, tabs, buttons. Anything marked `print-root` becomes the ONLY
-   thing on the paper — visibility rather than display, so the element keeps its
-   layout instead of collapsing. */
-@media print {
-  body * {
-    visibility: hidden !important;
-  }
-  .print-root,
-  .print-root * {
-    visibility: visible !important;
-  }
-  .print-root {
-    position: absolute !important;
-    left: 0;
-    top: 0;
-    width: 100%;
-  }
-  /* A class per sheet, so the stack can be split and handed to teachers — and
-     so a class-by-class PDF is just a page range. */
-  .print-page-break {
-    break-before: page;
-    page-break-before: always;
-  }
-  /* Never split a slip across two sheets: half a code is useless. */
-  .print-keep-together {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  @page {
-    margin: 12mm;
-  }
+   Sheets that have to look right on paper (sign-in slips) are printed from a
+   window of their own, built in the page that needs them — see printSlips in
+   ParentsPage. Styling THIS app for print isn't reliable: the sidebar is
+   position:fixed, and fixed elements are where per-browser print behaviour
+   diverges, so an app-wide print stylesheet reads as a promise it can't keep. */
+@page {
+  margin: 12mm;
 }
