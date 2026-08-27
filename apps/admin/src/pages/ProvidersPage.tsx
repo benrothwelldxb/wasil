@@ -511,11 +511,14 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
               // The status matters more than the name here: a club added to a
               // term parents can't see yet simply won't appear, and nothing else
               // on this screen would tell you why.
-              label: `${t.name}${t.schoolName ? ` · ${t.schoolName}` : ''}${PARENT_VISIBLE_TERM_STATUSES.includes(t.status ?? '') ? '' : ' — not open to parents yet'}`,
+              // Hub names its terms by season alone ("Autumn"), which repeats
+              // every year — the academic year is what makes one identifiable.
+              label: `${t.name}${t.academicYear ? ` ${t.academicYear}` : ''}${t.schoolName ? ` · ${t.schoolName}` : ''}${PARENT_VISIBLE_TERM_STATUSES.includes(t.status ?? '') ? '' : ' — not open to parents yet'}`,
             }))} />
           {selectedTerm && !PARENT_VISIBLE_TERM_STATUSES.includes(selectedTerm.status ?? '') && (
             <p className="text-xs rounded-warm bg-yellow-50 border border-yellow-200 text-yellow-800 px-3 py-2">
-              <strong>{selectedTerm.name}</strong> isn't open to parents yet, so clubs added to it stay hidden
+              <strong>{selectedTerm.name}{selectedTerm.academicYear ? ` ${selectedTerm.academicYear}` : ''}</strong> isn't
+              open to parents yet, so clubs added to it stay hidden
               until someone opens registration for that term under <strong>ECA</strong>. The term's dates come
               from Hub; when parents can see it is Connect's to decide.
             </p>
