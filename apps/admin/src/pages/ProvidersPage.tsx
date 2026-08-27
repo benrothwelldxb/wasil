@@ -8,6 +8,11 @@ import { Building2, Copy, Plus, Trash2, UserPlus, X } from 'lucide-react'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+// Term statuses a PARENT can see (mirrors GET /eca/parent/terms). A Hub-sourced
+// term lands in Connect as DRAFT with no registration window — Hub owns the
+// term's identity and dates, Connect owns when parents get to see it.
+const PARENT_VISIBLE_TERM_STATUSES = ['REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'ALLOCATION_COMPLETE', 'ACTIVE']
+
 const TYPE_LABEL: Record<string, string> = { ECA: 'Extra-curricular', CATERING: 'Catering' }
 
 export function ProvidersPage() {
@@ -419,6 +424,8 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
       .catch(() => toast.error('Failed to load clubs'))
   useEffect(() => { load() }, [providerId])
 
+  const selectedTerm = terms.find(t => t.id === form.ecaTermId) ?? null
+
   const create = async (e: FormEvent) => {
     e.preventDefault()
     try {
@@ -499,7 +506,20 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
       {adding ? (
         <form onSubmit={create} className="space-y-3 rounded-warm border border-warm-border p-3">
           <Select label="Term" value={form.ecaTermId} onChange={v => setForm({ ...form, ecaTermId: v })}
-            options={terms.map(t => ({ value: t.id, label: t.schoolName ? `${t.name} · ${t.schoolName}` : t.name }))} />
+            options={terms.map(t => ({
+              value: t.id,
+              // The status matters more than the name here: a club added to a
+              // term parents can't see yet simply won't appear, and nothing else
+              // on this screen would tell you why.
+              label: `${t.name}${t.schoolName ? ` · ${t.schoolName}` : ''}${PARENT_VISIBLE_TERM_STATUSES.includes(t.status ?? '') ? '' : ' — not open to parents yet'}`,
+            }))} />
+          {selectedTerm && !PARENT_VISIBLE_TERM_STATUSES.includes(selectedTerm.status ?? '') && (
+            <p className="text-xs rounded-warm bg-yellow-50 border border-yellow-200 text-yellow-800 px-3 py-2">
+              <strong>{selectedTerm.name}</strong> isn't open to parents yet, so clubs added to it stay hidden
+              until someone opens registration for that term under <strong>ECA</strong>. The term's dates come
+              from Hub; when parents can see it is Connect's to decide.
+            </p>
+          )}
           <Field label="Club name" value={form.name} onChange={v => setForm({ ...form, name: v })} required />
           <div className="grid grid-cols-2 gap-2">
             <Select label="Day" value={String(form.dayOfWeek)} onChange={v => setForm({ ...form, dayOfWeek: Number(v) })}
@@ -525,6 +545,13 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
           <Plus className="h-4 w-4" /> Add a club
         </button>
       )}
+
+      {/* Both gates in one sentence, because failing either looks identical
+          from here: nothing appears in the parent app. */}
+      <p className="text-xs text-warm-text-tertiary pt-1">
+        A club reaches parents once it's marked <strong>Visible to parents</strong> AND its term is open to
+        them (set under ECA). Terms and their dates come from Hub.
+      </p>
     </div>
   )
 }
@@ -813,7 +840,9 @@ function ToggleRow({ label, hint, checked, onChange }: { label: string; hint: st
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={onClose}>
-      <div className="bg-white rounded-warm w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      {/* Wide enough to actually work in: this modal is no longer a settings
+          panel, it's where a school sets a provider's clubs and menus up. */}
+      <div className="bg-white rounded-warm w-full max-w-3xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-warm-border">
           <h2 className="text-lg font-extrabold text-warm-text-primary">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-warm hover:bg-slate-50 text-warm-text-secondary">

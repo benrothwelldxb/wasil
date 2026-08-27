@@ -2370,6 +2370,11 @@ export interface ProviderPortalTerm {
   name: string
   schoolId: string
   schoolName?: string
+  academicYear?: string
+  /** EcaTerm status — decides whether PARENTS can see the term at all, and so
+   * whether a club added to it will ever appear. DRAFT is the state a
+   * Hub-sourced term arrives in. */
+  status?: string
 }
 export interface ProviderPortalActivity {
   id: string
