@@ -1017,6 +1017,44 @@ router.post('/sign-in-codes/by-class', isAdmin, async (req: Request, res: Respon
   }
 })
 
+// Clear EVERY outstanding sign-in code for this school's parents — the tidy-up
+// after an event, when the slips are in a bin somewhere and you no longer have
+// the batch on screen to revoke it precisely.
+//
+// Blunt on purpose, and it says so at the confirm: this also clears codes
+// parents requested by email themselves in the last few minutes. That costs them
+// one tap to request another, which is the right trade against leaving a stack
+// of printed keys alive because the precise version was too much faff.
+router.post('/sign-in-codes/revoke-all', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+
+    // School-scoped by construction: only addresses belonging to THIS school's
+    // parents, never a blanket delete of the LoginCode table.
+    const parents = await prisma.user.findMany({
+      where: { schoolId: user.schoolId, role: 'PARENT' },
+      select: { email: true },
+    })
+    const emails = parents.map(p => p.email.toLowerCase()).filter(Boolean)
+    if (emails.length === 0) return res.json({ revoked: 0 })
+
+    const { count } = await prisma.loginCode.deleteMany({ where: { email: { in: emails } } })
+
+    logAudit({
+      req,
+      action: 'DELETE',
+      resourceType: 'USER',
+      resourceId: user.schoolId,
+      metadata: { action: 'revoke-all-sign-in-codes', parents: emails.length, revoked: count },
+    })
+
+    res.json({ revoked: count })
+  } catch (error) {
+    console.error('Error revoking all sign-in codes:', error)
+    res.status(500).json({ error: 'Failed to revoke sign-in codes' })
+  }
+})
+
 // Kill printed codes early. After an event every unused slip is still a live key
 // until it expires, and deleting them one at a time is how they get left alive.
 // A code the parent has already used is gone from the table anyway.

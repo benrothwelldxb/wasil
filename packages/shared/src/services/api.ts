@@ -1296,6 +1296,12 @@ export const parentInvitations = {
       method: 'POST',
       body: JSON.stringify({ emails }),
     }),
+  // Every outstanding code for the school's parents — the after-the-event
+  // tidy-up, when you no longer have the batch on screen.
+  revokeAllSignInCodes: () =>
+    fetchApi<{ revoked: number }>('/api/parent-invitations/sign-in-codes/revoke-all', {
+      method: 'POST',
+    }),
 
   listParents: (params?: { search?: string; classId?: string; page?: number; limit?: number }) => {
     const searchParams = new URLSearchParams()

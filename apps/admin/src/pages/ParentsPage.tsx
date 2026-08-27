@@ -746,6 +746,7 @@ function SignInCodesTab() {
   const [batch, setBatch] = useState<ClassSignInCodes | null>(null)
   const [isMinting, setIsMinting] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState(false)
+  const [confirmRevokeAll, setConfirmRevokeAll] = useState(false)
 
   const mint = async () => {
     if (!classId) return
@@ -769,6 +770,18 @@ function SignInCodesTab() {
     try {
       const { revoked } = await api.parentInvitations.revokeSignInCodes(batch.codes.map(c => c.email))
       toast.success(revoked === 0 ? 'Nothing left to revoke' : `Revoked ${revoked} code${revoked === 1 ? '' : 's'}`)
+      setBatch(null)
+    } catch {
+      toast.error('Failed to revoke')
+    }
+  }
+
+  // The after-the-event tidy-up, reachable whether or not a batch is on screen.
+  const revokeAll = async () => {
+    setConfirmRevokeAll(false)
+    try {
+      const { revoked } = await api.parentInvitations.revokeAllSignInCodes()
+      toast.success(revoked === 0 ? 'No codes were outstanding' : `Revoked ${revoked} outstanding code${revoked === 1 ? '' : 's'}`)
       setBatch(null)
     } catch {
       toast.error('Failed to revoke')
@@ -841,6 +854,12 @@ function SignInCodesTab() {
               </button>
             </>
           )}
+          <button
+            onClick={() => setConfirmRevokeAll(true)}
+            className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 ml-auto"
+          >
+            <XCircle className="h-4 w-4" /> Revoke all outstanding
+          </button>
         </div>
 
         <p className="text-xs text-slate-500">
@@ -879,6 +898,17 @@ function SignInCodesTab() {
             </div>
           )}
         </div>
+      )}
+
+      {confirmRevokeAll && (
+        <ConfirmModal
+          title="Revoke every outstanding code"
+          message="All printed codes stop working, for every class. This also clears codes parents requested by email themselves — they can request another in one tap. Use this to tidy up after an event."
+          confirmLabel="Revoke all"
+          variant="danger"
+          onConfirm={revokeAll}
+          onCancel={() => setConfirmRevokeAll(false)}
+        />
       )}
 
       {confirmRevoke && (

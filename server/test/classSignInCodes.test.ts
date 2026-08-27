@@ -232,3 +232,29 @@ describe('POST /sign-in-codes/by-class — whole school', () => {
     ])
   })
 })
+
+// The after-the-event tidy-up. Blunt by design, but it must never reach beyond
+// this school.
+describe('POST /sign-in-codes/revoke-all', () => {
+  const revokeAll = () => request(makeApp()).post('/api/parent-invitations/sign-in-codes/revoke-all').send({})
+
+  it("clears every outstanding code for this school's parents", async () => {
+    prismaMock.user.findMany.mockResolvedValue([{ email: 'Mum@example.com' }, { email: 'dad@example.com' }])
+    prismaMock.loginCode.deleteMany.mockResolvedValue({ count: 2 })
+
+    const res = await revokeAll()
+
+    expect(res.body).toEqual({ revoked: 2 })
+    expect(prismaMock.user.findMany.mock.calls[0][0].where).toEqual({ schoolId: 'sch-1', role: 'PARENT' })
+    // Addresses are normalised, and it's an explicit list — never a blanket delete.
+    expect(prismaMock.loginCode.deleteMany.mock.calls[0][0]).toEqual({
+      where: { email: { in: ['mum@example.com', 'dad@example.com'] } },
+    })
+  })
+
+  it('deletes nothing when the school has no parents', async () => {
+    prismaMock.user.findMany.mockResolvedValue([])
+    expect((await revokeAll()).body).toEqual({ revoked: 0 })
+    expect(prismaMock.loginCode.deleteMany).not.toHaveBeenCalled()
+  })
+})
