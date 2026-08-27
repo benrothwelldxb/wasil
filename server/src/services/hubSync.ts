@@ -58,6 +58,10 @@ export interface SyncSummary {
   classes: number
   /** Pupils upserted (keyed on hubPupilId). */
   pupils: number
+  /** How many of those pupils Hub sent a `misId` (UPN/Student ID) for. Report
+   * cards are matched to pupils by UPN in the filename, so when that column
+   * looks empty this says whether Hub is sending them at all. */
+  pupilMisIds: { withMisId: number; missing: number }
   /** Staff, split by whether the Connect user was created or updated/linked. */
   staff: { created: number; updated: number }
   /** Guardians provisioned as Connect PARENT users. `fetched` = how many Hub
@@ -154,6 +158,10 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   // fields NOT touched by sync: allergies, medicalNotes, photoUrl. Keyed on
   // hubPupilId.
   let pupils = 0
+  // How many pupils Hub actually sent a `misId` for. The UPN is what report-card
+  // uploads match filenames against, so an empty column is indistinguishable
+  // from a broken importer unless the sync says which it was.
+  const misIds = { withMisId: 0, missing: 0 }
   // hubPupilId → Connect Student id, so the guardian pass can resolve each
   // guardian→pupil edge to a real Student without re-querying.
   const studentIdByHubPupil = new Map<string, string>()
@@ -162,20 +170,27 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     if (!classId) continue
     const hubPupils = await listPupils(hubSchoolId, { classId: cls.id })
     for (const p of hubPupils) {
+      const misId = p.misId?.trim() || null
+      if (misId) misIds.withMisId++
+      else misIds.missing++
       const row = await prisma.student.upsert({
         where: { hubPupilId: p.id },
         create: {
           hubPupilId: p.id,
           firstName: p.firstName,
           lastName: p.lastName,
-          externalId: p.misId ?? null,
+          externalId: misId,
           schoolId,
           classId,
         },
         update: {
           firstName: p.firstName,
           lastName: p.lastName,
-          externalId: p.misId ?? null,
+          // Only WRITE a UPN, never erase one. Hub sending no misId means Hub
+          // doesn't know it — not that Connect's is wrong. The previous
+          // `misId ?? null` wiped a hand-entered UPN on every sync, which is
+          // also how a working report-card match could stop working overnight.
+          ...(misId ? { externalId: misId } : {}),
           classId,
         },
       })
@@ -321,6 +336,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     yearGroups: hubYearGroups.length,
     classes: hubClasses.length,
     pupils,
+    pupilMisIds: misIds,
     staff: { created, updated },
     guardians: guardianSummary,
     parentLinks: parentLinkSummary,

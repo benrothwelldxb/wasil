@@ -177,6 +177,7 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       classes: 1,
       pupils: 1,
       staff: { created: 0, updated: 0 },
+      pupilMisIds: { withMisId: 1, missing: 0 },
       guardians: { fetched: 0, created: 0, linked: 0, skippedNoEmail: 0 },
       parentLinks: { created: 0, skippedNoPupil: 0 },
       teacherAssignments: { created: 0, removed: 0, unresolved: 0 },
@@ -606,5 +607,52 @@ describe('syncSchoolFromHub — term-dates refresh', () => {
       where: { id: 'connect-school-1' },
       data: { hubLastSyncedAt: expect.any(Date), hubDataStaleSince: null, lastHubSyncAt: expect.any(Date) },
     })
+  })
+})
+
+// A UPN is what report-card uploads match filenames against, so losing one
+// silently breaks a working feature.
+describe('syncSchoolFromHub — UPN (misId) handling', () => {
+  const withPupils = (pupils: Array<{ id: string; misId: string | null }>) =>
+    mPupils.mockImplementation(async (_schoolId: string, opts: any = {}) =>
+      opts.classId === 'hc1'
+        ? pupils.map(p => ({
+            id: p.id, misId: p.misId, firstName: 'Ada', lastName: 'Koy',
+            className: '1A', yearGroupName: 'Year 1',
+          }))
+        : [],
+    )
+
+  it('never erases a UPN Connect holds when Hub sends none', async () => {
+    withPupils([{ id: 'hp1', misId: null }])
+
+    await syncSchoolFromHub('school-1')
+
+    const update = prismaMock.student.upsert.mock.calls[0][0].update
+    // Absent, not null: Hub not knowing a UPN doesn't mean ours is wrong.
+    expect(update).not.toHaveProperty('externalId')
+    expect(prismaMock.student.upsert.mock.calls[0][0].create.externalId).toBeNull()
+  })
+
+  it('writes the UPN when Hub does send one', async () => {
+    withPupils([{ id: 'hp1', misId: 'A123456789' }])
+
+    const summary = await syncSchoolFromHub('school-1')
+
+    expect(prismaMock.student.upsert.mock.calls[0][0].update.externalId).toBe('A123456789')
+    expect(summary.pupilMisIds).toEqual({ withMisId: 1, missing: 0 })
+  })
+
+  it('counts how many pupils Hub sent a UPN for, so an empty column is diagnosable', async () => {
+    withPupils([
+      { id: 'hp1', misId: 'A1' },
+      { id: 'hp2', misId: null },
+      { id: 'hp3', misId: '   ' },
+    ])
+
+    const summary = await syncSchoolFromHub('school-1')
+
+    // Whitespace is not a UPN.
+    expect(summary.pupilMisIds).toEqual({ withMisId: 1, missing: 2 })
   })
 })
