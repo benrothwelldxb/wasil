@@ -747,6 +747,10 @@ function SignInCodesTab() {
   const [isMinting, setIsMinting] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState(false)
   const [confirmRevokeAll, setConfirmRevokeAll] = useState(false)
+  // Which class the next print run covers. null = all of them, one class per
+  // sheet; a class name = just that class, which is how you get a separate PDF
+  // per class rather than one long document to carve up afterwards.
+  const [printScope, setPrintScope] = useState<string | null>(null)
 
   const mint = async () => {
     if (!classId) return
@@ -786,6 +790,28 @@ function SignInCodesTab() {
     } catch {
       toast.error('Failed to revoke')
     }
+  }
+
+  // A slip is filed under its first child's class — the list arrives ordered by
+  // class, so this keeps that order and puts a parent with children in two
+  // classes in one place rather than two.
+  const byClass = new Map<string, ClassSignInCode[]>()
+  for (const c of batch?.codes ?? []) {
+    const key = c.children[0]?.className ?? 'No class'
+    const bucket = byClass.get(key)
+    if (bucket) bucket.push(c)
+    else byClass.set(key, [c])
+  }
+  const classGroups = [...byClass.entries()]
+
+  // Print one class, or all of them. The scope has to be applied before the
+  // dialogue opens, so we render, then print on the next frame.
+  const printClass = (className: string | null) => {
+    setPrintScope(className)
+    window.setTimeout(() => {
+      window.print()
+      setPrintScope(null)
+    }, 60)
   }
 
   return (
@@ -846,8 +872,8 @@ function SignInCodesTab() {
           </button>
           {batch && (
             <>
-              <button onClick={() => window.print()} className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                <Printer className="h-4 w-4" /> Print slips
+              <button onClick={() => printClass(null)} className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <Printer className="h-4 w-4" /> Print all ({classGroups.length} class{classGroups.length === 1 ? '' : 'es'})
               </button>
               <button onClick={() => setConfirmRevoke(true)} className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50">
                 <XCircle className="h-4 w-4" /> Revoke these codes
@@ -863,6 +889,10 @@ function SignInCodesTab() {
         </div>
 
         <p className="text-xs text-slate-500">
+          <strong>Print all</strong> starts each class on a fresh sheet, so one PDF splits into per-class
+          stacks. For a separate file per class, use <strong>Print just this class</strong> and save each one.
+        </p>
+        <p className="text-xs text-slate-500">
           A code is single-use and replaces any earlier one for that parent. If a parent asks the app to
           email them a code afterwards, the printed one stops working — and vice versa. Creating codes again
           for the same class issues NEW ones and invalidates slips already printed.
@@ -877,8 +907,30 @@ function SignInCodesTab() {
             </h4>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:grid-cols-2 print:gap-3">
-            {batch.codes.map(c => <Slip key={c.email} entry={c} />)}
+          <div className="print-root space-y-8">
+            {classGroups
+              .filter(([className]) => printScope === null || printScope === className)
+              .map(([className, codes], idx) => (
+                <section key={className} className={idx > 0 ? 'print-page-break' : undefined}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h5 className="text-sm font-extrabold text-slate-900">
+                      {className}
+                      <span className="ml-2 text-xs font-medium text-slate-500">
+                        {codes.length} slip{codes.length === 1 ? '' : 's'}
+                      </span>
+                    </h5>
+                    <button
+                      onClick={() => printClass(className)}
+                      className="print:hidden flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
+                    >
+                      <Printer className="h-3.5 w-3.5" /> Print just this class
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:grid-cols-2 print:gap-3">
+                    {codes.map(c => <Slip key={c.email} entry={c} />)}
+                  </div>
+                </section>
+              ))}
           </div>
 
           {batch.pupilsWithoutAccount.length > 0 && (
@@ -942,7 +994,7 @@ function Slip({ entry }: { entry: ClassSignInCode }) {
   const classes = [...new Set(entry.children.map(c => c.className).filter(Boolean))].join(' · ')
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 break-inside-avoid print:border-slate-400">
+    <div className="bg-white rounded-xl border border-slate-200 p-4 print-keep-together print:border-slate-400">
       <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{classes || 'School'}</p>
       <p className="text-base font-extrabold text-slate-900 mt-0.5">{entry.parentName}</p>
       <p className="text-xs text-slate-500">{entry.children.map(c => c.name).join(' & ')}</p>

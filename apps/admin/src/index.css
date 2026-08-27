@@ -61,3 +61,38 @@ body {
   border-radius: 14px;
   border: 1px solid var(--warm-border);
 }
+
+/* ── Printing ────────────────────────────────────────────────────────────────
+   Printing a page of an admin app otherwise means printing the app: sidebar,
+   sticky header, tabs, buttons. Anything marked `print-root` becomes the ONLY
+   thing on the paper — visibility rather than display, so the element keeps its
+   layout instead of collapsing. */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .print-root,
+  .print-root * {
+    visibility: visible !important;
+  }
+  .print-root {
+    position: absolute !important;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  /* A class per sheet, so the stack can be split and handed to teachers — and
+     so a class-by-class PDF is just a page range. */
+  .print-page-break {
+    break-before: page;
+    page-break-before: always;
+  }
+  /* Never split a slip across two sheets: half a code is useless. */
+  .print-keep-together {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  @page {
+    margin: 12mm;
+  }
+}
