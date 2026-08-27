@@ -40,8 +40,8 @@ function makeApp() {
 const guardian = (id: string, name: string, email: string, extra: Record<string, unknown> = {}) => ({
   user: { id, name, email, isTest: false, lastLoginAt: null, ...extra },
 })
-const pupil = (id: string, first: string, last: string, guardians: ReturnType<typeof guardian>[] = []) => ({
-  id, firstName: first, lastName: last, parentLinks: guardians,
+const pupil = (id: string, first: string, last: string, guardians: ReturnType<typeof guardian>[] = [], className = '1A') => ({
+  id, firstName: first, lastName: last, class: { name: className }, parentLinks: guardians,
 })
 
 const mint = (body: Record<string, unknown> = { classId: 'cls-1', expiresInHours: 120 }) =>
@@ -73,7 +73,10 @@ describe('POST /sign-in-codes/by-class', () => {
     expect(res.body.codes[0]).toMatchObject({
       parentName: 'Mrs Koy',
       email: 'mum@example.com',
-      children: ['Ada Koy', 'Ben Koy'],
+      children: [
+        { name: 'Ada Koy', className: '1A' },
+        { name: 'Ben Koy', className: '1A' },
+      ],
     })
     expect(res.body.codes[0].code).toMatch(/^\d{6}$/)
   })
@@ -110,7 +113,7 @@ describe('POST /sign-in-codes/by-class', () => {
       pupil('s2', 'Sara', 'Khan', [guardian('u-dad', 'Mr Khan', 'dad@example.com')]),
     ])
     const res = await mint()
-    expect(res.body.pupilsWithoutAccount).toEqual(['Ada Koy'])
+    expect(res.body.pupilsWithoutAccount).toEqual([{ name: 'Ada Koy', className: '1A' }])
     expect(res.body.codes).toHaveLength(1)
   })
 
@@ -121,7 +124,7 @@ describe('POST /sign-in-codes/by-class', () => {
     const res = await mint()
     expect(res.body.codes).toEqual([])
     // No account we'd print for, so the pupil is flagged instead.
-    expect(res.body.pupilsWithoutAccount).toEqual(['Ada Koy'])
+    expect(res.body.pupilsWithoutAccount).toEqual([{ name: 'Ada Koy', className: '1A' }])
   })
 
   it('flags a parent who has signed in before', async () => {
@@ -173,5 +176,59 @@ describe('POST /sign-in-codes/revoke', () => {
   it('400s on an empty request rather than clearing everything', async () => {
     expect((await revoke({})).status).toBe(400)
     expect(prismaMock.loginCode.deleteMany).not.toHaveBeenCalled()
+  })
+})
+
+// A school-wide sign-up event shouldn't mean running this sixteen times and
+// collating the stacks by hand.
+describe('POST /sign-in-codes/by-class — whole school', () => {
+  it('covers every class when no classId is given, and never looks one up', async () => {
+    prismaMock.student.findMany.mockResolvedValue([
+      pupil('s1', 'Ada', 'Koy', [guardian('u-mum', 'Mrs Koy', 'mum@example.com')], '1A'),
+      pupil('s2', 'Sara', 'Khan', [guardian('u-dad', 'Mr Khan', 'dad@example.com')], '3C'),
+    ])
+
+    const res = await mint({ expiresInHours: 120 })
+
+    expect(res.status).toBe(200)
+    expect(res.body.wholeSchool).toBe(true)
+    expect(res.body.className).toBeNull()
+    expect(res.body.codes).toHaveLength(2)
+    expect(prismaMock.class.findFirst).not.toHaveBeenCalled()
+    // Whole school, still school-scoped and still no Test Students.
+    expect(prismaMock.student.findMany.mock.calls[0][0].where).toEqual({
+      schoolId: 'sch-1', isTest: false,
+    })
+  })
+
+  it("treats classId 'all' the same way", async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    const res = await mint({ classId: 'all', expiresInHours: 24 })
+    expect(res.body.wholeSchool).toBe(true)
+    expect(prismaMock.class.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('gives a parent with children in two classes ONE slip naming both', async () => {
+    const mum = guardian('u-mum', 'Mrs Koy', 'mum@example.com')
+    prismaMock.student.findMany.mockResolvedValue([
+      pupil('s1', 'Ada', 'Koy', [mum], '1A'),
+      pupil('s2', 'Ben', 'Koy', [mum], '4B'),
+    ])
+
+    const res = await mint({ expiresInHours: 120 })
+
+    expect(res.body.codes).toHaveLength(1)
+    expect(res.body.codes[0].children).toEqual([
+      { name: 'Ada Koy', className: '1A' },
+      { name: 'Ben Koy', className: '4B' },
+    ])
+  })
+
+  it('orders by class so the printed stack can be split up', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    await mint({ expiresInHours: 24 })
+    expect(prismaMock.student.findMany.mock.calls[0][0].orderBy).toEqual([
+      { class: { name: 'asc' } }, { lastName: 'asc' }, { firstName: 'asc' },
+    ])
   })
 })

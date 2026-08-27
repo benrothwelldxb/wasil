@@ -903,7 +903,9 @@ router.post('/sign-in-codes/by-class', isAdmin, async (req: Request, res: Respon
   try {
     const user = req.user!
     const { classId, expiresInHours } = req.body as { classId?: string; expiresInHours?: number }
-    if (!classId) return res.status(400).json({ error: 'classId is required' })
+    // No classId (or 'all') means the whole school — a school-wide sign-up event
+    // shouldn't mean running this sixteen times and collating the stacks.
+    const wholeSchool = !classId || classId === 'all'
 
     const hours = Number(expiresInHours)
     // Bounded deliberately: a printed code is a standing key to an account, and
@@ -912,51 +914,63 @@ router.post('/sign-in-codes/by-class', isAdmin, async (req: Request, res: Respon
       return res.status(400).json({ error: 'expiresInHours must be between 1 and 168' })
     }
 
-    const klass = await prisma.class.findFirst({
-      where: { id: classId, schoolId: user.schoolId },
-      select: { id: true, name: true },
-    })
-    if (!klass) return res.status(404).json({ error: 'Class not found' })
+    let klass: { id: string; name: string } | null = null
+    if (!wholeSchool) {
+      klass = await prisma.class.findFirst({
+        where: { id: classId, schoolId: user.schoolId },
+        select: { id: true, name: true },
+      })
+      if (!klass) return res.status(404).json({ error: 'Class not found' })
+    }
 
     // Test Students never appear on a sign-up sheet.
     const students = await prisma.student.findMany({
-      where: { classId: klass.id, schoolId: user.schoolId, isTest: false },
+      where: {
+        schoolId: user.schoolId,
+        isTest: false,
+        ...(klass ? { classId: klass.id } : {}),
+      },
       select: {
         id: true,
         firstName: true,
         lastName: true,
+        class: { select: { name: true } },
         parentLinks: {
           select: {
             user: { select: { id: true, name: true, email: true, isTest: true, lastLoginAt: true } },
           },
         },
       },
-      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      // Ordered by class so a whole-school run prints as separable stacks.
+      orderBy: [{ class: { name: 'asc' } }, { lastName: 'asc' }, { firstName: 'asc' }],
     })
 
-    // One slip per guardian EMAIL, listing every child of theirs in this class.
-    const byEmail = new Map<string, { userId: string; name: string; email: string; children: string[]; hasLoggedIn: boolean }>()
-    const withoutAccount: string[] = []
+    // One slip per guardian EMAIL, listing every child of theirs in scope. Each
+    // child carries its class, because across a whole school a parent's children
+    // can sit in different ones — and the slip has to be filed under a class.
+    type Child = { name: string; className: string | null }
+    const byEmail = new Map<string, { userId: string; name: string; email: string; children: Child[]; hasLoggedIn: boolean }>()
+    const withoutAccount: Child[] = []
 
     for (const s of students) {
-      const childName = `${s.firstName} ${s.lastName}`.trim()
+      const child: Child = { name: `${s.firstName} ${s.lastName}`.trim(), className: s.class?.name ?? null }
       const guardians = s.parentLinks.map(l => l.user).filter(g => g?.email && !g.isTest)
       if (guardians.length === 0) {
-        withoutAccount.push(childName)
+        withoutAccount.push(child)
         continue
       }
       for (const g of guardians) {
         const key = g.email.toLowerCase()
         const existing = byEmail.get(key)
         if (existing) {
-          if (!existing.children.includes(childName)) existing.children.push(childName)
+          if (!existing.children.some(c => c.name === child.name)) existing.children.push(child)
           continue
         }
         byEmail.set(key, {
           userId: g.id,
           name: g.name,
           email: g.email,
-          children: [childName],
+          children: [child],
           hasLoggedIn: !!g.lastLoginAt,
         })
       }
@@ -980,17 +994,23 @@ router.post('/sign-in-codes/by-class', isAdmin, async (req: Request, res: Respon
       req,
       action: 'CREATE',
       resourceType: 'USER',
-      resourceId: klass.id,
+      resourceId: klass?.id ?? user.schoolId,
       metadata: {
         action: 'sign-in-codes-by-class',
-        className: klass.name,
+        scope: wholeSchool ? 'whole-school' : 'class',
+        className: klass?.name ?? null,
         codes: codes.length,
         pupilsWithoutAccount: withoutAccount.length,
         expiresInHours: hours,
       },
     })
 
-    res.json({ className: klass.name, codes, pupilsWithoutAccount: withoutAccount })
+    res.json({
+      className: klass?.name ?? null,
+      wholeSchool,
+      codes,
+      pupilsWithoutAccount: withoutAccount,
+    })
   } catch (error) {
     console.error('Error minting class sign-in codes:', error)
     res.status(500).json({ error: 'Failed to create sign-in codes' })

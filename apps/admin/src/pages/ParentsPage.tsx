@@ -797,6 +797,9 @@ function SignInCodesTab() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
             >
               <option value="">Choose a class…</option>
+              {/* One run for a school-wide event, rather than sixteen and a
+                  collation job. Slips come back ordered by class. */}
+              <option value="all">All classes (whole school)</option>
               {(classes ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
@@ -851,12 +854,12 @@ function SignInCodesTab() {
         <div className="mt-6 space-y-6">
           <div className="print:hidden flex items-center justify-between">
             <h4 className="text-sm font-bold text-slate-900">
-              {batch.className} · {batch.codes.length} slip{batch.codes.length === 1 ? '' : 's'}
+              {batch.wholeSchool ? 'Whole school' : batch.className} · {batch.codes.length} slip{batch.codes.length === 1 ? '' : 's'}
             </h4>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:grid-cols-2 print:gap-3">
-            {batch.codes.map(c => <Slip key={c.email} entry={c} className={batch.className} />)}
+            {batch.codes.map(c => <Slip key={c.email} entry={c} />)}
           </div>
 
           {batch.pupilsWithoutAccount.length > 0 && (
@@ -868,7 +871,11 @@ function SignInCodesTab() {
                 There's nothing for these families to sign in to yet — they need an account first (Invitations tab).
                 No slip was printed for them.
               </p>
-              <p className="text-xs text-amber-900">{batch.pupilsWithoutAccount.join(', ')}</p>
+              <p className="text-xs text-amber-900">
+                {batch.pupilsWithoutAccount
+                  .map(p => (p.className ? `${p.name} (${p.className})` : p.name))
+                  .join(', ')}
+              </p>
             </div>
           )}
         </div>
@@ -891,7 +898,7 @@ function SignInCodesTab() {
 // One parent's slip. The QR opens the login page with their email already
 // filled — the fiddly half — and they type the six digits, which is the half
 // that's quick. Deliberately NOT carrying the code itself into a URL.
-function Slip({ entry, className }: { entry: ClassSignInCode; className: string }) {
+function Slip({ entry }: { entry: ClassSignInCode }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const loginUrl = `${PARENT_APP_URL}/login?email=${encodeURIComponent(entry.email)}`
 
@@ -901,11 +908,14 @@ function Slip({ entry, className }: { entry: ClassSignInCode; className: string 
     QRCode.toCanvas(canvasRef.current, loginUrl, { width: 120, margin: 0 }).catch(() => {})
   }, [loginUrl])
 
+  // The class(es) this slip belongs to — what a teacher sorts the stack by.
+  const classes = [...new Set(entry.children.map(c => c.className).filter(Boolean))].join(' · ')
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 break-inside-avoid print:border-slate-400">
-      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{className}</p>
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{classes || 'School'}</p>
       <p className="text-base font-extrabold text-slate-900 mt-0.5">{entry.parentName}</p>
-      <p className="text-xs text-slate-500">{entry.children.join(' & ')}</p>
+      <p className="text-xs text-slate-500">{entry.children.map(c => c.name).join(' & ')}</p>
 
       <div className="flex items-start gap-4 mt-3">
         <div className="flex-1 min-w-0">

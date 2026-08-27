@@ -1285,6 +1285,7 @@ export const parentInvitations = {
   // Registered parents endpoints
   // Sign-up event: the app's own 6-digit sign-in codes, minted for a whole class
   // and printed instead of emailed.
+  // `classId: 'all'` prints the whole school in one run.
   signInCodesByClass: (classId: string, expiresInHours: number) =>
     fetchApi<ClassSignInCodes>('/api/parent-invitations/sign-in-codes/by-class', {
       method: 'POST',
@@ -2444,21 +2445,28 @@ export const dashboard = {
 // ─── Sign-up event codes ─────────────────────────────────────────────────────
 // The app's own 6-digit sign-in codes, printed rather than emailed. Keyed to an
 // email, so one slip per guardian address, listing their children in that class.
+export interface SignInCodeChild {
+  name: string
+  className: string | null
+}
 export interface ClassSignInCode {
   userId: string
   parentName: string
   email: string
   code: string
   expiresAt: string
-  children: string[]
+  /** Their children in scope. Across a whole school these can span classes. */
+  children: SignInCodeChild[]
   /** They've signed in before — the slip is a convenience, not a first step. */
   hasLoggedIn: boolean
 }
 export interface ClassSignInCodes {
-  className: string
+  /** Null on a whole-school run. */
+  className: string | null
+  wholeSchool: boolean
   codes: ClassSignInCode[]
   /** Pupils whose guardian has no Connect account: nothing to sign in to yet. */
-  pupilsWithoutAccount: string[]
+  pupilsWithoutAccount: SignInCodeChild[]
 }
 
 export const providerPortalAdmin = {
