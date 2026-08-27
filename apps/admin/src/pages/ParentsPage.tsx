@@ -1,10 +1,17 @@
-import React, { useState } from 'react'
-import { X, Trash2, Users, RefreshCw, Mail, Copy, CheckCircle, XCircle, Clock, Eye, Search, Send, KeyRound } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { X, Trash2, Users, RefreshCw, Mail, Copy, CheckCircle, XCircle, Clock, Eye, Search, Send, KeyRound, Printer, Ticket } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
-import type { ParentInvitation, InvitationStatus } from '@wasil/shared'
+import type { ParentInvitation, InvitationStatus, Class, ClassSignInCodes, ClassSignInCode } from '@wasil/shared'
+import QRCode from 'qrcode'
 import { HubSyncBanner } from '../components/HubSyncBanner'
 
-type Tab = 'invitations' | 'parents'
+// Where the slip's QR points. Same resolution the admin app uses to hand a
+// staff-parent over to the parent app.
+const PARENT_APP_URL =
+  import.meta.env.VITE_PARENT_URL ||
+  (window.location.hostname.includes('localhost') ? 'http://localhost:3000' : 'https://app.wasilconnect.com')
+
+type Tab = 'invitations' | 'parents' | 'signInCodes'
 
 export function ParentsPage() {
   const theme = useTheme()
@@ -185,7 +192,20 @@ export function ParentsPage() {
           Registered Parents
           {parentsPagination && <span className="ml-2 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{parentsPagination.total}</span>}
         </button>
+        <button
+          onClick={() => setActiveTab('signInCodes')}
+          className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'signInCodes'
+              ? 'border-current text-slate-900'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+          style={activeTab === 'signInCodes' ? { borderColor: theme.colors.brandColor, color: theme.colors.brandColor } : undefined}
+        >
+          Print sign-in codes
+        </button>
       </div>
+
+      {activeTab === 'signInCodes' && <SignInCodesTab />}
 
       {activeTab === 'invitations' && (
         <>
@@ -698,6 +718,207 @@ export function ParentsPage() {
         </div>
       )}
 
+    </div>
+  )
+}
+
+// ─── Print sign-in codes ─────────────────────────────────────────────────────
+// For a mass sign-up event: hand a parent their slip and they're in, without
+// waiting on an email. These are the app's OWN 6-digit sign-in codes, printed
+// ahead of time rather than emailed on demand, so there's one mechanism to
+// explain and nothing new for a parent to learn.
+//
+// Slips are individual cards, not one class list — a sheet left on a table is a
+// key to every account on it; a slip is a key to one, for a few hours.
+
+const EXPIRY_OPTIONS = [
+  { hours: 6, label: '6 hours', hint: 'Same session' },
+  { hours: 24, label: '1 day', hint: 'Event day' },
+  { hours: 72, label: '3 days', hint: 'Stragglers welcome' },
+  { hours: 120, label: '5 days', hint: 'Print ahead of the day' },
+]
+
+function SignInCodesTab() {
+  const toast = useToast()
+  const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
+  const [classId, setClassId] = useState('')
+  const [hours, setHours] = useState(120)
+  const [batch, setBatch] = useState<ClassSignInCodes | null>(null)
+  const [isMinting, setIsMinting] = useState(false)
+  const [confirmRevoke, setConfirmRevoke] = useState(false)
+
+  const mint = async () => {
+    if (!classId) return
+    setIsMinting(true)
+    try {
+      const result = await api.parentInvitations.signInCodesByClass(classId, hours)
+      setBatch(result)
+      toast.success(`${result.codes.length} code${result.codes.length === 1 ? '' : 's'} ready to print`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create codes')
+    } finally {
+      setIsMinting(false)
+    }
+  }
+
+  // The other half of handing out paper: after the event every unused slip is
+  // still a live key until it expires.
+  const revoke = async () => {
+    if (!batch) return
+    setConfirmRevoke(false)
+    try {
+      const { revoked } = await api.parentInvitations.revokeSignInCodes(batch.codes.map(c => c.email))
+      toast.success(revoked === 0 ? 'Nothing left to revoke' : `Revoked ${revoked} code${revoked === 1 ? '' : 's'}`)
+      setBatch(null)
+    } catch {
+      toast.error('Failed to revoke')
+    }
+  }
+
+  return (
+    <div>
+      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4 print:hidden">
+        <div>
+          <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+            <Ticket className="h-5 w-5" /> Print sign-in codes
+          </h3>
+          <p className="text-sm text-slate-500 mt-1">
+            One slip per parent for a sign-up event. Each carries their email and a 6-digit code —
+            the same code the app would normally email them.
+          </p>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Class</label>
+            <select
+              value={classId}
+              onChange={e => { setClassId(e.target.value); setBatch(null) }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+            >
+              <option value="">Choose a class…</option>
+              {(classes ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Codes stop working after</label>
+            <div className="flex flex-wrap gap-1.5">
+              {EXPIRY_OPTIONS.map(o => (
+                <button
+                  key={o.hours}
+                  onClick={() => setHours(o.hours)}
+                  title={o.hint}
+                  className={`rounded-lg px-3 py-2 text-sm font-semibold border ${
+                    hours === o.hours ? 'bg-slate-900 text-white border-transparent' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={mint}
+            disabled={!classId || isMinting}
+            className="flex items-center gap-2 rounded-lg bg-slate-900 text-white font-semibold px-5 py-2.5 text-sm disabled:opacity-60"
+          >
+            <Ticket className="h-4 w-4" />
+            {isMinting ? 'Creating…' : batch ? 'Create fresh codes' : 'Create codes'}
+          </button>
+          {batch && (
+            <>
+              <button onClick={() => window.print()} className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <Printer className="h-4 w-4" /> Print slips
+              </button>
+              <button onClick={() => setConfirmRevoke(true)} className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50">
+                <XCircle className="h-4 w-4" /> Revoke these codes
+              </button>
+            </>
+          )}
+        </div>
+
+        <p className="text-xs text-slate-500">
+          A code is single-use and replaces any earlier one for that parent. If a parent asks the app to
+          email them a code afterwards, the printed one stops working — and vice versa. Creating codes again
+          for the same class issues NEW ones and invalidates slips already printed.
+        </p>
+      </div>
+
+      {batch && (
+        <div className="mt-6 space-y-6">
+          <div className="print:hidden flex items-center justify-between">
+            <h4 className="text-sm font-bold text-slate-900">
+              {batch.className} · {batch.codes.length} slip{batch.codes.length === 1 ? '' : 's'}
+            </h4>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:grid-cols-2 print:gap-3">
+            {batch.codes.map(c => <Slip key={c.email} entry={c} className={batch.className} />)}
+          </div>
+
+          {batch.pupilsWithoutAccount.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 print:hidden">
+              <p className="text-sm font-bold text-amber-900 mb-1">
+                {batch.pupilsWithoutAccount.length} pupil{batch.pupilsWithoutAccount.length === 1 ? '' : 's'} with no parent account
+              </p>
+              <p className="text-xs text-amber-800 mb-2">
+                There's nothing for these families to sign in to yet — they need an account first (Invitations tab).
+                No slip was printed for them.
+              </p>
+              <p className="text-xs text-amber-900">{batch.pupilsWithoutAccount.join(', ')}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {confirmRevoke && (
+        <ConfirmModal
+          title="Revoke these codes"
+          message="Every printed code from this batch stops working immediately. Parents can still request a new code by email as usual."
+          confirmLabel="Revoke"
+          variant="danger"
+          onConfirm={revoke}
+          onCancel={() => setConfirmRevoke(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// One parent's slip. The QR opens the login page with their email already
+// filled — the fiddly half — and they type the six digits, which is the half
+// that's quick. Deliberately NOT carrying the code itself into a URL.
+function Slip({ entry, className }: { entry: ClassSignInCode; className: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const loginUrl = `${PARENT_APP_URL}/login?email=${encodeURIComponent(entry.email)}`
+
+  useEffect(() => {
+    if (!canvasRef.current) return
+    // Rendered locally, not via a third-party QR service.
+    QRCode.toCanvas(canvasRef.current, loginUrl, { width: 120, margin: 0 }).catch(() => {})
+  }, [loginUrl])
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 break-inside-avoid print:border-slate-400">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{className}</p>
+      <p className="text-base font-extrabold text-slate-900 mt-0.5">{entry.parentName}</p>
+      <p className="text-xs text-slate-500">{entry.children.join(' & ')}</p>
+
+      <div className="flex items-start gap-4 mt-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] font-semibold text-slate-600">Sign in with</p>
+          <p className="text-sm font-semibold text-slate-900 break-all">{entry.email}</p>
+          <p className="text-[11px] font-semibold text-slate-600 mt-2">Your code</p>
+          <p className="text-[26px] font-extrabold tracking-[0.2em] text-slate-900 leading-tight">{entry.code}</p>
+          <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+            Works once. Scan to open the app with your email filled in.
+          </p>
+        </div>
+        <canvas ref={canvasRef} className="shrink-0" />
+      </div>
     </div>
   )
 }

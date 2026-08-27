@@ -33,7 +33,16 @@ export function LoginView() {
 
   // Passwordless flow: step 1 (email) -> step 2 (6-digit code)
   const [step, setStep] = useState<'email' | 'code'>('email')
-  const [email, setEmail] = useState('')
+  // ?email= prefill: the QR on a printed sign-in slip points here, so a parent
+  // in a queue types six digits instead of their whole address on a phone
+  // keyboard. Only the address is ever carried in the link — never the code.
+  const [email, setEmail] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('email') ?? ''
+    } catch {
+      return ''
+    }
+  })
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)

@@ -1283,16 +1283,17 @@ export const parentInvitations = {
     }),
 
   // Registered parents endpoints
-  // Sign-up event: one code per FAMILY for a whole class, expiring in hours.
-  mintByClass: (classId: string, expiresInHours: number) =>
-    fetchApi<ClassInvitationBatch>('/api/parent-invitations/by-class', {
+  // Sign-up event: the app's own 6-digit sign-in codes, minted for a whole class
+  // and printed instead of emailed.
+  signInCodesByClass: (classId: string, expiresInHours: number) =>
+    fetchApi<ClassSignInCodes>('/api/parent-invitations/sign-in-codes/by-class', {
       method: 'POST',
       body: JSON.stringify({ classId, expiresInHours }),
     }),
-  revokeBatch: (invitationIds: string[]) =>
-    fetchApi<{ revoked: number }>('/api/parent-invitations/revoke-batch', {
+  revokeSignInCodes: (emails: string[]) =>
+    fetchApi<{ revoked: number }>('/api/parent-invitations/sign-in-codes/revoke', {
       method: 'POST',
-      body: JSON.stringify({ invitationIds }),
+      body: JSON.stringify({ emails }),
     }),
 
   listParents: (params?: { search?: string; classId?: string; page?: number; limit?: number }) => {
@@ -2441,23 +2442,23 @@ export const dashboard = {
 }
 
 // ─── Sign-up event codes ─────────────────────────────────────────────────────
-export interface ClassInvitationFamily {
-  invitationId: string
-  accessCode: string
-  /** Parent-app link the slip's QR encodes. */
-  registrationUrl: string
-  expiresAt: string | null
-  studentNames: string[]
-  parentNames: string[]
-  /** A guardian on this family already has a working login. */
-  alreadyRegistered: boolean
-  /** True when an existing live code was reused rather than a new one minted. */
-  reused: boolean
-}
-export interface ClassInvitationBatch {
-  className: string
+// The app's own 6-digit sign-in codes, printed rather than emailed. Keyed to an
+// email, so one slip per guardian address, listing their children in that class.
+export interface ClassSignInCode {
+  userId: string
+  parentName: string
+  email: string
+  code: string
   expiresAt: string
-  families: ClassInvitationFamily[]
+  children: string[]
+  /** They've signed in before — the slip is a convenience, not a first step. */
+  hasLoggedIn: boolean
+}
+export interface ClassSignInCodes {
+  className: string
+  codes: ClassSignInCode[]
+  /** Pupils whose guardian has no Connect account: nothing to sign in to yet. */
+  pupilsWithoutAccount: string[]
 }
 
 export const providerPortalAdmin = {

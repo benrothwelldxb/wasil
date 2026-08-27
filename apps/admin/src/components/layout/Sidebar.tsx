@@ -34,7 +34,6 @@ import {
   ClipboardCheck,
   Settings,
   Store,
-  Ticket,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth, useTheme, config } from '@wasil/shared'
@@ -106,7 +105,6 @@ const NAV_SECTIONS: NavSection[] = [
       { icon: GraduationCap, label: 'Students', path: '/students', hub: true },
       { icon: UserCog, label: 'Staff', path: '/staff', hub: true },
       { icon: UserPlus, label: 'Parents', path: '/parents', hub: true },
-      { icon: Ticket, label: 'Sign-up event', path: '/sign-up-event', adminOnly: true },
       { icon: Store, label: 'Providers', path: '/providers', adminOnly: true },
     ],
   },
