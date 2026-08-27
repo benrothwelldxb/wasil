@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Clock, MapPin, User, X, Check, AlertCircle, ExternalLink, Banknote } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useApi, useAuth } from '@wasil/shared'
@@ -61,6 +62,11 @@ function formatCurrency(amount: number, currency = 'AED') {
 
 export function SchoolServicesPage() {
   const { user } = useAuth()
+  // Arrived from a dashboard promo (?service=<id>): scroll that card into view
+  // and ring it, so "Sign up" doesn't drop you at the top of a list of eight.
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('service')
+  const highlightRef = useRef<HTMLDivElement>(null)
   const [registeringService, setRegisteringService] = useState<SchoolService | null>(null)
   const [selectedStudentId, setSelectedStudentId] = useState('')
   const [selectedDays, setSelectedDays] = useState<string[]>([])
@@ -73,6 +79,16 @@ export function SchoolServicesPage() {
     () => api.schoolServices.parent.list(),
     []
   )
+
+  useEffect(() => {
+    if (!highlightId || !services) return
+    // A frame after paint — the node has to exist before it can be scrolled to.
+    const id = window.setTimeout(
+      () => highlightRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+      120,
+    )
+    return () => window.clearTimeout(id)
+  }, [highlightId, services])
 
   const { data: myRegistrations, refetch: refetchRegs } = useApi<ServiceRegistration[]>(
     () => api.schoolServices.parent.myRegistrations(),
@@ -299,14 +315,20 @@ export function SchoolServicesPage() {
               const isCashOnly = service.paymentMethod === 'CASH_ONLY'
               const paymentLink = service.paymentUrl || (service.paymentMethod === 'ONLINE' ? undefined : undefined)
 
+              const isHighlighted = service.id === highlightId
+
               return (
                 <div
                   key={service.id}
+                  ref={isHighlighted ? highlightRef : undefined}
                   className="p-5"
                   style={{
                     backgroundColor: 'white',
                     borderRadius: '22px',
-                    border: '1.5px solid #F0E4E6',
+                    // A parent arriving from a dashboard promo lands on a list;
+                    // the ring says "this is the one you tapped".
+                    border: isHighlighted ? '1.5px solid #C4506E' : '1.5px solid #F0E4E6',
+                    boxShadow: isHighlighted ? '0 0 0 3px rgba(196, 80, 110, 0.12)' : undefined,
                   }}
                 >
                   {/* Header with cost badge */}

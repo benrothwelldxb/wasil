@@ -1700,6 +1700,12 @@ model SchoolService {
   staffName       String?  // Who runs it
   imageUrl        String?
   sortOrder       Int      @default(0)
+  // Dashboard promotion. A service a parent never navigates to might as well not
+  // exist, so the school can lift one onto the parent dashboard. `featuredUntil`
+  // is what stops the dashboard rotting: a promo nobody remembers to switch off
+  // stops being news, so it expires on its own (null = until switched off).
+  featuredOnDashboard Boolean  @default(false)
+  featuredUntil       DateTime?
   registrations   ServiceRegistration[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

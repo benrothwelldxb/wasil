@@ -2408,6 +2408,21 @@ export interface ProviderPortalMenu {
   items?: ProviderPortalMenuItem[]
 }
 
+// ─── Parent dashboard: what the school is promoting ──────────────────────────
+export interface DashboardFeature {
+  id: string
+  kind: 'SCHOOL_SERVICE'
+  title: string
+  blurb: string | null
+  meta: string | null
+  ctaLabel: string
+  href: string
+}
+
+export const dashboard = {
+  features: () => fetchApi<{ features: DashboardFeature[] }>('/api/dashboard/features'),
+}
+
 export const providerPortalAdmin = {
   profile: (providerId: string) =>
     fetchApi<ProviderPortalProfile>(`/api/provider-portal/profile?provider_id=${providerId}`),
@@ -2649,6 +2664,7 @@ export default {
   forms,
   providers,
   providerPortalAdmin,
+  dashboard,
   clubs,
   timetable,
   events,

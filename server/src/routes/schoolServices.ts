@@ -399,6 +399,7 @@ router.post('/', isAdmin, async (req, res) => {
       capacity, eligibleClasses, eligibleYears, status,
       registrationOpens, registrationCloses, serviceStarts, serviceEnds,
       location, staffName, imageUrl, sortOrder,
+      featuredOnDashboard, featuredUntil,
     } = req.body
 
     const service = await prisma.schoolService.create({
@@ -426,6 +427,8 @@ router.post('/', isAdmin, async (req, res) => {
         staffName: staffName || null,
         imageUrl: imageUrl || null,
         sortOrder: sortOrder || 0,
+        featuredOnDashboard: featuredOnDashboard === true,
+        featuredUntil: featuredUntil ? new Date(featuredUntil) : null,
       },
     })
 
@@ -488,6 +491,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       capacity, eligibleClasses, eligibleYears,
       registrationOpens, registrationCloses, serviceStarts, serviceEnds,
       location, staffName, imageUrl, sortOrder,
+      featuredOnDashboard, featuredUntil,
     } = req.body
 
     const data: any = {}
@@ -512,6 +516,8 @@ router.put('/:id', isAdmin, async (req, res) => {
     if (staffName !== undefined) data.staffName = staffName || null
     if (imageUrl !== undefined) data.imageUrl = imageUrl || null
     if (sortOrder !== undefined) data.sortOrder = sortOrder
+    if (featuredOnDashboard !== undefined) data.featuredOnDashboard = featuredOnDashboard === true
+    if (featuredUntil !== undefined) data.featuredUntil = featuredUntil ? new Date(featuredUntil) : null
 
     const service = await prisma.schoolService.update({
       where: { id: req.params.id },

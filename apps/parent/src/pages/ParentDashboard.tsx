@@ -7,7 +7,7 @@ import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import { useApi, useMutation } from '@wasil/shared'
 import * as api from '@wasil/shared'
-import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild, SchoolSettings } from '@wasil/shared'
+import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild, SchoolSettings, DashboardFeature } from '@wasil/shared'
 import { Clock, Sparkles, MapPin, ChevronRight, Calendar, Shield, Cloud, AlertTriangle, Heart, Siren, X, Check } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { Link } from 'react-router-dom'
@@ -109,6 +109,13 @@ export function ParentDashboard() {
     () => api.timetable.today(),
     []
   )
+  // What the school has chosen to promote. Empty is the normal state, so this
+  // never occupies space it hasn't earned.
+  const { data: featureData } = useApi<{ features: DashboardFeature[] }>(
+    () => api.dashboard.features(),
+    []
+  )
+  const features = featureData?.features ?? []
   const { data: allClasses } = useApi<Class[]>(
     () => api.classes.list(),
     []
@@ -886,6 +893,37 @@ export function ParentDashboard() {
         </>
         )
       })()}
+
+      {/* What the school is promoting. Deliberately a list of neutral cards
+          rather than another hardcoded banner: services, and later activities
+          and events, all reach parents through this one slot. Filtered
+          server-side to what this parent's children are eligible for. */}
+      {features.length > 0 && (
+        <div className="space-y-3">
+          {features.map((f) => (
+            <Link
+              key={f.id}
+              to={f.href}
+              className="block rounded-[22px] p-5 relative overflow-hidden"
+              style={{ background: 'linear-gradient(135deg, #5B6EC4, #7C5BC4)' }}
+            >
+              <h3 className="text-[19px] font-extrabold text-white relative z-10">{f.title}</h3>
+              {f.blurb && (
+                <p className="text-sm font-medium text-white/90 relative z-10 mt-0.5">{f.blurb}</p>
+              )}
+              <div className="flex items-center gap-2 mt-[10px] relative z-10 flex-wrap">
+                <span
+                  className="inline-flex items-center px-[14px] py-1.5 rounded-xl text-[13px] font-bold text-white"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.22)' }}
+                >
+                  {f.ctaLabel}
+                </span>
+                {f.meta && <span className="text-[13px] font-semibold text-white/85">{f.meta}</span>}
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* ECA Registration Banner */}
       {isEnabled('ecaEnabled') && openRegistrationTerm && (

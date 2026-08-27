@@ -46,6 +46,7 @@ import consultationsRoutes from './routes/consultations.js'
 import analyticsRoutes from './routes/analytics.js'
 import emergencyAlertsRoutes from './routes/emergencyAlerts.js'
 import schoolServicesRoutes from './routes/schoolServices.js'
+import dashboardRoutes from './routes/dashboard.js'
 import inboxRoutes from './routes/inbox.js'
 import partnerRoutes from './routes/partner.js'
 import searchRoutes from './routes/search.js'
@@ -188,6 +189,7 @@ app.use('/api/consultations', consultationsRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/emergency-alerts', emergencyAlertsRoutes)
 app.use('/api/school-services', schoolServicesRoutes)
+app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/inbox', inboxRoutes)
 app.use('/api/search', searchRoutes)
 app.use('/api/inclusion', inclusionRoutes)

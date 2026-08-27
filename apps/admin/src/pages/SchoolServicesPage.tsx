@@ -140,6 +140,9 @@ interface FormState {
   staffName: string
   serviceStarts: string
   serviceEnds: string
+  featuredOnDashboard: boolean
+  /** YYYY-MM-DD, or '' for "until I switch it off". */
+  featuredUntil: string
 }
 
 const emptyForm: FormState = {
@@ -149,6 +152,7 @@ const emptyForm: FormState = {
   costIsFrom: false, currency: 'AED', paymentMethod: '', paymentUrl: '',
   capacity: '', eligibleClasses: [], eligibleYears: [],
   location: '', staffName: '', serviceStarts: '', serviceEnds: '',
+  featuredOnDashboard: false, featuredUntil: '',
 }
 
 export function SchoolServicesPage() {
@@ -228,6 +232,8 @@ export function SchoolServicesPage() {
       staffName: service.staffName || '',
       serviceStarts: service.serviceStarts || '',
       serviceEnds: service.serviceEnds || '',
+      featuredOnDashboard: service.featuredOnDashboard === true,
+      featuredUntil: service.featuredUntil ? service.featuredUntil.slice(0, 10) : '',
     })
     setViewMode('form')
   }
@@ -258,6 +264,10 @@ export function SchoolServicesPage() {
         staffName: form.staffName || undefined,
         serviceStarts: form.serviceStarts || undefined,
         serviceEnds: form.serviceEnds || undefined,
+        featuredOnDashboard: form.featuredOnDashboard,
+        // Empty means "no end date" — send null, not undefined, so clearing it
+        // actually clears it.
+        featuredUntil: form.featuredUntil || null,
       }
 
       if (editingId) {
@@ -423,7 +433,15 @@ export function SchoolServicesPage() {
                     onClick={() => openDetail(s.id)}
                   >
                     <td className="px-4 py-3">
-                      <p className="font-semibold text-warm-text-primary">{s.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-warm-text-primary">{s.name}</p>
+                        {/* Visible at a glance: what parents are being shown. */}
+                        {s.featuredOnDashboard && (
+                          <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-brand/10 text-brand shrink-0">
+                            Featured
+                          </span>
+                        )}
+                      </div>
                       {s.description && <p className="text-xs text-warm-text-tertiary truncate max-w-xs">{s.description}</p>}
                     </td>
                     {/* Days + time share a column — they answer one question: when does it run? */}
@@ -725,6 +743,43 @@ export function SchoolServicesPage() {
               rows={3}
               className={`${inputCls} resize-none`}
             />
+          </div>
+
+          {/* Promotion. A service behind a tab nobody opens might as well not
+              exist — this lifts it onto the parent dashboard. The end date is
+              the important half: a promo nobody remembers to switch off stops
+              being news, so it can expire on its own. */}
+          <div className="rounded-warm border border-warm-border p-3.5 space-y-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.featuredOnDashboard}
+                onChange={(e) => setForm((f) => ({ ...f, featuredOnDashboard: e.target.checked }))}
+                className="mt-0.5 h-4 w-4 accent-brand"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-warm-text-primary">Feature on the parent dashboard</span>
+                <span className="block text-xs text-warm-text-tertiary mt-0.5">
+                  Shown as a card to parents whose children are eligible. Draft and archived services are never shown.
+                </span>
+              </span>
+            </label>
+            {form.featuredOnDashboard && (
+              <div>
+                <label className={labelCls}>
+                  Stop featuring on <span className="text-warm-text-tertiary font-normal">(optional)</span>
+                </label>
+                <input
+                  type="date"
+                  value={form.featuredUntil}
+                  onChange={(e) => setForm((f) => ({ ...f, featuredUntil: e.target.value }))}
+                  className={inputCls}
+                />
+                <p className="text-xs text-warm-text-tertiary mt-1">
+                  Leave empty to keep it up until you switch it off.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

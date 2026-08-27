@@ -1150,6 +1150,10 @@ export interface SchoolService {
   staffName?: string | null
   imageUrl?: string | null
   sortOrder: number
+  /** Promoted on the parent dashboard. `featuredUntil` (ISO) expires the promo
+   * on its own; null means until it's switched off. */
+  featuredOnDashboard?: boolean
+  featuredUntil?: string | null
   registeredCount?: number
   createdAt: string
   updatedAt: string
