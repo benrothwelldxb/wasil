@@ -881,6 +881,220 @@ router.post('/bulk', isAdmin, async (req: Request, res: Response) => {
 })
 
 // Revoke a pending invitation
+// ─── Sign-up event: a class's worth of codes, minted in one go ───────────────
+//
+//   POST /parent-invitations/by-class  { classId, expiresInHours }
+//
+// For a mass sign-up event: a teacher hands a family their slip and they're on
+// the app in a minute, no email round-trip. One code PER FAMILY, not per pupil —
+// a parent with three children should be handed one slip, and the invitation
+// model already links many students to one code.
+//
+// Families are grouped by the parent user(s) their children are linked to. A
+// pupil with no linked guardian yet gets a code of their own, since we have
+// nothing to group them by.
+//
+// Re-running is safe: an existing PENDING, unexpired code covering exactly the
+// same children is REUSED rather than duplicated, so a second click before the
+// event doesn't invalidate the slips already printed. Codes are single-use and
+// expire on their own; each one is a key to one family's children until then.
+router.post('/by-class', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { classId, expiresInHours } = req.body as { classId?: string; expiresInHours?: number }
+    if (!classId) return res.status(400).json({ error: 'classId is required' })
+
+    const hours = Number(expiresInHours)
+    // Bounded deliberately: these are printed on paper and handed out, so an
+    // open-ended code is a standing key. A week is the outside case.
+    if (!Number.isFinite(hours) || hours < 1 || hours > 168) {
+      return res.status(400).json({ error: 'expiresInHours must be between 1 and 168' })
+    }
+    const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000)
+
+    const klass = await prisma.class.findFirst({
+      where: { id: classId, schoolId: user.schoolId },
+      select: { id: true, name: true },
+    })
+    if (!klass) return res.status(404).json({ error: 'Class not found' })
+
+    // Test Students never appear on a sign-up sheet.
+    const students = await prisma.student.findMany({
+      where: { classId: klass.id, schoolId: user.schoolId, isTest: false },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        parentLinks: {
+          select: {
+            userId: true,
+            user: { select: { id: true, name: true, email: true, passwordHash: true, lastLoginAt: true } },
+          },
+        },
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    })
+    if (students.length === 0) return res.json({ className: klass.name, families: [] })
+
+    // Group siblings: same set of linked guardians → same family → one code.
+    type Family = {
+      key: string
+      studentIds: string[]
+      studentNames: string[]
+      parentNames: string[]
+      alreadyRegistered: boolean
+    }
+    const families = new Map<string, Family>()
+    for (const s of students) {
+      const parentIds = s.parentLinks.map(l => l.userId).sort()
+      const key = parentIds.length > 0 ? `p:${parentIds.join(',')}` : `s:${s.id}`
+      const name = `${s.firstName} ${s.lastName}`.trim()
+      const existing = families.get(key)
+      if (existing) {
+        existing.studentIds.push(s.id)
+        existing.studentNames.push(name)
+        continue
+      }
+      families.set(key, {
+        key,
+        studentIds: [s.id],
+        studentNames: [name],
+        parentNames: s.parentLinks.map(l => l.user.name).filter(Boolean),
+        // Already on the app: a teacher shouldn't spend the queue handing a
+        // code to someone who signed up weeks ago.
+        alreadyRegistered: s.parentLinks.some(l => !!l.user.passwordHash || !!l.user.lastLoginAt),
+      })
+    }
+
+    // Everything still live for this school, so we can reuse instead of minting.
+    const openInvitations = await prisma.parentInvitation.findMany({
+      where: {
+        schoolId: user.schoolId,
+        status: 'PENDING',
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: { id: true, accessCode: true, expiresAt: true, studentLinks: { select: { studentId: true } } },
+    })
+    const sameSet = (a: string[], b: string[]) =>
+      a.length === b.length && [...a].sort().join(',') === [...b].sort().join(',')
+
+    // The server owns PARENT_APP_URL, so it builds the link the slip's QR
+    // encodes — the admin app shouldn't be guessing the parent app's address.
+    const registrationUrl = (code: string) => `${process.env.PARENT_APP_URL ?? ''}/register?code=${code}`
+
+    const results: Array<{
+      invitationId: string
+      accessCode: string
+      registrationUrl: string
+      expiresAt: string | null
+      studentNames: string[]
+      parentNames: string[]
+      alreadyRegistered: boolean
+      reused: boolean
+    }> = []
+
+    for (const family of families.values()) {
+      const reusable = openInvitations.find(inv =>
+        sameSet(inv.studentLinks.map(l => l.studentId), family.studentIds),
+      )
+      if (reusable) {
+        results.push({
+          invitationId: reusable.id,
+          accessCode: reusable.accessCode,
+          registrationUrl: registrationUrl(reusable.accessCode),
+          expiresAt: reusable.expiresAt?.toISOString() ?? null,
+          studentNames: family.studentNames,
+          parentNames: family.parentNames,
+          alreadyRegistered: family.alreadyRegistered,
+          reused: true,
+        })
+        continue
+      }
+
+      // Fresh code. Retry on the (vanishingly unlikely) unique collision.
+      let accessCode = generateAccessCode()
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const clash = await prisma.parentInvitation.findUnique({ where: { accessCode } })
+        if (!clash) break
+        accessCode = generateAccessCode()
+      }
+
+      const invitation = await prisma.parentInvitation.create({
+        data: {
+          schoolId: user.schoolId,
+          accessCode,
+          parentName: family.parentNames[0] || null,
+          expiresAt,
+          status: 'PENDING',
+          createdById: user.id,
+          studentLinks: { create: family.studentIds.map(studentId => ({ studentId })) },
+        },
+      })
+      results.push({
+        invitationId: invitation.id,
+        accessCode: invitation.accessCode,
+        registrationUrl: registrationUrl(invitation.accessCode),
+        expiresAt: invitation.expiresAt?.toISOString() ?? null,
+        studentNames: family.studentNames,
+        parentNames: family.parentNames,
+        alreadyRegistered: family.alreadyRegistered,
+        reused: false,
+      })
+    }
+
+    logAudit({
+      req,
+      action: 'CREATE',
+      resourceType: 'PARENT_INVITATION',
+      resourceId: klass.id,
+      metadata: {
+        action: 'mint-by-class',
+        className: klass.name,
+        families: results.length,
+        minted: results.filter(r => !r.reused).length,
+        expiresInHours: hours,
+      },
+    })
+
+    res.json({ className: klass.name, expiresAt: expiresAt.toISOString(), families: results })
+  } catch (error) {
+    console.error('Error minting class invitations:', error)
+    res.status(500).json({ error: 'Failed to create invitations' })
+  }
+})
+
+// Revoke a batch in one go — after the event, every code that wasn't used is
+// still a live key, and revoking thirty of them one at a time is how they end up
+// left alive. Only PENDING ones move; anything already redeemed is untouched.
+router.post('/revoke-batch', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { invitationIds } = req.body as { invitationIds?: string[] }
+    if (!Array.isArray(invitationIds) || invitationIds.length === 0) {
+      return res.status(400).json({ error: 'invitationIds is required' })
+    }
+
+    const { count } = await prisma.parentInvitation.updateMany({
+      // School-scoped: an admin can only ever revoke their own school's codes.
+      where: { id: { in: invitationIds }, schoolId: user.schoolId, status: 'PENDING' },
+      data: { status: 'REVOKED' },
+    })
+
+    logAudit({
+      req,
+      action: 'UPDATE',
+      resourceType: 'PARENT_INVITATION',
+      resourceId: user.schoolId,
+      metadata: { action: 'revoke-batch', requested: invitationIds.length, revoked: count },
+    })
+
+    res.json({ revoked: count })
+  } catch (error) {
+    console.error('Error revoking invitations:', error)
+    res.status(500).json({ error: 'Failed to revoke invitations' })
+  }
+})
+
 router.patch('/:id/revoke', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!

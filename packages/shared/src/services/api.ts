@@ -1283,6 +1283,18 @@ export const parentInvitations = {
     }),
 
   // Registered parents endpoints
+  // Sign-up event: one code per FAMILY for a whole class, expiring in hours.
+  mintByClass: (classId: string, expiresInHours: number) =>
+    fetchApi<ClassInvitationBatch>('/api/parent-invitations/by-class', {
+      method: 'POST',
+      body: JSON.stringify({ classId, expiresInHours }),
+    }),
+  revokeBatch: (invitationIds: string[]) =>
+    fetchApi<{ revoked: number }>('/api/parent-invitations/revoke-batch', {
+      method: 'POST',
+      body: JSON.stringify({ invitationIds }),
+    }),
+
   listParents: (params?: { search?: string; classId?: string; page?: number; limit?: number }) => {
     const searchParams = new URLSearchParams()
     if (params?.search) searchParams.append('search', params.search)
@@ -2426,6 +2438,26 @@ export interface DashboardFeature {
 
 export const dashboard = {
   features: () => fetchApi<{ features: DashboardFeature[] }>('/api/dashboard/features'),
+}
+
+// ─── Sign-up event codes ─────────────────────────────────────────────────────
+export interface ClassInvitationFamily {
+  invitationId: string
+  accessCode: string
+  /** Parent-app link the slip's QR encodes. */
+  registrationUrl: string
+  expiresAt: string | null
+  studentNames: string[]
+  parentNames: string[]
+  /** A guardian on this family already has a working login. */
+  alreadyRegistered: boolean
+  /** True when an existing live code was reused rather than a new one minted. */
+  reused: boolean
+}
+export interface ClassInvitationBatch {
+  className: string
+  expiresAt: string
+  families: ClassInvitationFamily[]
 }
 
 export const providerPortalAdmin = {
