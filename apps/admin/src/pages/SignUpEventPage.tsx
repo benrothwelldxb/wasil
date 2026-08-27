@@ -16,6 +16,9 @@ const EXPIRY_OPTIONS = [
   { hours: 6, label: '6 hours', hint: 'Same session' },
   { hours: 24, label: '1 day', hint: 'Event day' },
   { hours: 72, label: '3 days', hint: 'Stragglers welcome' },
+  // Printing days ahead of the event is the normal case, not the exception —
+  // the slips have to still work when the day arrives.
+  { hours: 120, label: '5 days', hint: 'Print ahead of the day' },
 ]
 
 export function SignUpEventPage() {
