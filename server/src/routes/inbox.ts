@@ -5,6 +5,7 @@ import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../mid
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload } from '../services/uploadValidation.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
+import { getInboxUnreadCount, getPushBadgeCount } from '../services/unreadCount.js'
 import { teachingStaffForClasses, timetableLookupPossible } from '../services/classTeachingStaff.js'
 import { todayInTimezone } from '../services/dateTime.js'
 
@@ -577,6 +578,10 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
       })
       if (deviceTokens.length > 0) {
         const tokens = deviceTokens.map(dt => dt.token)
+        // The recipient's OWN unread total, now including the message just
+        // created - the number their device should badge with. Per recipient,
+        // and undefined (badge omitted) if it can't be worked out.
+        const badge = await getPushBadgeCount(r.userId)
         const result = await sendPushNotification(tokens, {
           title: `Message from ${senderDisplayName}`,
           body: content.trim().substring(0, 200),
@@ -586,6 +591,7 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
             resourceId: id,
             route: `/inbox/${id}`,
           },
+          badge,
         })
         if (result.failedTokens.length > 0) {
           await removeInvalidTokens(result.failedTokens)
@@ -1706,50 +1712,13 @@ router.get('/unread-count', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
 
-    const isParent = user.role === 'PARENT'
-    const isAdminUser = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
-
-    const conversations = await prisma.conversation.findMany({
-      where: {
-        ...(isParent
-          ? { parentId: user.id, archivedByParent: false }
-          : isAdminUser
-            ? { schoolId: user.schoolId, archivedByStaff: false }
-            : { staffId: user.id, archivedByStaff: false }
-        ),
-      },
-      select: { id: true },
+    // Shared with the push path (services/unreadCount.ts) so the number on the
+    // app icon and the number in the app are computed the same way.
+    const count = await getInboxUnreadCount({
+      id: user.id,
+      role: user.role,
+      schoolId: user.schoolId,
     })
-
-    let count = 0
-    if (conversations.length > 0) {
-      count = await prisma.conversationMessage.count({
-        where: {
-          conversationId: { in: conversations.map(c => c.id) },
-          senderId: { not: user.id },
-          readAt: null,
-          deletedAt: null,
-        },
-      })
-    }
-
-    // Add threads shared with this user as an added guardian. Their unread is
-    // driven by the participant row's lastReadAt (null ⇒ all inbound count),
-    // excluding their own messages and deleted messages.
-    const participantRows = await prisma.conversationParticipant.findMany({
-      where: { userId: user.id, archivedAt: null },
-      select: { conversationId: true, lastReadAt: true },
-    })
-    for (const p of participantRows) {
-      count += await prisma.conversationMessage.count({
-        where: {
-          conversationId: p.conversationId,
-          senderId: { not: user.id },
-          deletedAt: null,
-          ...(p.lastReadAt ? { createdAt: { gt: p.lastReadAt } } : {}),
-        },
-      })
-    }
 
     res.json({ count })
   } catch (error) {

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import * as api from '@wasil/shared'
+import { setAppBadge, clearAppBadge } from '../../services/appBadge'
 
 interface HeaderProps {
   menuOpen: boolean
@@ -18,12 +19,19 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
 
   // Poll unread count every 30 seconds
   useEffect(() => {
-    if (!user) return
+    if (!user) {
+      // Signed out - never leave a stale count sitting on the home-screen icon.
+      clearAppBadge()
+      return
+    }
 
     const fetchUnread = async () => {
       try {
         const result = await api.inbox.unreadCount()
         setUnreadCount(result.count)
+        // Mirror the same number onto the installed app's icon (iOS Home Screen
+        // PWA / desktop dock). No-ops wherever the Badging API is unavailable.
+        setAppBadge(result.count)
       } catch {
         // Silently fail
       }
@@ -31,7 +39,19 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
 
     fetchUnread()
     const interval = setInterval(fetchUnread, 30000)
-    return () => clearInterval(interval)
+
+    // Browsers throttle timers in a backgrounded tab, so a parent coming back to
+    // the app could otherwise be looking at a count up to 30s stale. Refreshing
+    // on resume keeps both the pill and the icon badge feeling instant.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchUnread()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [user])
 
   if (!user) return null

@@ -58,6 +58,12 @@ export interface PushMessage {
   title: string
   body: string
   data?: Record<string, string>
+  /**
+   * Unread count to show on the app icon. Only set it where a TRUE count is
+   * known (currently inbox messages); leave it undefined everywhere else so an
+   * unrelated notification never overwrites a real message count.
+   */
+  badge?: number
 }
 
 export async function sendPushNotification(
@@ -84,6 +90,13 @@ export async function sendPushNotification(
     }
   }
 
+  // Carried through to the web service worker (firebase-messaging-sw.js), which
+  // reads it to badge the installed PWA's icon while the app is closed. FCM data
+  // values must be strings.
+  if (message.badge !== undefined) {
+    stringData.badge = String(message.badge)
+  }
+
   const fcmMessage: admin.messaging.MulticastMessage = {
     notification: {
       title: message.title,
@@ -104,7 +117,11 @@ export async function sendPushNotification(
       payload: {
         aps: {
           sound: 'default',
-          badge: 1,
+          // Only send a badge when the caller knows the real count. Omitting the
+          // key entirely (rather than sending a placeholder 1) is deliberate:
+          // APNs leaves the current badge UNTOUCHED for an absent key, so a
+          // non-message notification can no longer stomp a true unread count.
+          ...(message.badge !== undefined ? { badge: message.badge } : {}),
         },
       },
     },

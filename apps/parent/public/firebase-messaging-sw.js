@@ -32,6 +32,35 @@ firebase.initializeApp({
 const messaging = firebase.messaging()
 
 /**
+ * Home-screen icon badge - the WhatsApp-style number on the app icon.
+ *
+ * The count is computed server-side, per recipient, and rides along in
+ * `data.badge` (see server/src/services/firebase.ts). Setting it HERE is what
+ * makes the badge work while the app is CLOSED; the poll in
+ * src/components/layout/Header.tsx only keeps it current while the app runs.
+ *
+ * Availability, none of it in our control: iOS/iPadOS 16.4+ Home Screen PWAs
+ * with notification permission granted, and installed desktop PWAs. Chrome on
+ * Android has no Badging API at all, so this silently does nothing there - by
+ * design, not a bug. Per spec a count of 0 clears the badge.
+ */
+function applyBadgeFromPayload(payload) {
+  var raw = payload && payload.data && payload.data.badge
+  if (raw === undefined || raw === null || raw === '') return
+  var count = Number(raw)
+  if (!isFinite(count) || count < 0) return
+  var nav = self.navigator
+  if (!nav || typeof nav.setAppBadge !== 'function') return
+  try {
+    var pending = nav.setAppBadge(count)
+    // Rejects when the app isn't installed or permission was revoked. Badging is
+    // a cosmetic extra on a notification that matters - never let it throw into
+    // the push handler.
+    if (pending && typeof pending.catch === 'function') pending.catch(function () {})
+  } catch (e) {}
+}
+
+/**
  * Background message handler.
  *
  * IMPORTANT — avoid double notifications: when an FCM payload contains a
@@ -43,6 +72,10 @@ const messaging = firebase.messaging()
  * payload); for notification messages we let the SDK's auto-display win.
  */
 messaging.onBackgroundMessage((payload) => {
+  // Badge FIRST. This hook runs for both notification and data-only payloads,
+  // and the early return below must not skip it.
+  applyBadgeFromPayload(payload)
+
   if (payload.notification) {
     // SDK already auto-displayed this — do nothing to avoid a duplicate.
     return

@@ -17,6 +17,7 @@ import { requirePartner } from '../middleware/partnerAuth.js'
 import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
+import { getPushBadgeCount } from '../services/unreadCount.js'
 import { sendNotification } from '../services/notify.js'
 import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
@@ -978,6 +979,10 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
       })
       if (deviceTokens.length > 0) {
         const tokens = deviceTokens.map((dt) => dt.token)
+        // The recipient's OWN unread total, now including the message just
+        // created - the number their device should badge with. Per recipient,
+        // and undefined (badge omitted) if it can't be worked out.
+        const badge = await getPushBadgeCount(r.userId)
         const result = await sendPushNotification(tokens, {
           title: `Message from ${senderDisplayName}`,
           body: content.trim().substring(0, 200),
@@ -987,6 +992,7 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
             resourceId: id,
             route: `/inbox/${id}`,
           },
+          badge,
         })
         if (result.failedTokens.length > 0) {
           await removeInvalidTokens(result.failedTokens)
