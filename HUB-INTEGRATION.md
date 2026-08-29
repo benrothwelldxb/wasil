@@ -25,8 +25,8 @@ Two stages, sequenced:
 ```
 Hub dashboard ──click "Connect" tile──▶ Hub /launch/connect
   (Hub verifies session + subscription, resolves this user's Connect roles,
-   mints an RS256 JWT: iss=hub, aud=wasil-connect, sub=hubUserId, sid=hubSchoolId,
-   gr=[globalRoles], ar=[connectAppRoles], exp=5m)
+   mints an RS256 JWT: iss=<Hub's issuer URL>, aud=wasil-connect, sub=hubUserId,
+   sid=hubSchoolId, gr=[globalRoles], ar=[connectAppRoles], exp=5m)
         │
         ▼  redirect  https://<connect-api>/auth/hub/exchange?hub_token=<JWT>
   Connect API  /auth/hub/exchange
@@ -46,10 +46,22 @@ Connect keeps its **own** session tokens (nothing else in the API changes —
 
 ### Connect-side work
 
-1. **Config + deps** — add `jose`; env: `HUB_URL`, `HUB_ISSUER`
-   (`https://hub.wasil.app`), `HUB_AUDIENCE` (`wasil-connect`), `HUB_JWKS_URL`
-   (default `${HUB_URL}/.well-known/jwks.json`), `HUB_LAUNCH_URL`
+1. **Config + deps** — add `jose`; env: `HUB_URL`, `HUB_ISSUER`, `HUB_AUDIENCE`
+   (`wasil-connect`), `HUB_JWKS_URL` (default
+   `${HUB_URL}/.well-known/jwks.json`), `HUB_LAUNCH_URL`
    (`${HUB_URL}/launch/connect`).
+
+   > **`iss` is a full URL, and it is deployment-specific — read it off Hub, do
+   > not assume it.** An earlier version of this document said `iss=hub`, which
+   > was never right. Hub's code defaults the issuer to `https://hub.wasil.app`,
+   > and `hubSso.ts` defaults to the same, but **this deployment issues
+   > `https://wasilhub.app`** — so `HUB_ISSUER` has to be set explicitly and
+   > neither default is usable as-is.
+   >
+   > Worth knowing before you debug it: `HUB_URL` falls back to `HUB_ISSUER`, and
+   > `HUB_JWKS_URL` is derived from `HUB_URL`. Get the issuer wrong and you don't
+   > get a clean "issuer mismatch" — the JWKS fetch goes to the wrong host first,
+   > so it surfaces as a key-resolution failure instead.
 2. **`services/hubSso.ts`** — `verifyHubToken(token)` (JWKS verify: issuer,
    audience, HS→RS256, exp) + single-use replay guard (in-memory now, Redis when
    multi-instance — same caveat as today's `authCodeStore`).
