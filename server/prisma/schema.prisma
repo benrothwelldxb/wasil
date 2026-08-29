@@ -2378,3 +2378,34 @@ model PartnerToken {
   lastUsedAt DateTime?
   revokedAt  DateTime?
 }
+
+// One communication intent received from Wasil Active — the system of record for
+// extra-curricular activities. Connect's job is to deliver these to parents; it
+// does not model programmes, allocation or attendance.
+//
+// The row IS the receipt. Its id is what we hand back as the message id, and
+// `idempotencyKey` is unique because Active retries from a durable outbox and
+// WILL present the same key more than once: the constraint is what makes a
+// re-delivery a no-op rather than telling a parent twice that their child has a
+// place. An intent we cannot deliver (unknown school or pupil, no linked parent)
+// is still recorded, UNDELIVERABLE with a reason — Active's outbox stops the
+// moment we answer 2xx, so a dropped intent must leave a trace on this side or
+// it is simply lost.
+model PartnerIntent {
+  id             String   @id @default(cuid())
+  idempotencyKey String   @unique
+  eventType      String
+  hubSchoolId    String
+  hubPupilId     String?
+  payload        Json
+  occurredAt     DateTime
+  status         String // DELIVERED | UNDELIVERABLE
+  reason         String? // why nobody was told, when UNDELIVERABLE
+  recipients     Int      @default(0)
+  schoolId       String? // resolved Connect school, when we could resolve one
+  studentId      String? // resolved Connect student, when we could resolve one
+  createdAt      DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([hubSchoolId, createdAt])
+}
