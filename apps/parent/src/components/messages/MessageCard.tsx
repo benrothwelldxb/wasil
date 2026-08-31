@@ -13,6 +13,10 @@ interface MessageCardProps {
   classColors?: Record<string, { bg: string; hex: string }>
 }
 
+/** Lines of post body shown before "Read more". Height, not character count —
+ *  see the clamp block in MessageCard for why. */
+const CONTENT_CLAMP_LINES = 6
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
@@ -189,6 +193,45 @@ export function MessageCard({
 
   const isUrgent = message.isUrgent
 
+  // --- Long-post clamp -------------------------------------------------------
+  // A post body is unbounded rich HTML, and one long one pushes the whole
+  // dashboard below the fold. Clamped by LINES rather than characters: the body
+  // is markup, so a character cut would slice through tags, and the same count
+  // occupies wildly different height as a bulleted list vs a paragraph (and
+  // differs again between English and Arabic). Line-clamping caps the thing
+  // actually complained about — height — and needs no parsing.
+  //
+  // Two kinds of post are never clamped: an URGENT one, because the school
+  // marking it urgent is a statement it should be read in full; and one with an
+  // acknowledgement still outstanding, because a parent must not be able to
+  // acknowledge a post they have seen a third of.
+  const ackPending = showAcknowledgeButton && !!onAcknowledge && !message.acknowledged
+  const clampable = !isUrgent && !ackPending
+
+  const [expanded, setExpanded] = useState(false)
+  const [overflowing, setOverflowing] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el || !clampable) {
+      setOverflowing(false)
+      return
+    }
+    // CSS can clamp but cannot report that it clamped, so measure — otherwise
+    // every short post grows a "Read more" that does nothing. Skipped while
+    // expanded (the clamp is off then, so it would measure false and yank the
+    // "Show less" away). A ResizeObserver keeps it honest through font loading,
+    // rotation and width changes.
+    const measure = () => {
+      if (!expanded) setOverflowing(el.scrollHeight > el.clientHeight + 1)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [clampable, expanded, sanitizedContent])
+
   // Get initials for avatar
   const getInitials = (name: string) => {
     if (name === 'Whole School') return 'WS'
@@ -278,10 +321,35 @@ export function MessageCard({
 
         {/* Content */}
         <div
-          className="text-sm leading-relaxed font-medium mb-3 rich-content"
-          style={{ color: '#7A6469' }}
+          ref={contentRef}
+          className={`text-sm leading-relaxed font-medium rich-content ${
+            clampable && overflowing ? 'mb-1' : 'mb-3'
+          }`}
+          style={{
+            color: '#7A6469',
+            // Height cap rather than -webkit-line-clamp. Line-clamp needs
+            // `display: -webkit-box`, which turns every child of this div into
+            // a box item — and these bodies are real markup (p, ul, ol, hr),
+            // whose margins and list bullets do not survive that reliably. A
+            // max-height leaves block layout completely alone and clips just as
+            // well; the trade is no ellipsis, and a part-cut last line, which
+            // reads as "there is more" anyway.
+            ...(clampable && !expanded
+              ? { maxHeight: `${CONTENT_CLAMP_LINES * 1.625}em`, overflow: 'hidden' }
+              : {}),
+          }}
           dangerouslySetInnerHTML={{ __html: sanitizedContent }}
         />
+        {clampable && overflowing && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="mb-3 text-[13px] font-bold"
+            style={{ color: '#C4506E' }}
+            aria-expanded={expanded}
+          >
+            {expanded ? t('messages.showLess', 'Show less') : t('messages.readMore', 'Read more')}
+          </button>
+        )}
 
         {/* Attachments indicator */}
         {hasAttachments && (
