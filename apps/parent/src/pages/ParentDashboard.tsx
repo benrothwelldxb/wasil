@@ -767,17 +767,47 @@ export function ParentDashboard() {
       {(() => {
         const ecaOn = isEnabled('ecaEnabled')
         const scheduleOn = isEnabled('scheduleEnabled')
-        const anyVisible = childCards.some(c =>
-          (ecaOn && c.activities.length > 0) || (scheduleOn && (c.timetableItems.length > 0 || c.schedule.length > 0))
-        )
-        if (childCards.length === 0 || !anyVisible) return null
-        return (
-        <>
+        if (childCards.length === 0) return null
+
+        const hasAnythingToday = (c: (typeof childCards)[number]) =>
+          (ecaOn && c.activities.length > 0) ||
+          (scheduleOn && (c.timetableItems.length > 0 || c.schedule.length > 0))
+
+        const heading = (
           <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#A8929A' }}>
             {t('dashboard.familyDay', "Your family's day")}
           </p>
-          {childCards.map((child, idx) => (
-            ((ecaOn && child.activities.length > 0) || (scheduleOn && (child.schedule.length > 0 || child.timetableItems.length > 0))) && (
+        )
+
+        // Nobody has anything: one line, rather than a stack of identical empty
+        // cards. The section still renders at all, which is the point of the
+        // change — a parent can see the app knows about every one of their
+        // children, on a day when none of them needs to bring a thing.
+        if (!childCards.some(hasAnythingToday)) {
+          return (
+            <>
+              {heading}
+              <div
+                className="bg-white rounded-[22px] p-[18px] text-[13px] font-medium"
+                style={{ border: '1.5px solid #F0E4E6', color: '#7A6469' }}
+              >
+                {t('dashboard.nothingToBringAnyone', 'Nothing to bring for anyone today')}
+              </div>
+            </>
+          )
+        }
+
+        return (
+        <>
+          {heading}
+          {childCards.map((child, idx) => {
+            // EVERY child gets a card, including one whose day is empty. Cards
+            // used to render only for a child with something on, which made a
+            // three-child family show as two with nothing on screen to say why
+            // — and for a class whose timetable Hub doesn't carry, that is
+            // every day rather than a one-off.
+            const empty = !hasAnythingToday(child)
+            return (
               <div
                 key={child.id}
                 className="bg-white rounded-[22px] overflow-hidden"
@@ -877,6 +907,20 @@ export function ParentDashboard() {
                       </div>
                     ))
                   ))}
+                  {/* Deliberately "nothing to BRING", not "nothing on": these
+                      items are reminder-gated (GET /timetable/today returns only
+                      subjects with an active SubjectReminder), so a child with a
+                      full day of Maths and English has no items at all. Saying
+                      "nothing scheduled" would tell a parent their child has no
+                      lessons. */}
+                  {empty && (
+                    <div
+                      className="rounded-[16px] p-[14px] text-[13px] font-medium"
+                      style={{ backgroundColor: '#FFF8F4', color: '#7A6469' }}
+                    >
+                      {t('dashboard.nothingToBring', 'Nothing to bring today')}
+                    </div>
+                  )}
                   {scheduleOn && (
                     <Link
                       to="/timetable"
@@ -889,7 +933,7 @@ export function ParentDashboard() {
                 </div>
               </div>
             )
-          ))}
+          })}
         </>
         )
       })()}
