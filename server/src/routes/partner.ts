@@ -786,8 +786,11 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
         parent: { select: { name: true } },
         student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } },
         participants: { select: { id: true, userId: true, role: true, user: { select: { name: true } } } },
+        // Soft-deleted messages are INCLUDED, as tombstones. Filtering them out
+        // left a teacher holding a notification about a message that wasn't
+        // there — indistinguishable, from Desk's side, from a bug in Desk. The
+        // content is withheld below; only the fact and time of withdrawal go.
         messages: {
-          where: { deletedAt: null },
           include: {
             sender: { select: { name: true } },
             attachments: true,
@@ -849,19 +852,34 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
         // thread, and always empty on an ILSA thread — no teacher is ever on one).
         ccStaff: conversation.participants.filter((p) => p.role === 'STAFF').map((p) => p.user.name),
       },
-      messages: conversation.messages.map((m) => ({
-        id: m.id,
-        senderName: m.sender.name,
-        mine: m.senderId === aId,
-        content: m.content,
-        sentAt: m.createdAt.toISOString(),
-        attachments: m.attachments.map((a) => ({
-          name: a.fileName,
-          url: a.fileUrl,
-          type: a.fileType,
-          size: a.fileSize,
-        })),
-      })),
+      messages: conversation.messages.map((m) => {
+        // Same tombstone shape the parent inbox already uses (serializeMessage
+        // in routes/inbox.ts): blank content, `deleted` present only when true,
+        // `deletedAt` always. Attachments are dropped too — Desk renders none
+        // for a withdrawn message, and shipping the file URLs of something a
+        // parent withdrew would undo the withdrawal.
+        // Truthiness, not `!== null`: a row reaching here without the field set
+        // must read as LIVE. Getting that backwards would tombstone a real
+        // message, which is a far worse failure than missing a withdrawal.
+        const isDeleted = !!m.deletedAt
+        return {
+          id: m.id,
+          senderName: m.sender.name,
+          mine: m.senderId === aId,
+          content: isDeleted ? '' : m.content,
+          deleted: isDeleted || undefined,
+          deletedAt: m.deletedAt?.toISOString() || null,
+          sentAt: m.createdAt.toISOString(),
+          attachments: isDeleted
+            ? []
+            : m.attachments.map((a) => ({
+                name: a.fileName,
+                url: a.fileUrl,
+                type: a.fileType,
+                size: a.fileSize,
+              })),
+        }
+      }),
     })
   } catch (error) {
     console.error('Error fetching partner inbox thread:', error)

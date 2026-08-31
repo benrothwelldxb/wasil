@@ -478,7 +478,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     })
   })
 
-  it('marks inbound messages read, excludes soft-deleted, and renames attachment fields', async () => {
+  it('marks inbound messages read, returns soft-deleted as tombstones, and renames attachment fields', async () => {
     prismaMock.user.findUnique.mockResolvedValue(STAFF)
     prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c-1',
@@ -488,12 +488,18 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       messages: [
         {
           id: 'm-1', senderId: 'p-1', content: 'Hello', createdAt: new Date('2026-08-14T09:00:00.000Z'),
-          sender: { name: 'Amina Dad' },
+          deletedAt: null, sender: { name: 'Amina Dad' },
           attachments: [{ fileName: 'note.pdf', fileUrl: 'https://x/note.pdf', fileType: 'application/pdf', fileSize: 1234 }],
         },
         {
           id: 'm-2', senderId: 'staff-1', content: 'Hi there', createdAt: new Date('2026-08-14T09:05:00.000Z'),
-          sender: { name: 'Ms Noor' }, attachments: [],
+          deletedAt: null, sender: { name: 'Ms Noor' }, attachments: [],
+        },
+        {
+          // Withdrawn by the parent: comes back, but says nothing.
+          id: 'm-3', senderId: 'p-1', content: 'Sent by mistake', createdAt: new Date('2026-08-14T09:10:00.000Z'),
+          deletedAt: new Date('2026-08-14T09:11:00.000Z'), sender: { name: 'Amina Dad' },
+          attachments: [{ fileName: 'oops.pdf', fileUrl: 'https://x/oops.pdf', fileType: 'application/pdf', fileSize: 9 }],
         },
       ],
     })
@@ -504,15 +510,23 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       where: { conversationId: 'c-1', senderId: { not: 'staff-1' }, readAt: null },
       data: { readAt: expect.any(Date) },
     })
-    // soft-deleted excluded via the include filter
-    expect(prismaMock.conversation.findFirst.mock.calls[0][0].include.messages.where).toEqual({ deletedAt: null })
+    // Soft-deleted are NOT filtered out any more: Desk needs to tell "withdrawn"
+    // from "never existed", or a teacher gets a notification and an empty thread.
+    expect(prismaMock.conversation.findFirst.mock.calls[0][0].include.messages.where).toBeUndefined()
     expect(res.body.thread).toEqual({ id: 'c-1', parentName: 'Amina Dad', studentName: 'Amina Khan', className: '1A', sharedWith: ['Amina Mum'], ccStaff: [] })
     expect(res.body.messages).toEqual([
       {
         id: 'm-1', senderName: 'Amina Dad', mine: false, content: 'Hello', sentAt: '2026-08-14T09:00:00.000Z',
+        deletedAt: null,
         attachments: [{ name: 'note.pdf', url: 'https://x/note.pdf', type: 'application/pdf', size: 1234 }],
       },
-      { id: 'm-2', senderName: 'Ms Noor', mine: true, content: 'Hi there', sentAt: '2026-08-14T09:05:00.000Z', attachments: [] },
+      { id: 'm-2', senderName: 'Ms Noor', mine: true, content: 'Hi there', sentAt: '2026-08-14T09:05:00.000Z', deletedAt: null, attachments: [] },
+      // The withdrawal keeps its place and its authorship, and carries NO
+      // content and NO attachment URLs — sending either would undo it.
+      {
+        id: 'm-3', senderName: 'Amina Dad', mine: false, content: '', deleted: true,
+        deletedAt: '2026-08-14T09:11:00.000Z', sentAt: '2026-08-14T09:10:00.000Z', attachments: [],
+      },
     ])
   })
 
@@ -526,7 +540,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       messages: [
         {
           id: 'm-1', senderId: 'p-1', content: 'Hi', createdAt: new Date('2026-08-14T09:00:00.000Z'),
-          sender: { name: 'Dad' },
+          deletedAt: null, sender: { name: 'Dad' },
           attachments: [{ fileName: 'n.pdf', fileUrl: 'https://x/n.pdf', fileType: 'application/pdf', fileSize: 1 }],
         },
       ],
@@ -534,7 +548,9 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-1?hub_user_id=hu-staff'))
     expect(Object.keys(res.body.thread).sort()).toEqual(['ccStaff', 'className', 'id', 'parentName', 'sharedWith', 'studentName'].sort())
     expect(Object.keys(res.body.messages[0]).sort()).toEqual(
-      ['attachments', 'content', 'id', 'mine', 'senderName', 'sentAt'].sort(),
+      // `deleted` is absent on a live message (undefined, so JSON drops it);
+      // `deletedAt` is always sent, null when live.
+      ['attachments', 'content', 'deletedAt', 'id', 'mine', 'senderName', 'sentAt'].sort(),
     )
     expect(Object.keys(res.body.messages[0].attachments[0]).sort()).toEqual(['name', 'size', 'type', 'url'].sort())
   })

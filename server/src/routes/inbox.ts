@@ -1221,6 +1221,24 @@ router.delete('/conversations/:id/messages/:messageId', isAuthenticated, async (
       },
     })
 
+    // Withdraw it from the thread PREVIEW too. Conversation.lastMessageText is
+    // denormalised at send time, so without this the withdrawn words carried on
+    // showing in every inbox list — the parent app's and Desk's — next to a
+    // thread that now says the message was withdrawn. The preview falls back to
+    // the most recent message still standing, or empties if there is none.
+    //
+    // lastMessageAt is deliberately NOT rewound: it orders the inbox, and a
+    // thread should not jump down the list because its last line was withdrawn.
+    const newest = await prisma.conversationMessage.findFirst({
+      where: { conversationId: id, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { content: true },
+    })
+    await prisma.conversation.update({
+      where: { id },
+      data: { lastMessageText: newest?.content.trim().substring(0, 200) ?? null },
+    })
+
     res.json({ success: true })
   } catch (error) {
     console.error('Error deleting message:', error)
