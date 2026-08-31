@@ -28,7 +28,8 @@ interface FormFormProps {
 const FIELD_TYPES: { value: FormFieldType; label: string }[] = [
   { value: 'text', label: 'Text' },
   { value: 'textarea', label: 'Long Text' },
-  { value: 'checkbox', label: 'Checkbox' },
+  { value: 'checkbox', label: 'Checkbox (single tick)' },
+  { value: 'checkboxes', label: 'Checkboxes (tick all that apply)' },
   { value: 'select', label: 'Select / Dropdown' },
   { value: 'number', label: 'Number' },
   { value: 'date', label: 'Date' },
@@ -388,8 +389,10 @@ export function FormForm({
                             </div>
                           )}
 
-                          {/* Options for select fields */}
-                          {field.type === 'select' && (
+                          {/* Options for the choice fields. A single 'checkbox'
+                              is excluded on purpose: it is one box with nothing
+                              to enumerate. */}
+                          {(field.type === 'select' || field.type === 'checkboxes') && (
                             <div className="space-y-1">
                               {(field.options || []).map((opt, optIdx) => (
                                 <div key={optIdx} className="flex gap-1">

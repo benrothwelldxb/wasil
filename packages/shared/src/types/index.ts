@@ -206,7 +206,10 @@ export interface MessageAcknowledgment {
 }
 
 // Form types
-export type FormFieldType = 'text' | 'textarea' | 'checkbox' | 'select' | 'number' | 'date' | 'signature'
+// 'checkbox' is ONE box, answered with a boolean. 'checkboxes' is a group,
+// answered with an array of the chosen option labels. Different answer shapes,
+// so they are different types rather than one type with a flag.
+export type FormFieldType = 'text' | 'textarea' | 'checkbox' | 'checkboxes' | 'select' | 'number' | 'date' | 'signature'
 
 export interface FormFieldCondition {
   fieldId: string    // which field to check

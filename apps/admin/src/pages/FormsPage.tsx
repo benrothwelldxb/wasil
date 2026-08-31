@@ -95,7 +95,10 @@ function AnalyticsView({ form }: { form: FormWithResponses }) {
               </div>
             )}
 
-            {stat.type === 'select' && stat.optionCounts && (
+            {/* Checkboxes share the select bar chart. Percentages are of
+                RESPONDENTS, so with several ticks each they sum past 100 —
+                which is the honest reading of "tick all that apply". */}
+            {(stat.type === 'select' || stat.type === 'checkboxes') && stat.optionCounts && (
               <div className="space-y-2">
                 {Object.entries(stat.optionCounts).map(([option, count]) => {
                   const pct = totalResponses > 0 ? Math.round(((count as number) / totalResponses) * 100) : 0
@@ -490,7 +493,7 @@ export function FormsPage() {
                                 const val = (r.answers as Record<string, unknown>)[f.id]
                                 return (
                                   <td key={f.id} className="py-2 pr-3">
-                                    {f.type === 'checkbox' ? (val ? 'Yes' : 'No') : String(val ?? '—')}
+                                    {f.type === 'checkbox' ? (val ? 'Yes' : 'No') : Array.isArray(val) ? (val.length ? val.join(', ') : '—') : String(val ?? '—')}
                                   </td>
                                 )
                               })}

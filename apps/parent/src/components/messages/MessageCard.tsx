@@ -81,7 +81,9 @@ export function MessageCard({
     }
     const initial: Record<string, unknown> = {}
     fields.forEach(f => {
-      initial[f.id] = f.type === 'checkbox' ? false : ''
+      // A group answers with an array of chosen labels; a single checkbox with
+      // a boolean; everything else with a string.
+      initial[f.id] = f.type === 'checkboxes' ? [] : f.type === 'checkbox' ? false : ''
     })
     return initial
   })
@@ -120,7 +122,11 @@ export function MessageCard({
     fields.forEach(f => {
       if (f.required && shouldShowField(f)) {
         const val = answers[f.id]
-        if (val === undefined || val === null || val === '' || val === false) {
+        // Nothing ticked in a group is [], which the scalar checks let through.
+        const missing = Array.isArray(val)
+          ? val.length === 0
+          : val === undefined || val === null || val === '' || val === false
+        if (missing) {
           newErrors[f.id] = `${f.label} is required`
         }
       }
@@ -145,7 +151,11 @@ export function MessageCard({
     currentPageFields.forEach(f => {
       if (f.required) {
         const val = answers[f.id]
-        if (val === undefined || val === null || val === '' || val === false) {
+        // Nothing ticked in a group is [], which the scalar checks let through.
+        const missing = Array.isArray(val)
+          ? val.length === 0
+          : val === undefined || val === null || val === '' || val === false
+        if (missing) {
           newErrors[f.id] = `${f.label} is required`
         }
       }
@@ -534,6 +544,39 @@ export function MessageCard({
                         {field.placeholder || field.label}
                       </span>
                     </label>
+                  )}
+
+                  {field.type === 'checkboxes' && (
+                    <div className="space-y-1">
+                      {(field.options || []).map(option => {
+                        // The answer is the list of CHOSEN LABELS, not indices —
+                        // so an existing response stays readable if the school
+                        // later reorders the options.
+                        const chosen = Array.isArray(answers[field.id])
+                          ? (answers[field.id] as string[])
+                          : []
+                        const isOn = chosen.includes(option)
+                        return (
+                          <label key={option} className="flex items-center gap-2 cursor-pointer py-1">
+                            <input
+                              type="checkbox"
+                              checked={isOn}
+                              onChange={() =>
+                                updateAnswer(
+                                  field.id,
+                                  isOn ? chosen.filter(c => c !== option) : [...chosen, option]
+                                )
+                              }
+                              className="w-5 h-5 rounded"
+                              style={{ accentColor: '#C4506E' }}
+                            />
+                            <span className="text-sm font-medium" style={{ color: '#4A3A40' }}>
+                              {option}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
                   )}
 
                   {field.type === 'select' && (

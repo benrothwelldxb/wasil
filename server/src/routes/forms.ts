@@ -329,7 +329,14 @@ router.post('/:id/respond', isAuthenticated, async (req, res) => {
 
     const fields = form.fields as any[]
     for (const field of fields) {
-      if (field.required && (answers[field.id] === undefined || answers[field.id] === '' || answers[field.id] === null)) {
+      const given = answers[field.id]
+      // A 'checkboxes' answer is an ARRAY, so the empty case is [] — which none
+      // of the scalar checks below would catch.
+      const missing =
+        field.type === 'checkboxes'
+          ? !Array.isArray(given) || given.length === 0
+          : given === undefined || given === '' || given === null
+      if (field.required && missing) {
         return res.status(400).json({ error: `Field "${field.label}" is required` })
       }
     }
@@ -435,6 +442,10 @@ router.get('/:id/export', isAdmin, async (req, res) => {
         const val = answers[f.id]
         if (val === undefined || val === null) return ''
         if (f.type === 'checkbox') return val ? 'Yes' : 'No'
+        // Joined with '; ' rather than left to String(array)'s commas — the same
+        // separator the children/classes columns use, and it survives escapeCSV
+        // without turning one answer into several columns.
+        if (Array.isArray(val)) return val.join('; ')
         return String(val)
       })
 
@@ -562,6 +573,23 @@ router.get('/:id/analytics', isAdmin, async (req, res) => {
         }
         stat.checkedCount = checked
         stat.uncheckedCount = unchecked
+      } else if (field.type === 'checkboxes') {
+        // Like select, but one response contributes to SEVERAL options, so the
+        // percentages are of respondents and deliberately sum past 100.
+        const optionCounts: Record<string, number> = {}
+        if (field.options) {
+          for (const opt of field.options) optionCounts[opt] = 0
+        }
+        for (const r of responses) {
+          const answers = r.answers as Record<string, unknown>
+          const val = answers[field.id]
+          if (Array.isArray(val)) {
+            for (const chosen of val) {
+              if (typeof chosen === 'string') optionCounts[chosen] = (optionCounts[chosen] || 0) + 1
+            }
+          }
+        }
+        stat.optionCounts = optionCounts
       } else if (field.type === 'select') {
         const optionCounts: Record<string, number> = {}
         // Initialize with known options
@@ -809,6 +837,10 @@ router.get('/public-export/:token', async (req, res) => {
         const val = answers[f.id]
         if (val === undefined || val === null) return ''
         if (f.type === 'checkbox') return val ? 'Yes' : 'No'
+        // Joined with '; ' rather than left to String(array)'s commas — the same
+        // separator the children/classes columns use, and it survives escapeCSV
+        // without turning one answer into several columns.
+        if (Array.isArray(val)) return val.join('; ')
         return String(val)
       })
 
