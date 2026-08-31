@@ -281,8 +281,8 @@ describe('GET /api/partner/oversight/ilsa-threads', () => {
         id: 'c-ilsa', staffId: 'ilsa-1', createdAt: new Date('2026-08-01T09:00:00.000Z'), lastMessageAt: new Date('2026-08-14T10:00:00.000Z'),
         parent: { name: 'Sara Khan' }, staff: { id: 'ilsa-1', name: 'Ms Support' }, participants: [],
         messages: [
-          { id: 'm-1', senderId: 'ilsa-1', content: 'Update', createdAt: new Date('2026-08-14T09:00:00.000Z'), sender: { name: 'Ms Support' }, attachments: [] },
-          { id: 'm-2', senderId: 'p-1', content: 'Thanks', createdAt: new Date('2026-08-14T10:00:00.000Z'), sender: { name: 'Sara Khan' }, attachments: [] },
+          { id: 'm-1', senderId: 'ilsa-1', content: 'Update', createdAt: new Date('2026-08-14T09:00:00.000Z'), deletedAt: null, sender: { name: 'Ms Support' }, attachments: [] },
+          { id: 'm-2', senderId: 'p-1', content: 'Thanks', createdAt: new Date('2026-08-14T10:00:00.000Z'), deletedAt: null, sender: { name: 'Sara Khan' }, attachments: [] },
         ],
       },
     ])
@@ -304,5 +304,43 @@ describe('GET /api/partner/oversight/ilsa-threads', () => {
         metadata: expect.objectContaining({ event: 'OVERSIGHT_ACCESS', pupilHubId: 'hp-1', threadCount: 1 }),
       }),
     }))
+  })
+
+  it('keeps a withdrawn message as a tombstone — safeguarding must see it happened', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(ADMIN)
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' } })
+    prismaMock.conversation.findMany.mockResolvedValue([
+      {
+        id: 'c-ilsa', staffId: 'ilsa-1', createdAt: new Date('2026-08-01T09:00:00.000Z'), lastMessageAt: new Date('2026-08-14T10:00:00.000Z'),
+        parent: { name: 'Sara Khan' }, staff: { id: 'ilsa-1', name: 'Ms Support' }, participants: [],
+        messages: [
+          {
+            id: 'm-1', senderId: 'p-1', content: 'Said something I regret',
+            createdAt: new Date('2026-08-14T09:00:00.000Z'),
+            deletedAt: new Date('2026-08-14T09:02:00.000Z'),
+            sender: { name: 'Sara Khan' },
+            attachments: [{ fileName: 'x.pdf', fileUrl: 'https://x/x.pdf', fileType: 'application/pdf', fileSize: 4 }],
+          },
+        ],
+      },
+    ])
+    prismaMock.ilsaLink.findMany.mockResolvedValue([{ userId: 'ilsa-1' }])
+    prismaMock.auditLog.create.mockResolvedValue({})
+
+    const res = await auth(request(makeApp()).get('/api/partner/oversight/ilsa-threads?hub_user_id=hu-admin&pupil_id=hp-1'))
+    expect(res.status).toBe(200)
+    // The row survives the read — filtering it left no trace it ever existed.
+    expect(prismaMock.conversation.findMany.mock.calls[0][0].include.messages.where).toBeUndefined()
+    // It says WHO and WHEN, and nothing else: no content, no fetchable file.
+    expect(res.body.threads[0].messages[0]).toEqual({
+      id: 'm-1',
+      senderName: 'Sara Khan',
+      senderRole: 'GUARDIAN',
+      content: '',
+      deleted: true,
+      deletedAt: '2026-08-14T09:02:00.000Z',
+      sentAt: '2026-08-14T09:00:00.000Z',
+      attachments: [],
+    })
   })
 })

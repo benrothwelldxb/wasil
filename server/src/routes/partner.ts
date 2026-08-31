@@ -1283,8 +1283,11 @@ router.get('/oversight/ilsa-threads', requirePartner, async (req, res) => {
         parent: { select: { name: true } },
         staff: { select: { id: true, name: true } }, // the ILSA (staff-side slot)
         participants: { select: { role: true, user: { select: { name: true } } } },
+        // Tombstones included, as on the thread route. This is the safeguarding
+        // read of an ILSA's threads for one pupil: a message that was sent and
+        // withdrawn is exactly the kind of thing a safeguarding lead needs to
+        // see happened, and filtering it left no trace of it at all.
         messages: {
-          where: { deletedAt: null },
           include: { sender: { select: { name: true } }, attachments: true },
           orderBy: { createdAt: 'asc' },
         },
@@ -1334,17 +1337,28 @@ router.get('/oversight/ilsa-threads', requirePartner, async (req, res) => {
         sharedWith: c.participants.filter((p) => p.role !== 'STAFF').map((p) => p.user.name),
         createdAt: c.createdAt.toISOString(),
         lastMessageAt: c.lastMessageAt.toISOString(),
-        messages: c.messages.map((m) => ({
-          id: m.id,
-          senderName: m.sender.name,
-          // ILSA vs guardian, by whether the sender is the thread's ILSA party.
-          senderRole: m.senderId === c.staffId ? 'ILSA' : 'GUARDIAN',
-          content: m.content,
-          sentAt: m.createdAt.toISOString(),
-          attachments: m.attachments.map((a) => ({
-            name: a.fileName, url: a.fileUrl, type: a.fileType, size: a.fileSize,
-          })),
-        })),
+        messages: c.messages.map((m) => {
+          // Same tombstone shape as the thread route: blank content, `deleted`
+          // only when true, `deletedAt` always, `senderName` kept so a consumer
+          // can say WHO withdrew it. Attachments dropped — a withdrawn file
+          // must not stay fetchable just because this view retains the row.
+          const isDeleted = !!m.deletedAt
+          return {
+            id: m.id,
+            senderName: m.sender.name,
+            // ILSA vs guardian, by whether the sender is the thread's ILSA party.
+            senderRole: m.senderId === c.staffId ? 'ILSA' : 'GUARDIAN',
+            content: isDeleted ? '' : m.content,
+            deleted: isDeleted || undefined,
+            deletedAt: m.deletedAt?.toISOString() || null,
+            sentAt: m.createdAt.toISOString(),
+            attachments: isDeleted
+              ? []
+              : m.attachments.map((a) => ({
+                  name: a.fileName, url: a.fileUrl, type: a.fileType, size: a.fileSize,
+                })),
+          }
+        }),
       })),
     })
   } catch (error) {
