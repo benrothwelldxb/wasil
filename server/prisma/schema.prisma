@@ -491,6 +491,11 @@ model Message {
   // Message flags
   isPinned Boolean @default(false)
   isUrgent Boolean @default(false)
+  // Opt-IN. Acknowledgement used to be on every post, which made it mean
+  // nothing: if everything asks to be acknowledged, the notices that genuinely
+  // need it don't stand out and the counts aren't worth reading. Most posts are
+  // read-and-consume. Defaults false, so existing posts stop asking.
+  requiresAcknowledgment Boolean @default(false)
 
   // Lifecycle
   scheduledAt DateTime? // If set, hidden from parents until this time

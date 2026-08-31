@@ -20,6 +20,7 @@ export interface MessageFormData {
   groupId?: string
   isPinned: boolean
   isUrgent: boolean
+  requiresAcknowledgment: boolean
   scheduledAt: string
   expiresAt: string
   hasAction: boolean
@@ -292,6 +293,10 @@ export function MessageForm({
           <div className="flex items-center space-x-2">
             <input type="checkbox" id="isUrgent" checked={formData.isUrgent} onChange={(e) => onChange({ ...formData, isUrgent: e.target.checked })} className="rounded" />
             <label htmlFor="isUrgent" className="text-sm text-gray-700">Mark as urgent</label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input type="checkbox" id="requiresAcknowledgment" checked={formData.requiresAcknowledgment} onChange={(e) => onChange({ ...formData, requiresAcknowledgment: e.target.checked })} className="rounded" />
+            <label htmlFor="requiresAcknowledgment" className="text-sm text-gray-700" title="Only tick this when you need to know each parent has seen it — if every post asks, the ask stops meaning anything.">Require acknowledgement</label>
           </div>
           <div className="flex items-center space-x-2">
             <input type="checkbox" id="hasAction" checked={formData.hasAction} onChange={(e) => onChange({ ...formData, hasAction: e.target.checked })} className="rounded" />

@@ -19,7 +19,7 @@ export function MessagesPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null)
   const [formData, setFormData] = useState<MessageFormData>({
-    title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false,
+    title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false, requiresAcknowledgment: false,
     scheduledAt: '', expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '',
   })
   const [attachments, setAttachments] = useState<AttachmentData[]>([])
@@ -49,7 +49,7 @@ export function MessagesPage() {
         title: formData.title, content: formData.content, targetClass: formData.targetClass,
         classId: formData.classId || undefined, yearGroupId: formData.yearGroupId || undefined,
         groupId: formData.groupId || undefined,
-        isPinned: formData.isPinned, isUrgent: formData.isUrgent,
+        isPinned: formData.isPinned, isUrgent: formData.isUrgent, requiresAcknowledgment: formData.requiresAcknowledgment,
         scheduledAt: formData.scheduledAt || undefined, expiresAt: formData.expiresAt || undefined,
         formId: formData.formId || undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -73,7 +73,7 @@ export function MessagesPage() {
   const handleEdit = (message: Message) => {
     setFormData({
       title: message.title, content: message.content, targetClass: message.targetClass,
-      isPinned: message.isPinned || false, isUrgent: message.isUrgent || false,
+      isPinned: message.isPinned || false, isUrgent: message.isUrgent || false, requiresAcknowledgment: message.requiresAcknowledgment || false,
       scheduledAt: message.scheduledAt ? message.scheduledAt.slice(0, 16) : '',
       expiresAt: message.expiresAt ? message.expiresAt.split('T')[0] : '',
       hasAction: !!message.actionType, actionType: message.actionType || 'consent',
@@ -95,7 +95,7 @@ export function MessagesPage() {
   const resetForm = () => {
     setShowForm(false)
     setEditingMessage(null)
-    setFormData({ title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false, scheduledAt: '', expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '' })
+    setFormData({ title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false, requiresAcknowledgment: false, scheduledAt: '', expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '' })
     setAttachments([])
   }
 

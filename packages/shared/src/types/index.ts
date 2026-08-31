@@ -185,6 +185,8 @@ export interface Message {
   actionAmount?: string
   isPinned?: boolean
   isUrgent?: boolean
+  /** Opt-in: only these posts show parents an Acknowledge button. */
+  requiresAcknowledgment?: boolean
   scheduledAt?: string
   isScheduled?: boolean
   expiresAt?: string

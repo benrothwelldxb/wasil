@@ -26,6 +26,7 @@ const createMessageSchema = z.object({
   actionAmount: z.string().optional(),
   isPinned: z.boolean().optional(),
   isUrgent: z.boolean().optional(),
+  requiresAcknowledgment: z.boolean().optional(),
   scheduledAt: z.string().optional(),
   expiresAt: z.string().optional(),
   formId: z.string().optional(),
@@ -202,6 +203,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       actionAmount: msg.actionAmount,
       isPinned: msg.isPinned,
       isUrgent: msg.isUrgent,
+      requiresAcknowledgment: msg.requiresAcknowledgment,
       expiresAt: msg.expiresAt?.toISOString(),
       formId: msg.formId,
       form: msg.form ? {
@@ -283,6 +285,7 @@ router.get('/all', isAdmin, async (req, res) => {
       actionAmount: msg.actionAmount,
       isPinned: msg.isPinned,
       isUrgent: msg.isUrgent,
+      requiresAcknowledgment: msg.requiresAcknowledgment,
       scheduledAt: msg.scheduledAt?.toISOString(),
       isScheduled: msg.scheduledAt ? msg.scheduledAt > now : false,
       expiresAt: msg.expiresAt?.toISOString(),
@@ -319,7 +322,7 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMarkUrgent, async (req, res) => {
   try {
     const user = req.user!
-    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, scheduledAt, expiresAt, formId, attachments } = req.body
+    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, requiresAcknowledgment, scheduledAt, expiresAt, formId, attachments } = req.body
 
     // Staff cannot pin messages (only admin)
     const canPin = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
@@ -341,6 +344,7 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
         actionAmount: actionAmount || null,
         isPinned: canPin ? (isPinned || false) : false,
         isUrgent: isUrgent || false,
+        requiresAcknowledgment: requiresAcknowledgment || false,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         formId: formId || null,
@@ -394,6 +398,7 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
       actionAmount: message.actionAmount,
       isPinned: message.isPinned,
       isUrgent: message.isUrgent,
+      requiresAcknowledgment: message.requiresAcknowledgment,
       scheduledAt: message.scheduledAt?.toISOString(),
       expiresAt: message.expiresAt?.toISOString(),
       formId: message.formId,
@@ -419,7 +424,7 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, scheduledAt, expiresAt, formId, attachments } = req.body
+    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, requiresAcknowledgment, scheduledAt, expiresAt, formId, attachments } = req.body
 
     // Verify message belongs to user's school
     const existing = await prisma.message.findFirst({
@@ -445,6 +450,7 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
         actionAmount: actionAmount || null,
         isPinned: isPinned ?? existing.isPinned,
         isUrgent: isUrgent ?? existing.isUrgent,
+        requiresAcknowledgment: requiresAcknowledgment ?? existing.requiresAcknowledgment,
         scheduledAt: scheduledAt !== undefined ? (scheduledAt ? new Date(scheduledAt) : null) : existing.scheduledAt,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         formId: formId !== undefined ? (formId || null) : existing.formId,
@@ -479,7 +485,7 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
       where: { messageId: id },
     })
 
-    const changes = computeChanges(existing as any, message as any, ['title', 'content', 'targetClass', 'isPinned', 'isUrgent', 'actionType', 'actionLabel', 'actionDueDate', 'actionAmount'])
+    const changes = computeChanges(existing as any, message as any, ['title', 'content', 'targetClass', 'isPinned', 'isUrgent', 'requiresAcknowledgment', 'actionType', 'actionLabel', 'actionDueDate', 'actionAmount'])
     logAudit({ req, action: 'UPDATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title }, changes })
 
     res.json({
@@ -499,6 +505,7 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
       actionAmount: message.actionAmount,
       isPinned: message.isPinned,
       isUrgent: message.isUrgent,
+      requiresAcknowledgment: message.requiresAcknowledgment,
       expiresAt: message.expiresAt?.toISOString(),
       formId: message.formId,
       attachments: updatedAttachments.map(a => ({

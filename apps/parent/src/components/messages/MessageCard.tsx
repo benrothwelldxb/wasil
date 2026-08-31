@@ -201,12 +201,18 @@ export function MessageCard({
   // differs again between English and Arabic). Line-clamping caps the thing
   // actually complained about — height — and needs no parsing.
   //
-  // Two kinds of post are never clamped: an URGENT one, because the school
-  // marking it urgent is a statement it should be read in full; and one with an
-  // acknowledgement still outstanding, because a parent must not be able to
-  // acknowledge a post they have seen a third of.
-  const ackPending = showAcknowledgeButton && !!onAcknowledge && !message.acknowledged
-  const clampable = !isUrgent && !ackPending
+  // An URGENT post is never clamped: the school marking one urgent is a
+  // statement that it should be read in full.
+  //
+  // A pending acknowledgement is deliberately NOT an exemption here, though it
+  // reads like it should be. Every post carries an Acknowledge button — the
+  // dashboard hands onAcknowledge to all of them and there is no per-post
+  // "requires acknowledgement" flag — so exempting unacknowledged posts left
+  // the clamp applying to almost nothing, and to a parent it looked arbitrary:
+  // "Read more" appeared only on posts they had already acknowledged. The
+  // concern behind it is real, so it is handled where it belongs, on the button
+  // itself: see mustExpandToAcknowledge.
+  const clampable = !isUrgent
 
   const [expanded, setExpanded] = useState(false)
   const [overflowing, setOverflowing] = useState(false)
@@ -231,6 +237,9 @@ export function MessageCard({
     observer.observe(el)
     return () => observer.disconnect()
   }, [clampable, expanded, sanitizedContent])
+
+  // The clamp must not become a way to acknowledge six lines of a long post.
+  const mustExpandToAcknowledge = clampable && overflowing && !expanded
 
   // Get initials for avatar
   const getInitials = (name: string) => {
@@ -629,11 +638,26 @@ export function MessageCard({
         {/* Action buttons */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {showAcknowledgeButton && onAcknowledge && !message.acknowledged && (
+            {/* Opt-in per post. The dashboard hands onAcknowledge to every card,
+                so before requiresAcknowledgment existed EVERY post asked to be
+                acknowledged — which made the ask worthless. Most posts are read
+                and consume. An already-acknowledged post still shows its badge
+                below, whatever the flag now says. */}
+            {message.requiresAcknowledgment && showAcknowledgeButton && onAcknowledge && !message.acknowledged && (
               <button
                 onClick={() => onAcknowledge(message.id)}
+                disabled={mustExpandToAcknowledge}
+                title={
+                  mustExpandToAcknowledge
+                    ? t('messages.readBeforeAcknowledge', 'Read the full post first')
+                    : undefined
+                }
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-[14px] text-sm font-bold transition-colors"
-                style={{ backgroundColor: '#FFF0F3', color: '#C4506E' }}
+                style={{
+                  backgroundColor: '#FFF0F3',
+                  color: '#C4506E',
+                  ...(mustExpandToAcknowledge ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
+                }}
               >
                 <Check className="h-4 w-4" />
                 <span>{t('messages.acknowledge', 'Acknowledge')}</span>
