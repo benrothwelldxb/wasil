@@ -2,7 +2,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, useApi, useToast } from '@wasil/shared'
 import type {
   ProviderSummary, ProviderDetail, ProviderInviteResult,
-  ProviderPortalActivity, ProviderPortalMenu, ProviderPortalMenuItem, ProviderPortalTerm,
+  ProviderPortalActivity, ProviderPortalMenu, ProviderPortalMenuItem, ProviderPortalTerm, ProviderPortalYearGroup,
 } from '@wasil/shared'
 import { Building2, Copy, Plus, Trash2, UserPlus, X } from 'lucide-react'
 
@@ -412,19 +412,42 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
   const [activities, setActivities] = useState<ProviderPortalActivity[] | null>(null)
   const [terms, setTerms] = useState<ProviderPortalTerm[]>([])
   const [adding, setAdding] = useState(false)
-  const [form, setForm] = useState({ ecaTermId: '', name: '', dayOfWeek: 1, timeSlot: 'AFTER_SCHOOL', location: '', cost: '', maxCapacity: '' })
+  const [yearGroups, setYearGroups] = useState<ProviderPortalYearGroup[]>([])
+  const [form, setForm] = useState({
+    ecaTermId: '', name: '', dayOfWeek: 1, timeSlot: 'AFTER_SCHOOL', location: '', cost: '', maxCapacity: '',
+    customStartTime: '', customEndTime: '', paymentUrl: '', eligibleYearGroupIds: [] as string[],
+  })
 
   const load = () =>
-    Promise.all([api.providerPortalAdmin.activities(providerId), api.providerPortalAdmin.terms(providerId)])
-      .then(([a, t]) => {
+    Promise.all([
+      api.providerPortalAdmin.activities(providerId),
+      api.providerPortalAdmin.terms(providerId),
+      api.providerPortalAdmin.yearGroups(providerId),
+    ])
+      .then(([a, t, yg]) => {
         setActivities(a)
         setTerms(t)
+        setYearGroups(yg)
         setForm(f => ({ ...f, ecaTermId: f.ecaTermId || t[0]?.id || '' }))
       })
       .catch(() => toast.error('Failed to load clubs'))
   useEffect(() => { load() }, [providerId])
 
   const selectedTerm = terms.find(t => t.id === form.ecaTermId) ?? null
+  // Year groups belong to a school, and a provider may serve several — so the
+  // list follows whichever term is selected.
+  const termYearGroups = yearGroups.filter(y => y.schoolId === selectedTerm?.schoolId)
+  const before = form.timeSlot === 'BEFORE_SCHOOL'
+  const defaultStart = (before ? selectedTerm?.defaultBeforeSchoolStart : selectedTerm?.defaultAfterSchoolStart) || ''
+  const defaultEnd = (before ? selectedTerm?.defaultBeforeSchoolEnd : selectedTerm?.defaultAfterSchoolEnd) || ''
+
+  const toggleYearGroup = (id: string) =>
+    setForm(f => ({
+      ...f,
+      eligibleYearGroupIds: f.eligibleYearGroupIds.includes(id)
+        ? f.eligibleYearGroupIds.filter(x => x !== id)
+        : [...f.eligibleYearGroupIds, id],
+    }))
 
   const create = async (e: FormEvent) => {
     e.preventDefault()
@@ -437,8 +460,16 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
         location: form.location.trim() || null,
         cost: form.cost ? Number(form.cost) : null,
         maxCapacity: form.maxCapacity ? Number(form.maxCapacity) : null,
+        customStartTime: form.customStartTime || null,
+        customEndTime: form.customEndTime || null,
+        paymentUrl: form.paymentUrl.trim() || null,
+        // Empty list = open to every year group.
+        eligibleYearGroupIds: form.eligibleYearGroupIds,
       })
-      setForm({ ...form, name: '', location: '', cost: '', maxCapacity: '' })
+      setForm({
+        ...form, name: '', location: '', cost: '', maxCapacity: '',
+        customStartTime: '', customEndTime: '', paymentUrl: '', eligibleYearGroupIds: [],
+      })
       setAdding(false)
       await load()
       toast.success('Club added — publish it when you\u2019re ready')
@@ -480,7 +511,10 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
             <div className="min-w-0">
               <div className="text-sm font-semibold text-warm-text-primary truncate">{a.name}</div>
               <div className="text-xs text-warm-text-tertiary truncate">
-                {DAYS[a.dayOfWeek]} · {a.timeSlot === 'AFTER_SCHOOL' ? 'After school' : 'Before school'}
+                {DAYS[a.dayOfWeek]} · {a.startTime && a.endTime
+                  ? `${a.startTime}–${a.endTime}`
+                  : a.timeSlot === 'AFTER_SCHOOL' ? 'After school' : 'Before school'}
+                {a.eligibleYearGroupIds.length > 0 ? ` · ${a.eligibleYearGroupIds.length} year group${a.eligibleYearGroupIds.length === 1 ? '' : 's'}` : ''}
                 {a.location ? ` · ${a.location}` : ''}
                 {a.cost != null ? ` · ${a.cost}` : ''}
                 {a.termName ? ` · ${a.termName}` : ''}
@@ -530,10 +564,58 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
             <Select label="When" value={form.timeSlot} onChange={v => setForm({ ...form, timeSlot: v })}
               options={[{ value: 'AFTER_SCHOOL', label: 'After school' }, { value: 'BEFORE_SCHOOL', label: 'Before school' }]} />
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Starts" type="time" value={form.customStartTime}
+              onChange={v => setForm({ ...form, customStartTime: v })} placeholder={defaultStart} />
+            <Field label="Ends" type="time" value={form.customEndTime}
+              onChange={v => setForm({ ...form, customEndTime: v })} placeholder={defaultEnd} />
+          </div>
+          <p className="text-xs text-warm-text-tertiary -mt-1">
+            {defaultStart || defaultEnd
+              ? <>Leave blank to run to the term's usual {before ? 'before-school' : 'after-school'} time
+                  ({defaultStart || '—'}–{defaultEnd || '—'}).</>
+              : <>This term has no default {before ? 'before-school' : 'after-school'} time set, so parents see
+                  no clock time unless you give one here.</>}
+          </p>
           <Field label="Location" value={form.location} onChange={v => setForm({ ...form, location: v })} />
           <div className="grid grid-cols-2 gap-2">
             <Field label="Cost" type="number" value={form.cost} onChange={v => setForm({ ...form, cost: v })} />
             <Field label="Capacity" type="number" value={form.maxCapacity} onChange={v => setForm({ ...form, maxCapacity: v })} />
+          </div>
+          <Field label="Payment link" type="url" value={form.paymentUrl}
+            onChange={v => setForm({ ...form, paymentUrl: v })} placeholder="https://…" />
+          <p className="text-xs text-warm-text-tertiary -mt-1">
+            Where parents pay. Without one, a parent can book a place but gets no way to pay.
+          </p>
+          <div>
+            <span className="text-xs font-semibold text-warm-text-secondary">Year groups</span>
+            <p className="text-xs text-warm-text-tertiary mt-0.5 mb-1.5">
+              {form.eligibleYearGroupIds.length === 0
+                ? 'None ticked — open to every year group.'
+                : 'Only the ticked year groups can book a place.'}
+            </p>
+            {termYearGroups.length === 0 ? (
+              <p className="text-xs text-warm-text-tertiary">No year groups for this school yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {termYearGroups.map(yg => {
+                  const on = form.eligibleYearGroupIds.includes(yg.id)
+                  return (
+                    <button
+                      key={yg.id}
+                      type="button"
+                      onClick={() => toggleYearGroup(yg.id)}
+                      aria-pressed={on}
+                      className={`text-xs font-semibold rounded-full px-2.5 py-1 border ${
+                        on ? 'bg-brand text-white border-brand' : 'bg-white text-warm-text-secondary border-warm-border'
+                      }`}
+                    >
+                      {yg.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <button type="submit" disabled={!form.ecaTermId} className="rounded-warm-btn bg-brand text-white font-semibold px-4 py-2 text-sm disabled:opacity-60">Add club</button>
@@ -785,8 +867,9 @@ function MenuItemsEditor({ providerId, menuId, onBack }: { providerId: string; m
   )
 }
 
-function Field({ label, value, onChange, type = 'text', required = false }: {
+function Field({ label, value, onChange, type = 'text', required = false, placeholder }: {
   label: string; value: string; onChange: (v: string) => void; type?: string; required?: boolean
+  placeholder?: string
 }) {
   return (
     <label className="block">
@@ -794,6 +877,7 @@ function Field({ label, value, onChange, type = 'text', required = false }: {
       <input
         type={type}
         required={required}
+        placeholder={placeholder}
         value={value}
         onChange={e => onChange(e.target.value)}
         className="mt-1 w-full rounded-warm-btn border border-warm-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"

@@ -47,10 +47,15 @@ export function ClubsPage() {
     }
   }
 
+  /** The children this club will accept — a restricted club offers only the
+   * ones in an eligible year group. */
+  const eligibleChildren = (club: ClubActivity) =>
+    (data?.students || []).filter(s => club.eligibleStudentIds.includes(s.id))
+
   const startBooking = (club: ClubActivity) => {
-    const students = data?.students || []
-    if (students.length === 1) {
-      void book(club.id, students[0].id)
+    const children = eligibleChildren(club)
+    if (children.length === 1) {
+      void book(club.id, children[0].id)
     } else {
       setPickFor(club)
     }
@@ -81,6 +86,10 @@ export function ClubsPage() {
           {data?.clubs.map(club => {
             const booking = data.bookings.find(b => b.activityId === club.id && !b.cancelled)
             const full = club.spotsLeft === 0 && !booking
+            // A club restricted to year groups none of this parent's children
+            // are in still shows, so they can see what the school runs — it
+            // just can't be booked.
+            const noEligibleChild = eligibleChildren(club).length === 0
             const pay = booking ? PAYMENT_COLORS[booking.paymentStatus] || PAYMENT_COLORS.UNPAID : null
 
             return (
@@ -100,9 +109,16 @@ export function ClubsPage() {
                 {club.description && <p style={{ fontSize: 13, color: '#7A6469', margin: '8px 0 0' }}>{club.description}</p>}
 
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 13, color: '#7A6469', marginTop: 10 }}>
-                  <span>{DAYS[club.dayOfWeek]} · {SLOT[club.timeSlot] || club.timeSlot}</span>
+                  <span>
+                    {DAYS[club.dayOfWeek]} · {club.startTime && club.endTime
+                      ? `${club.startTime}–${club.endTime}`
+                      : SLOT[club.timeSlot] || club.timeSlot}
+                  </span>
                   {club.location && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><MapPin size={13} /> {club.location}</span>}
                   {club.spotsLeft != null && <span>{club.spotsLeft} place{club.spotsLeft === 1 ? '' : 's'} left</span>}
+                  {club.eligibleYearGroupNames.length > 0 && (
+                    <span>{club.eligibleYearGroupNames.join(', ')} only</span>
+                  )}
                 </div>
 
                 <div style={{ marginTop: 14 }}>
@@ -135,13 +151,18 @@ export function ClubsPage() {
                   ) : (
                     <button
                       onClick={() => startBooking(club)}
-                      disabled={full || busyId === club.id}
+                      disabled={full || noEligibleChild || busyId === club.id}
                       style={{
-                        width: '100%', background: full ? '#F0E4E6' : '#C4506E', color: full ? '#A8929A' : '#fff',
-                        fontSize: 14, fontWeight: 700, padding: '11px', borderRadius: 12, border: 'none', cursor: full ? 'default' : 'pointer',
+                        width: '100%',
+                        background: full || noEligibleChild ? '#F0E4E6' : '#C4506E',
+                        color: full || noEligibleChild ? '#A8929A' : '#fff',
+                        fontSize: 14, fontWeight: 700, padding: '11px', borderRadius: 12, border: 'none',
+                        cursor: full || noEligibleChild ? 'default' : 'pointer',
                       }}
                     >
-                      {full ? 'Full' : busyId === club.id ? 'Booking…' : 'Book a place'}
+                      {noEligibleChild
+                        ? 'Not open to your child\u2019s year group'
+                        : full ? 'Full' : busyId === club.id ? 'Booking…' : 'Book a place'}
                     </button>
                   )}
                 </div>
@@ -160,7 +181,7 @@ export function ClubsPage() {
               <button onClick={() => setPickFor(null)} style={{ background: 'none', border: 'none', color: '#A8929A' }} aria-label="Close"><X size={22} /></button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(data?.students || []).map(s => (
+              {eligibleChildren(pickFor).map(s => (
                 <button
                   key={s.id}
                   onClick={() => book(pickFor.id, s.id)}

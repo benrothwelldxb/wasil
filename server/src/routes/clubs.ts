@@ -4,6 +4,11 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { notifyClubBookingCreated } from '../services/clubNotify.js'
+import { parseYearGroupIds, effectiveTimes } from '../services/ecaActivity.js'
+
+// Term statuses a parent may see. A club on a DRAFT or COMPLETED term is not
+// bookable, the same rule the ECA selection flow applies.
+const PARENT_VISIBLE_TERM_STATUSES = ['REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'ALLOCATION_COMPLETE', 'ACTIVE'] as const
 
 // Parent-facing browsing + booking of paid, provider-run clubs.
 const router = Router()
@@ -37,16 +42,41 @@ router.get('/', isAuthenticated, async (req, res) => {
       id: l.studentId,
       name: `${l.student.firstName} ${l.student.lastName}`,
       className: l.student.class?.name || null,
+      yearGroupId: l.student.class?.yearGroupId || null,
     }))
 
     const activities = await prisma.ecaActivity.findMany({
-      where: { schoolId: user.schoolId, providerId: { not: null }, isActive: true, isCancelled: false },
+      where: {
+        schoolId: user.schoolId,
+        providerId: { not: null },
+        isActive: true,
+        isCancelled: false,
+        // A club reaches parents only once its provider publishes it, and only
+        // while its term is one parents can see. Both gates are what the admin
+        // and provider screens already promise.
+        isPublished: true,
+        ecaTerm: { status: { in: [...PARENT_VISIBLE_TERM_STATUSES] } },
+      },
       include: {
         provider: { select: { name: true } },
+        ecaTerm: {
+          select: {
+            defaultBeforeSchoolStart: true, defaultBeforeSchoolEnd: true,
+            defaultAfterSchoolStart: true, defaultAfterSchoolEnd: true,
+          },
+        },
         _count: { select: { providerBookings: { where: { cancelledAt: null } } } },
       },
       orderBy: [{ dayOfWeek: 'asc' }, { name: 'asc' }],
     })
+
+    // Year-group names for the "Year 3, Year 4 only" label on a restricted club.
+    const yearGroups = await prisma.yearGroup.findMany({
+      where: { schoolId: user.schoolId },
+      select: { id: true, name: true, order: true },
+      orderBy: { order: 'asc' },
+    })
+    const yearGroupName = new Map(yearGroups.map(y => [y.id, y.name]))
 
     const bookings = await prisma.ecaProviderBooking.findMany({
       where: { parentUserId: user.id, cancelledAt: null },
@@ -56,20 +86,37 @@ router.get('/', isAuthenticated, async (req, res) => {
 
     res.json({
       students,
-      clubs: activities.map(a => ({
-        id: a.id,
-        name: a.name,
-        description: a.description,
-        providerName: a.provider?.name || null,
-        dayOfWeek: a.dayOfWeek,
-        timeSlot: a.timeSlot,
-        location: a.location,
-        cost: a.cost,
-        costDescription: a.costDescription,
-        maxCapacity: a.maxCapacity,
-        spotsBooked: a._count.providerBookings,
-        spotsLeft: a.maxCapacity != null ? Math.max(0, a.maxCapacity - a._count.providerBookings) : null,
-      })),
+      clubs: activities.map(a => {
+        const eligibleYearGroupIds = parseYearGroupIds(a.eligibleYearGroupIds)
+        // An empty list means open to everyone — the same reading the ECA
+        // selection flow and the allocator already use.
+        const restricted = eligibleYearGroupIds.length > 0
+        return {
+          id: a.id,
+          name: a.name,
+          description: a.description,
+          providerName: a.provider?.name || null,
+          dayOfWeek: a.dayOfWeek,
+          timeSlot: a.timeSlot,
+          ...effectiveTimes(a, a.ecaTerm),
+          eligibleYearGroupIds,
+          eligibleYearGroupNames: eligibleYearGroupIds
+            .map(id => yearGroupName.get(id))
+            .filter((n): n is string => !!n),
+          // Which of this parent's children may be booked in. A child with no
+          // year group on their class is treated as eligible rather than being
+          // silently locked out.
+          eligibleStudentIds: students
+            .filter(st => !restricted || !st.yearGroupId || eligibleYearGroupIds.includes(st.yearGroupId))
+            .map(st => st.id),
+          location: a.location,
+          cost: a.cost,
+          costDescription: a.costDescription,
+          maxCapacity: a.maxCapacity,
+          spotsBooked: a._count.providerBookings,
+          spotsLeft: a.maxCapacity != null ? Math.max(0, a.maxCapacity - a._count.providerBookings) : null,
+        }
+      }),
       bookings: bookings.map(serializeBooking),
     })
   } catch (error) {
@@ -89,12 +136,36 @@ router.post('/:activityId/book', isAuthenticated, validate(bookSchema), async (r
     const ownsStudent = (user.studentLinks || []).some(l => l.studentId === studentId)
     if (!ownsStudent) return res.status(403).json({ error: 'That child is not on your account' })
 
-    // The activity must be a provider club in the parent's school.
+    // The activity must be a provider club in the parent's school, published,
+    // and on a term parents can see — the same gates the listing applies, so a
+    // stale page can't book into a club that has since been withdrawn.
     const activity = await prisma.ecaActivity.findFirst({
-      where: { id: activityId, schoolId: user.schoolId, providerId: { not: null }, isActive: true, isCancelled: false },
-      select: { id: true, name: true, providerId: true, schoolId: true, maxCapacity: true, paymentUrl: true },
+      where: {
+        id: activityId,
+        schoolId: user.schoolId,
+        providerId: { not: null },
+        isActive: true,
+        isCancelled: false,
+        isPublished: true,
+        ecaTerm: { status: { in: [...PARENT_VISIBLE_TERM_STATUSES] } },
+      },
+      select: {
+        id: true, name: true, providerId: true, schoolId: true, maxCapacity: true, paymentUrl: true,
+        eligibleYearGroupIds: true,
+      },
     })
     if (!activity) return res.status(404).json({ error: 'Club not found' })
+
+    // Year-group eligibility. Enforced here and not only in the UI, since the
+    // child picker is the only thing that would otherwise stop it.
+    const eligibleYearGroupIds = parseYearGroupIds(activity.eligibleYearGroupIds)
+    if (eligibleYearGroupIds.length > 0) {
+      const link = (user.studentLinks || []).find(l => l.studentId === studentId)
+      const yearGroupId = link?.student.class?.yearGroupId || null
+      if (yearGroupId && !eligibleYearGroupIds.includes(yearGroupId)) {
+        return res.status(403).json({ error: 'This club is not open to that year group' })
+      }
+    }
 
     // Capacity check against current live bookings.
     if (activity.maxCapacity != null) {

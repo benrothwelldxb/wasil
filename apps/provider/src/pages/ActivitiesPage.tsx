@@ -9,6 +9,16 @@ interface Term {
   status: string
   schoolId: string
   schoolName: string
+  defaultBeforeSchoolStart: string | null
+  defaultBeforeSchoolEnd: string | null
+  defaultAfterSchoolStart: string | null
+  defaultAfterSchoolEnd: string | null
+}
+interface YearGroup {
+  id: string
+  name: string
+  order: number
+  schoolId: string
 }
 interface Activity {
   id: string
@@ -21,6 +31,11 @@ interface Activity {
   cost: number | null
   costDescription: string | null
   paymentUrl: string | null
+  customStartTime: string | null
+  customEndTime: string | null
+  startTime: string | null
+  endTime: string | null
+  eligibleYearGroupIds: string[]
   isActive: boolean
   isCancelled: boolean
   isPublished: boolean
@@ -45,6 +60,9 @@ interface FormState {
   costDescription: string
   paymentUrl: string
   eligibleGender: 'MIXED' | 'BOYS_ONLY' | 'GIRLS_ONLY'
+  customStartTime: string
+  customEndTime: string
+  eligibleYearGroupIds: string[]
 }
 
 const emptyForm = (ecaTermId = ''): FormState => ({
@@ -59,6 +77,9 @@ const emptyForm = (ecaTermId = ''): FormState => ({
   costDescription: '',
   paymentUrl: '',
   eligibleGender: 'MIXED',
+  customStartTime: '',
+  customEndTime: '',
+  eligibleYearGroupIds: [],
 })
 
 export function ActivitiesPage() {
@@ -66,18 +87,21 @@ export function ActivitiesPage() {
   const [error, setError] = useState<string | null>(null)
   const [activities, setActivities] = useState<Activity[]>([])
   const [terms, setTerms] = useState<Term[]>([])
+  const [yearGroups, setYearGroups] = useState<YearGroup[]>([])
   const [form, setForm] = useState<FormState | null>(null)
   const [publishing, setPublishing] = useState<string | null>(null)
 
   const load = async () => {
     setError(null)
     try {
-      const [acts, trms] = await Promise.all([
+      const [acts, trms, ygs] = await Promise.all([
         apiFetch<Activity[]>('/api/provider-portal/activities'),
         apiFetch<Term[]>('/api/provider-portal/terms'),
+        apiFetch<YearGroup[]>('/api/provider-portal/year-groups'),
       ])
       setActivities(acts)
       setTerms(trms)
+      setYearGroups(ygs)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load activities.')
     } finally {
@@ -104,6 +128,9 @@ export function ActivitiesPage() {
       costDescription: a.costDescription || '',
       paymentUrl: a.paymentUrl || '',
       eligibleGender: 'MIXED',
+      customStartTime: a.customStartTime || '',
+      customEndTime: a.customEndTime || '',
+      eligibleYearGroupIds: a.eligibleYearGroupIds || [],
     })
 
   // Flip the "Show on parent app" visibility toggle for one activity.
@@ -186,7 +213,10 @@ export function ActivitiesPage() {
                   {!a.isActive && <span className="text-xs bg-slate-100 text-warm-text-tertiary px-2 py-0.5 rounded-full">Inactive</span>}
                 </div>
                 <div className="text-sm text-warm-text-secondary mt-1">
-                  {DAYS[a.dayOfWeek]} · {SLOTS[a.timeSlot]}
+                  {DAYS[a.dayOfWeek]} · {a.startTime && a.endTime ? `${a.startTime}–${a.endTime}` : SLOTS[a.timeSlot]}
+                  {a.eligibleYearGroupIds.length > 0
+                    ? ` · ${a.eligibleYearGroupIds.length} year group${a.eligibleYearGroupIds.length === 1 ? '' : 's'}`
+                    : ''}
                   {a.location ? ` · ${a.location}` : ''}
                   {a.maxCapacity ? ` · ${a.maxCapacity} places` : ''}
                 </div>
@@ -230,6 +260,7 @@ export function ActivitiesPage() {
         <ActivityForm
           form={form}
           terms={terms}
+          yearGroups={yearGroups}
           onClose={() => setForm(null)}
           onSaved={() => {
             setForm(null)
@@ -244,11 +275,13 @@ export function ActivitiesPage() {
 function ActivityForm({
   form,
   terms,
+  yearGroups,
   onClose,
   onSaved,
 }: {
   form: FormState
   terms: Term[]
+  yearGroups: YearGroup[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -256,6 +289,21 @@ function ActivityForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isEdit = !!state.id
+  const term = terms.find(t => t.id === state.ecaTermId) ?? null
+  // Year groups are per school and a provider may serve several, so the list
+  // follows the term this club sits in.
+  const termYearGroups = yearGroups.filter(y => y.schoolId === term?.schoolId)
+  const before = state.timeSlot === 'BEFORE_SCHOOL'
+  const defaultStart = (before ? term?.defaultBeforeSchoolStart : term?.defaultAfterSchoolStart) || ''
+  const defaultEnd = (before ? term?.defaultBeforeSchoolEnd : term?.defaultAfterSchoolEnd) || ''
+
+  const toggleYearGroup = (id: string) =>
+    setState(prev => ({
+      ...prev,
+      eligibleYearGroupIds: prev.eligibleYearGroupIds.includes(id)
+        ? prev.eligibleYearGroupIds.filter(x => x !== id)
+        : [...prev.eligibleYearGroupIds, id],
+    }))
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setState(prev => ({ ...prev, [key]: value }))
 
@@ -274,6 +322,10 @@ function ActivityForm({
       costDescription: state.costDescription.trim() || null,
       paymentUrl: state.paymentUrl.trim() || null,
       eligibleGender: state.eligibleGender,
+      customStartTime: state.customStartTime || null,
+      customEndTime: state.customEndTime || null,
+      // Empty list = open to every year group.
+      eligibleYearGroupIds: state.eligibleYearGroupIds,
     }
     try {
       if (isEdit) {
@@ -331,12 +383,61 @@ function ActivityForm({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-warm-text-primary mb-1.5">Time</label>
+              <label className="block text-sm font-semibold text-warm-text-primary mb-1.5">Slot</label>
               <select value={state.timeSlot} onChange={e => set('timeSlot', e.target.value as FormState['timeSlot'])} className={inputClass}>
                 <option value="BEFORE_SCHOOL">Before school</option>
                 <option value="AFTER_SCHOOL">After school</option>
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-warm-text-primary mb-1.5">Starts</label>
+              <input type="time" value={state.customStartTime} onChange={e => set('customStartTime', e.target.value)}
+                placeholder={defaultStart} className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-warm-text-primary mb-1.5">Ends</label>
+              <input type="time" value={state.customEndTime} onChange={e => set('customEndTime', e.target.value)}
+                placeholder={defaultEnd} className={inputClass} />
+            </div>
+          </div>
+          <p className="text-xs text-warm-text-tertiary -mt-2">
+            {defaultStart || defaultEnd
+              ? `Leave blank and this club runs to the term's usual ${before ? 'before-school' : 'after-school'} time (${defaultStart || '—'}–${defaultEnd || '—'}).`
+              : `This term sets no default ${before ? 'before-school' : 'after-school'} time, so parents see no clock time unless you give one here.`}
+          </p>
+
+          <div>
+            <label className="block text-sm font-semibold text-warm-text-primary mb-1.5">Year groups</label>
+            <p className="text-xs text-warm-text-tertiary mb-2">
+              {state.eligibleYearGroupIds.length === 0
+                ? 'None selected — open to every year group.'
+                : 'Only the selected year groups can book a place.'}
+            </p>
+            {termYearGroups.length === 0 ? (
+              <p className="text-xs text-warm-text-tertiary">No year groups listed for this school.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {termYearGroups.map(yg => {
+                  const on = state.eligibleYearGroupIds.includes(yg.id)
+                  return (
+                    <button
+                      key={yg.id}
+                      type="button"
+                      onClick={() => toggleYearGroup(yg.id)}
+                      aria-pressed={on}
+                      className={`text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors ${
+                        on ? 'bg-brand text-white border-brand' : 'bg-white text-warm-text-secondary border-warm-border hover:bg-slate-50'
+                      }`}
+                    >
+                      {yg.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
