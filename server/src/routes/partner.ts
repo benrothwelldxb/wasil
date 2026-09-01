@@ -22,7 +22,7 @@ import { sendNotification } from '../services/notify.js'
 import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
 import { uploadFile, generateKey } from '../services/storage.js'
-import { checkUpload } from '../services/uploadValidation.js'
+import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 
 const router = Router()
 
@@ -33,12 +33,6 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 // convert that markdown to HTML and run it through the SAME sanitizer the admin
 // composer uses, so a partner broadcast stores the same safe-HTML content model
 // as a native one (bold/italic/lists survive; anything unsafe is discarded).
-const ATTACHMENT_MIME_TYPES = [
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-]
 const attachmentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 16 * 1024 * 1024 }, // 16MB, matches native

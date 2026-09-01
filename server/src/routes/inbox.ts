@@ -3,7 +3,7 @@ import multer from 'multer'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../middleware/auth.js'
 import { uploadFile, generateKey } from '../services/storage.js'
-import { checkUpload } from '../services/uploadValidation.js'
+import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getInboxUnreadCount, getPushBadgeCount } from '../services/unreadCount.js'
 import { teachingStaffForClasses, timetableLookupPossible } from '../services/classTeachingStaff.js'
@@ -42,13 +42,6 @@ const attachmentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 16 * 1024 * 1024 },
 })
-
-const ATTACHMENT_MIME_TYPES = [
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-]
 
 // Helper: serialize a message with soft-delete handling, replyTo, and reactions
 function serializeMessage(

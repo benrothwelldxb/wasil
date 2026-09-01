@@ -8,7 +8,7 @@ import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
 import { uploadFile, generateKey } from '../services/storage.js'
-import { checkUpload } from '../services/uploadValidation.js'
+import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
 
 const router = Router()
@@ -44,13 +44,6 @@ const attachmentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 16 * 1024 * 1024 }, // 16MB
 })
-
-const ATTACHMENT_MIME_TYPES = [
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-]
 
 // Upload attachment file to R2 (staff/admin only)
 router.post('/upload', isStaff, attachmentUpload.single('file'), async (req, res) => {
