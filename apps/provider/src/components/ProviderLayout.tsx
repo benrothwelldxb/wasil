@@ -1,10 +1,11 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { CalendarDays, LayoutDashboard, LogOut, Settings, UtensilsCrossed, Users } from 'lucide-react'
+import { Building2, CalendarDays, LayoutDashboard, LogOut, Settings, UtensilsCrossed, Users } from 'lucide-react'
 import { useProviderAuth } from '../auth'
 
 const ECA_NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/activities', label: 'Activities', icon: CalendarDays, end: false },
+  { to: '/operators', label: 'Operators', icon: Building2, end: false },
   { to: '/bookings', label: 'Bookings', icon: Users, end: false },
   { to: '/profile', label: 'Profile', icon: Settings, end: false },
 ]

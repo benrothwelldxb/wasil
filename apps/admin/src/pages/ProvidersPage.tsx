@@ -3,6 +3,7 @@ import { api, useApi, useToast } from '@wasil/shared'
 import type {
   ProviderSummary, ProviderDetail, ProviderInviteResult,
   ProviderPortalActivity, ProviderPortalMenu, ProviderPortalMenuItem, ProviderPortalTerm, ProviderPortalYearGroup,
+  ProviderPortalOperator,
 } from '@wasil/shared'
 import { Building2, Copy, Plus, Trash2, UserPlus, X } from 'lucide-react'
 
@@ -413,9 +414,11 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
   const [terms, setTerms] = useState<ProviderPortalTerm[]>([])
   const [adding, setAdding] = useState(false)
   const [yearGroups, setYearGroups] = useState<ProviderPortalYearGroup[]>([])
+  const [operators, setOperators] = useState<ProviderPortalOperator[]>([])
   const [form, setForm] = useState({
     ecaTermId: '', name: '', dayOfWeek: 1, timeSlot: 'AFTER_SCHOOL', location: '', cost: '', maxCapacity: '',
     customStartTime: '', customEndTime: '', paymentUrl: '', eligibleYearGroupIds: [] as string[],
+    operatorId: '',
   })
 
   const load = () =>
@@ -423,11 +426,13 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
       api.providerPortalAdmin.activities(providerId),
       api.providerPortalAdmin.terms(providerId),
       api.providerPortalAdmin.yearGroups(providerId),
+      api.providerPortalAdmin.operators(providerId),
     ])
-      .then(([a, t, yg]) => {
+      .then(([a, t, yg, ops]) => {
         setActivities(a)
         setTerms(t)
         setYearGroups(yg)
+        setOperators(ops)
         setForm(f => ({ ...f, ecaTermId: f.ecaTermId || t[0]?.id || '' }))
       })
       .catch(() => toast.error('Failed to load clubs'))
@@ -465,10 +470,12 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
         paymentUrl: form.paymentUrl.trim() || null,
         // Empty list = open to every year group.
         eligibleYearGroupIds: form.eligibleYearGroupIds,
+        operatorId: form.operatorId || null,
       })
       setForm({
         ...form, name: '', location: '', cost: '', maxCapacity: '',
         customStartTime: '', customEndTime: '', paymentUrl: '', eligibleYearGroupIds: [],
+        operatorId: '',
       })
       setAdding(false)
       await load()
@@ -509,7 +516,10 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
         {activities.map(a => (
           <div key={a.id} className="flex items-center justify-between gap-3 rounded-warm border border-warm-border px-3 py-2.5">
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-warm-text-primary truncate">{a.name}</div>
+              <div className="text-sm font-semibold text-warm-text-primary truncate">
+                {a.name}
+                {a.operatorName ? <span className="font-normal text-warm-text-tertiary"> · {a.operatorName}</span> : null}
+              </div>
               <div className="text-xs text-warm-text-tertiary truncate">
                 {DAYS[a.dayOfWeek]} · {a.startTime && a.endTime
                   ? `${a.startTime}–${a.endTime}`
@@ -558,6 +568,16 @@ function ProviderClubsTab({ providerId }: { providerId: string }) {
             </p>
           )}
           <Field label="Club name" value={form.name} onChange={v => setForm({ ...form, name: v })} required />
+          <div>
+            <Select label="Run by" value={form.operatorId} onChange={v => setForm({ ...form, operatorId: v })}
+              options={[{ value: '', label: 'The partner runs it themselves' },
+                ...operators.map(o => ({ value: o.id, label: o.name }))]} />
+            <p className="text-xs text-warm-text-tertiary mt-1">
+              {operators.length === 0
+                ? 'This partner has added no operators yet — they manage that list in their own portal.'
+                : "Parents see this company's name and logo; the partner is credited as who they book through."}
+            </p>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <Select label="Day" value={String(form.dayOfWeek)} onChange={v => setForm({ ...form, dayOfWeek: Number(v) })}
               options={DAYS.map((d, i) => ({ value: String(i), label: d }))} />

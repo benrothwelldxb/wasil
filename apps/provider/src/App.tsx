@@ -5,6 +5,7 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ActivitiesPage } from './pages/ActivitiesPage'
+import { OperatorsPage } from './pages/OperatorsPage'
 import { BookingsPage } from './pages/BookingsPage'
 import { MenusPage } from './pages/MenusPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -31,6 +32,7 @@ export default function App() {
         <Route element={<ProviderLayout />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/activities" element={<ActivitiesPage />} />
+          <Route path="/operators" element={<OperatorsPage />} />
           <Route path="/bookings" element={<BookingsPage />} />
           <Route path="/menus" element={<MenusPage />} />
           <Route path="/profile" element={<ProfilePage />} />

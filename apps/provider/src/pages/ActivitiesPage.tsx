@@ -14,6 +14,11 @@ interface Term {
   defaultAfterSchoolStart: string | null
   defaultAfterSchoolEnd: string | null
 }
+interface Operator {
+  id: string
+  name: string
+  logoUrl: string | null
+}
 interface YearGroup {
   id: string
   name: string
@@ -36,6 +41,9 @@ interface Activity {
   startTime: string | null
   endTime: string | null
   eligibleYearGroupIds: string[]
+  operatorId: string | null
+  operatorName: string | null
+  operatorLogoUrl: string | null
   isActive: boolean
   isCancelled: boolean
   isPublished: boolean
@@ -63,6 +71,7 @@ interface FormState {
   customStartTime: string
   customEndTime: string
   eligibleYearGroupIds: string[]
+  operatorId: string
 }
 
 const emptyForm = (ecaTermId = ''): FormState => ({
@@ -80,6 +89,7 @@ const emptyForm = (ecaTermId = ''): FormState => ({
   customStartTime: '',
   customEndTime: '',
   eligibleYearGroupIds: [],
+  operatorId: '',
 })
 
 export function ActivitiesPage() {
@@ -88,20 +98,23 @@ export function ActivitiesPage() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [terms, setTerms] = useState<Term[]>([])
   const [yearGroups, setYearGroups] = useState<YearGroup[]>([])
+  const [operators, setOperators] = useState<Operator[]>([])
   const [form, setForm] = useState<FormState | null>(null)
   const [publishing, setPublishing] = useState<string | null>(null)
 
   const load = async () => {
     setError(null)
     try {
-      const [acts, trms, ygs] = await Promise.all([
+      const [acts, trms, ygs, ops] = await Promise.all([
         apiFetch<Activity[]>('/api/provider-portal/activities'),
         apiFetch<Term[]>('/api/provider-portal/terms'),
         apiFetch<YearGroup[]>('/api/provider-portal/year-groups'),
+        apiFetch<Operator[]>('/api/provider-portal/operators'),
       ])
       setActivities(acts)
       setTerms(trms)
       setYearGroups(ygs)
+      setOperators(ops)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load activities.')
     } finally {
@@ -131,6 +144,7 @@ export function ActivitiesPage() {
       customStartTime: a.customStartTime || '',
       customEndTime: a.customEndTime || '',
       eligibleYearGroupIds: a.eligibleYearGroupIds || [],
+      operatorId: a.operatorId || '',
     })
 
   // Flip the "Show on parent app" visibility toggle for one activity.
@@ -221,7 +235,7 @@ export function ActivitiesPage() {
                   {a.maxCapacity ? ` · ${a.maxCapacity} places` : ''}
                 </div>
                 <div className="text-xs text-warm-text-tertiary mt-1">
-                  {a.termName}{a.schoolName ? ` · ${a.schoolName}` : ''}
+                  {a.operatorName ? `${a.operatorName} · ` : ''}{a.termName}{a.schoolName ? ` · ${a.schoolName}` : ''}
                   {a.paymentUrl ? ' · payment link set' : ''}
                 </div>
               </div>
@@ -261,6 +275,7 @@ export function ActivitiesPage() {
           form={form}
           terms={terms}
           yearGroups={yearGroups}
+          operators={operators}
           onClose={() => setForm(null)}
           onSaved={() => {
             setForm(null)
@@ -276,12 +291,14 @@ function ActivityForm({
   form,
   terms,
   yearGroups,
+  operators,
   onClose,
   onSaved,
 }: {
   form: FormState
   terms: Term[]
   yearGroups: YearGroup[]
+  operators: Operator[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -326,6 +343,7 @@ function ActivityForm({
       customEndTime: state.customEndTime || null,
       // Empty list = open to every year group.
       eligibleYearGroupIds: state.eligibleYearGroupIds,
+      operatorId: state.operatorId || null,
     }
     try {
       if (isEdit) {
@@ -368,6 +386,19 @@ function ActivityForm({
           <div>
             <label className="block text-sm font-semibold text-warm-text-primary mb-1.5">Name</label>
             <input value={state.name} onChange={e => set('name', e.target.value)} className={inputClass} required />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-warm-text-primary mb-1.5">Run by</label>
+            <select value={state.operatorId} onChange={e => set('operatorId', e.target.value)} className={inputClass}>
+              <option value="">We run this club ourselves</option>
+              {operators.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+            <p className="text-xs text-warm-text-tertiary mt-1">
+              {operators.length === 0
+                ? 'Add the companies that run your clubs under Operators, and their logo shows on the card.'
+                : "Parents see this company's name and logo, and that they book through you."}
+            </p>
           </div>
 
           <div>

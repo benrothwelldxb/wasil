@@ -58,7 +58,10 @@ router.get('/', isAuthenticated, async (req, res) => {
         ecaTerm: { status: { in: [...PARENT_VISIBLE_TERM_STATUSES] } },
       },
       include: {
-        provider: { select: { name: true } },
+        provider: { select: { name: true, logoUrl: true } },
+        // The company actually running the club. Parents see this brand; the
+        // provider above is the partner who organises the booking.
+        operator: { select: { name: true, logoUrl: true } },
         ecaTerm: {
           select: {
             defaultBeforeSchoolStart: true, defaultBeforeSchoolEnd: true,
@@ -95,6 +98,19 @@ router.get('/', isAuthenticated, async (req, res) => {
           id: a.id,
           name: a.name,
           description: a.description,
+          // Who the club is sold as. A club the partner runs themselves has no
+          // operator and falls back to the partner — which is every existing
+          // row, so nothing changes until someone fills it in.
+          //
+          // The fallback is all-or-nothing per company, never per field: an
+          // operator that has not uploaded a logo yet shows no logo, because
+          // reaching past it to the partner's would put Infinite's mark beside
+          // another company's name.
+          operatorName: a.operator?.name ?? a.provider?.name ?? null,
+          operatorLogoUrl: a.operator ? a.operator.logoUrl : a.provider?.logoUrl ?? null,
+          // Credited under the club as "Booked through …", and only when that
+          // is actually a different company from the one running it.
+          bookedThrough: a.operator ? a.provider?.name ?? null : null,
           providerName: a.provider?.name || null,
           dayOfWeek: a.dayOfWeek,
           timeSlot: a.timeSlot,
