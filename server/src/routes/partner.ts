@@ -1462,6 +1462,7 @@ router.post('/messages', requirePartner, async (req, res) => {
     const safeContent = markdownToSafeHtml(content)
     const cleanTitle = title.trim()
     const scheduledDate = typeof scheduledAt === 'string' && scheduledAt ? new Date(scheduledAt) : null
+    const broadcastLiveNow = !scheduledDate || scheduledDate <= new Date()
     const expiresDate = typeof expiresAt === 'string' && expiresAt ? new Date(expiresAt) : null
     const attachmentRows = Array.isArray(attachments) ? attachments : []
 
@@ -1486,6 +1487,8 @@ router.post('/messages', requirePartner, async (req, res) => {
           isPinned: false,
           isUrgent: isUrgent === true,
           scheduledAt: scheduledDate,
+          // Live now → stamped; future-dated → null, and the sweep owes it.
+          notifiedAt: broadcastLiveNow ? new Date() : null,
           expiresAt: expiresDate,
         },
       })
@@ -1502,21 +1505,26 @@ router.post('/messages', requirePartner, async (req, res) => {
         })
       }
 
-      await sendNotification({
-        req,
-        type: 'MESSAGE',
-        title: cleanTitle,
-        body: safeContent.substring(0, 200),
-        resourceType: 'MESSAGE',
-        resourceId: message.id,
-        target: {
-          targetClass: t.targetClass,
-          classId: t.classId,
-          yearGroupId: t.yearGroupId,
-          groupId: t.groupId,
-          schoolId: actor.schoolId,
-        },
-      })
+      // Same rule as the native create: announce only what is live now. A
+      // future-dated broadcast is picked up by the publishScheduledMessages
+      // sweep when its time arrives, and `notifiedAt` staying null is the marker.
+      if (broadcastLiveNow) {
+        await sendNotification({
+          req,
+          type: 'MESSAGE',
+          title: cleanTitle,
+          body: safeContent.substring(0, 200),
+          resourceType: 'MESSAGE',
+          resourceId: message.id,
+          target: {
+            targetClass: t.targetClass,
+            classId: t.classId,
+            yearGroupId: t.yearGroupId,
+            groupId: t.groupId,
+            schoolId: actor.schoolId,
+          },
+        })
+      }
     }
 
     res.status(201).json({ created: targets.length })

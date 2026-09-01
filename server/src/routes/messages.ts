@@ -320,6 +320,12 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
     // Staff cannot pin messages (only admin)
     const canPin = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
 
+    // A future-dated post is hidden from parents until its time (the list route
+    // filters on scheduledAt), so announcing it at creation pushed an alert
+    // about something they could not then find.
+    const scheduledDate = scheduledAt ? new Date(scheduledAt) : null
+    const liveNow = !scheduledDate || scheduledDate <= new Date()
+
     const message = await prisma.message.create({
       data: {
         title,
@@ -339,6 +345,9 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
         isUrgent: isUrgent || false,
         requiresAcknowledgment: requiresAcknowledgment || false,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+        // Stamped now for a live post; left null for a future-dated one so the
+        // publishScheduledMessages sweep knows it still owes an announcement.
+        notifiedAt: liveNow ? new Date() : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         formId: formId || null,
       },
@@ -372,7 +381,10 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
     })
 
     logAudit({ req, action: 'CREATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title, attachmentCount: createdAttachments.length } })
-    sendNotification({ req, type: 'MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'MESSAGE', resourceId: message.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
+
+    if (liveNow) {
+      sendNotification({ req, type: 'MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'MESSAGE', resourceId: message.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
+    }
 
     res.status(201).json({
       id: message.id,

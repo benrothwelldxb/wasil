@@ -67,6 +67,7 @@ import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders 
 import { cleanupOldAuditLogs } from './services/audit.js'
 import { sendDueAttendanceDigests } from './services/attendanceDigest.js'
 import { drainOutbox } from './services/outbox.js'
+import { publishDueScheduledMessages } from './services/scheduledMessages.js'
 import { withJobLock } from './services/jobLock.js'
 import { sendEventRsvpReminders } from './services/eventReminders.js'
 
@@ -341,6 +342,12 @@ app.listen(PORT, () => {
     locked('sendEventRsvpReminders', 'hour', sendEventRsvpReminders),
   )
   const outboxDrain = runJob('drainOutbox', drainOutbox)
+  // Every tick, like the outbox drain, and for the same reason: the hour/day
+  // buckets that give the other jobs their idempotency are far too coarse here —
+  // a post scheduled for 09:15 must not wait until 10:00. Its idempotency comes
+  // from the conditional notifiedAt claim in the sweep itself, which is also
+  // what keeps two replicas from both announcing it.
+  const scheduledMessages = runJob('publishDueScheduledMessages', publishDueScheduledMessages)
 
   tokenCleanup()
   setInterval(tokenCleanup, SIX_HOURS)
@@ -364,4 +371,9 @@ app.listen(PORT, () => {
   const THIRTY_SECONDS = 30 * 1000
   outboxDrain()
   setInterval(outboxDrain, THIRTY_SECONDS)
+
+  // A minute is the resolution a scheduled post is actually set at.
+  const ONE_MINUTE = 60 * 1000
+  scheduledMessages()
+  setInterval(scheduledMessages, ONE_MINUTE)
 })

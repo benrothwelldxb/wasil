@@ -500,6 +500,10 @@ model Message {
   // Lifecycle
   scheduledAt DateTime? // If set, hidden from parents until this time
   expiresAt   DateTime? // Auto-archive after this date
+  // When parents were actually told. Set at creation for an immediate post, and
+  // by the publishScheduledMessages sweep when a scheduled one comes due — which
+  // is also what stops the sweep announcing the same post twice.
+  notifiedAt  DateTime?
 
   // Attached form
   formId  String? @unique
@@ -507,6 +511,9 @@ model Message {
 
   acknowledgments MessageAcknowledgment[]
   attachments     MessageAttachment[]
+
+  // The publishScheduledMessages sweep filters on exactly this pair.
+  @@index([notifiedAt, scheduledAt])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
