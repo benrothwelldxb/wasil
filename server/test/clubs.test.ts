@@ -45,7 +45,8 @@ const clubRow = (over: Record<string, unknown> = {}) => ({
   id: 'act-1', name: 'Chess', description: null, dayOfWeek: 1, timeSlot: 'AFTER_SCHOOL',
   location: null, cost: null, costDescription: null, maxCapacity: null,
   customStartTime: null, customEndTime: null, eligibleYearGroupIds: [],
-  provider: { name: 'Infinite' },
+  provider: { name: 'Infinite Sports', logoUrl: 'https://cdn/infinite.png' },
+  operator: null as null | { name: string; logoUrl: string | null },
   ecaTerm: {
     defaultBeforeSchoolStart: '07:30', defaultBeforeSchoolEnd: '08:15',
     defaultAfterSchoolStart: '15:30', defaultAfterSchoolEnd: '16:30',
@@ -132,7 +133,7 @@ describe('GET /api/clubs', () => {
     ])
     prismaMock.ecaProviderBooking.findMany.mockResolvedValue([])
     const res = await request(makeApp()).get('/api/clubs')
-    expect(res.body.clubs[0]).toMatchObject({ startTime: '15:30', endTime: '16:30', providerName: 'Infinite' })
+    expect(res.body.clubs[0]).toMatchObject({ startTime: '15:30', endTime: '16:30', providerName: 'Infinite Sports' })
     expect(res.body.clubs[1]).toMatchObject({ startTime: '16:00', endTime: '17:15' })
   })
 
@@ -182,5 +183,51 @@ describe('year-group eligibility on booking', () => {
     })
     const res = await request(makeApp()).post('/api/clubs/act-1/book').send({ studentId: 'stu-1' })
     expect(res.status).toBe(201)
+  })
+})
+
+// Infinite Sports organises the bookings; the clubs are run by other companies
+// and it is that brand a parent recognises on the card.
+describe('who a club is sold as', () => {
+  beforeEach(() => prismaMock.ecaProviderBooking.findMany.mockResolvedValue([]))
+
+  it('leads with the operator and credits the partner underneath', async () => {
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      clubRow({ operator: { name: '3-52 Football', logoUrl: 'https://cdn/352.png' } }),
+    ])
+    const res = await request(makeApp()).get('/api/clubs')
+    expect(res.body.clubs[0]).toMatchObject({
+      operatorName: '3-52 Football',
+      operatorLogoUrl: 'https://cdn/352.png',
+      bookedThrough: 'Infinite Sports',
+    })
+  })
+
+  it('falls back to the partner when a club has no operator', async () => {
+    prismaMock.ecaActivity.findMany.mockResolvedValue([clubRow()])
+    const res = await request(makeApp()).get('/api/clubs')
+    expect(res.body.clubs[0]).toMatchObject({
+      operatorName: 'Infinite Sports',
+      operatorLogoUrl: 'https://cdn/infinite.png',
+    })
+  })
+
+  // Otherwise every card would read "by Infinite Sports / Booked through
+  // Infinite Sports", which is noise.
+  it('does not credit the partner when it runs the club itself', async () => {
+    prismaMock.ecaActivity.findMany.mockResolvedValue([clubRow()])
+    const res = await request(makeApp()).get('/api/clubs')
+    expect(res.body.clubs[0].bookedThrough).toBeNull()
+  })
+
+  it('an operator with no logo yet still names the operator', async () => {
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      clubRow({ operator: { name: '3-52 Football', logoUrl: null } }),
+    ])
+    const res = await request(makeApp()).get('/api/clubs')
+    expect(res.body.clubs[0].operatorName).toBe('3-52 Football')
+    // Falling back to the partner's logo here would put Infinite's mark beside
+    // another company's name.
+    expect(res.body.clubs[0].operatorLogoUrl).toBeNull()
   })
 })

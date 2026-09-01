@@ -95,9 +95,24 @@ export function ClubsPage() {
             return (
               <div key={club.id} style={{ background: '#fff', borderRadius: 18, border: '1px solid #F0E4E6', padding: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, color: '#2D2225', fontSize: 16 }}>{club.name}</div>
-                    {club.providerName && <div style={{ fontSize: 12, color: '#A8929A', marginTop: 1 }}>by {club.providerName}</div>}
+                  <div style={{ display: 'flex', gap: 11, minWidth: 0 }}>
+                    {club.operatorLogoUrl && (
+                      <img
+                        src={club.operatorLogoUrl}
+                        alt=""
+                        width={42}
+                        height={42}
+                        loading="lazy"
+                        style={{
+                          width: 42, height: 42, borderRadius: 11, flexShrink: 0,
+                          objectFit: 'cover', border: '1px solid #F0E4E6', background: '#fff',
+                        }}
+                      />
+                    )}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, color: '#2D2225', fontSize: 16 }}>{club.name}</div>
+                      {club.operatorName && <div style={{ fontSize: 12, color: '#A8929A', marginTop: 1 }}>by {club.operatorName}</div>}
+                    </div>
                   </div>
                   {club.cost != null && club.cost > 0 && (
                     <div style={{ flexShrink: 0, background: '#FFF7EC', color: '#C47A20', fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, height: 'fit-content' }}>
@@ -120,6 +135,14 @@ export function ClubsPage() {
                     <span>{club.eligibleYearGroupNames.join(', ')} only</span>
                   )}
                 </div>
+
+                {/* Only when the partner organising the booking is a different
+                    company from the one running the club. */}
+                {club.bookedThrough && (
+                  <div style={{ fontSize: 12, color: '#A8929A', marginTop: 8 }}>
+                    Booked through {club.bookedThrough}
+                  </div>
+                )}
 
                 <div style={{ marginTop: 14 }}>
                   {booking ? (

@@ -9,87 +9,87 @@ datasource db {
 
 // Schools (white-label support)
 model School {
-  id           String   @id @default(cuid())
-  name         String   // "Victory Heights Primary School"
-  shortName    String   // "VHPS"
+  id             String  @id @default(cuid())
+  name           String // "Victory Heights Primary School"
+  shortName      String // "VHPS"
   // URL slug for branded multi-tenant login (e.g. "vhpscoa" → /vhpscoa or
   // vhpscoa.wasilconnect.com). Nullable for now (Phase 0); Phase 2 provisioning
   // will require it for every new school. Only the public branding lookup reads it.
-  slug         String?  @unique
-  city         String
-  academicYear String   @default("2025/26") // e.g., "2025/26"
-  brandColor   String   @default("#7f0029")
-  accentColor  String   @default("#D4AF37")
-  tagline      String?  // "Stay Connected" - displayed in header
-  logoUrl      String?  // URL to school logo (login page)
-  logoIconUrl  String?  // URL to header icon (48x48)
-  paymentUrl      String?  // URL to payment portal (e.g., PayHub)
-  principalName   String?  // Name of the principal/head teacher
-  principalTitle  String?  // e.g. "Principal", "Head Teacher", "Director"
-  cafeteriaUrl    String?  // URL to cafeteria ordering portal
-  archived        Boolean  @default(false) // Soft delete flag
+  slug           String? @unique
+  city           String
+  academicYear   String  @default("2025/26") // e.g., "2025/26"
+  brandColor     String  @default("#7f0029")
+  accentColor    String  @default("#D4AF37")
+  tagline        String? // "Stay Connected" - displayed in header
+  logoUrl        String? // URL to school logo (login page)
+  logoIconUrl    String? // URL to header icon (48x48)
+  paymentUrl     String? // URL to payment portal (e.g., PayHub)
+  principalName  String? // Name of the principal/head teacher
+  principalTitle String? // e.g. "Principal", "Head Teacher", "Director"
+  cafeteriaUrl   String? // URL to cafeteria ordering portal
+  archived       Boolean @default(false) // Soft delete flag
 
   // Locale
-  timezone     String   @default("Asia/Dubai") // IANA timezone, used for scheduled jobs (e.g. digests)
+  timezone String @default("Asia/Dubai") // IANA timezone, used for scheduled jobs (e.g. digests)
 
   // Wasil Hub identity link. Set when this Connect school is linked to a Hub
   // school; used to resolve the `sid` claim on Hub SSO handoff tokens.
-  hubSchoolId  String?  @unique
+  hubSchoolId String? @unique
 
   // Wasil Hub MIS sync (Stage 2). `hubLastSyncedAt` is the last successful
   // `syncSchoolFromHub` completion; `hubDataStaleSince` is set by the webhook /
   // poll freshness signal when Hub data changed after our last sync, and
   // cleared on the next successful sync. Together they drive the "stale data"
   // banner (see INTEGRATION.md → Data freshness).
-  hubLastSyncedAt    DateTime?
-  hubDataStaleSince  DateTime?
+  hubLastSyncedAt   DateTime?
+  hubDataStaleSince DateTime?
   // Timestamp of the last successful `syncSchoolFromHub` run, surfaced by the
   // admin sync endpoint / status route (Stage 2, Feature C). Distinct from the
   // freshness-banner fields above; set on every successful sync completion.
-  lastHubSyncAt      DateTime?
+  lastHubSyncAt     DateTime?
 
   // Wasil Hub calendar sync (Stage 4 / Phase A). Cursor from the last
   // `/api/v1/calendar/changes` pull, persisted per school for incremental
   // refresh. Null until the first calendar sync runs.
-  hubCalendarCursor  Int?
+  hubCalendarCursor Int?
 
   // Module enabled flags — all default true so existing schools keep current behavior
-  inboxEnabled            Boolean @default(true)
-  postsEnabled            Boolean @default(true)
-  emergencyAlertsEnabled  Boolean @default(true)
-  formsEnabled            Boolean @default(true)
-  eventsEnabled           Boolean @default(true)
-  weeklyUpdatesEnabled    Boolean @default(true)
-  pulseEnabled            Boolean @default(true)
-  attendanceEnabled       Boolean @default(true)
-  ecaEnabled              Boolean @default(true)
-  consultationsEnabled    Boolean @default(true)
-  schoolServicesEnabled   Boolean @default(true)
-  lunchMenuEnabled        Boolean @default(true)
-  termDatesEnabled        Boolean @default(true)
-  scheduleEnabled         Boolean @default(true)
-  policiesEnabled         Boolean @default(true)
-  filesEnabled            Boolean @default(true)
-  linksEnabled            Boolean @default(true)
-  knowledgeBaseEnabled    Boolean @default(true)
+  inboxEnabled           Boolean @default(true)
+  postsEnabled           Boolean @default(true)
+  emergencyAlertsEnabled Boolean @default(true)
+  formsEnabled           Boolean @default(true)
+  eventsEnabled          Boolean @default(true)
+  weeklyUpdatesEnabled   Boolean @default(true)
+  pulseEnabled           Boolean @default(true)
+  attendanceEnabled      Boolean @default(true)
+  ecaEnabled             Boolean @default(true)
+  consultationsEnabled   Boolean @default(true)
+  schoolServicesEnabled  Boolean @default(true)
+  lunchMenuEnabled       Boolean @default(true)
+  termDatesEnabled       Boolean @default(true)
+  scheduleEnabled        Boolean @default(true)
+  policiesEnabled        Boolean @default(true)
+  filesEnabled           Boolean @default(true)
+  linksEnabled           Boolean @default(true)
+  knowledgeBaseEnabled   Boolean @default(true)
 
   // Attendance digest
-  attendanceDigestEnabled       Boolean @default(false)
-  attendanceDigestTime          String? // HH:MM in school timezone, e.g. "09:00"
-  attendanceDigestLastSentDate  String? // YYYY-MM-DD, dedupes daily send
+  attendanceDigestEnabled      Boolean @default(false)
+  attendanceDigestTime         String? // HH:MM in school timezone, e.g. "09:00"
+  attendanceDigestLastSentDate String? // YYYY-MM-DD, dedupes daily send
 
   // Periodically ask parents to confirm their mobile number is still current.
   // Days between prompts. 0 disables the prompt entirely.
-  contactConfirmDays            Int     @default(180)
+  contactConfirmDays Int @default(180)
 
   // The three middle items of the parent app's bottom tab bar (Home + these 3 +
   // More are the five slots). A JSON array of catalog keys (see the shared
   // PARENT_BOTTOM_NAV_CATALOG), e.g. ["events","activities","resources"]. Null =
   // the app's default set. Only the parent bottom bar + admin settings read it.
-  bottomNavItems                Json?
+  bottomNavItems Json?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   users               User[]
   yearGroups          YearGroup[]
@@ -142,10 +142,10 @@ model School {
   attendanceRequests  AttendanceRequest[]
 
   // Outbox (email + push delivery queue)
-  outboxEntries       OutboxEntry[]
+  outboxEntries OutboxEntry[]
 
   // External providers (ECA / catering) linked to this school
-  providerLinks       ProviderSchoolLink[]
+  providerLinks        ProviderSchoolLink[]
   providerClubBookings EcaProviderBooking[]
 
   // Google Calendar integration
@@ -155,12 +155,12 @@ model School {
 
 // Users (Parents, Staff & Admins)
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String
-  role      Role     @default(PARENT)
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id])
+  id       String @id @default(cuid())
+  email    String @unique
+  name     String
+  role     Role   @default(PARENT)
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
 
   // OAuth fields
   googleId    String? @unique
@@ -170,7 +170,7 @@ model User {
   // Wasil Hub identity link. Set on first successful Hub SSO exchange when a
   // pre-existing staff account is matched by email; thereafter the `sub` claim
   // resolves straight to this user.
-  hubUserId   String? @unique
+  hubUserId String? @unique
 
   // Wasil Hub guardian link (Stage 2 — guardian provisioning). Set when this
   // Connect PARENT account was provisioned from a Hub guardian; the idempotency
@@ -188,22 +188,22 @@ model User {
   position String?
 
   // Phone number for SMS/WhatsApp alerts
-  phone              String?
+  phone            String?
   // When the parent last confirmed/updated their phone via the contact-
   // details modal. Null means never confirmed — they'll be prompted on next
   // login. Compared against School.contactConfirmDays to decide when to
   // re-prompt.
-  phoneConfirmedAt   DateTime?
+  phoneConfirmedAt DateTime?
 
   // 2FA fields
-  twoFactorSecret        String?    // AES-256-GCM encrypted TOTP secret
-  twoFactorEnabled       Boolean    @default(false)
-  twoFactorRecoveryCodes String?    // JSON array of bcrypt-hashed recovery codes
+  twoFactorSecret        String? // AES-256-GCM encrypted TOTP secret
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorRecoveryCodes String? // JSON array of bcrypt-hashed recovery codes
   twoFactorSetupAt       DateTime?
 
   // Account lockout
-  failedLoginAttempts    Int        @default(0)
-  lockedUntil            DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
 
   // Tracking
   lastLoginAt DateTime?
@@ -226,27 +226,27 @@ model User {
   // linked child's class. MUST be excluded from every staff/admin enumeration
   // and all launch analytics/counts, yet MUST still receive live class-targeted
   // content and comms (that is the whole point). Never emailed anything.
-  isTest    Boolean  @default(false)
+  isTest Boolean @default(false)
 
   // Parent relations
-  children           Child[]
-  studentLinks       ParentStudentLink[]
+  children     Child[]
+  studentLinks ParentStudentLink[]
 
   // Staff relations - classes they can manage/message
-  assignedClasses    StaffClassAssignment[]
-  sentMessages       Message[]
+  assignedClasses StaffClassAssignment[]
+  sentMessages    Message[]
 
   // Activity relations
-  messageAcks        MessageAcknowledgment[]
-  formResponses      FormResponse[]
-  eventRsvps         EventRsvp[]
-  proposedEvents     Event[]           @relation("EventProposals")
-  pulseResponses     PulseResponse[]
-  weeklyHearts       WeeklyMessageHeart[]
-  refreshTokens      RefreshToken[]
-  auditLogs          AuditLog[]
-  notifications      Notification[]
-  deviceTokens       DeviceToken[]
+  messageAcks    MessageAcknowledgment[]
+  formResponses  FormResponse[]
+  eventRsvps     EventRsvp[]
+  proposedEvents Event[]                 @relation("EventProposals")
+  pulseResponses PulseResponse[]
+  weeklyHearts   WeeklyMessageHeart[]
+  refreshTokens  RefreshToken[]
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  deviceTokens   DeviceToken[]
 
   // Invitation relations
   createdInvitations  ParentInvitation[] @relation("CreatedInvitations")
@@ -256,45 +256,45 @@ model User {
   staffGroupAssignments StaffGroupAssignment[]
 
   // ECA relations
-  ecaSelections        EcaSelection[] @relation("EcaSelections")
-  clubBookings         EcaProviderBooking[] @relation("ClubBookings")
-  ecaActivitiesManaged EcaActivity[]  @relation("EcaActivityStaff")
-  ecaInvitationsSent   EcaInvitation[] @relation("EcaInvitationsSent")
-  ecaAttendanceMarked  EcaAttendance[] @relation("EcaAttendanceMarkedBy")
+  ecaSelections          EcaSelection[]            @relation("EcaSelections")
+  clubBookings           EcaProviderBooking[]      @relation("ClubBookings")
+  ecaActivitiesManaged   EcaActivity[]             @relation("EcaActivityStaff")
+  ecaInvitationsSent     EcaInvitation[]           @relation("EcaInvitationsSent")
+  ecaAttendanceMarked    EcaAttendance[]           @relation("EcaAttendanceMarkedBy")
   ecaSuggestionsResolved EcaAllocationSuggestion[] @relation("EcaSuggestionsResolved")
 
   // Consultation relations
-  consultationTeachers  ConsultationTeacher[]
-  consultationBookings  ConsultationBooking[]
+  consultationTeachers ConsultationTeacher[]
+  consultationBookings ConsultationBooking[]
 
   // Emergency Alert relations
-  createdAlerts         EmergencyAlert[] @relation("AlertCreator")
-  alertAcknowledgments  AlertAcknowledgment[]
+  createdAlerts        EmergencyAlert[]      @relation("AlertCreator")
+  alertAcknowledgments AlertAcknowledgment[]
 
   // School Services relations
-  serviceRegistrations  ServiceRegistration[] @relation("ServiceRegistrations")
+  serviceRegistrations ServiceRegistration[] @relation("ServiceRegistrations")
 
   // Notification preferences
-  notificationPreferences  NotificationPreference?
+  notificationPreferences NotificationPreference?
 
   // Inbox relations
-  conversationsAsParent    Conversation[] @relation("ConversationsAsParent")
-  conversationsAsStaff     Conversation[] @relation("ConversationsAsStaff")
+  conversationsAsParent      Conversation[]            @relation("ConversationsAsParent")
+  conversationsAsStaff       Conversation[]            @relation("ConversationsAsStaff")
   // ILSA scope link (present only for role ILSA — the pupil this assistant may
   // message the guardian(s) of). One row for v1.
-  ilsaLinks                IlsaLink[]     @relation("IlsaActor")
+  ilsaLinks                  IlsaLink[]                @relation("IlsaActor")
   conversationParticipations ConversationParticipant[] @relation("ConversationParticipations")
-  sentConversationMessages ConversationMessage[] @relation("SentConversationMessages")
-  schoolContactAssignments SchoolContact[] @relation("SchoolContactAssignments")
-  messageReactions         MessageReaction[] @relation("MessageReactions")
+  sentConversationMessages   ConversationMessage[]     @relation("SentConversationMessages")
+  schoolContactAssignments   SchoolContact[]           @relation("SchoolContactAssignments")
+  messageReactions           MessageReaction[]         @relation("MessageReactions")
 
   // Report card uploads
-  uploadedReports          StudentReport[]
+  uploadedReports StudentReport[]
 
   // Attendance relations
-  attendanceMarked         AttendanceRecord[] @relation("AttendanceMarkedBy")
-  attendanceRequests       AttendanceRequest[] @relation("AttendanceRequests")
-  attendanceReviewed       AttendanceRequest[] @relation("AttendanceReviewed")
+  attendanceMarked   AttendanceRecord[]  @relation("AttendanceMarkedBy")
+  attendanceRequests AttendanceRequest[] @relation("AttendanceRequests")
+  attendanceReviewed AttendanceRequest[] @relation("AttendanceReviewed")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -334,39 +334,39 @@ model Child {
 
 // Students exist independently, managed by school admins
 model Student {
-  id          String   @id @default(cuid())
-  firstName   String
-  lastName    String
-  externalId  String?  // Optional: Student ID from school MIS (UPN)
-  hubPupilId  String?  @unique // Hub MIS link (Stage 2)
-  photoUrl    String?  // Student photo URL
+  id           String  @id @default(cuid())
+  firstName    String
+  lastName     String
+  externalId   String? // Optional: Student ID from school MIS (UPN)
+  hubPupilId   String? @unique // Hub MIS link (Stage 2)
+  photoUrl     String? // Student photo URL
   // Safety info surfaced to activity/club staff (incl. external providers).
   allergies    String? // JSON array of strings, e.g. ["nuts","dairy"]
   medicalNotes String? // Free-text medical/care notes
-  schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id])
-  classId     String
-  class       Class    @relation(fields: [classId], references: [id])
+  schoolId     String
+  school       School  @relation(fields: [schoolId], references: [id])
+  classId      String
+  class        Class   @relation(fields: [classId], references: [id])
 
-  parentLinks     ParentStudentLink[]
-  invitationLinks StudentInvitationLink[]
-  groupLinks      StudentGroupLink[]
+  parentLinks      ParentStudentLink[]
+  invitationLinks  StudentInvitationLink[]
+  groupLinks       StudentGroupLink[]
   // ECA relations
-  ecaSelections   EcaSelection[]
-  ecaAllocations  EcaAllocation[]
-  ecaWaitlists    EcaWaitlist[]
-  ecaInvitations  EcaInvitation[]
-  ecaAttendance   EcaAttendance[]
+  ecaSelections    EcaSelection[]
+  ecaAllocations   EcaAllocation[]
+  ecaWaitlists     EcaWaitlist[]
+  ecaInvitations   EcaInvitation[]
+  ecaAttendance    EcaAttendance[]
   providerBookings EcaProviderBooking[]
 
   // Inbox relations
-  conversations   Conversation[]
+  conversations      Conversation[]
   // ILSA scope links (the ILSA(s) assigned to this pupil for messaging).
-  ilsaLinks       IlsaLink[]
+  ilsaLinks          IlsaLink[]
   // Inclusion relations
-  ieps            StudentIep[]
+  ieps               StudentIep[]
   // Report card relations
-  reports         StudentReport[]
+  reports            StudentReport[]
   // Attendance relations
   attendanceRecords  AttendanceRecord[]
   attendanceRequests AttendanceRequest[]
@@ -377,10 +377,10 @@ model Student {
   // excluded from all analytics/counts. Content targeting is by classId and
   // does not require the pupil to appear in any staff list, so hiding it does
   // not break delivery.
-  isTest      Boolean  @default(false)
+  isTest Boolean @default(false)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([schoolId, externalId])
   @@index([schoolId, classId])
@@ -388,12 +388,12 @@ model Student {
 
 // Junction table: Parent-Student link
 model ParentStudentLink {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  studentId    String
-  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 
   @@unique([userId, studentId])
 }
@@ -411,31 +411,32 @@ model StudentInvitationLink {
 
 // Year Groups
 model YearGroup {
-  id        String   @id @default(cuid())
-  name      String   // "Reception", "Year 1", "Year 2"
-  order     Int      // Sorting (0=Reception, 1=Year 1, etc.)
-  hubYearGroupId String? @unique // Hub MIS link (Stage 2)
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id])
-  classes   Class[]
-  messages  Message[]
-  events    Event[]
-  eventTargets  EventTarget[]
-  scheduleItems ScheduleItem[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String         @id @default(cuid())
+  name           String // "Reception", "Year 1", "Year 2"
+  order          Int // Sorting (0=Reception, 1=Year 1, etc.)
+  hubYearGroupId String?        @unique // Hub MIS link (Stage 2)
+  schoolId       String
+  school         School         @relation(fields: [schoolId], references: [id])
+  classes        Class[]
+  messages       Message[]
+  events         Event[]
+  eventTargets   EventTarget[]
+  scheduleItems  ScheduleItem[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
   @@unique([schoolId, name])
 }
 
 // Classes/Year Groups
 model Class {
-  id          String  @id @default(cuid())
-  name        String  // "FS1 Blue", "Y2 Red"
-  hubClassId  String? @unique // Hub MIS link (Stage 2)
-  colorBg     String  @default("bg-blue-500")
-  colorText   String  @default("text-white")
+  id          String     @id @default(cuid())
+  name        String // "FS1 Blue", "Y2 Red"
+  hubClassId  String?    @unique // Hub MIS link (Stage 2)
+  colorBg     String     @default("bg-blue-500")
+  colorText   String     @default("text-white")
   schoolId    String
-  school      School  @relation(fields: [schoolId], references: [id])
+  school      School     @relation(fields: [schoolId], references: [id])
   yearGroupId String?
   yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
 
@@ -466,21 +467,21 @@ model StaffClassAssignment {
 
 // Messages/Announcements
 model Message {
-  id          String   @id @default(cuid())
+  id          String     @id @default(cuid())
   title       String
   content     String
-  targetClass String   // "Whole School" or class name
+  targetClass String // "Whole School" or class name
   classId     String?
-  class       Class?   @relation(fields: [classId], references: [id])
+  class       Class?     @relation(fields: [classId], references: [id])
   yearGroupId String?
   yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
   groupId     String?
-  group       Group?   @relation(fields: [groupId], references: [id])
+  group       Group?     @relation(fields: [groupId], references: [id])
   schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id])
+  school      School     @relation(fields: [schoolId], references: [id])
   senderId    String
-  sender      User     @relation(fields: [senderId], references: [id])
-  senderName  String   // Kept for historical/backup, but sender.name is preferred
+  sender      User       @relation(fields: [senderId], references: [id])
+  senderName  String // Kept for historical/backup, but sender.name is preferred
 
   // Action required
   actionType    String? // "consent", "payment", "rsvp"
@@ -489,8 +490,8 @@ model Message {
   actionAmount  String?
 
   // Message flags
-  isPinned Boolean @default(false)
-  isUrgent Boolean @default(false)
+  isPinned               Boolean @default(false)
+  isUrgent               Boolean @default(false)
   // Opt-IN. Acknowledgement used to be on every post, which made it mean
   // nothing: if everything asks to be acknowledged, the notices that genuinely
   // need it don't stand out and the counts aren't worth reading. Most posts are
@@ -506,18 +507,17 @@ model Message {
   notifiedAt  DateTime?
 
   // Attached form
-  formId  String? @unique
-  form    Form?   @relation(fields: [formId], references: [id])
+  formId String? @unique
+  form   Form?   @relation(fields: [formId], references: [id])
 
   acknowledgments MessageAcknowledgment[]
   attachments     MessageAttachment[]
 
-  // The publishScheduledMessages sweep filters on exactly this pair.
-  @@index([notifiedAt, scheduledAt])
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // The publishScheduledMessages sweep filters on exactly this pair.
+  @@index([notifiedAt, scheduledAt])
   @@index([schoolId, createdAt])
   @@index([classId])
   @@index([yearGroupId])
@@ -529,8 +529,8 @@ model MessageAttachment {
   message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
   fileName  String
   fileUrl   String
-  fileType  String   // "image/jpeg", "application/pdf", etc.
-  fileSize  Int      // bytes
+  fileType  String // "image/jpeg", "application/pdf", etc.
+  fileSize  Int // bytes
   createdAt DateTime @default(now())
 }
 
@@ -547,7 +547,7 @@ model MessageAcknowledgment {
 
 // Events Calendar
 model Event {
-  id           String   @id @default(cuid())
+  id           String     @id @default(cuid())
   title        String
   description  String?
   date         DateTime
@@ -560,14 +560,14 @@ model Event {
   // legacy rows). `groupId` targeting stays scalar — Hub has no groups.
   targetClass  String
   classId      String?
-  class        Class?   @relation(fields: [classId], references: [id])
+  class        Class?     @relation(fields: [classId], references: [id])
   yearGroupId  String?
   yearGroup    YearGroup? @relation(fields: [yearGroupId], references: [id])
   groupId      String?
-  group        Group?   @relation(fields: [groupId], references: [id])
+  group        Group?     @relation(fields: [groupId], references: [id])
   schoolId     String
-  school       School   @relation(fields: [schoolId], references: [id])
-  requiresRsvp Boolean  @default(false)
+  school       School     @relation(fields: [schoolId], references: [id])
+  requiresRsvp Boolean    @default(false)
 
   // Wasil Hub calendar link (Stage 4 / Phase A). When set, this event is
   // mirrored (read-only) from Hub's CalendarEvent and must NOT be edited or
@@ -588,10 +588,10 @@ model Event {
   // Staff member who submitted the proposal. SetNull so deleting the user keeps
   // the (now confirmed) event on the calendar.
   submittedByUserId  String?
-  submittedBy        User?    @relation("EventProposals", fields: [submittedByUserId], references: [id], onDelete: SetNull)
+  submittedBy        User?   @relation("EventProposals", fields: [submittedByUserId], references: [id], onDelete: SetNull)
 
-  parentEventId    String?
-  recurrenceType   String?
+  parentEventId  String?
+  recurrenceType String?
 
   rsvps   EventRsvp[]
   targets EventTarget[]
@@ -628,7 +628,7 @@ model EventRsvp {
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status    String   // "attending", "not_attending", "maybe"
+  status    String // "attending", "not_attending", "maybe"
   createdAt DateTime @default(now())
 
   @@unique([eventId, userId])
@@ -643,9 +643,9 @@ model TermDate {
   sublabel     String?
   date         DateTime
   endDate      DateTime?
-  type         String    // "term-start", "term-end", "half-term", "public-holiday", "induction"
+  type         String // "term-start", "term-end", "half-term", "public-holiday", "induction"
   color        String
-  academicYear String?   // "2025-26", "2026-27" etc.
+  academicYear String? // "2025-26", "2026-27" etc.
   // Links a row to its Wasil Hub academic term (idempotent upsert + prune key).
   // Null = a manually-created Connect row (half-term / public-holiday / induction),
   // which stays fully editable and is never touched by the Hub term sync.
@@ -653,26 +653,27 @@ model TermDate {
   schoolId     String
   school       School    @relation(fields: [schoolId], references: [id])
 }
+
 // Daily/Recurring Schedule
 model ScheduleItem {
-  id          String   @id @default(cuid())
+  id          String     @id @default(cuid())
   targetClass String
   classId     String?
-  class       Class?   @relation(fields: [classId], references: [id])
+  class       Class?     @relation(fields: [classId], references: [id])
   yearGroupId String?
   yearGroup   YearGroup? @relation(fields: [yearGroupId], references: [id])
   schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id])
+  school      School     @relation(fields: [schoolId], references: [id])
 
   // For recurring items
   isRecurring Boolean @default(false)
-  dayOfWeek   Int?    // 0-6 for recurring
+  dayOfWeek   Int? // 0-6 for recurring
   active      Boolean @default(true)
 
   // For one-off items
   date DateTime?
 
-  type        String  // "pe", "swimming", "trip", "early-finish", etc.
+  type        String // "pe", "swimming", "trip", "early-finish", etc.
   label       String
   description String?
   icon        String?
@@ -690,10 +691,10 @@ model SubjectReminder {
   id         String   @id @default(cuid())
   schoolId   String
   school     School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  subject    String   // Display name as entered, e.g. "Swimming"
-  subjectKey String   // = subject.trim().toLowerCase(), the case-insensitive match key
+  subject    String // Display name as entered, e.g. "Swimming"
+  subjectKey String // = subject.trim().toLowerCase(), the case-insensitive match key
   emoji      String
-  reminder   String   // Parent-facing nudge text, e.g. "Remember swimwear, towel & goggles"
+  reminder   String // Parent-facing nudge text, e.g. "Remember swimwear, towel & goggles"
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -718,11 +719,11 @@ model TimetableOverride {
   classId         String
   class           Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
   date            DateTime // the specific day this override applies to (UTC midnight)
-  subjectKey      String   // normalised match key (subjectKeyOf), case-insensitive
-  subject         String   // display name as entered, e.g. "Swimming"
-  emoji           String?  // optional emoji override; falls back to the reminder map / default
-  action          String   // 'CANCELLED' | 'ADDED'
-  note            String?  // optional staff note, e.g. "pool closed"
+  subjectKey      String // normalised match key (subjectKeyOf), case-insensitive
+  subject         String // display name as entered, e.g. "Swimming"
+  emoji           String? // optional emoji override; falls back to the reminder map / default
+  action          String // 'CANCELLED' | 'ADDED'
+  note            String? // optional staff note, e.g. "pool closed"
   createdByUserId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -732,15 +733,15 @@ model TimetableOverride {
 
 // Weekly Principal Message
 model WeeklyMessage {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
   content     String
   weekOf      DateTime
-  isCurrent   Boolean  @default(false)
-  imageUrl    String?  // Header image/photo URL
+  isCurrent   Boolean   @default(false)
+  imageUrl    String? // Header image/photo URL
   scheduledAt DateTime? // If set, hidden from parents until this time
   schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id])
+  school      School    @relation(fields: [schoolId], references: [id])
 
   hearts WeeklyMessageHeart[]
 
@@ -785,11 +786,11 @@ model KnowledgeArticle {
 model PulseSurvey {
   id                    String   @id @default(cuid())
   halfTermName          String
-  status                String   // "DRAFT", "OPEN", "CLOSED"
+  status                String // "DRAFT", "OPEN", "CLOSED"
   opensAt               DateTime
   closesAt              DateTime
-  additionalQuestionKey String?  // Key from OPTIONAL_QUESTIONS list (legacy)
-  customQuestions        Json?   // Array of custom questions [{id, text, type}]
+  additionalQuestionKey String? // Key from OPTIONAL_QUESTIONS list (legacy)
+  customQuestions       Json? // Array of custom questions [{id, text, type}]
   schoolId              String
   school                School   @relation(fields: [schoolId], references: [id])
 
@@ -804,7 +805,7 @@ model PulseResponse {
   pulse     PulseSurvey @relation(fields: [pulseId], references: [id], onDelete: Cascade)
   userId    String
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  answers   Json        // { q1: 4, q2: 5, ... }
+  answers   Json // { q1: 4, q2: 5, ... }
   createdAt DateTime    @default(now())
 
   @@unique([pulseId, userId])
@@ -813,10 +814,10 @@ model PulseResponse {
 // School Policies
 model Policy {
   id          String   @id @default(cuid())
-  name        String   // e.g., "Attendance Policy", "Behaviour Policy"
+  name        String // e.g., "Attendance Policy", "Behaviour Policy"
   description String?
-  fileUrl     String   // URL to the policy document (PDF)
-  fileSize    Int?     // File size in bytes
+  fileUrl     String // URL to the policy document (PDF)
+  fileSize    Int? // File size in bytes
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id])
   updatedAt   DateTime @updatedAt
@@ -825,54 +826,54 @@ model Policy {
 
 // File Folders for organizing school files
 model FileFolder {
-  id          String   @id @default(cuid())
-  name        String   // e.g., "Forms", "Letters", "Curriculum", "Photos"
-  icon        String?  // Emoji or icon identifier
-  color       String?  // Color for the folder
-  parentId    String?  // For nested folders (null = root level)
-  parent      FileFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
-  children    FileFolder[] @relation("FolderHierarchy")
-  schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id])
-  files       SchoolFile[]
-  order       Int      @default(0)
-  createdAt   DateTime @default(now())
+  id        String       @id @default(cuid())
+  name      String // e.g., "Forms", "Letters", "Curriculum", "Photos"
+  icon      String? // Emoji or icon identifier
+  color     String? // Color for the folder
+  parentId  String? // For nested folders (null = root level)
+  parent    FileFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children  FileFolder[] @relation("FolderHierarchy")
+  schoolId  String
+  school    School       @relation(fields: [schoolId], references: [id])
+  files     SchoolFile[]
+  order     Int          @default(0)
+  createdAt DateTime     @default(now())
 }
 
 // School Files
 model SchoolFile {
-  id          String     @id @default(cuid())
-  name        String     // Display name
-  fileName    String     // Original file name
-  fileUrl     String     // URL to the file
-  fileType    String     // MIME type or extension (pdf, doc, jpg, etc.)
-  fileSize    Int        // Size in bytes
-  folderId    String?
-  folder      FileFolder? @relation(fields: [folderId], references: [id])
-  schoolId    String
-  school      School     @relation(fields: [schoolId], references: [id])
-  uploadedAt  DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id         String      @id @default(cuid())
+  name       String // Display name
+  fileName   String // Original file name
+  fileUrl    String // URL to the file
+  fileType   String // MIME type or extension (pdf, doc, jpg, etc.)
+  fileSize   Int // Size in bytes
+  folderId   String?
+  folder     FileFolder? @relation(fields: [folderId], references: [id])
+  schoolId   String
+  school     School      @relation(fields: [schoolId], references: [id])
+  uploadedAt DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 }
 
 // Forms (replaces Surveys)
 model Form {
-  id           String   @id @default(cuid())
-  title        String
-  description  String?
-  type         String   // template key: "permission-consent", "trip-consent", etc.
-  status       String   @default("DRAFT") // "DRAFT", "ACTIVE", "CLOSED"
-  fields       Json     // Array of field definitions
-  targetClass  String   // Display label: "Whole School", "Y1 Red, Y2 Blue", etc.
-  classIds     Json     @default("[]") // String[] of class IDs
-  yearGroupIds Json     @default("[]") // String[] of year group IDs
-  schoolId     String
-  school       School   @relation(fields: [schoolId], references: [id])
-  expiresAt    DateTime?
-  exportToken           String?   @unique // Secret token for public CSV export (Google Sheets IMPORTDATA)
-  exportTokenCreatedAt  DateTime? // When the export token was generated (expires after 24h)
+  id                   String    @id @default(cuid())
+  title                String
+  description          String?
+  type                 String // template key: "permission-consent", "trip-consent", etc.
+  status               String    @default("DRAFT") // "DRAFT", "ACTIVE", "CLOSED"
+  fields               Json // Array of field definitions
+  targetClass          String // Display label: "Whole School", "Y1 Red, Y2 Blue", etc.
+  classIds             Json      @default("[]") // String[] of class IDs
+  yearGroupIds         Json      @default("[]") // String[] of year group IDs
+  schoolId             String
+  school               School    @relation(fields: [schoolId], references: [id])
+  expiresAt            DateTime?
+  exportToken          String?   @unique // Secret token for public CSV export (Google Sheets IMPORTDATA)
+  exportTokenCreatedAt DateTime? // When the export token was generated (expires after 24h)
 
-  message   Message?
+  message Message?
 
   responses FormResponse[]
 
@@ -888,7 +889,7 @@ model FormResponse {
   form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  answers   Json     // { fieldId: value }
+  answers   Json // { fieldId: value }
   createdAt DateTime @default(now())
 
   @@unique([formId, userId])
@@ -896,28 +897,28 @@ model FormResponse {
 
 // Parent Invitations (for self-registration)
 model ParentInvitation {
-  id             String   @id @default(cuid())
-  schoolId       String
-  school         School   @relation(fields: [schoolId], references: [id])
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
 
-  accessCode     String   @unique  // ABC-123-XYZ format
-  magicToken     String?  @unique  // For email magic links
+  accessCode String  @unique // ABC-123-XYZ format
+  magicToken String? @unique // For email magic links
 
-  parentEmail    String?  // Optional: for magic link invites
-  parentName     String?  // Optional: for display
+  parentEmail String? // Optional: for magic link invites
+  parentName  String? // Optional: for display
 
-  childLinks     ChildInvitationLink[]
-  studentLinks   StudentInvitationLink[]
+  childLinks   ChildInvitationLink[]
+  studentLinks StudentInvitationLink[]
 
-  status         String   @default("PENDING") // PENDING, REDEEMED, EXPIRED, REVOKED
-  expiresAt      DateTime?
-  redeemedAt     DateTime?
+  status           String    @default("PENDING") // PENDING, REDEEMED, EXPIRED, REVOKED
+  expiresAt        DateTime?
+  redeemedAt       DateTime?
   redeemedByUserId String?
-  redeemedByUser User?    @relation("RedeemedInvitations", fields: [redeemedByUserId], references: [id])
+  redeemedByUser   User?     @relation("RedeemedInvitations", fields: [redeemedByUserId], references: [id])
 
-  createdById    String
-  createdBy      User     @relation("CreatedInvitations", fields: [createdById], references: [id])
-  createdAt      DateTime @default(now())
+  createdById String
+  createdBy   User     @relation("CreatedInvitations", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
 
   @@index([schoolId, status])
   @@index([accessCode])
@@ -928,9 +929,9 @@ model ChildInvitationLink {
   invitationId String
   invitation   ParentInvitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
 
-  childName    String
-  classId      String
-  class        Class            @relation(fields: [classId], references: [id])
+  childName String
+  classId   String
+  class     Class  @relation(fields: [classId], references: [id])
 
   @@unique([invitationId, classId, childName])
 }
@@ -992,7 +993,7 @@ model AuditLog {
   resourceType AuditResourceType
   resourceId   String
   metadata     Json?
-  changes      Json?             // { field: { from, to } } diff for UPDATE actions
+  changes      Json? // { field: { from, to } } diff for UPDATE actions
   schoolId     String
   school       School            @relation(fields: [schoolId], references: [id])
   ipAddress    String?
@@ -1008,10 +1009,10 @@ model Notification {
   id           String   @id @default(cuid())
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         String   // e.g. "MESSAGE", "EVENT", "SURVEY", "PULSE", "WEEKLY_MESSAGE"
+  type         String // e.g. "MESSAGE", "EVENT", "SURVEY", "PULSE", "WEEKLY_MESSAGE"
   title        String
   body         String
-  resourceType String?  // e.g. "MESSAGE", "EVENT"
+  resourceType String? // e.g. "MESSAGE", "EVENT"
   resourceId   String?
   data         Json?
   read         Boolean  @default(false)
@@ -1029,7 +1030,7 @@ model DeviceToken {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   token     String
-  platform  String   // "ios", "android", "web"
+  platform  String // "ios", "android", "web"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1038,15 +1039,15 @@ model DeviceToken {
 
 // Magic Link Tokens for passwordless authentication
 model MagicLinkToken {
-  id           String   @id @default(cuid())
-  token        String   @unique
+  id           String    @id @default(cuid())
+  token        String    @unique
   email        String
   schoolId     String
-  type         String   // "LOGIN" or "REGISTRATION"
-  invitationId String?  // For registration flow, links to ParentInvitation
+  type         String // "LOGIN" or "REGISTRATION"
+  invitationId String? // For registration flow, links to ParentInvitation
   expiresAt    DateTime
   usedAt       DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   @@index([email, type])
   @@index([token])
@@ -1072,28 +1073,28 @@ model LoginCode {
 
 // Link Categories for organizing external links
 model LinkCategory {
-  id          String         @id @default(cuid())
-  name        String
-  order       Int            @default(0)
-  schoolId    String
-  school      School         @relation(fields: [schoolId], references: [id])
-  links       ExternalLink[]
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  id        String         @id @default(cuid())
+  name      String
+  order     Int            @default(0)
+  schoolId  String
+  school    School         @relation(fields: [schoolId], references: [id])
+  links     ExternalLink[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
   @@index([schoolId, order])
 }
 
 // Group Category for organizing (Sports, Music, Clubs, etc.)
 model GroupCategory {
-  id        String   @id @default(cuid())
-  name      String   // "Sports", "Music", "Clubs"
-  icon      String?  // Emoji
-  color     String?  // Hex color
-  order     Int      @default(0)
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id])
-  groups    Group[]
+  id            String        @id @default(cuid())
+  name          String // "Sports", "Music", "Clubs"
+  icon          String? // Emoji
+  color         String? // Hex color
+  order         Int           @default(0)
+  schoolId      String
+  school        School        @relation(fields: [schoolId], references: [id])
+  groups        Group[]
   ecaActivities EcaActivity[]
 
   createdAt DateTime @default(now())
@@ -1106,7 +1107,7 @@ model GroupCategory {
 // Main Group model (Teams, Clubs, etc.)
 model Group {
   id          String         @id @default(cuid())
-  name        String         // "U11 Football"
+  name        String // "U11 Football"
   description String?
   categoryId  String?
   category    GroupCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -1114,11 +1115,11 @@ model Group {
   school      School         @relation(fields: [schoolId], references: [id])
   isActive    Boolean        @default(true)
 
-  studentMembers  StudentGroupLink[]
-  staffManagers   StaffGroupAssignment[]
-  messages        Message[]
-  events          Event[]
-  ecaActivity     EcaActivity?
+  studentMembers StudentGroupLink[]
+  staffManagers  StaffGroupAssignment[]
+  messages       Message[]
+  events         Event[]
+  ecaActivity    EcaActivity?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1134,7 +1135,7 @@ model StudentGroupLink {
   student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   groupId   String
   group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  role      String?  // Optional: "captain", "member"
+  role      String? // Optional: "captain", "member"
   joinedAt  DateTime @default(now())
 
   @@unique([studentId, groupId])
@@ -1160,8 +1161,8 @@ model ExternalLink {
   title       String
   description String?
   url         String
-  icon        String?       // Emoji or icon name
-  imageUrl    String?       // URL to logo/image
+  icon        String? // Emoji or icon name
+  imageUrl    String? // URL to logo/image
   order       Int           @default(0)
   active      Boolean       @default(true)
   categoryId  String?
@@ -1181,22 +1182,22 @@ model ExternalLink {
 
 // School-level ECA settings
 model EcaSettings {
-  id                    String   @id @default(cuid())
-  schoolId              String   @unique
-  school                School   @relation(fields: [schoolId], references: [id])
-  selectionMode         EcaSelectionMode @default(FIRST_COME_FIRST_SERVED)
-  schoolWeek            EcaSchoolWeek @default(MON_FRI)
-  attendanceEnabled     Boolean  @default(false)
-  showCost              Boolean  @default(false) // Show cost info to parents
-  maxPriorityChoices    Int      @default(1)  // Priority ECAs per week
-  maxChoicesPerDay      Int      @default(3)  // Ranked choices per slot
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                 String           @id @default(cuid())
+  schoolId           String           @unique
+  school             School           @relation(fields: [schoolId], references: [id])
+  selectionMode      EcaSelectionMode @default(FIRST_COME_FIRST_SERVED)
+  schoolWeek         EcaSchoolWeek    @default(MON_FRI)
+  attendanceEnabled  Boolean          @default(false)
+  showCost           Boolean          @default(false) // Show cost info to parents
+  maxPriorityChoices Int              @default(1) // Priority ECAs per week
+  maxChoicesPerDay   Int              @default(3) // Ranked choices per slot
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 }
 
 enum EcaSchoolWeek {
-  MON_FRI   // Monday to Friday (Western)
-  SUN_THU   // Sunday to Thursday (Middle East)
+  MON_FRI // Monday to Friday (Western)
+  SUN_THU // Sunday to Thursday (Middle East)
 }
 
 enum EcaSelectionMode {
@@ -1206,12 +1207,12 @@ enum EcaSelectionMode {
 
 // ECA Term - registration windows and time slots per term
 model EcaTerm {
-  id                       String   @id @default(cuid())
+  id                       String                    @id @default(cuid())
   schoolId                 String
-  school                   School   @relation(fields: [schoolId], references: [id])
-  name                     String   // "Term 1 2025/26"
-  termNumber               Int      // 1, 2, 3
-  academicYear             String   // "2025/26"
+  school                   School                    @relation(fields: [schoolId], references: [id])
+  name                     String // "Term 1 2025/26"
+  termNumber               Int // 1, 2, 3
+  academicYear             String // "2025/26"
   startDate                DateTime
   endDate                  DateTime
   // Nullable: a Hub-sourced term is created in DRAFT with no registration
@@ -1219,12 +1220,12 @@ model EcaTerm {
   // Manual terms still supply them on create.
   registrationOpens        DateTime?
   registrationCloses       DateTime?
-  defaultBeforeSchoolStart String?  // "07:30"
-  defaultBeforeSchoolEnd   String?  // "08:15"
-  defaultAfterSchoolStart  String?  // "15:30"
-  defaultAfterSchoolEnd    String?  // "16:30"
-  status                   EcaTermStatus @default(DRAFT)
-  allocationRun            Boolean  @default(false)
+  defaultBeforeSchoolStart String? // "07:30"
+  defaultBeforeSchoolEnd   String? // "08:15"
+  defaultAfterSchoolStart  String? // "15:30"
+  defaultAfterSchoolEnd    String? // "16:30"
+  status                   EcaTermStatus             @default(DRAFT)
+  allocationRun            Boolean                   @default(false)
   // Set when this term was created from a Wasil Hub academic term. Hub owns the
   // term's identity (name/dates); Connect owns the enrolment workflow (status,
   // registration windows, session-time defaults). Null for manual terms.
@@ -1235,72 +1236,79 @@ model EcaTerm {
   waitlists                EcaWaitlist[]
   attendanceRecords        EcaAttendance[]
   suggestions              EcaAllocationSuggestion[]
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
 
   @@unique([schoolId, termNumber, academicYear])
   @@index([schoolId, status])
 }
 
 enum EcaTermStatus {
-  DRAFT               // Setup phase
-  REGISTRATION_OPEN   // Parents can submit
+  DRAFT // Setup phase
+  REGISTRATION_OPEN // Parents can submit
   REGISTRATION_CLOSED // Waiting for allocation
   ALLOCATION_COMPLETE // Results published
-  ACTIVE              // Term in progress
-  COMPLETED           // Term ended
+  ACTIVE // Term in progress
+  COMPLETED // Term ended
 }
 
 // ECA Activity - individual activity offering
 model EcaActivity {
-  id                   String   @id @default(cuid())
+  id                   String               @id @default(cuid())
   ecaTermId            String
-  ecaTerm              EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  ecaTerm              EcaTerm              @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
   schoolId             String
-  school               School   @relation(fields: [schoolId], references: [id])
-  name                 String   // "Football Club"
+  school               School               @relation(fields: [schoolId], references: [id])
+  name                 String // "Football Club"
   description          String?
-  groupId              String?  @unique  // Auto-created group
-  group                Group?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  groupId              String?              @unique // Auto-created group
+  group                Group?               @relation(fields: [groupId], references: [id], onDelete: SetNull)
   categoryId           String?
-  category             GroupCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  dayOfWeek            Int      // 0=Sun, 1=Mon, etc.
+  category             GroupCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  dayOfWeek            Int // 0=Sun, 1=Mon, etc.
   timeSlot             EcaTimeSlot
-  customStartTime      String?  // Override default
+  customStartTime      String? // Override default
   customEndTime        String?
   location             String?
-  activityType         EcaActivityType @default(OPEN)
-  eligibleYearGroupIds Json     @default("[]")  // String[]
-  eligibleGender       EcaGender @default(MIXED)
+  activityType         EcaActivityType      @default(OPEN)
+  eligibleYearGroupIds Json                 @default("[]") // String[]
+  eligibleGender       EcaGender            @default(MIXED)
   minCapacity          Int?
   maxCapacity          Int?
   staffId              String?
-  staff                User?    @relation("EcaActivityStaff", fields: [staffId], references: [id])
-  isActive             Boolean  @default(true)
+  staff                User?                @relation("EcaActivityStaff", fields: [staffId], references: [id])
+  isActive             Boolean              @default(true)
   // Provider-controlled visibility on the parent app. Activities are hidden from
   // parents until the owning provider publishes them (admins/provider see all).
-  isPublished          Boolean  @default(false)
-  cost                 Float?   // Cost per term (null = free)
-  costDescription      String?  // Free text like "55 AED per term"
+  isPublished          Boolean              @default(false)
+  cost                 Float? // Cost per term (null = free)
+  costDescription      String? // Free text like "55 AED per term"
   // External provider-run club (null = school-run). Ownership for the provider
   // portal is enforced by providerId; paymentUrl is the external pay link.
   providerId           String?
-  provider             Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  provider             Provider?            @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  // The company that actually runs this club, e.g. "3-52 Football". The
+  // provider above is the booking partner who organises it and takes payment;
+  // the operator is the brand parents recognise and the logo they see. Null on
+  // a club run by the partner themselves, where the two are the same.
+  operatorId           String?
+  operator             ClubOperator?        @relation(fields: [operatorId], references: [id], onDelete: SetNull)
   paymentUrl           String?
   providerBookings     EcaProviderBooking[]
-  isCancelled          Boolean  @default(false)
+  isCancelled          Boolean              @default(false)
   cancelReason         String?
   selections           EcaSelection[]
   allocations          EcaAllocation[]
   waitlists            EcaWaitlist[]
   invitations          EcaInvitation[]
   attendanceRecords    EcaAttendance[]
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 
   @@index([ecaTermId, dayOfWeek, timeSlot])
   @@index([schoolId, isActive])
   @@index([providerId])
+  @@index([operatorId])
 }
 
 enum EcaTimeSlot {
@@ -1323,19 +1331,19 @@ enum EcaGender {
 
 // Parent selections during registration
 model EcaSelection {
-  id            String   @id @default(cuid())
+  id            String      @id @default(cuid())
   ecaTermId     String
-  ecaTerm       EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  ecaTerm       EcaTerm     @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
   studentId     String
-  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student       Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   parentUserId  String
-  parentUser    User     @relation("EcaSelections", fields: [parentUserId], references: [id], onDelete: Cascade)
+  parentUser    User        @relation("EcaSelections", fields: [parentUserId], references: [id], onDelete: Cascade)
   ecaActivityId String
   ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
-  rank          Int      @default(1)  // 1=first choice
-  isPriority    Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  rank          Int         @default(1) // 1=first choice
+  isPriority    Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   @@unique([ecaTermId, studentId, ecaActivityId])
   @@index([ecaTermId, studentId])
@@ -1343,18 +1351,18 @@ model EcaSelection {
 
 // Final allocations after algorithm runs
 model EcaAllocation {
-  id              String   @id @default(cuid())
+  id              String              @id @default(cuid())
   ecaTermId       String
-  ecaTerm         EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  ecaTerm         EcaTerm             @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
   studentId       String
-  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student         Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
   ecaActivityId   String
-  ecaActivity     EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  ecaActivity     EcaActivity         @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
   allocationType  EcaAllocationType
   allocationRound Int?
   status          EcaAllocationStatus @default(CONFIRMED)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
   @@unique([ecaTermId, studentId, ecaActivityId])
   @@index([ecaTermId, studentId])
@@ -1365,7 +1373,7 @@ enum EcaAllocationType {
   SMART_PRIORITY
   SMART_RANKED
   SMART_REALLOCATION
-  SMART_FORCED       // Student assigned to non-selected activity for coverage
+  SMART_FORCED // Student assigned to non-selected activity for coverage
   INVITED
   COMPULSORY
   MANUAL
@@ -1379,15 +1387,15 @@ enum EcaAllocationStatus {
 
 // Waitlist for full activities
 model EcaWaitlist {
-  id            String   @id @default(cuid())
+  id            String      @id @default(cuid())
   ecaTermId     String
-  ecaTerm       EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  ecaTerm       EcaTerm     @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
   studentId     String
-  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student       Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   ecaActivityId String
   ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
   position      Int
-  createdAt     DateTime @default(now())
+  createdAt     DateTime    @default(now())
 
   @@unique([ecaTermId, studentId, ecaActivityId])
   @@index([ecaActivityId, position])
@@ -1395,18 +1403,18 @@ model EcaWaitlist {
 
 // Invitations for invite-only/tryout activities
 model EcaInvitation {
-  id            String   @id @default(cuid())
+  id            String              @id @default(cuid())
   ecaActivityId String
-  ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  ecaActivity   EcaActivity         @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
   studentId     String
-  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student       Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
   status        EcaInvitationStatus @default(PENDING)
   invitedById   String
-  invitedBy     User     @relation("EcaInvitationsSent", fields: [invitedById], references: [id])
-  isTryout      Boolean  @default(false)
+  invitedBy     User                @relation("EcaInvitationsSent", fields: [invitedById], references: [id])
+  isTryout      Boolean             @default(false)
   tryoutResult  EcaTryoutResult?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@unique([ecaActivityId, studentId])
 }
@@ -1426,20 +1434,20 @@ enum EcaTryoutResult {
 
 // Attendance tracking (optional)
 model EcaAttendance {
-  id            String   @id @default(cuid())
+  id            String              @id @default(cuid())
   ecaTermId     String
-  ecaTerm       EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  ecaTerm       EcaTerm             @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
   ecaActivityId String
-  ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  ecaActivity   EcaActivity         @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
   studentId     String
-  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student       Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
   sessionDate   DateTime
   status        EcaAttendanceStatus
   note          String?
   markedById    String?
-  markedBy      User?    @relation("EcaAttendanceMarkedBy", fields: [markedById], references: [id])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  markedBy      User?               @relation("EcaAttendanceMarkedBy", fields: [markedById], references: [id])
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@unique([ecaActivityId, studentId, sessionDate])
   @@index([ecaActivityId, sessionDate])
@@ -1454,34 +1462,34 @@ enum EcaAttendanceStatus {
 
 // Allocation suggestions for admin review
 model EcaAllocationSuggestion {
-  id            String   @id @default(cuid())
-  ecaTermId     String
-  ecaTerm       EcaTerm  @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
-  type          EcaSuggestionType
-  priority      EcaSuggestionPriority
-  title         String
-  description   String
-  activityId    String?
-  activityName  String?
-  currentValue  Int?     // e.g., current capacity
-  suggestedValue Int?    // e.g., suggested capacity
-  affectedCount Int?     // e.g., number of students affected
-  status        EcaSuggestionStatus @default(PENDING)
-  resolvedAt    DateTime?
-  resolvedById  String?
-  resolvedBy    User?    @relation("EcaSuggestionsResolved", fields: [resolvedById], references: [id])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String                @id @default(cuid())
+  ecaTermId      String
+  ecaTerm        EcaTerm               @relation(fields: [ecaTermId], references: [id], onDelete: Cascade)
+  type           EcaSuggestionType
+  priority       EcaSuggestionPriority
+  title          String
+  description    String
+  activityId     String?
+  activityName   String?
+  currentValue   Int? // e.g., current capacity
+  suggestedValue Int? // e.g., suggested capacity
+  affectedCount  Int? // e.g., number of students affected
+  status         EcaSuggestionStatus   @default(PENDING)
+  resolvedAt     DateTime?
+  resolvedById   String?
+  resolvedBy     User?                 @relation("EcaSuggestionsResolved", fields: [resolvedById], references: [id])
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
   @@index([ecaTermId, status])
 }
 
 enum EcaSuggestionType {
-  INCREASE_CAPACITY    // Activity oversubscribed, suggest increasing max
-  DECREASE_MINIMUM     // Activity at risk, suggest lowering min
-  ADD_SESSION          // High demand, suggest adding another session
-  MANUAL_PLACEMENT     // Students couldn't be placed, need manual intervention
-  REVIEW_ACTIVITY      // Activity has issues needing review
+  INCREASE_CAPACITY // Activity oversubscribed, suggest increasing max
+  DECREASE_MINIMUM // Activity at risk, suggest lowering min
+  ADD_SESSION // High demand, suggest adding another session
+  MANUAL_PLACEMENT // Students couldn't be placed, need manual intervention
+  REVIEW_ACTIVITY // Activity has issues needing review
 }
 
 enum EcaSuggestionPriority {
@@ -1501,73 +1509,73 @@ enum EcaSuggestionStatus {
 // ============================================
 
 model ConsultationEvent {
-  id            String   @id @default(cuid())
+  id            String                @id @default(cuid())
   schoolId      String
-  school        School   @relation(fields: [schoolId], references: [id])
-  title         String   // e.g., "Spring Term Parents' Evening"
+  school        School                @relation(fields: [schoolId], references: [id])
+  title         String // e.g., "Spring Term Parents' Evening"
   description   String?
-  date          String   // YYYY-MM-DD
-  endDate       String?  // For multi-day events
-  status        ConsultationStatus @default(DRAFT)
-  slotDuration  Int      @default(10)  // minutes per slot
-  breakDuration Int      @default(0)   // minutes break between slots
-  targetClass   String?  // null = whole school, or specific class name
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  date          String // YYYY-MM-DD
+  endDate       String? // For multi-day events
+  status        ConsultationStatus    @default(DRAFT)
+  slotDuration  Int                   @default(10) // minutes per slot
+  breakDuration Int                   @default(0) // minutes break between slots
+  targetClass   String? // null = whole school, or specific class name
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
   teachers      ConsultationTeacher[]
 }
 
 model ConsultationTeacher {
-  id                String   @id @default(cuid())
-  consultationId    String
-  consultation      ConsultationEvent @relation(fields: [consultationId], references: [id], onDelete: Cascade)
-  teacherId         String
-  teacher           User     @relation(fields: [teacherId], references: [id])
-  location          String?  // e.g., "Room 3A", "Virtual - Zoom link"
-  locationType      String   @default("IN_PERSON") // IN_PERSON, GOOGLE_MEET, ZOOM, TEAMS, CUSTOM
-  startTime         String   // HH:MM - when this teacher's slots begin
-  endTime           String   // HH:MM - when this teacher's slots end
+  id                  String                           @id @default(cuid())
+  consultationId      String
+  consultation        ConsultationEvent                @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  teacherId           String
+  teacher             User                             @relation(fields: [teacherId], references: [id])
+  location            String? // e.g., "Room 3A", "Virtual - Zoom link"
+  locationType        String                           @default("IN_PERSON") // IN_PERSON, GOOGLE_MEET, ZOOM, TEAMS, CUSTOM
+  startTime           String // HH:MM - when this teacher's slots begin
+  endTime             String // HH:MM - when this teacher's slots end
   slots               ConsultationSlot[]
   availabilityWindows ConsultationAvailabilityWindow[]
-  createdAt           DateTime @default(now())
+  createdAt           DateTime                         @default(now())
 }
 
 model ConsultationAvailabilityWindow {
-  id                    String   @id @default(cuid())
+  id                    String              @id @default(cuid())
   consultationTeacherId String
   consultationTeacher   ConsultationTeacher @relation(fields: [consultationTeacherId], references: [id], onDelete: Cascade)
-  date                  String   // YYYY-MM-DD
-  startTime             String   // HH:MM
-  endTime               String   // HH:MM
-  createdAt             DateTime @default(now())
+  date                  String // YYYY-MM-DD
+  startTime             String // HH:MM
+  endTime               String // HH:MM
+  createdAt             DateTime            @default(now())
 
   @@index([consultationTeacherId, date])
 }
 
 model ConsultationSlot {
-  id                    String   @id @default(cuid())
+  id                    String               @id @default(cuid())
   consultationTeacherId String
-  consultationTeacher   ConsultationTeacher @relation(fields: [consultationTeacherId], references: [id], onDelete: Cascade)
-  startTime             String   // HH:MM
-  endTime               String   // HH:MM
-  date                  String?  // YYYY-MM-DD — which day this slot is for
-  isBreak               Boolean  @default(false)
-  isCustom              Boolean  @default(false) // true if manually added (not auto-generated)
+  consultationTeacher   ConsultationTeacher  @relation(fields: [consultationTeacherId], references: [id], onDelete: Cascade)
+  startTime             String // HH:MM
+  endTime               String // HH:MM
+  date                  String? // YYYY-MM-DD — which day this slot is for
+  isBreak               Boolean              @default(false)
+  isCustom              Boolean              @default(false) // true if manually added (not auto-generated)
   booking               ConsultationBooking?
 }
 
 model ConsultationBooking {
-  id             String    @id @default(cuid())
-  slotId         String    @unique
+  id             String           @id @default(cuid())
+  slotId         String           @unique
   slot           ConsultationSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
   parentId       String
-  parent         User     @relation(fields: [parentId], references: [id])
+  parent         User             @relation(fields: [parentId], references: [id])
   studentId      String
   studentName    String
-  notes          String?  // Parent can add a note for the teacher
-  meetingLink    String?  // Google Meet / video call link
+  notes          String? // Parent can add a note for the teacher
+  meetingLink    String? // Google Meet / video call link
   reminderSentAt DateTime? // Tracks whether 24h reminder was sent
-  createdAt      DateTime @default(now())
+  createdAt      DateTime         @default(now())
 }
 
 enum ConsultationStatus {
@@ -1583,62 +1591,62 @@ enum ConsultationStatus {
 // ============================================
 
 model EmergencyAlert {
-  id            String        @id @default(cuid())
-  schoolId      String
-  school        School        @relation(fields: [schoolId], references: [id])
-  title         String
-  message       String
-  type          AlertType     @default(GENERAL)
-  severity      AlertSeverity @default(HIGH)
-  status        AlertStatus   @default(ACTIVE)
-  sendPush      Boolean       @default(true)
-  sendSms       Boolean       @default(false)
-  sendWhatsapp  Boolean       @default(false)
-  sendEmail     Boolean       @default(false)
-  targetClass   String?       // null = whole school
-  sentAt        DateTime      @default(now())
-  resolvedAt    DateTime?
-  resolvedBy    String?
-  createdById   String
-  createdBy     User          @relation("AlertCreator", fields: [createdById], references: [id])
-  isDrill       Boolean       @default(false)
-  drillName     String?       // "Fire Evacuation Drill - Term 1"
-  requireAck    Boolean       @default(false) // whether parents must acknowledge
-  deliveries    AlertDelivery[]
+  id              String                @id @default(cuid())
+  schoolId        String
+  school          School                @relation(fields: [schoolId], references: [id])
+  title           String
+  message         String
+  type            AlertType             @default(GENERAL)
+  severity        AlertSeverity         @default(HIGH)
+  status          AlertStatus           @default(ACTIVE)
+  sendPush        Boolean               @default(true)
+  sendSms         Boolean               @default(false)
+  sendWhatsapp    Boolean               @default(false)
+  sendEmail       Boolean               @default(false)
+  targetClass     String? // null = whole school
+  sentAt          DateTime              @default(now())
+  resolvedAt      DateTime?
+  resolvedBy      String?
+  createdById     String
+  createdBy       User                  @relation("AlertCreator", fields: [createdById], references: [id])
+  isDrill         Boolean               @default(false)
+  drillName       String? // "Fire Evacuation Drill - Term 1"
+  requireAck      Boolean               @default(false) // whether parents must acknowledge
+  deliveries      AlertDelivery[]
   acknowledgments AlertAcknowledgment[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   @@index([schoolId, status])
   @@index([schoolId, createdAt])
 }
 
 model AlertAcknowledgment {
-  id             String    @id @default(cuid())
+  id             String         @id @default(cuid())
   alertId        String
   alert          EmergencyAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
   parentId       String
-  parent         User      @relation(fields: [parentId], references: [id])
-  acknowledgedAt DateTime  @default(now())
-  device         String?   // "web", "ios", "android"
-  createdAt      DateTime  @default(now())
+  parent         User           @relation(fields: [parentId], references: [id])
+  acknowledgedAt DateTime       @default(now())
+  device         String? // "web", "ios", "android"
+  createdAt      DateTime       @default(now())
 
   @@unique([alertId, parentId])
   @@index([alertId])
 }
 
 model AlertDelivery {
-  id          String         @id @default(cuid())
+  id          String          @id @default(cuid())
   alertId     String
-  alert       EmergencyAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  alert       EmergencyAlert  @relation(fields: [alertId], references: [id], onDelete: Cascade)
   parentId    String
   channel     DeliveryChannel
-  status      DeliveryStatus @default(PENDING)
-  externalId  String?        // Twilio message SID
+  status      DeliveryStatus  @default(PENDING)
+  externalId  String? // Twilio message SID
   error       String?
   sentAt      DateTime?
   deliveredAt DateTime?
-  createdAt   DateTime       @default(now())
+  createdAt   DateTime        @default(now())
 
   @@index([alertId, channel])
   @@index([alertId, status])
@@ -1683,64 +1691,64 @@ enum AlertStatus {
 // ============================================
 
 model SchoolService {
-  id              String   @id @default(uuid())
-  schoolId        String
-  school          School   @relation(fields: [schoolId], references: [id])
-  name            String   // "Early Bird Club", "Homework Club"
-  description     String?
-  details         String?  // Longer description, what's included
-  days            String   // JSON array of days e.g. ["Monday","Tuesday","Wednesday","Thursday","Friday"]
-  startTime       String   // "07:00"
-  endTime         String   // "08:00"
-  costPerSession  Float?   // e.g. 5.00 per session
-  costPerWeek     Float?   // or weekly rate
-  costPerTerm     Float?   // or termly rate
-  costDescription String?  // Free text like "£5 per session or £20 per week"
-  costIsFrom      Boolean  @default(false) // If true, display as "from X"
-  currency        String   @default("AED")  // Currency code
-  paymentMethod   String?  // "ONLINE", "CASH_ONLY", "FREE"
-  paymentUrl      String?  // Custom payment link (Stripe, PayHub, Zenda, etc.)
-  capacity        Int?     // null = unlimited
-  eligibleClasses String?  // JSON array of class names, null = all
-  eligibleYears   String?  // JSON array of year group names, null = all
-  status          ServiceStatus @default(DRAFT)
-  registrationOpens  DateTime?
-  registrationCloses DateTime?
-  serviceStarts      String?  // Date string
-  serviceEnds        String?  // Date string
-  location        String?
-  staffName       String?  // Who runs it
-  imageUrl        String?
-  sortOrder       Int      @default(0)
+  id                  String                @id @default(uuid())
+  schoolId            String
+  school              School                @relation(fields: [schoolId], references: [id])
+  name                String // "Early Bird Club", "Homework Club"
+  description         String?
+  details             String? // Longer description, what's included
+  days                String // JSON array of days e.g. ["Monday","Tuesday","Wednesday","Thursday","Friday"]
+  startTime           String // "07:00"
+  endTime             String // "08:00"
+  costPerSession      Float? // e.g. 5.00 per session
+  costPerWeek         Float? // or weekly rate
+  costPerTerm         Float? // or termly rate
+  costDescription     String? // Free text like "£5 per session or £20 per week"
+  costIsFrom          Boolean               @default(false) // If true, display as "from X"
+  currency            String                @default("AED") // Currency code
+  paymentMethod       String? // "ONLINE", "CASH_ONLY", "FREE"
+  paymentUrl          String? // Custom payment link (Stripe, PayHub, Zenda, etc.)
+  capacity            Int? // null = unlimited
+  eligibleClasses     String? // JSON array of class names, null = all
+  eligibleYears       String? // JSON array of year group names, null = all
+  status              ServiceStatus         @default(DRAFT)
+  registrationOpens   DateTime?
+  registrationCloses  DateTime?
+  serviceStarts       String? // Date string
+  serviceEnds         String? // Date string
+  location            String?
+  staffName           String? // Who runs it
+  imageUrl            String?
+  sortOrder           Int                   @default(0)
   // Dashboard promotion. A service a parent never navigates to might as well not
   // exist, so the school can lift one onto the parent dashboard. `featuredUntil`
   // is what stops the dashboard rotting: a promo nobody remembers to switch off
   // stops being news, so it expires on its own (null = until switched off).
-  featuredOnDashboard Boolean  @default(false)
+  featuredOnDashboard Boolean               @default(false)
   featuredUntil       DateTime?
-  registrations   ServiceRegistration[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  registrations       ServiceRegistration[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 
   @@index([schoolId, status])
 }
 
 model ServiceRegistration {
-  id          String   @id @default(uuid())
-  serviceId   String
-  service     SchoolService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  parentId    String
-  parent      User     @relation("ServiceRegistrations", fields: [parentId], references: [id])
-  studentId   String
-  studentName String
-  className   String
-  days        String   // JSON array of which days they're signing up for
-  status      RegistrationStatus @default(PENDING)
-  paymentStatus PaymentStatus @default(UNPAID)
-  notes       String?  // Parent notes e.g. dietary requirements, allergies
-  startDate   String?  // When they want to start
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String             @id @default(uuid())
+  serviceId     String
+  service       SchoolService      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  parentId      String
+  parent        User               @relation("ServiceRegistrations", fields: [parentId], references: [id])
+  studentId     String
+  studentName   String
+  className     String
+  days          String // JSON array of which days they're signing up for
+  status        RegistrationStatus @default(PENDING)
+  paymentStatus PaymentStatus      @default(UNPAID)
+  notes         String? // Parent notes e.g. dietary requirements, allergies
+  startDate     String? // When they want to start
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
   @@unique([serviceId, studentId])
   @@index([parentId])
@@ -1775,40 +1783,40 @@ enum PaymentStatus {
 
 // Admin-defined key contacts parents can reach (Reception, Parent Liaison, etc.)
 model SchoolContact {
-  id             String   @id @default(cuid())
-  schoolId       String
-  school         School   @relation(fields: [schoolId], references: [id])
-  name           String   // "Reception", "Parent Liaison", "SEN Coordinator"
-  description    String?
-  icon           String?  // Emoji or icon name
+  id                  String   @id @default(cuid())
+  schoolId            String
+  school              School   @relation(fields: [schoolId], references: [id])
+  name                String // "Reception", "Parent Liaison", "SEN Coordinator"
+  description         String?
+  icon                String? // Emoji or icon name
   // Optional "deflection" guard-rail: when on, parents see an editable notice
   // (nudging them to try a class teacher / the office first) before starting a
   // thread to this contact. Never blocks — there's always a "continue" path.
-  warnBeforeMessaging Boolean @default(false)
+  warnBeforeMessaging Boolean  @default(false)
   warningMessage      String?
-  assignedUserId String
-  assignedUser   User     @relation("SchoolContactAssignments", fields: [assignedUserId], references: [id])
-  order          Int      @default(0)
-  archived       Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  assignedUserId      String
+  assignedUser        User     @relation("SchoolContactAssignments", fields: [assignedUserId], references: [id])
+  order               Int      @default(0)
+  archived            Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  conversations  Conversation[]
+  conversations Conversation[]
 
   @@index([schoolId, archived])
 }
 
 // Conversation thread between parent and staff
 model Conversation {
-  id               String   @id @default(cuid())
+  id               String         @id @default(cuid())
   schoolId         String
-  school           School   @relation(fields: [schoolId], references: [id])
+  school           School         @relation(fields: [schoolId], references: [id])
   parentId         String
-  parent           User     @relation("ConversationsAsParent", fields: [parentId], references: [id])
+  parent           User           @relation("ConversationsAsParent", fields: [parentId], references: [id])
   staffId          String
-  staff            User     @relation("ConversationsAsStaff", fields: [staffId], references: [id])
+  staff            User           @relation("ConversationsAsStaff", fields: [staffId], references: [id])
   studentId        String?
-  student          Student? @relation(fields: [studentId], references: [id])
+  student          Student?       @relation(fields: [studentId], references: [id])
   schoolContactId  String?
   schoolContact    SchoolContact? @relation(fields: [schoolContactId], references: [id])
   // Thread typing — the mechanism that keeps the two channels from ever sharing
@@ -1819,18 +1827,18 @@ model Conversation {
   // to the class teacher AND to a school-wide admin inbox; the ILSA only ever
   // resolves against `kind: "ILSA"` threads for their one pupil. ILSA threads are
   // surfaced to the school ONLY via the audited oversight route.
-  kind             String   @default("STAFF")
-  lastMessageAt    DateTime @default(now())
+  kind             String         @default("STAFF")
+  lastMessageAt    DateTime       @default(now())
   lastMessageText  String?
-  archivedByParent Boolean  @default(false)
-  archivedByStaff  Boolean  @default(false)
-  mutedByParent    Boolean  @default(false)
-  mutedByStaff     Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  archivedByParent Boolean        @default(false)
+  archivedByStaff  Boolean        @default(false)
+  mutedByParent    Boolean        @default(false)
+  mutedByStaff     Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
-  messages         ConversationMessage[]
-  participants     ConversationParticipant[]
+  messages     ConversationMessage[]
+  participants ConversationParticipant[]
 
   @@unique([parentId, staffId, studentId, schoolContactId])
   @@index([parentId, archivedByParent, lastMessageAt])
@@ -1849,18 +1857,18 @@ model Conversation {
 // archive state lives HERE (lastReadAt / mutedAt / archivedAt) — never on the
 // Conversation's primary parent/staff flags or ConversationMessage.readAt.
 model ConversationParticipant {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   userId         String
-  user           User     @relation("ConversationParticipations", fields: [userId], references: [id])
-  role           String   @default("PARENT") // forward-compat: future "STAFF"
-  addedById      String?  // who added this participant (the acting primary parent)
+  user           User         @relation("ConversationParticipations", fields: [userId], references: [id])
+  role           String       @default("PARENT") // forward-compat: future "STAFF"
+  addedById      String? // who added this participant (the acting primary parent)
   lastReadAt     DateTime?
   mutedAt        DateTime?
   archivedAt     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@unique([conversationId, userId])
   @@index([userId, archivedAt])
@@ -1869,34 +1877,34 @@ model ConversationParticipant {
 
 // Individual message within a conversation
 model ConversationMessage {
-  id             String   @id @default(cuid())
+  id             String                @id @default(cuid())
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   senderId       String
-  sender         User     @relation("SentConversationMessages", fields: [senderId], references: [id])
+  sender         User                  @relation("SentConversationMessages", fields: [senderId], references: [id])
   content        String
   readAt         DateTime?
   deletedAt      DateTime?
   deletedBy      String?
   replyToId      String?
-  replyTo        ConversationMessage? @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replyTo        ConversationMessage?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies        ConversationMessage[] @relation("MessageReplies")
-  createdAt      DateTime @default(now())
+  createdAt      DateTime              @default(now())
 
-  attachments    ConversationAttachment[]
-  reactions      MessageReaction[]
+  attachments ConversationAttachment[]
+  reactions   MessageReaction[]
 
   @@index([conversationId, createdAt])
 }
 
 model MessageReaction {
-  id        String   @id @default(cuid())
+  id        String              @id @default(cuid())
   messageId String
   message   ConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation("MessageReactions", fields: [userId], references: [id])
+  user      User                @relation("MessageReactions", fields: [userId], references: [id])
   emoji     String
-  createdAt DateTime @default(now())
+  createdAt DateTime            @default(now())
 
   @@unique([messageId, userId, emoji])
   @@index([messageId])
@@ -1904,14 +1912,14 @@ model MessageReaction {
 
 // File attachments for conversation messages
 model ConversationAttachment {
-  id        String   @id @default(cuid())
+  id        String              @id @default(cuid())
   messageId String
   message   ConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
   fileName  String
   fileUrl   String
   fileType  String
   fileSize  Int
-  createdAt DateTime @default(now())
+  createdAt DateTime            @default(now())
 }
 
 // An ILSA (Learning Support Assistant) resolved as a messaging actor scoped to
@@ -1928,11 +1936,11 @@ model IlsaLink {
   id            String    @id @default(cuid())
   schoolId      String
   school        School    @relation(fields: [schoolId], references: [id])
-  userId        String    // the ILSA's Connect User (role ILSA)
+  userId        String // the ILSA's Connect User (role ILSA)
   user          User      @relation("IlsaActor", fields: [userId], references: [id])
-  studentId     String    // the ONE linked pupil (Connect Student id)
+  studentId     String // the ONE linked pupil (Connect Student id)
   student       Student   @relation(fields: [studentId], references: [id])
-  hubPupilId    String    // Hub pupil id — the oversight lookup key (?pupil_id=)
+  hubPupilId    String // Hub pupil id — the oversight lookup key (?pupil_id=)
   // Lifecycle: a Hub unlink/deactivate flips this to false (+ stamps
   // deactivatedAt). Inactive links resolve to NO actor (messaging cut off) and
   // drop out of the parent-side contact surface; thread history is untouched.
@@ -1952,20 +1960,20 @@ model IlsaLink {
 
 // Per-user notification preferences (all default to true)
 model NotificationPreference {
-  id        String  @id @default(cuid())
-  userId    String  @unique
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Communication
-  posts          Boolean @default(true) // Broadcast messages/posts
-  directMessages Boolean @default(true) // Inbox conversations
+  posts           Boolean @default(true) // Broadcast messages/posts
+  directMessages  Boolean @default(true) // Inbox conversations
   emergencyAlerts Boolean @default(true) // Emergency alerts (recommended always on)
 
   // Engagement
-  forms          Boolean @default(true) // New forms to complete
-  events         Boolean @default(true) // New events and reminders
-  weeklyUpdates  Boolean @default(true) // Principal's weekly updates
-  pulseSurveys   Boolean @default(true) // Parent pulse surveys
+  forms         Boolean @default(true) // New forms to complete
+  events        Boolean @default(true) // New events and reminders
+  weeklyUpdates Boolean @default(true) // Principal's weekly updates
+  pulseSurveys  Boolean @default(true) // Parent pulse surveys
 
   // Programmes
   ecaUpdates     Boolean @default(true) // ECA registration, allocations, invitations
@@ -1984,20 +1992,20 @@ model NotificationPreference {
 // ============================================
 
 model CafeteriaMenu {
-  id        String   @id @default(cuid())
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id])
+  id          String              @id @default(cuid())
+  schoolId    String
+  school      School              @relation(fields: [schoolId], references: [id])
   // External catering provider that owns this menu (null = school-run).
-  providerId String?
-  provider   Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
-  weekOf    DateTime // Monday of the week
-  title     String?  // "Week 3 Menu" (optional)
-  imageUrl  String?  // Optional: uploaded menu image/PDF instead of items
-  orderUrl  String?  // Override school-level payment URL for this menu
-  isPublished Boolean @default(false)
-  items     CafeteriaMenuItem[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  providerId  String?
+  provider    Provider?           @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  weekOf      DateTime // Monday of the week
+  title       String? // "Week 3 Menu" (optional)
+  imageUrl    String? // Optional: uploaded menu image/PDF instead of items
+  orderUrl    String? // Override school-level payment URL for this menu
+  isPublished Boolean             @default(false)
+  items       CafeteriaMenuItem[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
   @@unique([schoolId, weekOf])
   @@index([schoolId, isPublished])
@@ -2005,56 +2013,56 @@ model CafeteriaMenu {
 }
 
 model CafeteriaMenuItem {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   menuId      String
   menu        CafeteriaMenu @relation(fields: [menuId], references: [id], onDelete: Cascade)
-  dayOfWeek   Int      // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri
-  mealType    String   @default("LUNCH") // LUNCH, BREAKFAST, SNACK
-  name        String   // "Chicken Biryani with Raita"
-  description String?  // "Served with salad and naan bread"
-  dietaryTags String?  // JSON array: ["halal","vegetarian","gluten-free"]
-  allergens   String?  // JSON array: ["nuts","dairy","gluten","eggs","soy","fish","shellfish","sesame"]
-  calories    Int?     // kcal per serving
-  protein     Int?     // grams
-  carbs       Int?     // grams
-  fat         Int?     // grams
-  price       Float?   // price per item in school currency (AED)
-  isDefault   Boolean  @default(false) // Main option vs alternative
-  order       Int      @default(0)
-  createdAt   DateTime @default(now())
+  dayOfWeek   Int // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri
+  mealType    String        @default("LUNCH") // LUNCH, BREAKFAST, SNACK
+  name        String // "Chicken Biryani with Raita"
+  description String? // "Served with salad and naan bread"
+  dietaryTags String? // JSON array: ["halal","vegetarian","gluten-free"]
+  allergens   String? // JSON array: ["nuts","dairy","gluten","eggs","soy","fish","shellfish","sesame"]
+  calories    Int? // kcal per serving
+  protein     Int? // grams
+  carbs       Int? // grams
+  fat         Int? // grams
+  price       Float? // price per item in school currency (AED)
+  isDefault   Boolean       @default(false) // Main option vs alternative
+  order       Int           @default(0)
+  createdAt   DateTime      @default(now())
 
   @@index([menuId, dayOfWeek])
 }
 
 // Permanent cafe menu (always-available items like coffee, paninis, snacks)
 model CafeteriaCategory {
-  id        String   @id @default(cuid())
+  id        String              @id @default(cuid())
   schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id])
-  name      String   // "Hot Drinks", "Cold Drinks", "Paninis", "Salads", "Snacks"
-  order     Int      @default(0)
-  isActive  Boolean  @default(true)
+  school    School              @relation(fields: [schoolId], references: [id])
+  name      String // "Hot Drinks", "Cold Drinks", "Paninis", "Salads", "Snacks"
+  order     Int                 @default(0)
+  isActive  Boolean             @default(true)
   items     CafeteriaCafeItem[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
 
   @@index([schoolId, isActive])
 }
 
 model CafeteriaCafeItem {
-  id          String   @id @default(cuid())
+  id          String            @id @default(cuid())
   categoryId  String
   category    CafeteriaCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  name        String   // "Cappuccino", "Chicken Panini"
+  name        String // "Cappuccino", "Chicken Panini"
   description String?
-  price       Float?   // AED
-  dietaryTags String?  // JSON array like weekly menu
-  allergens   String?  // JSON array
+  price       Float? // AED
+  dietaryTags String? // JSON array like weekly menu
+  allergens   String? // JSON array
   calories    Int?
-  isAvailable Boolean  @default(true)
-  order       Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isAvailable Boolean           @default(true)
+  order       Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   @@index([categoryId])
 }
@@ -2065,35 +2073,35 @@ model CafeteriaCafeItem {
 
 // API key for Wasil Inclusion to push IEP data
 model InclusionApiKey {
-  id        String   @id @default(cuid())
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id])
-  key       String   @unique
-  label     String
-  isActive  Boolean  @default(true)
+  id         String    @id @default(cuid())
+  schoolId   String
+  school     School    @relation(fields: [schoolId], references: [id])
+  key        String    @unique
+  label      String
+  isActive   Boolean   @default(true)
   lastUsedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([schoolId])
 }
 
 // IEP data pushed from Wasil Inclusion
 model StudentIep {
-  id          String   @id @default(cuid())
-  studentId   String
-  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id])
-  title       String   // "Spring Term IEP 2025/26"
-  status      String   @default("ACTIVE") // ACTIVE, COMPLETED, ARCHIVED
-  targets     Json     // [{area, target, strategies, progress, status}]
-  reviewDate  String?
-  keyWorker   String?
-  notes       String?
-  parentVisible Boolean @default(true)
-  syncedAt    DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id])
+  title         String // "Spring Term IEP 2025/26"
+  status        String   @default("ACTIVE") // ACTIVE, COMPLETED, ARCHIVED
+  targets       Json // [{area, target, strategies, progress, status}]
+  reviewDate    String?
+  keyWorker     String?
+  notes         String?
+  parentVisible Boolean  @default(true)
+  syncedAt      DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([studentId])
   @@index([schoolId])
@@ -2106,12 +2114,12 @@ model StudentReport {
   student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   schoolId     String
   school       School   @relation(fields: [schoolId], references: [id])
-  fileName     String   // Original filename
-  fileUrl      String   // R2 public URL
-  fileSize     Int      // bytes
+  fileName     String // Original filename
+  fileUrl      String // R2 public URL
+  fileSize     Int // bytes
   reportType   String   @default("REPORT_CARD") // REPORT_CARD, PROGRESS_REPORT, OTHER
-  reportPeriod String?  // "Term 1 2025-26", "Semester 1", etc.
-  academicYear String?  // "2025-26"
+  reportPeriod String? // "Term 1 2025-26", "Semester 1", etc.
+  academicYear String? // "2025-26"
   uploadedById String
   uploadedBy   User     @relation(fields: [uploadedById], references: [id])
   createdAt    DateTime @default(now())
@@ -2126,18 +2134,18 @@ model StudentReport {
 
 // Daily attendance record per student
 model AttendanceRecord {
-  id        String   @id @default(cuid())
-  studentId String
-  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id])
-  date      String   // YYYY-MM-DD
-  status    AttendanceStatus @default(PRESENT)
-  notes     String?
-  markedById String?  // staff who marked it
-  markedBy  User?    @relation("AttendanceMarkedBy", fields: [markedById], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String           @id @default(cuid())
+  studentId  String
+  student    Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  schoolId   String
+  school     School           @relation(fields: [schoolId], references: [id])
+  date       String // YYYY-MM-DD
+  status     AttendanceStatus @default(PRESENT)
+  notes      String?
+  markedById String? // staff who marked it
+  markedBy   User?            @relation("AttendanceMarkedBy", fields: [markedById], references: [id])
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
   @@unique([studentId, date])
   @@index([schoolId, date])
@@ -2153,26 +2161,26 @@ enum AttendanceStatus {
 
 // Parent-submitted absence/request
 model AttendanceRequest {
-  id          String   @id @default(cuid())
-  studentId   String
-  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  parentId    String
-  parent      User     @relation("AttendanceRequests", fields: [parentId], references: [id])
-  schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id])
-  type        AttendanceRequestType
-  startDate   String   // YYYY-MM-DD
-  endDate     String?  // YYYY-MM-DD (for multi-day absences)
-  reason      String   // "illness", "appointment", "family", "other"
-  notes       String?
-  time        String?  // HH:MM for early pickup / late arrival
-  status      RequestApprovalStatus @default(PENDING)
+  id           String                @id @default(cuid())
+  studentId    String
+  student      Student               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parentId     String
+  parent       User                  @relation("AttendanceRequests", fields: [parentId], references: [id])
+  schoolId     String
+  school       School                @relation(fields: [schoolId], references: [id])
+  type         AttendanceRequestType
+  startDate    String // YYYY-MM-DD
+  endDate      String? // YYYY-MM-DD (for multi-day absences)
+  reason       String // "illness", "appointment", "family", "other"
+  notes        String?
+  time         String? // HH:MM for early pickup / late arrival
+  status       RequestApprovalStatus @default(PENDING)
   reviewedById String?
-  reviewedBy  User?    @relation("AttendanceReviewed", fields: [reviewedById], references: [id])
-  reviewedAt  DateTime?
-  reviewNotes String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  reviewedBy   User?                 @relation("AttendanceReviewed", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+  reviewNotes  String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
   @@index([schoolId, status])
   @@index([studentId])
@@ -2197,22 +2205,22 @@ enum RequestApprovalStatus {
 // downstream provider availability and gives us a single place to see what
 // failed and why.
 model OutboxEntry {
-  id        String        @id @default(cuid())
-  schoolId  String
-  school    School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  kind      OutboxKind
-  payload   Json          // kind-specific delivery details
+  id       String     @id @default(cuid())
+  schoolId String
+  school   School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  kind     OutboxKind
+  payload  Json // kind-specific delivery details
 
-  status    OutboxStatus  @default(PENDING)
-  attempts  Int           @default(0)
+  status    OutboxStatus @default(PENDING)
+  attempts  Int          @default(0)
   lastError String?
-  runAfter  DateTime      @default(now()) // when the worker is allowed to pick this up
+  runAfter  DateTime     @default(now()) // when the worker is allowed to pick this up
 
-  sentAt    DateTime?
-  failedAt  DateTime?
+  sentAt   DateTime?
+  failedAt DateTime?
 
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status, runAfter])
   @@index([schoolId])
@@ -2243,34 +2251,57 @@ enum ProviderStatus {
 }
 
 model Provider {
-  id          String         @id @default(cuid())
-  name        String
-  type        ProviderType
-  status      ProviderStatus @default(ACTIVE)
-  logoUrl     String?
+  id           String         @id @default(cuid())
+  name         String
+  type         ProviderType
+  status       ProviderStatus @default(ACTIVE)
+  logoUrl      String?
   contactEmail String?
   contactPhone String?
 
-  schoolLinks ProviderSchoolLink[]
-  users       ProviderUser[]
-  invitations ProviderInvitation[]
-  ecaActivities EcaActivity[]
+  schoolLinks    ProviderSchoolLink[]
+  users          ProviderUser[]
+  invitations    ProviderInvitation[]
+  ecaActivities  EcaActivity[]
+  clubOperators  ClubOperator[]
   cafeteriaMenus CafeteriaMenu[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// A company whose clubs a booking partner organises — "3-52 Football" run
+/// through Infinite Sports. It is a brand, not an account: no login, no school
+/// link, no portal session. The partner maintains its own roster.
+///
+/// Separate from Provider because an EcaActivity is term-scoped: a club running
+/// three terms a year is three activity rows, and holding the name and logo on
+/// the activity would mean re-uploading the same logo every term and watching
+/// them drift apart.
+model ClubOperator {
+  id         String        @id @default(cuid())
+  name       String
+  logoUrl    String?
+  providerId String
+  provider   Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  activities EcaActivity[]
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@unique([providerId, name])
+  @@index([providerId])
 }
 
 model ProviderSchoolLink {
-  id         String   @id @default(cuid())
-  providerId String
-  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  schoolId   String
-  school     School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  id                 String   @id @default(cuid())
+  providerId         String
+  provider           Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  schoolId           String
+  school             School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   // Per-link governance: whether this provider may see parent contact details
   // for bookings at this school.
-  shareParentContact Boolean @default(true)
-  createdAt  DateTime @default(now())
+  shareParentContact Boolean  @default(true)
+  createdAt          DateTime @default(now())
 
   @@unique([providerId, schoolId])
   @@index([schoolId])
@@ -2319,12 +2350,12 @@ model ProviderInvitation {
   provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   email      String
-  token      String   @unique
-  status     String   @default("PENDING") // PENDING, REDEEMED, EXPIRED, REVOKED
+  token      String    @unique
+  status     String    @default("PENDING") // PENDING, REDEEMED, EXPIRED, REVOKED
   expiresAt  DateTime?
   redeemedAt DateTime?
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([providerId, status])
 }
@@ -2333,21 +2364,21 @@ model ProviderInvitation {
 // from the school's ranked-selection/allocation flow). Payment happens on the
 // provider's external link; Wasil tracks the booking + payment status.
 model EcaProviderBooking {
-  id            String   @id @default(cuid())
+  id            String      @id @default(cuid())
   ecaActivityId String
   ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
   studentId     String
-  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student       Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   parentUserId  String
-  parentUser    User     @relation("ClubBookings", fields: [parentUserId], references: [id], onDelete: Cascade)
+  parentUser    User        @relation("ClubBookings", fields: [parentUserId], references: [id], onDelete: Cascade)
   schoolId      String
-  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school        School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   paymentStatus PaymentStatus @default(UNPAID)
   cancelledAt   DateTime?
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([ecaActivityId, studentId])
   @@index([ecaActivityId])
@@ -2366,12 +2397,12 @@ enum OutboxStatus {
 // If a row already exists, the job has run for that period and is skipped.
 // Combined with pg_try_advisory_lock for mutual exclusion across processes.
 model JobRun {
-  id          String   @id @default(cuid())
-  jobKey      String   // e.g. "attendance-digest"
-  periodKey   String   // e.g. "2026-06-29" for a daily job
-  startedAt   DateTime @default(now())
+  id          String    @id @default(cuid())
+  jobKey      String // e.g. "attendance-digest"
+  periodKey   String // e.g. "2026-06-29" for a daily job
+  startedAt   DateTime  @default(now())
   completedAt DateTime?
-  succeeded   Boolean  @default(false)
+  succeeded   Boolean   @default(false)
   error       String?
 
   @@unique([jobKey, periodKey])

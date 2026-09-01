@@ -2402,6 +2402,12 @@ export interface ProviderPortalTerm {
   defaultAfterSchoolStart?: string | null
   defaultAfterSchoolEnd?: string | null
 }
+export interface ProviderPortalOperator {
+  id: string
+  name: string
+  logoUrl: string | null
+  clubCount?: number
+}
 export interface ProviderPortalYearGroup {
   id: string
   name: string
@@ -2427,6 +2433,9 @@ export interface ProviderPortalActivity {
   endTime: string | null
   /** Empty = open to every year group. */
   eligibleYearGroupIds: string[]
+  operatorId: string | null
+  operatorName: string | null
+  operatorLogoUrl: string | null
   isActive: boolean
   isCancelled: boolean
   isPublished: boolean
@@ -2524,6 +2533,22 @@ export const providerPortalAdmin = {
   yearGroups: (providerId: string) =>
     fetchApi<ProviderPortalYearGroup[]>(`/api/provider-portal/year-groups?provider_id=${providerId}`),
 
+  operators: (providerId: string) =>
+    fetchApi<ProviderPortalOperator[]>(`/api/provider-portal/operators?provider_id=${providerId}`),
+  createOperator: (providerId: string, name: string) =>
+    fetchApi<ProviderPortalOperator>(`/api/provider-portal/operators?provider_id=${providerId}`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  uploadOperatorLogo: (providerId: string, operatorId: string, file: File) => {
+    const form = new FormData()
+    form.append('logo', file)
+    return fetchApi<{ logoUrl: string }>(
+      `/api/provider-portal/operators/${operatorId}/logo?provider_id=${providerId}`,
+      { method: 'POST', body: form },
+    )
+  },
+
   activities: (providerId: string) =>
     fetchApi<ProviderPortalActivity[]>(`/api/provider-portal/activities?provider_id=${providerId}`),
   createActivity: (providerId: string, data: Record<string, unknown>) =>
@@ -2574,6 +2599,13 @@ export interface ClubActivity {
   id: string
   name: string
   description: string | null
+  /** The company running the club — the brand parents recognise. Falls back to
+   *  the booking partner when the club has no separate operator. */
+  operatorName: string | null
+  operatorLogoUrl: string | null
+  /** The partner who organises the booking, when that is a different company
+   *  from the one running the club. Null when they are the same. */
+  bookedThrough: string | null
   providerName: string | null
   dayOfWeek: number
   timeSlot: string

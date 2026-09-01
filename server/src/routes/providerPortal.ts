@@ -32,6 +32,8 @@ const updateProfileSchema = z.object({
 /** 24-hour "HH:MM" — the shape EcaTerm's default times are already stored in. */
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use 24-hour HH:MM, e.g. 15:30')
 
+const operatorSchema = z.object({ name: z.string().min(1).max(80) })
+
 const activitySchema = z.object({
   ecaTermId: z.string().min(1),
   name: z.string().min(1),
@@ -53,6 +55,8 @@ const activitySchema = z.object({
   // override and puts the club back on the term default.
   customStartTime: hhmm.nullable().optional(),
   customEndTime: hhmm.nullable().optional(),
+  // The company running this club. Null means the partner runs it themselves.
+  operatorId: z.string().nullable().optional(),
 })
 // Update accepts everything create does (minus the term) plus the parent-app
 // visibility toggle. Create never publishes immediately — a provider opts in
@@ -128,6 +132,15 @@ const TERM_SELECT = {
 
 /** Year-group ids are client-supplied and a provider spans several schools, so
  * every id must belong to the school whose term the club sits in. */
+/** An operator id must belong to the partner setting it — ids are client-supplied. */
+async function operatorIsOwned(operatorId: string, providerId: string): Promise<boolean> {
+  const found = await prisma.clubOperator.findFirst({
+    where: { id: operatorId, providerId },
+    select: { id: true },
+  })
+  return !!found
+}
+
 async function unknownYearGroupIds(ids: string[], schoolId: string): Promise<string[]> {
   if (ids.length === 0) return []
   const found = await prisma.yearGroup.findMany({
@@ -138,11 +151,16 @@ async function unknownYearGroupIds(ids: string[], schoolId: string): Promise<str
   return [...new Set(ids)].filter(id => !ok.has(id))
 }
 
+/** An activity's operator as the client needs it. */
+const OPERATOR_SELECT = { id: true, name: true, logoUrl: true } as const
+
 function serializeActivity(a: {
   id: string; name: string; description: string | null; dayOfWeek: number; timeSlot: string
   location: string | null; maxCapacity: number | null; cost: number | null; costDescription: string | null
   paymentUrl: string | null; isActive: boolean; isCancelled: boolean; isPublished: boolean; ecaTermId: string
   customStartTime: string | null; customEndTime: string | null; eligibleYearGroupIds: unknown
+  operatorId: string | null
+  operator?: { id: string; name: string; logoUrl: string | null } | null
   ecaTerm?: {
     name: string; school: { id: string; name: string }
     defaultBeforeSchoolStart: string | null; defaultBeforeSchoolEnd: string | null
@@ -166,6 +184,9 @@ function serializeActivity(a: {
     // What parents will actually see — the override, or the term's default.
     ...effectiveTimes(a, a.ecaTerm),
     eligibleYearGroupIds: parseYearGroupIds(a.eligibleYearGroupIds),
+    operatorId: a.operatorId,
+    operatorName: a.operator?.name ?? null,
+    operatorLogoUrl: a.operator?.logoUrl ?? null,
     isActive: a.isActive,
     isCancelled: a.isCancelled,
     isPublished: a.isPublished,
@@ -278,6 +299,106 @@ router.get('/terms', async (req, res) => {
   }
 })
 
+// ─── Club operators: the companies whose clubs this partner organises ────────
+// A brand, not an account — no login, no school link. Scoped to the partner, so
+// one partner can never see or edit another's roster.
+router.get('/operators', async (req, res) => {
+  try {
+    const operators = await prisma.clubOperator.findMany({
+      where: { providerId: req.providerUser!.providerId },
+      select: { id: true, name: true, logoUrl: true, _count: { select: { activities: true } } },
+      orderBy: { name: 'asc' },
+    })
+    res.json(operators.map(o => ({ id: o.id, name: o.name, logoUrl: o.logoUrl, clubCount: o._count.activities })))
+  } catch (error) {
+    console.error('Provider operators error:', error)
+    res.status(500).json({ error: 'Failed to load operators' })
+  }
+})
+
+router.post('/operators', validate(operatorSchema), async (req, res) => {
+  try {
+    const operator = await prisma.clubOperator.create({
+      data: { name: req.body.name.trim(), providerId: req.providerUser!.providerId },
+    })
+    res.status(201).json({ id: operator.id, name: operator.name, logoUrl: operator.logoUrl, clubCount: 0 })
+  } catch (error) {
+    // @@unique([providerId, name]) — the same brand twice is a mistake, not a
+    // second operator, and saying so beats a 500.
+    if ((error as { code?: string }).code === 'P2002') {
+      return res.status(409).json({ error: 'You already have an operator with that name' })
+    }
+    console.error('Provider create operator error:', error)
+    res.status(500).json({ error: 'Failed to add operator' })
+  }
+})
+
+router.patch('/operators/:id', validate(operatorSchema), async (req, res) => {
+  try {
+    const owned = await prisma.clubOperator.findFirst({
+      where: { id: req.params.id, providerId: req.providerUser!.providerId },
+      select: { id: true },
+    })
+    if (!owned) return res.status(404).json({ error: 'Operator not found' })
+    const operator = await prisma.clubOperator.update({
+      where: { id: owned.id },
+      data: { name: req.body.name.trim() },
+    })
+    res.json({ id: operator.id, name: operator.name, logoUrl: operator.logoUrl })
+  } catch (error) {
+    if ((error as { code?: string }).code === 'P2002') {
+      return res.status(409).json({ error: 'You already have an operator with that name' })
+    }
+    console.error('Provider update operator error:', error)
+    res.status(500).json({ error: 'Failed to rename operator' })
+  }
+})
+
+router.delete('/operators/:id', async (req, res) => {
+  try {
+    const owned = await prisma.clubOperator.findFirst({
+      where: { id: req.params.id, providerId: req.providerUser!.providerId },
+      select: { id: true, _count: { select: { activities: true } } },
+    })
+    if (!owned) return res.status(404).json({ error: 'Operator not found' })
+    // The FK is SET NULL, so deleting would silently strip the brand off live
+    // clubs rather than failing. Refuse instead and say how many.
+    if (owned._count.activities > 0) {
+      return res.status(409).json({
+        error: `${owned._count.activities} club${owned._count.activities === 1 ? '' : 's'} still use this operator`,
+      })
+    }
+    await prisma.clubOperator.delete({ where: { id: owned.id } })
+    res.json({ message: 'Operator removed' })
+  } catch (error) {
+    console.error('Provider delete operator error:', error)
+    res.status(500).json({ error: 'Failed to remove operator' })
+  }
+})
+
+router.post('/operators/:id/logo', logoUpload.single('logo'), async (req, res) => {
+  try {
+    const owned = await prisma.clubOperator.findFirst({
+      where: { id: req.params.id, providerId: req.providerUser!.providerId },
+      select: { id: true },
+    })
+    if (!owned) return res.status(404).json({ error: 'Operator not found' })
+
+    const file = req.file
+    if (!file) return res.status(400).json({ error: 'Logo file is required' })
+    const check = checkUpload(file.buffer, file.mimetype, file.originalname, LOGO_MIMES)
+    if (!check.valid) return res.status(400).json({ error: `Invalid image: ${check.reason}` })
+
+    const key = generateKey('operator-logos', file.originalname)
+    const logoUrl = await uploadFile(file.buffer, key, file.mimetype)
+    await prisma.clubOperator.update({ where: { id: owned.id }, data: { logoUrl } })
+    res.json({ logoUrl })
+  } catch (error) {
+    console.error('Provider operator logo error:', error)
+    res.status(500).json({ error: 'Failed to upload logo' })
+  }
+})
+
 // ─── Year groups a club can be restricted to, per linked school ──────────────
 // A provider works across several schools and year groups are per school, so
 // these are grouped by school and the club form filters to its term's school.
@@ -301,7 +422,7 @@ router.get('/activities', async (req, res) => {
   try {
     const activities = await prisma.ecaActivity.findMany({
       where: { providerId: req.providerUser!.providerId },
-      include: { ecaTerm: { select: TERM_SELECT } },
+      include: { ecaTerm: { select: TERM_SELECT }, operator: { select: OPERATOR_SELECT } },
       orderBy: { createdAt: 'desc' },
     })
     res.json(activities.map(serializeActivity))
@@ -330,6 +451,10 @@ router.post('/activities', validate(activitySchema), async (req, res) => {
       return res.status(400).json({ error: 'Unknown year group for this school' })
     }
 
+    if (body.operatorId && !(await operatorIsOwned(body.operatorId, providerId))) {
+      return res.status(400).json({ error: 'Unknown club operator' })
+    }
+
     const activity = await prisma.ecaActivity.create({
       data: {
         ecaTermId: term.id,
@@ -354,8 +479,9 @@ router.post('/activities', validate(activitySchema), async (req, res) => {
         // this column historically, and every reader handles both (see
         // parseYearGroupIds).
         eligibleYearGroupIds: yearGroupIds,
+        operatorId: body.operatorId ?? null,
       },
-      include: { ecaTerm: { select: TERM_SELECT } },
+      include: { ecaTerm: { select: TERM_SELECT }, operator: { select: OPERATOR_SELECT } },
     })
 
     res.status(201).json(serializeActivity(activity))
@@ -381,9 +507,14 @@ router.patch('/activities/:id', validate(updateActivitySchema), async (req, res)
         return res.status(400).json({ error: 'Unknown year group for this school' })
       }
     }
+    if (b.operatorId && !(await operatorIsOwned(b.operatorId, req.providerUser!.providerId))) {
+      return res.status(400).json({ error: 'Unknown club operator' })
+    }
+
     const activity = await prisma.ecaActivity.update({
       where: { id: owned.id },
       data: {
+        ...(b.operatorId !== undefined && { operatorId: b.operatorId }),
         ...(b.name !== undefined && { name: b.name }),
         ...(b.description !== undefined && { description: b.description }),
         ...(b.dayOfWeek !== undefined && { dayOfWeek: b.dayOfWeek }),
@@ -399,7 +530,7 @@ router.patch('/activities/:id', validate(updateActivitySchema), async (req, res)
         ...(b.eligibleYearGroupIds !== undefined && { eligibleYearGroupIds: b.eligibleYearGroupIds }),
         ...(b.isPublished !== undefined && { isPublished: b.isPublished }),
       },
-      include: { ecaTerm: { select: TERM_SELECT } },
+      include: { ecaTerm: { select: TERM_SELECT }, operator: { select: OPERATOR_SELECT } },
     })
     res.json(serializeActivity(activity))
   } catch (error) {

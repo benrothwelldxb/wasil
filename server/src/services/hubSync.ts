@@ -73,7 +73,22 @@ export interface SyncSummary {
    * linked + skippedNoEmail` always equals `fetched`, so the two ways parents
    * go missing — Hub not sending them, or Hub sending them without an email —
    * are told apart at a glance. */
-  guardians: { fetched: number; created: number; linked: number; skippedNoEmail: number }
+  guardians: {
+    fetched: number; created: number; linked: number; skippedNoEmail: number
+    /** Guardians whose Connect email was re-pointed to the address Hub now
+     * holds. See `upsertGuardian` for when that is allowed. */
+    emailUpdated: number
+    /** Address changes Hub sent that Connect declined to apply, each with the
+     * reason. Surfaced rather than counted so a divergence is actionable: it
+     * names the guardian and both addresses instead of leaving an admin to
+     * work out why the two systems disagree. */
+    emailConflicts: Array<{
+      hubGuardianId: string
+      from: string
+      to: string
+      reason: 'address_in_use' | 'account_has_login'
+    }>
+  }
   /** Parent↔student links. `created` counts links upserted this run;
    * `skippedNoPupil` counts guardian→pupil edges whose Hub pupil isn't synced
    * into Connect yet (no matching Student.hubPupilId). */
@@ -207,7 +222,10 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   // summary reports `fetched` alongside the outcomes so a short roster is
   // attributable to Hub's data rather than to this pass.
   const hubGuardians = await listGuardians(hubSchoolId)
-  const guardianSummary = { fetched: hubGuardians.length, created: 0, linked: 0, skippedNoEmail: 0 }
+  const guardianSummary: SyncSummary['guardians'] = {
+    fetched: hubGuardians.length, created: 0, linked: 0, skippedNoEmail: 0,
+    emailUpdated: 0, emailConflicts: [],
+  }
   const parentLinkSummary = { created: 0, skippedNoPupil: 0 }
   for (const g of hubGuardians) {
     const userId = await upsertGuardian(g, schoolId, guardianSummary)
@@ -374,6 +392,84 @@ async function resolveTeacherUserId(
 }
 
 /**
+ * Has this account ever been used to sign in? `User.email` is a login
+ * credential as well as a contact address, so re-pointing it on an account
+ * someone actually uses would silently move where their sign-in link goes.
+ *
+ * Deliberately broad: a password, a recorded login, an OAuth or Hub SSO
+ * identity, or a live refresh token all count. A guardian provisioned by this
+ * sync has none of them — it is created with no password and cannot log in
+ * until invited — so the ordinary case is still free to converge.
+ */
+async function accountHasLogin(user: {
+  id: string
+  passwordHash: string | null
+  lastLoginAt: Date | null
+  googleId: string | null
+  microsoftId: string | null
+  hubUserId: string | null
+}): Promise<boolean> {
+  if (user.passwordHash || user.lastLoginAt || user.googleId || user.microsoftId || user.hubUserId) {
+    return true
+  }
+  const token = await prisma.refreshToken.findFirst({ where: { userId: user.id }, select: { id: true } })
+  return !!token
+}
+
+/**
+ * Decide whether to move a linked guardian's email to the address Hub now
+ * holds. Returns the new address to write, or `null` to leave it alone.
+ *
+ * Connect stores contact address and login identity in one column, and the two
+ * want different update rules. Ignoring Hub's change is not a safe default —
+ * the two systems then diverge permanently, which is exactly the bug this
+ * fixes — so the address does move, but only where moving it cannot cost
+ * anyone their way in:
+ *
+ *   - Hub dropped the address entirely → keep what we have. Never erase a
+ *     credential because an upstream field went blank.
+ *   - The account has been used as a login → leave it, and report the conflict.
+ *     Re-keying a working sign-in belongs to a person, not a nightly job.
+ *   - Another Connect user already holds the address → leave it, and report.
+ *     `User.email` is unique across the whole database, not per school, so this
+ *     is the collision that would otherwise throw mid-sync.
+ *
+ * A declined change is recorded in the summary with both addresses, never
+ * folded into an anonymous skip counter: a divergence nobody can see is how
+ * this went unnoticed in the first place.
+ */
+async function resolveEmailChange(
+  user: {
+    id: string
+    email: string
+    passwordHash: string | null
+    lastLoginAt: Date | null
+    googleId: string | null
+    microsoftId: string | null
+    hubUserId: string | null
+  },
+  g: HubGuardian,
+  incoming: string | null,
+  summary: SyncSummary['guardians'],
+): Promise<string | null> {
+  if (!incoming || incoming === user.email.toLowerCase()) return null
+
+  const conflict = (reason: 'address_in_use' | 'account_has_login') => {
+    summary.emailConflicts.push({ hubGuardianId: g.id, from: user.email, to: incoming, reason })
+    return null
+  }
+
+  if (await accountHasLogin(user)) return conflict('account_has_login')
+
+  // Global, not school-scoped: User.email is @unique across the database.
+  const taken = await prisma.user.findFirst({ where: { email: incoming }, select: { id: true } })
+  if (taken && taken.id !== user.id) return conflict('address_in_use')
+
+  summary.emailUpdated++
+  return incoming
+}
+
+/**
  * Provision a single Hub guardian as a Connect PARENT user. Resolution order
  * mirrors `upsertStaff`'s "match by Hub id → else by email → else create; never
  * rewrite an existing user's role" discipline:
@@ -385,11 +481,16 @@ async function resolveTeacherUserId(
  * A guardian with no email can't be provisioned (User.email is required +
  * unique): skip it, count it in `skippedNoEmail`, never throw. Returns the
  * resolved Connect user id, or `null` when skipped (no email).
+ *
+ * Step 1 also refreshes the email address itself when Hub's has changed — see
+ * `resolveEmailChange` for the guards. It previously refreshed only name and
+ * phone, which pinned a guardian's address at whatever it was when the account
+ * was first seen, and let Connect drift permanently from Hub.
  */
 async function upsertGuardian(
   g: HubGuardian,
   schoolId: string,
-  summary: { created: number; linked: number; skippedNoEmail: number },
+  summary: SyncSummary['guardians'],
 ): Promise<string | null> {
   const name = `${g.firstName} ${g.lastName}`.trim()
   const email = g.email?.trim().toLowerCase() || null
@@ -399,10 +500,11 @@ async function upsertGuardian(
     where: { hubGuardianId: g.id, schoolId },
   })
   if (linked) {
+    const nextEmail = await resolveEmailChange(linked, g, email, summary)
     await prisma.user.update({
       where: { id: linked.id },
       // Refresh profile; deliberately DO NOT touch `role`.
-      data: { name, phone: g.phone ?? undefined },
+      data: { name, phone: g.phone ?? undefined, ...(nextEmail ? { email: nextEmail } : {}) },
     })
     summary.linked++
     return linked.id

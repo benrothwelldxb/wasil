@@ -11,6 +11,7 @@ const prismaMock = {
   class: { upsert: vi.fn(), create: vi.fn() },
   student: { upsert: vi.fn(), create: vi.fn() },
   user: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  refreshToken: { findFirst: vi.fn() },
   parentStudentLink: { upsert: vi.fn(), create: vi.fn() },
   staffClassAssignment: { findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
 }
@@ -178,7 +179,7 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       pupils: 1,
       staff: { created: 0, updated: 0 },
       pupilMisIds: { withMisId: 1, missing: 0 },
-      guardians: { fetched: 0, created: 0, linked: 0, skippedNoEmail: 0 },
+      guardians: { fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, emailUpdated: 0, emailConflicts: [] },
       parentLinks: { created: 0, skippedNoPupil: 0 },
       teacherAssignments: { created: 0, removed: 0, unresolved: 0 },
       calendar: CALENDAR_DORMANT,
@@ -317,7 +318,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
       update: {},
     })
 
-    expect(summary.guardians).toEqual({ fetched: 1, created: 1, linked: 0, skippedNoEmail: 0 })
+    expect(summary.guardians).toEqual({ fetched: 1, created: 1, linked: 0, skippedNoEmail: 0, emailUpdated: 0, emailConflicts: [] })
     expect(summary.parentLinks).toEqual({ created: 1, skippedNoPupil: 0 })
   })
 
@@ -328,7 +329,11 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
       where.hubGuardianId ? provisioned : null,
     )
     prismaMock.user.create.mockImplementation(async () => {
-      provisioned = { id: 'cu-parent', role: 'PARENT', schoolId: 'connect-school-1', hubGuardianId: 'hg1' }
+      provisioned = {
+        id: 'cu-parent', role: 'PARENT', schoolId: 'connect-school-1', hubGuardianId: 'hg1',
+        email: 'layla.khan@example.com', passwordHash: null, lastLoginAt: null,
+        googleId: null, microsoftId: null, hubUserId: null,
+      }
       return provisioned
     })
     prismaMock.user.update.mockResolvedValue({ id: 'cu-parent' })
@@ -375,7 +380,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
       update: {},
     })
 
-    expect(summary.guardians).toEqual({ fetched: 1, created: 0, linked: 1, skippedNoEmail: 0 })
+    expect(summary.guardians).toEqual({ fetched: 1, created: 0, linked: 1, skippedNoEmail: 0, emailUpdated: 0, emailConflicts: [] })
   })
 
   it('skips a guardian with a null email (counted, no user or link written)', async () => {
@@ -386,7 +391,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
 
     expect(prismaMock.user.create).not.toHaveBeenCalled()
     expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
-    expect(summary.guardians).toEqual({ fetched: 1, created: 0, linked: 0, skippedNoEmail: 1 })
+    expect(summary.guardians).toEqual({ fetched: 1, created: 0, linked: 0, skippedNoEmail: 1, emailUpdated: 0, emailConflicts: [] })
     expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 0 })
   })
 
@@ -402,7 +407,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
     // User is still created, but the unresolved pupil link is skipped.
     expect(prismaMock.user.create).toHaveBeenCalledTimes(1)
     expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
-    expect(summary.guardians).toEqual({ fetched: 1, created: 1, linked: 0, skippedNoEmail: 0 })
+    expect(summary.guardians).toEqual({ fetched: 1, created: 1, linked: 0, skippedNoEmail: 0, emailUpdated: 0, emailConflicts: [] })
     expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 1 })
   })
 
@@ -414,7 +419,7 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
     expect(prismaMock.user.create).not.toHaveBeenCalled()
     expect(prismaMock.user.update).not.toHaveBeenCalled()
     expect(prismaMock.parentStudentLink.upsert).not.toHaveBeenCalled()
-    expect(summary.guardians).toEqual({ fetched: 0, created: 0, linked: 0, skippedNoEmail: 0 })
+    expect(summary.guardians).toEqual({ fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, emailUpdated: 0, emailConflicts: [] })
     expect(summary.parentLinks).toEqual({ created: 0, skippedNoPupil: 0 })
   })
 })
@@ -654,5 +659,139 @@ describe('syncSchoolFromHub — UPN (misId) handling', () => {
 
     // Whitespace is not a UPN.
     expect(summary.pupilMisIds).toEqual({ withMisId: 1, missing: 2 })
+  })
+})
+
+// A guardian's address changing in Hub used to never reach Connect: the
+// "already linked by hubGuardianId" branch refreshed name and phone and
+// returned, so the email stayed at whatever it was when the account was first
+// seen. Hub could serve the new value on every pull and Connect would keep
+// showing the old one.
+describe('syncSchoolFromHub — a guardian who changed their email', () => {
+  const GUARDIAN = {
+    id: 'hg1',
+    firstName: 'Nessrine',
+    lastName: 'Hertelli',
+    email: 'ness@nessdealmaker.com',
+    phone: '+971500000000',
+    pupils: [{ pupilId: 'hp1', relationship: 'mother', isPrimary: true }],
+  }
+
+  /** A guardian account as this sync provisions one: no password, never used. */
+  const provisionedAccount = (over: Record<string, unknown> = {}) => ({
+    id: 'cu-parent',
+    role: 'PARENT',
+    schoolId: 'connect-school-1',
+    hubGuardianId: 'hg1',
+    email: 'nessrine.hertelli@outlook.fr',
+    passwordHash: null,
+    lastLoginAt: null,
+    googleId: null,
+    microsoftId: null,
+    hubUserId: null,
+    ...over,
+  })
+
+  /** Only the hubGuardianId lookup resolves unless a test says otherwise. */
+  const linkAs = (account: Record<string, unknown>, emailOwner: unknown = null) =>
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) => {
+      if (where.hubGuardianId) return account
+      if (where.email) return emailOwner
+      return null
+    })
+
+  beforeEach(() => {
+    mGuardians.mockResolvedValue([GUARDIAN])
+    prismaMock.user.update.mockResolvedValue({ id: 'cu-parent' })
+    prismaMock.refreshToken.findFirst.mockResolvedValue(null)
+  })
+
+  it('moves the address to the one Hub now holds', async () => {
+    linkAs(provisionedAccount())
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.user.update.mock.calls[0][0].data.email).toBe('ness@nessdealmaker.com')
+    expect(summary.guardians.emailUpdated).toBe(1)
+    expect(summary.guardians.emailConflicts).toEqual([])
+  })
+
+  it('still never touches role', async () => {
+    linkAs(provisionedAccount())
+    await syncSchoolFromHub('connect-school-1')
+    expect(prismaMock.user.update.mock.calls[0][0].data).not.toHaveProperty('role')
+  })
+
+  it('writes nothing when the address already matches', async () => {
+    linkAs(provisionedAccount({ email: 'ness@nessdealmaker.com' }))
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.user.update.mock.calls[0][0].data).not.toHaveProperty('email')
+    expect(summary.guardians.emailUpdated).toBe(0)
+  })
+
+  // The address is a login credential. Re-keying one on an account someone
+  // actually signs into belongs to a person, not a nightly job.
+  it.each([
+    ['a password set', { passwordHash: 'argon2...' }],
+    ['a recorded login', { lastLoginAt: new Date('2026-08-01') }],
+    ['a Google identity', { googleId: 'g-1' }],
+    ['Hub staff SSO', { hubUserId: 'hu-1' }],
+  ])('leaves it alone and reports the conflict — %s', async (_label, over) => {
+    linkAs(provisionedAccount(over))
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.user.update.mock.calls[0][0].data).not.toHaveProperty('email')
+    expect(summary.guardians.emailUpdated).toBe(0)
+    expect(summary.guardians.emailConflicts).toEqual([
+      {
+        hubGuardianId: 'hg1',
+        from: 'nessrine.hertelli@outlook.fr',
+        to: 'ness@nessdealmaker.com',
+        reason: 'account_has_login',
+      },
+    ])
+  })
+
+  it('a live refresh token counts as having logged in', async () => {
+    linkAs(provisionedAccount())
+    prismaMock.refreshToken.findFirst.mockResolvedValue({ id: 'rt-1' })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.user.update.mock.calls[0][0].data).not.toHaveProperty('email')
+    expect(summary.guardians.emailConflicts[0].reason).toBe('account_has_login')
+  })
+
+  // User.email is unique across the whole database, not per school — this is
+  // the collision that would otherwise throw mid-sync.
+  it('reports rather than throws when another user already holds the address', async () => {
+    linkAs(provisionedAccount(), { id: 'cu-someone-else' })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.user.update.mock.calls[0][0].data).not.toHaveProperty('email')
+    expect(summary.guardians.emailConflicts).toEqual([
+      {
+        hubGuardianId: 'hg1',
+        from: 'nessrine.hertelli@outlook.fr',
+        to: 'ness@nessdealmaker.com',
+        reason: 'address_in_use',
+      },
+    ])
+  })
+
+  // Never erase a credential because an upstream field went blank.
+  it('keeps the existing address when Hub sends none', async () => {
+    mGuardians.mockResolvedValue([{ ...GUARDIAN, email: null }])
+    linkAs(provisionedAccount())
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.user.update.mock.calls[0][0].data).not.toHaveProperty('email')
+    expect(summary.guardians.emailUpdated).toBe(0)
+    expect(summary.guardians.emailConflicts).toEqual([])
   })
 })
