@@ -22,7 +22,7 @@ import { sendNotification } from '../services/notify.js'
 import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
 import { uploadFile, generateKey } from '../services/storage.js'
-import { checkUpload } from '../services/uploadValidation.js'
+import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 
 const router = Router()
 
@@ -33,12 +33,6 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 // convert that markdown to HTML and run it through the SAME sanitizer the admin
 // composer uses, so a partner broadcast stores the same safe-HTML content model
 // as a native one (bold/italic/lists survive; anything unsafe is discarded).
-const ATTACHMENT_MIME_TYPES = [
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-]
 const attachmentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 16 * 1024 * 1024 }, // 16MB, matches native
@@ -1468,6 +1462,7 @@ router.post('/messages', requirePartner, async (req, res) => {
     const safeContent = markdownToSafeHtml(content)
     const cleanTitle = title.trim()
     const scheduledDate = typeof scheduledAt === 'string' && scheduledAt ? new Date(scheduledAt) : null
+    const broadcastLiveNow = !scheduledDate || scheduledDate <= new Date()
     const expiresDate = typeof expiresAt === 'string' && expiresAt ? new Date(expiresAt) : null
     const attachmentRows = Array.isArray(attachments) ? attachments : []
 
@@ -1492,6 +1487,8 @@ router.post('/messages', requirePartner, async (req, res) => {
           isPinned: false,
           isUrgent: isUrgent === true,
           scheduledAt: scheduledDate,
+          // Live now → stamped; future-dated → null, and the sweep owes it.
+          notifiedAt: broadcastLiveNow ? new Date() : null,
           expiresAt: expiresDate,
         },
       })
@@ -1508,21 +1505,26 @@ router.post('/messages', requirePartner, async (req, res) => {
         })
       }
 
-      await sendNotification({
-        req,
-        type: 'MESSAGE',
-        title: cleanTitle,
-        body: safeContent.substring(0, 200),
-        resourceType: 'MESSAGE',
-        resourceId: message.id,
-        target: {
-          targetClass: t.targetClass,
-          classId: t.classId,
-          yearGroupId: t.yearGroupId,
-          groupId: t.groupId,
-          schoolId: actor.schoolId,
-        },
-      })
+      // Same rule as the native create: announce only what is live now. A
+      // future-dated broadcast is picked up by the publishScheduledMessages
+      // sweep when its time arrives, and `notifiedAt` staying null is the marker.
+      if (broadcastLiveNow) {
+        await sendNotification({
+          req,
+          type: 'MESSAGE',
+          title: cleanTitle,
+          body: safeContent.substring(0, 200),
+          resourceType: 'MESSAGE',
+          resourceId: message.id,
+          target: {
+            targetClass: t.targetClass,
+            classId: t.classId,
+            yearGroupId: t.yearGroupId,
+            groupId: t.groupId,
+            schoolId: actor.schoolId,
+          },
+        })
+      }
     }
 
     res.status(201).json({ created: targets.length })

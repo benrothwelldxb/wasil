@@ -38,7 +38,9 @@ interface NotificationTarget {
 }
 
 interface SendNotificationParams {
-  req: Request
+  /** Unused — kept because every request-path caller passes it. Optional so a
+   *  background job (which has no request) can notify too. */
+  req?: Request
   type: string
   title: string
   body: string

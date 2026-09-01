@@ -4,6 +4,7 @@ import { z } from 'zod'
 import prisma from '../services/prisma.js'
 import { requireProviderOrSchoolAdmin } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
+import { parseYearGroupIds, effectiveTimes } from '../services/ecaActivity.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload } from '../services/uploadValidation.js'
 import logger from '../services/logger.js'
@@ -28,6 +29,9 @@ const updateProfileSchema = z.object({
   displayName: z.string().min(1).optional(),
 })
 
+/** 24-hour "HH:MM" — the shape EcaTerm's default times are already stored in. */
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use 24-hour HH:MM, e.g. 15:30')
+
 const activitySchema = z.object({
   ecaTermId: z.string().min(1),
   name: z.string().min(1),
@@ -40,6 +44,15 @@ const activitySchema = z.object({
   costDescription: z.string().nullable().optional(),
   paymentUrl: z.string().url().nullable().optional(),
   eligibleGender: z.enum(['MIXED', 'BOYS_ONLY', 'GIRLS_ONLY']).optional(),
+  // Year groups the club is open to. Absent or empty = open to every year
+  // group, which is what the parent app and the allocator already assume of
+  // an empty list. Ids are checked against the term's school on write.
+  eligibleYearGroupIds: z.array(z.string()).optional(),
+  // Clubs sharing a slot rarely share a clock, so a club may override the
+  // term's BEFORE_SCHOOL / AFTER_SCHOOL default times. Null clears the
+  // override and puts the club back on the term default.
+  customStartTime: hhmm.nullable().optional(),
+  customEndTime: hhmm.nullable().optional(),
 })
 // Update accepts everything create does (minus the term) plus the parent-app
 // visibility toggle. Create never publishes immediately — a provider opts in
@@ -102,11 +115,39 @@ async function mySchoolIds(providerId: string): Promise<string[]> {
   return links.map(l => l.schoolId)
 }
 
+/** The term fields an activity row needs: its name and school for display,
+ * plus the slot defaults a club falls back to when it sets no time of its own. */
+const TERM_SELECT = {
+  name: true,
+  school: { select: { id: true, name: true } },
+  defaultBeforeSchoolStart: true,
+  defaultBeforeSchoolEnd: true,
+  defaultAfterSchoolStart: true,
+  defaultAfterSchoolEnd: true,
+} as const
+
+/** Year-group ids are client-supplied and a provider spans several schools, so
+ * every id must belong to the school whose term the club sits in. */
+async function unknownYearGroupIds(ids: string[], schoolId: string): Promise<string[]> {
+  if (ids.length === 0) return []
+  const found = await prisma.yearGroup.findMany({
+    where: { schoolId, id: { in: ids } },
+    select: { id: true },
+  })
+  const ok = new Set(found.map(y => y.id))
+  return [...new Set(ids)].filter(id => !ok.has(id))
+}
+
 function serializeActivity(a: {
   id: string; name: string; description: string | null; dayOfWeek: number; timeSlot: string
   location: string | null; maxCapacity: number | null; cost: number | null; costDescription: string | null
   paymentUrl: string | null; isActive: boolean; isCancelled: boolean; isPublished: boolean; ecaTermId: string
-  ecaTerm?: { name: string; school: { id: string; name: string } }
+  customStartTime: string | null; customEndTime: string | null; eligibleYearGroupIds: unknown
+  ecaTerm?: {
+    name: string; school: { id: string; name: string }
+    defaultBeforeSchoolStart: string | null; defaultBeforeSchoolEnd: string | null
+    defaultAfterSchoolStart: string | null; defaultAfterSchoolEnd: string | null
+  }
   createdAt: Date
 }) {
   return {
@@ -120,6 +161,11 @@ function serializeActivity(a: {
     cost: a.cost,
     costDescription: a.costDescription,
     paymentUrl: a.paymentUrl,
+    customStartTime: a.customStartTime,
+    customEndTime: a.customEndTime,
+    // What parents will actually see — the override, or the term's default.
+    ...effectiveTimes(a, a.ecaTerm),
+    eligibleYearGroupIds: parseYearGroupIds(a.eligibleYearGroupIds),
     isActive: a.isActive,
     isCancelled: a.isCancelled,
     isPublished: a.isPublished,
@@ -219,10 +265,34 @@ router.get('/terms', async (req, res) => {
       status: t.status,
       schoolId: t.school.id,
       schoolName: t.school.name,
+      // Shown as the placeholder on a club's time fields: leave them empty and
+      // the club runs to these.
+      defaultBeforeSchoolStart: t.defaultBeforeSchoolStart,
+      defaultBeforeSchoolEnd: t.defaultBeforeSchoolEnd,
+      defaultAfterSchoolStart: t.defaultAfterSchoolStart,
+      defaultAfterSchoolEnd: t.defaultAfterSchoolEnd,
     })))
   } catch (error) {
     console.error('Provider terms error:', error)
     res.status(500).json({ error: 'Failed to load terms' })
+  }
+})
+
+// ─── Year groups a club can be restricted to, per linked school ──────────────
+// A provider works across several schools and year groups are per school, so
+// these are grouped by school and the club form filters to its term's school.
+router.get('/year-groups', async (req, res) => {
+  try {
+    const schoolIds = await mySchoolIds(req.providerUser!.providerId)
+    const yearGroups = await prisma.yearGroup.findMany({
+      where: { schoolId: { in: schoolIds } },
+      select: { id: true, name: true, order: true, schoolId: true },
+      orderBy: [{ schoolId: 'asc' }, { order: 'asc' }],
+    })
+    res.json(yearGroups)
+  } catch (error) {
+    console.error('Provider year groups error:', error)
+    res.status(500).json({ error: 'Failed to load year groups' })
   }
 })
 
@@ -231,7 +301,7 @@ router.get('/activities', async (req, res) => {
   try {
     const activities = await prisma.ecaActivity.findMany({
       where: { providerId: req.providerUser!.providerId },
-      include: { ecaTerm: { select: { name: true, school: { select: { id: true, name: true } } } } },
+      include: { ecaTerm: { select: TERM_SELECT } },
       orderBy: { createdAt: 'desc' },
     })
     res.json(activities.map(serializeActivity))
@@ -254,6 +324,12 @@ router.post('/activities', validate(activitySchema), async (req, res) => {
     })
     if (!term) return res.status(404).json({ error: 'Term not found' })
 
+    const yearGroupIds = body.eligibleYearGroupIds ?? []
+    const unknown = await unknownYearGroupIds(yearGroupIds, term.schoolId)
+    if (unknown.length > 0) {
+      return res.status(400).json({ error: 'Unknown year group for this school' })
+    }
+
     const activity = await prisma.ecaActivity.create({
       data: {
         ecaTermId: term.id,
@@ -272,8 +348,14 @@ router.post('/activities', validate(activitySchema), async (req, res) => {
         cost: body.cost ?? null,
         costDescription: body.costDescription ?? null,
         paymentUrl: body.paymentUrl ?? null,
+        customStartTime: body.customStartTime ?? null,
+        customEndTime: body.customEndTime ?? null,
+        // Stored as a real array; the admin ECA routes wrote a JSON string into
+        // this column historically, and every reader handles both (see
+        // parseYearGroupIds).
+        eligibleYearGroupIds: yearGroupIds,
       },
-      include: { ecaTerm: { select: { name: true, school: { select: { id: true, name: true } } } } },
+      include: { ecaTerm: { select: TERM_SELECT } },
     })
 
     res.status(201).json(serializeActivity(activity))
@@ -288,11 +370,17 @@ router.patch('/activities/:id', validate(updateActivitySchema), async (req, res)
     // Ownership: only the provider that owns the activity may edit it.
     const owned = await prisma.ecaActivity.findFirst({
       where: { id: req.params.id, providerId: req.providerUser!.providerId },
-      select: { id: true },
+      select: { id: true, schoolId: true },
     })
     if (!owned) return res.status(404).json({ error: 'Activity not found' })
 
     const b = req.body
+    if (b.eligibleYearGroupIds !== undefined) {
+      const unknown = await unknownYearGroupIds(b.eligibleYearGroupIds, owned.schoolId)
+      if (unknown.length > 0) {
+        return res.status(400).json({ error: 'Unknown year group for this school' })
+      }
+    }
     const activity = await prisma.ecaActivity.update({
       where: { id: owned.id },
       data: {
@@ -306,9 +394,12 @@ router.patch('/activities/:id', validate(updateActivitySchema), async (req, res)
         ...(b.costDescription !== undefined && { costDescription: b.costDescription }),
         ...(b.paymentUrl !== undefined && { paymentUrl: b.paymentUrl }),
         ...(b.eligibleGender !== undefined && { eligibleGender: b.eligibleGender }),
+        ...(b.customStartTime !== undefined && { customStartTime: b.customStartTime }),
+        ...(b.customEndTime !== undefined && { customEndTime: b.customEndTime }),
+        ...(b.eligibleYearGroupIds !== undefined && { eligibleYearGroupIds: b.eligibleYearGroupIds }),
         ...(b.isPublished !== undefined && { isPublished: b.isPublished }),
       },
-      include: { ecaTerm: { select: { name: true, school: { select: { id: true, name: true } } } } },
+      include: { ecaTerm: { select: TERM_SELECT } },
     })
     res.json(serializeActivity(activity))
   } catch (error) {

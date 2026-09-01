@@ -2395,6 +2395,18 @@ export interface ProviderPortalTerm {
    * whether a club added to it will ever appear. DRAFT is the state a
    * Hub-sourced term arrives in. */
   status?: string
+  /** The term's fallback times per slot. A club that sets no time of its own
+   * runs to these, so the club form shows them as its placeholder. */
+  defaultBeforeSchoolStart?: string | null
+  defaultBeforeSchoolEnd?: string | null
+  defaultAfterSchoolStart?: string | null
+  defaultAfterSchoolEnd?: string | null
+}
+export interface ProviderPortalYearGroup {
+  id: string
+  name: string
+  order: number
+  schoolId: string
 }
 export interface ProviderPortalActivity {
   id: string
@@ -2407,6 +2419,14 @@ export interface ProviderPortalActivity {
   cost: number | null
   costDescription: string | null
   paymentUrl: string | null
+  /** Per-club time override, "HH:MM". Null = run to the term's slot default. */
+  customStartTime: string | null
+  customEndTime: string | null
+  /** Override if set, else the term default — what parents actually see. */
+  startTime: string | null
+  endTime: string | null
+  /** Empty = open to every year group. */
+  eligibleYearGroupIds: string[]
   isActive: boolean
   isCancelled: boolean
   isPublished: boolean
@@ -2501,6 +2521,9 @@ export const providerPortalAdmin = {
   terms: (providerId: string) =>
     fetchApi<ProviderPortalTerm[]>(`/api/provider-portal/terms?provider_id=${providerId}`),
 
+  yearGroups: (providerId: string) =>
+    fetchApi<ProviderPortalYearGroup[]>(`/api/provider-portal/year-groups?provider_id=${providerId}`),
+
   activities: (providerId: string) =>
     fetchApi<ProviderPortalActivity[]>(`/api/provider-portal/activities?provider_id=${providerId}`),
   createActivity: (providerId: string, data: Record<string, unknown>) =>
@@ -2546,7 +2569,7 @@ export const providerPortalAdmin = {
 }
 
 // ─── Paid provider-run clubs (parent-facing) ─────────────────────────────────
-export interface ClubStudent { id: string; name: string; className: string | null }
+export interface ClubStudent { id: string; name: string; className: string | null; yearGroupId: string | null }
 export interface ClubActivity {
   id: string
   name: string
@@ -2554,6 +2577,16 @@ export interface ClubActivity {
   providerName: string | null
   dayOfWeek: number
   timeSlot: string
+  /** Clock times, the club's own or its term's default. Null when the term
+   * has no default set for the slot and the club sets none either. */
+  startTime: string | null
+  endTime: string | null
+  /** Empty = open to every year group. */
+  eligibleYearGroupIds: string[]
+  /** Names for the "Year 3, Year 4 only" label. */
+  eligibleYearGroupNames: string[]
+  /** This parent's children who may be booked into it. */
+  eligibleStudentIds: string[]
   location: string | null
   cost: number | null
   costDescription: string | null

@@ -53,6 +53,9 @@ export interface UserWithRelations extends Express.User {
       class: {
         id: string
         name: string
+        /** The whole Class row is selected, so this is populated; it is null
+         * only for a class that sits in no year group. */
+        yearGroupId?: string | null
       }
     }
   }>

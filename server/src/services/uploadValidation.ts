@@ -33,6 +33,10 @@ const EXTENSION_TO_MIMES: Record<string, string[]> = {
   png: ['image/png'],
   gif: ['image/gif'],
   webp: ['image/webp'],
+  // iPhone's default camera format. Browsers other than Safari can't render it
+  // inline, so a HEIC attachment downloads rather than previews.
+  heic: ['image/heic', 'image/heif'],
+  heif: ['image/heif', 'image/heic'],
   svg: ['image/svg+xml'],
   mp4: ['video/mp4'],
   mov: ['video/quicktime'],
@@ -56,6 +60,13 @@ function startsWith(buf: Buffer, bytes: number[]): boolean {
     if (buf[i] !== bytes[i]) return false
   }
   return true
+}
+
+const HEIF_BRANDS = ['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'hevm', 'hevs', 'mif1', 'msf1']
+function isHeif(buf: Buffer): boolean {
+  if (buf.length < 12) return false
+  if (buf.subarray(4, 8).toString('ascii') !== 'ftyp') return false
+  return HEIF_BRANDS.includes(buf.subarray(8, 12).toString('ascii'))
 }
 
 const SNIFFERS: Record<string, (buf: Buffer) => boolean> = {
@@ -92,6 +103,10 @@ const SNIFFERS: Record<string, (buf: Buffer) => boolean> = {
     buf => startsWith(buf, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
   'application/vnd.ms-powerpoint':
     buf => startsWith(buf, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+  // HEIC/HEIF share the ISO base media container with mp4 ('ftyp' at offset 4),
+  // so the brand at offset 8 is what distinguishes them.
+  'image/heic': isHeif,
+  'image/heif': isHeif,
   'video/mp4': buf => buf.length >= 12 && buf.subarray(4, 8).toString('ascii') === 'ftyp',
   'video/quicktime': buf => buf.length >= 12 && buf.subarray(4, 8).toString('ascii') === 'ftyp',
 }
@@ -128,3 +143,23 @@ export function checkUpload(
   }
   return { valid: true }
 }
+
+
+/**
+ * What a message attachment may be — shared by the staff, parent-inbox and
+ * partner upload routes so the three can't drift apart (Desk posts through the
+ * partner one and its picker mirrors this list).
+ *
+ * Spreadsheets and slide decks are here because staff attach them routinely;
+ * HEIC because that is what an iPhone camera produces by default.
+ */
+export const ATTACHMENT_MIME_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+]

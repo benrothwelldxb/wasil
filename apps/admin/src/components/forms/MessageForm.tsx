@@ -186,7 +186,7 @@ export function MessageForm({
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
             onChange={handleFileSelect}
             className="hidden"
           />
@@ -208,7 +208,7 @@ export function MessageForm({
               </>
             )}
           </button>
-          <p className="text-xs text-gray-500 mt-1">Images, PDF, Word documents (max 16 MB each)</p>
+          <p className="text-xs text-gray-500 mt-1">Images, PDF, Word, Excel, PowerPoint (max 16 MB each)</p>
 
           {attachments.length > 0 && (
             <div className="mt-2 space-y-1.5">

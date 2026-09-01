@@ -49,7 +49,7 @@ vi.mock('../src/services/htmlSanitizer', () => ({ sanitizeRichText: (s: string) 
 // Storage + validation for the partner upload endpoint.
 const storageMock = { uploadFile: vi.fn(), generateKey: vi.fn((p: string, n: string) => `${p}/${n}`) }
 vi.mock('../src/services/storage', () => storageMock)
-const uploadValidationMock = { checkUpload: vi.fn() }
+const uploadValidationMock = { checkUpload: vi.fn(), ATTACHMENT_MIME_TYPES: ['application/pdf'] }
 vi.mock('../src/services/uploadValidation', () => uploadValidationMock)
 
 const { default: partnerRoutes } = await import('../src/routes/partner')
