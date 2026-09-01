@@ -19,6 +19,7 @@ import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { sendNotification } from '../services/notify.js'
+import { enqueuePush } from '../services/outbox.js'
 import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
 import { uploadFile, generateKey } from '../services/storage.js'
@@ -1814,6 +1815,438 @@ router.post('/inbox/upload', requirePartner, attachmentUpload.single('file'), as
     })
   } catch (error) {
     console.error('Error uploading partner attachment:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// ─── School services: the directory, the register, and the door ──────────────
+//
+// Desk surfacing of Connect's School Services (Early Bird, Homework Club and
+// the like). Three shapes: what the school runs, who is coming, and signing a
+// child up at the door.
+//
+// Reads take the partner token and a school_id, matching /attendance/today.
+// Writes additionally need `hub_user_id` — registering a child is an act by a
+// named member of staff, and the parent gets told it happened.
+//
+// Pupils are addressed by Hub pupil id throughout; Connect's internal Student
+// id never crosses.
+
+// Mirrors the admin routes' allowlists, and the Prisma enums behind them.
+const PAYMENT_STATUSES = ['UNPAID', 'PAID', 'PARTIAL', 'WAIVED']
+const REGISTRATION_STATUSES = ['PENDING', 'CONFIRMED', 'WAITLISTED', 'CANCELLED']
+
+/** JSON-array columns on SchoolService (days, eligibleClasses, eligibleYears). */
+function parseJsonList(value: string | null): string[] | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/** A registration as Desk sees it. Deliberately NOT schoolServices.ts's
+ *  serializeRegistration, which attaches parentName and parentEmail — parent
+ *  contact details must never cross the partner surface. */
+function serializePartnerRegistration(r: {
+  id: string; studentName: string; className: string; days: string
+  status: string; paymentStatus: string; notes: string | null; startDate: string | null
+  createdAt: Date
+  student?: { hubPupilId: string | null } | null
+}) {
+  return {
+    id: r.id,
+    pupilId: r.student?.hubPupilId ?? null,
+    pupilName: r.studentName,
+    className: r.className,
+    days: parseJsonList(r.days) ?? [],
+    status: r.status,
+    paymentStatus: r.paymentStatus,
+    // Dietary requirements and allergies, as the parent wrote them. Present
+    // because a staff member handing out breakfast needs it — a register that
+    // withholds this is less safe than the paper one it replaces.
+    notes: r.notes,
+    startDate: r.startDate,
+    registeredAt: r.createdAt.toISOString(),
+  }
+}
+
+/** Resolve the school from a Hub or Connect id, the way every partner route does. */
+async function partnerSchool(schoolIdParam: string) {
+  return prisma.school.findFirst({
+    where: { OR: [{ hubSchoolId: schoolIdParam }, { id: schoolIdParam }] },
+    select: { id: true },
+  })
+}
+
+//   GET /api/partner/services?school_id=<hub or connect id>
+//     → { services: [...] }
+router.get('/services', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+
+    const school = await partnerSchool(schoolIdParam)
+    // Unknown school is not an error — Desk may probe ids we don't host.
+    if (!school) return res.json({ services: [] })
+
+    const services = await prisma.schoolService.findMany({
+      // DRAFT is the school still writing it; it is not a thing that exists yet.
+      where: { schoolId: school.id, status: { not: 'DRAFT' } },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: {
+        _count: { select: { registrations: { where: { status: { not: 'CANCELLED' } } } } },
+      },
+    })
+
+    res.json({
+      services: services.map(sv => ({
+        id: sv.id,
+        name: sv.name,
+        description: sv.description,
+        details: sv.details,
+        days: parseJsonList(sv.days) ?? [],
+        startTime: sv.startTime,
+        endTime: sv.endTime,
+        location: sv.location,
+        collectionLocation: sv.collectionLocation,
+        staffName: sv.staffName,
+        status: sv.status,
+        registrationOpens: sv.registrationOpens?.toISOString() ?? null,
+        registrationCloses: sv.registrationCloses?.toISOString() ?? null,
+        serviceStarts: sv.serviceStarts,
+        serviceEnds: sv.serviceEnds,
+        cost: {
+          perSession: sv.costPerSession,
+          perWeek: sv.costPerWeek,
+          perTerm: sv.costPerTerm,
+          description: sv.costDescription,
+          isFrom: sv.costIsFrom,
+          currency: sv.currency,
+          paymentMethod: sv.paymentMethod,
+        },
+        capacity: sv.capacity,
+        registeredCount: sv._count.registrations,
+        // null capacity means unlimited, which is not the same as "no places".
+        spotsLeft: sv.capacity == null ? null : Math.max(0, sv.capacity - sv._count.registrations),
+        eligibleClasses: parseJsonList(sv.eligibleClasses),
+        eligibleYears: parseJsonList(sv.eligibleYears),
+      })),
+    })
+  } catch (error) {
+    console.error('Partner services list error:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+//   GET /api/partner/services/:id/registrations?school_id=&day=Monday
+//     → { service: {...}, registrations: [...] }
+router.get('/services/:id/registrations', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+    const school = await partnerSchool(schoolIdParam)
+    if (!school) return res.status(404).json({ error: 'service_not_found' })
+
+    const service = await prisma.schoolService.findFirst({
+      where: { id: req.params.id, schoolId: school.id, status: { not: 'DRAFT' } },
+      select: { id: true, name: true, days: true, startTime: true, endTime: true, location: true, collectionLocation: true },
+    })
+    if (!service) return res.status(404).json({ error: 'service_not_found' })
+
+    const registrations = await prisma.serviceRegistration.findMany({
+      where: {
+        serviceId: service.id,
+        // A cancelled registration is not a register entry.
+        status: { not: 'CANCELLED' },
+      },
+      select: {
+        id: true, studentId: true, studentName: true, className: true, days: true,
+        status: true, paymentStatus: true, notes: true, startDate: true, createdAt: true,
+      },
+      orderBy: { studentName: 'asc' },
+    })
+
+    // ServiceRegistration.studentId is a bare column with no relation, so the
+    // Hub pupil ids — and the Test Student exclusion Desk-facing lists need —
+    // come from a second pass rather than an include.
+    const students = await prisma.student.findMany({
+      where: { id: { in: registrations.map(r => r.studentId) }, isTest: false },
+      select: { id: true, hubPupilId: true },
+    })
+    const hubPupilById = new Map(students.map(st => [st.id, st.hubPupilId]))
+
+    // `day` narrows to one session's register — the Tuesday list, not everyone
+    // who is on the books. Filtered here because days is a JSON column.
+    const day = typeof req.query.day === 'string' ? req.query.day.trim() : ''
+    const rows = registrations
+      // A registration whose student is missing here is a Test Student.
+      .filter(r => hubPupilById.has(r.studentId))
+      .map(r => serializePartnerRegistration({ ...r, student: { hubPupilId: hubPupilById.get(r.studentId) ?? null } }))
+    const filtered = day ? rows.filter(r => r.days.includes(day)) : rows
+
+    res.json({
+      service: {
+        id: service.id,
+        name: service.name,
+        days: parseJsonList(service.days) ?? [],
+        startTime: service.startTime,
+        endTime: service.endTime,
+        location: service.location,
+        collectionLocation: service.collectionLocation,
+      },
+      registrations: filtered,
+    })
+  } catch (error) {
+    console.error('Partner service registrations error:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+//   POST /api/partner/services/:id/registrations
+//     { hub_user_id, school_id, pupil_id, days: [...], notes?, start_date? }
+//     → the created registration
+router.post('/services/:id/registrations', requirePartner, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const hubUserId = typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : ''
+    if (!hubUserId) return res.status(400).json({ error: 'hub_user_id required' })
+
+    const staff = await resolveStaffActor(hubUserId, schoolHintOf(req))
+    if (!staff) return res.status(403).json({ error: 'not_staff' })
+
+    const pupilId = typeof body.pupil_id === 'string' ? body.pupil_id.trim() : ''
+    const days = Array.isArray(body.days) ? (body.days as unknown[]).filter(d => typeof d === 'string') as string[] : []
+    if (!pupilId) return res.status(400).json({ error: 'pupil_id required' })
+    if (days.length === 0) return res.status(400).json({ error: 'days required' })
+
+    const service = await prisma.schoolService.findFirst({
+      where: { id: req.params.id, schoolId: staff.schoolId },
+    })
+    if (!service) return res.status(404).json({ error: 'service_not_found' })
+    // Staff may sign a child up outside the parent-facing registration window —
+    // that is much of the point of doing it at the door — but never onto a
+    // service the school has not finished writing.
+    if (service.status === 'DRAFT') {
+      return res.status(409).json({ error: 'service_not_open' })
+    }
+
+    const student = await prisma.student.findFirst({
+      where: { hubPupilId: pupilId, schoolId: staff.schoolId, isTest: false },
+      select: { id: true, firstName: true, lastName: true, classId: true, class: { select: { name: true, yearGroup: { select: { name: true } } } } },
+    })
+    if (!student) return res.status(404).json({ error: 'pupil_not_found' })
+
+    // Same eligibility rules the parent flow enforces — a service restricted to
+    // Year 1 is restricted however the registration is made.
+    const eligibleClasses = parseJsonList(service.eligibleClasses)
+    if (eligibleClasses?.length && !eligibleClasses.includes(student.class.name)) {
+      return res.status(409).json({ error: 'pupil_not_eligible', reason: 'class' })
+    }
+    const eligibleYears = parseJsonList(service.eligibleYears)
+    const yearGroupName = student.class.yearGroup?.name
+    if (eligibleYears?.length && yearGroupName && !eligibleYears.includes(yearGroupName)) {
+      return res.status(409).json({ error: 'pupil_not_eligible', reason: 'year_group' })
+    }
+
+    // ServiceRegistration.parentId is required, and the parent is who gets told
+    // and who owns it in the parent app. A pupil with no linked guardian cannot
+    // be registered from Desk — saying so beats inventing an owner.
+    const link = await prisma.parentStudentLink.findFirst({
+      where: { studentId: student.id },
+      select: { userId: true },
+      orderBy: { createdAt: 'asc' },
+    })
+    if (!link) return res.status(409).json({ error: 'no_linked_parent' })
+
+    const existing = await prisma.serviceRegistration.findUnique({
+      where: { serviceId_studentId: { serviceId: service.id, studentId: student.id } },
+    })
+    if (existing && existing.status !== 'CANCELLED') {
+      return res.status(409).json({ error: 'already_registered' })
+    }
+
+    // Over capacity goes to the waitlist rather than being refused, matching the
+    // parent flow — Desk should show which one it got.
+    let status: 'PENDING' | 'WAITLISTED' = 'PENDING'
+    if (service.capacity) {
+      const count = await prisma.serviceRegistration.count({
+        where: { serviceId: service.id, status: { not: 'CANCELLED' } },
+      })
+      if (count >= service.capacity) status = 'WAITLISTED'
+    }
+
+    const studentName = `${student.firstName} ${student.lastName}`.trim()
+    const data = {
+      parentId: link.userId,
+      studentName,
+      className: student.class.name,
+      days: JSON.stringify(days),
+      status,
+      paymentStatus: 'UNPAID' as const,
+      notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+      startDate: typeof body.start_date === 'string' && body.start_date ? body.start_date : null,
+    }
+
+    const registration = existing
+      ? await prisma.serviceRegistration.update({ where: { id: existing.id }, data })
+      : await prisma.serviceRegistration.create({
+          data: { ...data, serviceId: service.id, studentId: student.id },
+        })
+
+    // The parent is told, exactly as if they had registered themselves. A place
+    // taken on their behalf that they never hear about is how a child turns up
+    // to a club nobody expected to pay for.
+    const paymentRequired = service.paymentMethod === 'ONLINE' || service.paymentMethod === 'CASH_ONLY'
+    const title = status === 'WAITLISTED' ? 'Added to waitlist' : 'Registration confirmed'
+    const notificationBody = status === 'WAITLISTED'
+      ? `${studentName} has been added to the waitlist for ${service.name} by ${staff.name}. We'll let you know if a place opens up.`
+      : `${studentName} has been registered for ${service.name} by ${staff.name}.${paymentRequired ? ' Payment is required to confirm the place.' : ''}`
+
+    // sendNotification targets an audience (class / year / group); this is one
+    // parent, so it goes the same way the parent-facing registration does.
+    await prisma.notification.create({
+      data: {
+        userId: link.userId,
+        type: 'SCHOOL_SERVICE',
+        title,
+        body: notificationBody,
+        resourceType: 'SCHOOL_SERVICE',
+        resourceId: service.id,
+        schoolId: staff.schoolId,
+      },
+    })
+    const tokens = await prisma.deviceToken.findMany({
+      where: { userId: link.userId },
+      select: { token: true },
+    })
+    if (tokens.length > 0) {
+      await enqueuePush(staff.schoolId, {
+        tokens: tokens.map(t => t.token),
+        title,
+        body: notificationBody,
+        data: { type: 'SCHOOL_SERVICE', resourceType: 'SCHOOL_SERVICE', resourceId: service.id },
+      })
+    }
+
+    res.status(201).json(
+      serializePartnerRegistration({
+        ...registration,
+        student: { hubPupilId: pupilId },
+      }),
+    )
+  } catch (error) {
+    if ((error as { code?: string }).code === 'P2002') {
+      return res.status(409).json({ error: 'already_registered' })
+    }
+    console.error('Partner service registration error:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+//   PATCH /api/partner/services/registrations/:regId
+//     { hub_user_id, school_id, payment_status?, status? }
+//
+// Accounts work in Desk and have no Connect login, so marking a place paid has
+// to be possible from there — Connect consumes the sign-up, Desk runs the money
+// and the approvals. Both fields are optional; send either or both.
+router.patch('/services/registrations/:regId', requirePartner, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const hubUserId = typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : ''
+    if (!hubUserId) return res.status(400).json({ error: 'hub_user_id required' })
+    const staff = await resolveStaffActor(hubUserId, schoolHintOf(req))
+    if (!staff) return res.status(403).json({ error: 'not_staff' })
+
+    const paymentStatus = typeof body.payment_status === 'string' ? body.payment_status : undefined
+    const status = typeof body.status === 'string' ? body.status : undefined
+    if (paymentStatus === undefined && status === undefined) {
+      return res.status(400).json({ error: 'payment_status or status required' })
+    }
+    if (paymentStatus !== undefined && !PAYMENT_STATUSES.includes(paymentStatus)) {
+      return res.status(400).json({ error: 'invalid_payment_status' })
+    }
+    if (status !== undefined && !REGISTRATION_STATUSES.includes(status)) {
+      return res.status(400).json({ error: 'invalid_status' })
+    }
+
+    const owned = await prisma.serviceRegistration.findFirst({
+      where: { id: req.params.regId, service: { schoolId: staff.schoolId } },
+      select: { id: true, studentId: true, paymentStatus: true, status: true, service: { select: { name: true } } },
+    })
+    if (!owned) return res.status(404).json({ error: 'registration_not_found' })
+
+    const updated = await prisma.serviceRegistration.update({
+      where: { id: owned.id },
+      data: {
+        ...(paymentStatus !== undefined && { paymentStatus: paymentStatus as 'UNPAID' }),
+        ...(status !== undefined && { status: status as 'PENDING' }),
+      },
+      select: {
+        id: true, studentId: true, studentName: true, className: true, days: true,
+        status: true, paymentStatus: true, notes: true, startDate: true, createdAt: true,
+      },
+    })
+
+    // Money changing state is the kind of thing someone asks about months later,
+    // and the person who did it has no Connect session to trace back to. Written
+    // against the RESOLVED actor, the way every partner write does it — the
+    // shared logAudit helper needs a req.user a partner request never has.
+    await prisma.auditLog.create({
+      data: {
+        userId: staff.id,
+        userName: staff.name,
+        action: 'UPDATE',
+        resourceType: 'SCHOOL_SERVICE',
+        resourceId: owned.id,
+        metadata: { via: 'partner', service: owned.service.name },
+        changes: {
+          ...(paymentStatus !== undefined && { paymentStatus: { from: owned.paymentStatus, to: paymentStatus } }),
+          ...(status !== undefined && { status: { from: owned.status, to: status } }),
+        },
+        schoolId: staff.schoolId,
+        ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+      },
+    })
+
+    const student = await prisma.student.findFirst({
+      where: { id: updated.studentId },
+      select: { hubPupilId: true },
+    })
+    res.json(serializePartnerRegistration({ ...updated, student: { hubPupilId: student?.hubPupilId ?? null } }))
+  } catch (error) {
+    console.error('Partner registration update error:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+//   DELETE /api/partner/services/registrations/:regId?hub_user_id=&school_id=
+router.delete('/services/registrations/:regId', requirePartner, async (req, res) => {
+  try {
+    const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
+    if (!hubUserId) return res.status(400).json({ error: 'hub_user_id required' })
+    const staff = await resolveStaffActor(hubUserId, schoolHintOf(req))
+    if (!staff) return res.status(403).json({ error: 'not_staff' })
+
+    const registration = await prisma.serviceRegistration.findFirst({
+      where: { id: req.params.regId, service: { schoolId: staff.schoolId } },
+      select: { id: true, status: true },
+    })
+    if (!registration) return res.status(404).json({ error: 'registration_not_found' })
+
+    // Cancelled, not deleted — the same thing the parent-facing cancel does, so
+    // the history of who was on the books survives.
+    if (registration.status !== 'CANCELLED') {
+      await prisma.serviceRegistration.update({
+        where: { id: registration.id },
+        data: { status: 'CANCELLED' },
+      })
+    }
+    res.json({ message: 'Registration cancelled' })
+  } catch (error) {
+    console.error('Partner service cancel error:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })

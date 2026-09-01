@@ -979,6 +979,10 @@ enum AuditResourceType {
   // inbox's explicit `?scope=school` audit sweep. Oversight is a deliberate,
   // logged act — not the default inbox view.
   CONVERSATION
+  // A School Services registration changed hands — chiefly payment state marked
+  // from Desk, where the accounts team works and has no Connect session to
+  // trace back to.
+  SCHOOL_SERVICE
 }
 
 model AuditLog {
