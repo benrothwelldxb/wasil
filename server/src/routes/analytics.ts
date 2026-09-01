@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { activatedParentIds } from '../services/parentActivation.js'
 import prisma from '../services/prisma.js'
 import { isAdmin } from '../middleware/auth.js'
 
@@ -49,30 +50,9 @@ async function loadParentActivation(schoolId: string): Promise<{
     where: { schoolId, role: 'PARENT', isTest: false },
     select: { id: true, email: true, name: true, lastSeenAt: true, welcomeSentAt: true },
   })
-  const parentIds = parents.map(p => p.id)
-  const emails = parents.map(p => p.email)
-
-  const [tokenUsers, consumedCodes] = await Promise.all([
-    prisma.refreshToken.findMany({
-      where: { userId: { in: parentIds } },
-      select: { userId: true },
-      distinct: ['userId'],
-    }),
-    prisma.loginCode.findMany({
-      where: { consumedAt: { not: null }, email: { in: emails } },
-      select: { email: true },
-      distinct: ['email'],
-    }),
-  ])
-  const tokenSet = new Set(tokenUsers.map(t => t.userId))
-  const consumedEmailSet = new Set(consumedCodes.map(c => c.email))
-
-  const activatedIds = new Set<string>()
-  for (const p of parents) {
-    if (p.lastSeenAt != null || tokenSet.has(p.id) || consumedEmailSet.has(p.email)) {
-      activatedIds.add(p.id)
-    }
-  }
+  // Shared with the admin parents list, so the chase list and this funnel can
+  // never disagree about who has got in.
+  const activatedIds = await activatedParentIds(parents)
   return { parents, activatedIds }
 }
 

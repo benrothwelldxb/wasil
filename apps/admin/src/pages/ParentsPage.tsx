@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { X, Trash2, Users, RefreshCw, Mail, Copy, CheckCircle, XCircle, Clock, Eye, Search, Send, KeyRound, Printer, Ticket } from 'lucide-react'
+import { X, Trash2, Users, RefreshCw, Mail, Copy, CheckCircle, XCircle, Clock, Eye, Search, Send, KeyRound, Printer, Ticket, BellRing } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { ParentInvitation, InvitationStatus, Class, ClassSignInCodes, ClassSignInCode } from '@wasil/shared'
 import QRCode from 'qrcode'
@@ -118,6 +118,10 @@ export function ParentsPage() {
   // === Registered Parents state ===
   const [parentsSearch, setParentsSearch] = useState('')
   const [parentsPage, setParentsPage] = useState(1)
+  const [signInFilter, setSignInFilter] = useState<'all' | 'never' | 'signed-in'>('all')
+  const [nudgeAllConfirm, setNudgeAllConfirm] = useState(false)
+  const [nudging, setNudging] = useState(false)
+  const [nudgingFor, setNudgingFor] = useState<string | null>(null)
   const [inviteAllConfirm, setInviteAllConfirm] = useState(false)
   const [sendingInvites, setSendingInvites] = useState(false)
   const [sendingInviteFor, setSendingInviteFor] = useState<string | null>(null)
@@ -128,8 +132,8 @@ export function ParentsPage() {
   const [codeCopied, setCodeCopied] = useState(false)
 
   const { data: parentsData, refetch: refetchParents } = useApi(
-    () => api.parentInvitations.listParents({ search: parentsSearch, page: parentsPage, limit: 50 }),
-    [parentsSearch, parentsPage]
+    () => api.parentInvitations.listParents({ search: parentsSearch, page: parentsPage, limit: 50, status: signInFilter }),
+    [parentsSearch, parentsPage, signInFilter]
   )
 
   const handleRevoke = async () => {
@@ -203,6 +207,43 @@ export function ParentsPage() {
     }
   }
 
+  // Chase a parent who has never signed in. The server re-checks that they
+  // still qualify, so a page left open cannot email someone who has since
+  // got in.
+  const handleNudgeOne = async (id: string) => {
+    setNudgingFor(id)
+    try {
+      const result = await api.parentInvitations.nudge([id])
+      if (result.sent > 0) toast.success('Nudge sent')
+      else if (result.skippedAlreadySignedIn > 0) toast.success('They have signed in since — nothing sent')
+      else toast.error('Could not send — no email on file')
+      refetchParents()
+    } catch (error) {
+      toast.error(`Failed to send nudge: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setNudgingFor(null)
+    }
+  }
+
+  const handleNudgeAll = async () => {
+    setNudging(true)
+    try {
+      const result = await api.parentInvitations.nudge()
+      toast.success(
+        result.sent === 0
+          ? 'Nobody to chase — everyone has signed in'
+          : `Nudged ${result.sent} parent${result.sent === 1 ? '' : 's'}` +
+            (result.skippedNoEmail > 0 ? ` · ${result.skippedNoEmail} skipped, no email` : ''),
+      )
+      setNudgeAllConfirm(false)
+      refetchParents()
+    } catch (error) {
+      toast.error(`Failed to send nudges: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setNudging(false)
+    }
+  }
+
   // Mint a one-time sign-in code for a parent whose email blocks the emailed
   // code. The admin reads it out; the parent uses "I already have a code" on the
   // sign-in screen. The code is display-only — never emailed.
@@ -243,6 +284,7 @@ export function ParentsPage() {
   const pagination = invitationsData?.pagination
   const registeredParents = parentsData?.parents || []
   const parentsPagination = parentsData?.pagination
+  const signInCounts = parentsData?.counts
 
   return (
     <div>
@@ -467,6 +509,16 @@ export function ParentsPage() {
               <Mail className="h-4 w-4" />
               <span>Send sign-in invites</span>
             </button>
+            {(signInCounts?.neverSignedIn ?? 0) > 0 && (
+              <button
+                onClick={() => setNudgeAllConfirm(true)}
+                className="flex items-center space-x-2 px-4 py-2 text-sm font-medium rounded-lg text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors"
+                title="Email everyone who has never signed in"
+              >
+                <BellRing className="h-4 w-4" />
+                <span>Nudge {signInCounts?.neverSignedIn} who never signed in</span>
+              </button>
+            )}
           </div>
 
           {/* Search */}
@@ -481,6 +533,29 @@ export function ParentsPage() {
                 className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            {/* Signed in at all? The question the invite record cannot answer:
+                a code read out at the gate leaves no invite behind. */}
+            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+              {([
+                ['all', 'All', signInCounts?.all],
+                ['never', 'Never signed in', signInCounts?.neverSignedIn],
+                ['signed-in', 'Signed in', signInCounts?.signedIn],
+              ] as const).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  onClick={() => { setSignInFilter(value); setParentsPage(1) }}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    signInFilter === value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {label}
+                  {count !== undefined && (
+                    <span className={`ml-1.5 ${signInFilter === value ? 'text-gray-400' : 'text-gray-400'}`}>{count}</span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Parents Table */}
@@ -491,7 +566,7 @@ export function ParentsPage() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Name</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Email</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Children</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Last Login</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Signed in</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Invite Status</th>
                   <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">Actions</th>
                 </tr>
@@ -528,10 +603,21 @@ export function ParentsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
-                      {parent.lastLoginAt
-                        ? new Date(parent.lastLoginAt).toLocaleDateString()
-                        : <span className="text-gray-400">Never</span>
-                      }
+                      {parent.hasSignedIn ? (
+                        // A date only where we have one — a parent who got in
+                        // with a shared code before lastSeenAt existed counts as
+                        // signed in without a day attached, and inventing one
+                        // would be worse than saying so.
+                        parent.lastSeenAt || parent.lastLoginAt ? (
+                          new Date((parent.lastSeenAt || parent.lastLoginAt) as string).toLocaleDateString()
+                        ) : (
+                          <span className="text-gray-500">Yes</span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800">
+                          Never
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {parent.welcomeSentAt ? (
@@ -541,6 +627,11 @@ export function ParentsPage() {
                         </span>
                       ) : (
                         <span className="text-xs text-gray-400">Not invited</span>
+                      )}
+                      {parent.lastNudgedAt && (
+                        <div className="text-xs text-gray-400 mt-1">
+                          Nudged {new Date(parent.lastNudgedAt).toLocaleDateString()}
+                        </div>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -554,6 +645,17 @@ export function ParentsPage() {
                           <Mail className="h-3 w-3" />
                           <span>{sendingInviteFor === parent.id ? 'Sending...' : parent.welcomeSentAt ? 'Resend' : 'Send'}</span>
                         </button>
+                        {!parent.hasSignedIn && (
+                          <button
+                            onClick={() => handleNudgeOne(parent.id)}
+                            disabled={nudgingFor === parent.id}
+                            className="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg text-amber-800 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                            title="Email this parent about what they're missing"
+                          >
+                            <BellRing className="h-3 w-3" />
+                            <span>{nudgingFor === parent.id ? 'Sending...' : 'Nudge'}</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => handleGenerateSignInCode(parent)}
                           disabled={isGeneratingCode && signInCodeFor?.id === parent.id}
@@ -738,6 +840,17 @@ export function ParentsPage() {
           isLoading={sendingInvites}
           onConfirm={handleSendAllInvites}
           onCancel={() => setInviteAllConfirm(false)}
+        />
+      )}
+
+      {nudgeAllConfirm && (
+        <ConfirmModal
+          title={`Nudge ${signInCounts?.neverSignedIn ?? 0} parents?`}
+          message={`This emails every parent who has never signed in — telling them what they've missed and how to get in. Parents who have signed in are not contacted, even if they were never formally invited. Parents with no email on file are skipped.`}
+          confirmLabel={nudging ? 'Sending...' : 'Send nudges'}
+          isLoading={nudging}
+          onConfirm={handleNudgeAll}
+          onCancel={() => setNudgeAllConfirm(false)}
         />
       )}
 

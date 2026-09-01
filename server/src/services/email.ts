@@ -277,6 +277,109 @@ Powered by ${appName}`
   return sendEmail({ to, subject, html, text })
 }
 
+/**
+ * The chase email for a parent who has never signed in.
+ *
+ * Different job from the welcome: they have already been told the app exists,
+ * so repeating the setup instructions louder achieves nothing. This one leads
+ * with what they are actually missing — the messages and notices that have gone
+ * out to everyone else since — and keeps the how-to short underneath.
+ *
+ * `missedCount` is what makes it land. Where the number is unknown, the copy
+ * falls back to a plainer line rather than inventing one.
+ */
+export async function sendParentNudgeEmail({
+  to,
+  schoolName,
+  missedCount,
+  appName = 'Wasil Connect',
+  appUrl = process.env.PARENT_APP_URL || 'https://app.wasilconnect.com',
+  schoolLogoUrl = `${process.env.PARENT_APP_URL || 'https://app.wasilconnect.com'}/school-logo.png`,
+  wasilLogoUrl = `${process.env.PARENT_APP_URL || 'https://app.wasilconnect.com'}/wasil-logo-grey.png`,
+}: {
+  to: string
+  schoolName: string
+  missedCount?: number
+  appName?: string
+  appUrl?: string
+  schoolLogoUrl?: string
+  wasilLogoUrl?: string
+}): Promise<boolean> {
+  const subject = `You're missing out on updates from ${schoolName}`
+  const BURGUNDY = '#7F0029'
+
+  const missedLine =
+    missedCount && missedCount > 0
+      ? `There ${missedCount === 1 ? 'is' : 'are'} <strong>${missedCount} message${missedCount === 1 ? '' : 's'}</strong> waiting for you on ${appName} — notices, reminders and updates that have gone out to ${schoolName} families since you were added.`
+      : `Messages, notices and reminders from ${schoolName} are going out on ${appName}, and you haven't seen any of them yet.`
+
+  const missedLineText =
+    missedCount && missedCount > 0
+      ? `There ${missedCount === 1 ? 'is' : 'are'} ${missedCount} message${missedCount === 1 ? '' : 's'} waiting for you on ${appName} — notices, reminders and updates that have gone out to ${schoolName} families since you were added.`
+      : `Messages, notices and reminders from ${schoolName} are going out on ${appName}, and you haven't seen any of them yet.`
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="color-scheme" content="light"></head>
+<body style="margin:0;padding:0;background-color:#F4EFEC;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F4EFEC;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px -16px rgba(74,20,35,0.18);">
+        <tr><td style="height:5px;background-color:${BURGUNDY};font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td align="center" style="padding:34px 40px 8px 40px;">
+          <img src="${schoolLogoUrl}" width="76" alt="${schoolName} crest" style="display:block;width:76px;height:auto;margin:0 auto 14px auto;">
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:14px;letter-spacing:0.4px;color:${BURGUNDY};font-weight:bold;">${schoolName}</div>
+        </td></tr>
+        <tr><td style="padding:18px 40px 0 40px;">
+          <h1 style="margin:0 0 16px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:23px;line-height:1.3;color:#2A2024;text-align:center;font-weight:700;">You're missing out</h1>
+          <p style="margin:0 0 14px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#4A3E43;">${missedLine}</p>
+          <p style="margin:0 0 6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#4A3E43;">Signing in takes about a minute. Open the app, enter <strong>this email address</strong>, and we'll send you a <strong>6-digit code</strong> to type in. There's no password to set up or remember.</p>
+        </td></tr>
+        <tr><td align="center" style="padding:24px 40px 8px 40px;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td align="center" bgcolor="${BURGUNDY}" style="border-radius:12px;">
+              <a href="${appUrl}" target="_blank" style="display:inline-block;padding:14px 34px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:12px;">See what you've missed</a>
+            </td>
+          </tr></table>
+          <div style="margin-top:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.5;color:#A8929A;">If the button doesn't work, use this link:<br><a href="${appUrl}" target="_blank" style="color:${BURGUNDY};font-weight:600;text-decoration:none;">${appUrl.replace(/^https?:\/\//, '')}</a></div>
+        </td></tr>
+        <tr><td style="padding:16px 40px 0 40px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#FBF6F3;border:1px solid #F0E3E6;border-radius:12px;">
+            <tr><td style="padding:14px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13.5px;line-height:1.6;color:#7A6469;">
+              <strong style="color:${BURGUNDY};">Already tried and got stuck?</strong> Reply to this email and the school office will help you in.
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="padding:26px 40px 32px 40px;">
+          <div style="border-top:1px solid #EFE3E6;margin-bottom:18px;font-size:0;line-height:0;">&nbsp;</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td align="center">
+              <img src="${wasilLogoUrl}" width="96" alt="${appName}" style="display:block;width:96px;height:auto;margin:0 auto 6px auto;opacity:0.8;">
+              <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#A8929A;">Powered by ${appName}</div>
+            </td>
+          </tr></table>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+  const text = `You're missing out
+
+${missedLineText}
+
+Signing in takes about a minute. Open the app, enter this email address, and we'll send you a 6-digit code to type in. There's no password to set up or remember.
+
+See what you've missed: ${appUrl}
+
+Already tried and got stuck? Reply to this email and the school office will help you in.
+
+Powered by ${appName}`
+
+  return sendEmail({ to, subject, html, text })
+}
+
 export async function sendInvitationEmail({
   to,
   magicLink,
