@@ -1152,6 +1152,8 @@ export interface SchoolService {
   serviceStarts?: string | null
   serviceEnds?: string | null
   location?: string | null
+  /** Where parents collect afterwards, when that differs from where it runs. */
+  collectionLocation?: string | null
   staffName?: string | null
   imageUrl?: string | null
   sortOrder: number
@@ -1191,6 +1193,20 @@ export interface ServiceRegistration {
   parentName?: string
   parentEmail?: string
   serviceName?: string
+  // Service detail carried alongside a parent's own registration, so the
+  // "you're enrolled" card can answer when, where and how much without a
+  // second fetch per registration.
+  startTime?: string
+  endTime?: string
+  location?: string | null
+  /** Where to collect the child afterwards. Only shown once CONFIRMED. */
+  collectionLocation?: string | null
+  staffName?: string | null
+  costDescription?: string | null
+  costPerSession?: number | null
+  currency?: string
+  paymentMethod?: string | null
+  paymentUrl?: string | null
 }
 
 export interface ServiceRegistrationCreate {

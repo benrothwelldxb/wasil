@@ -1716,7 +1716,12 @@ model SchoolService {
   registrationCloses  DateTime?
   serviceStarts       String? // Date string
   serviceEnds         String? // Date string
-  location            String?
+  location            String? // Where the service runs
+  // Where a parent collects their child afterwards, when that is somewhere
+  // other than where it runs — the gate rather than the hall. Shown to a parent
+  // only once their place is confirmed, because it is what they need on the day
+  // and noise before then.
+  collectionLocation  String?
   staffName           String? // Who runs it
   imageUrl            String?
   sortOrder           Int                   @default(0)

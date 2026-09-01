@@ -32,10 +32,24 @@ const PAYMENT_COLORS: Record<string, { bg: string; text: string }> = {
   WAIVED: { bg: '#F0E4E6', text: '#7A6469' },
 }
 
+// A parent should not be reading our enum names. CONFIRMED is the state the
+// school reaches by ticking the place off in Desk, and from the parent's side
+// the only thing that matters is whether their child has a place.
 const REG_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   PENDING: { bg: '#F0E4E6', text: '#7A6469' },
   CONFIRMED: { bg: '#E8F5EC', text: '#2D8B4E' },
   WAITLISTED: { bg: '#FFF3E6', text: '#C47A20' },
+}
+const REG_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Awaiting approval',
+  CONFIRMED: 'Place confirmed',
+  WAITLISTED: 'On the waitlist',
+}
+const PAYMENT_LABELS: Record<string, string> = {
+  UNPAID: 'Payment due',
+  PAID: 'Paid',
+  PARTIAL: 'Part paid',
+  WAIVED: 'No charge',
 }
 
 function formatTime(time: string) {
@@ -245,6 +259,40 @@ export function SchoolServicesPage() {
                         </span>
                       ))}
                     </div>
+
+                    {/* What the parent needs on the day. Held back until the
+                        place is actually confirmed — before then the answer to
+                        "where do I collect them" is "you might not need to". */}
+                    {reg.status === 'CONFIRMED' && (
+                      <div className="mt-2.5 space-y-1">
+                        {reg.startTime && reg.endTime && (
+                          <p className="text-xs" style={{ color: '#7A6469' }}>
+                            {formatTime(reg.startTime)}–{formatTime(reg.endTime)}
+                            {reg.location ? ` · ${reg.location}` : ''}
+                          </p>
+                        )}
+                        {reg.collectionLocation && (
+                          <p className="text-xs font-semibold" style={{ color: '#2D8B4E' }}>
+                            Collect from {reg.collectionLocation}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* A confirmed place that still owes money is the one case
+                        worth a call to action rather than just a badge. */}
+                    {reg.status === 'CONFIRMED' && reg.paymentUrl
+                      && reg.paymentStatus !== 'PAID' && reg.paymentStatus !== 'WAIVED' && (
+                      <a
+                        href={reg.paymentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 mt-2.5 text-xs font-bold px-3 py-1.5"
+                        style={{ borderRadius: '10px', background: '#C4506E', color: '#fff', textDecoration: 'none' }}
+                      >
+                        Pay {reg.costDescription || (reg.costPerSession ? `${reg.costPerSession} ${reg.currency || 'AED'}` : '')}
+                      </a>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <div className="flex gap-1.5">
@@ -256,7 +304,7 @@ export function SchoolServicesPage() {
                           color: REG_STATUS_COLORS[reg.status]?.text || '#7A6469',
                         }}
                       >
-                        {reg.status}
+                        {REG_STATUS_LABELS[reg.status] || reg.status}
                       </span>
                       <span
                         className="text-xs px-2.5 py-0.5 font-semibold"
@@ -266,7 +314,7 @@ export function SchoolServicesPage() {
                           color: PAYMENT_COLORS[reg.paymentStatus]?.text || '#7A6469',
                         }}
                       >
-                        {reg.paymentStatus}
+                        {PAYMENT_LABELS[reg.paymentStatus] || reg.paymentStatus}
                       </span>
                     </div>
                     <button
