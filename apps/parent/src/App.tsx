@@ -22,6 +22,7 @@ import { PrincipalUpdatesPage } from './pages/PrincipalUpdatesPage'
 import { ResourcesPage } from './pages/ResourcesPage'
 import { EcaPage } from './pages/EcaPage'
 import { ClubsPage } from './pages/ClubsPage'
+import { TransportPage } from './pages/TransportPage'
 import { ConsultationsPage } from './pages/ConsultationsPage'
 import { SchoolServicesPage } from './pages/SchoolServicesPage'
 import { NotificationSettingsPage } from './pages/NotificationSettingsPage'
@@ -301,6 +302,10 @@ export default function App() {
       <Route
         path="/clubs"
         element={<ProtectedRoute><AppLayout><ClubsPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/transport"
+        element={<ProtectedRoute><AppLayout><TransportPage /></AppLayout></ProtectedRoute>}
       />
       <Route
         path="/consultations"

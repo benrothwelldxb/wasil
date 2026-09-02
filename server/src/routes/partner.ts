@@ -19,6 +19,7 @@ import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { sendNotification } from '../services/notify.js'
+import logger from '../services/logger.js'
 import { enqueuePush } from '../services/outbox.js'
 import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
@@ -2247,6 +2248,106 @@ router.delete('/services/registrations/:regId', requirePartner, async (req, res)
     res.json({ message: 'Registration cancelled' })
   } catch (error) {
     console.error('Partner service cancel error:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// ─── Transport: Desk pushes a leg's assignments ──────────────────────────────
+//
+// Desk is the system of record for the bus roster; Connect stores and displays
+// it to a child's own guardians. See docs/adr/0001 for why this lands flat and
+// why there is no staff-facing transport surface in Connect.
+//
+//   PUT /api/partner/transport/assignments
+//     { school_id, leg: 'AM'|'PM',
+//       routes: [ { id, name, code?,
+//                   stops: [ { id, name, time_local, hide_stop_name?,
+//                              pupils: [ { hub_pupil_id } ] } ] } ] }
+//     → { updated, removed, skippedUnknownPupil }
+//
+// Full replacement for that leg, and idempotent: re-sending the same payload is
+// a no-op beyond timestamps. Anything absent is DELETED, not flagged — a
+// retained row here is a child's home address nobody meant to keep.
+router.put('/transport/assignments', requirePartner, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const schoolIdParam = typeof body.school_id === 'string' ? body.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+
+    const leg = body.leg
+    if (leg !== 'AM' && leg !== 'PM') return res.status(400).json({ error: "leg must be 'AM' or 'PM'" })
+
+    const school = await partnerSchool(schoolIdParam)
+    if (!school) return res.status(404).json({ error: 'school_not_found' })
+
+    // Flatten the route → stop → pupil tree into the one line each child needs.
+    // A pupil listed twice in a leg keeps the first stop; the alternative is a
+    // unique-constraint failure that fails the whole push over one bad row.
+    type Row = { hubPupilId: string; routeName: string; routeCode: string | null; stopName: string; timeLocal: string; hideStopName: boolean }
+    const rows = new Map<string, Row>()
+    const routes = Array.isArray(body.routes) ? body.routes : []
+    for (const route of routes as Array<Record<string, unknown>>) {
+      const routeName = typeof route?.name === 'string' ? route.name.trim() : ''
+      if (!routeName) continue
+      const routeCode = typeof route?.code === 'string' && route.code.trim() ? route.code.trim() : null
+      const stops = Array.isArray(route?.stops) ? route.stops : []
+      for (const stop of stops as Array<Record<string, unknown>>) {
+        const stopName = typeof stop?.name === 'string' ? stop.name.trim() : ''
+        const timeLocal = typeof stop?.time_local === 'string' ? stop.time_local.trim() : ''
+        if (!stopName || !timeLocal) continue
+        const hideStopName = stop?.hide_stop_name === true
+        const pupils = Array.isArray(stop?.pupils) ? stop.pupils : []
+        for (const pupil of pupils as Array<Record<string, unknown>>) {
+          const hubPupilId = typeof pupil?.hub_pupil_id === 'string' ? pupil.hub_pupil_id.trim() : ''
+          if (!hubPupilId || rows.has(hubPupilId)) continue
+          rows.set(hubPupilId, { hubPupilId, routeName, routeCode, stopName, timeLocal, hideStopName })
+        }
+      }
+    }
+
+    // Resolve Hub pupil ids to this school's children. A pupil Connect has not
+    // synced yet is counted and skipped, never guessed at.
+    const students = await prisma.student.findMany({
+      where: { hubPupilId: { in: [...rows.keys()] }, schoolId: school.id },
+      select: { id: true, hubPupilId: true },
+    })
+    const studentIdByHubId = new Map(students.map(st => [st.hubPupilId as string, st.id]))
+    const skippedUnknownPupil = rows.size - studentIdByHubId.size
+
+    const keptStudentIds: string[] = []
+    for (const [hubPupilId, row] of rows) {
+      const studentId = studentIdByHubId.get(hubPupilId)
+      if (!studentId) continue
+      keptStudentIds.push(studentId)
+      const data = {
+        routeName: row.routeName,
+        routeCode: row.routeCode,
+        stopName: row.stopName,
+        timeLocal: row.timeLocal,
+        hideStopName: row.hideStopName,
+      }
+      await prisma.transportAssignment.upsert({
+        where: { studentId_leg: { studentId, leg } },
+        create: { ...data, studentId, leg, schoolId: school.id },
+        update: data,
+      })
+    }
+
+    // Everything for this leg that the push did not mention is gone from the
+    // roster, so it goes from here. Hard delete: see the migration's note.
+    const removed = await prisma.transportAssignment.deleteMany({
+      where: { schoolId: school.id, leg, studentId: { notIn: keptStudentIds } },
+    })
+
+    // Counts only — never a stop name or a child's name.
+    logger.info(
+      { schoolId: school.id, leg, updated: keptStudentIds.length, removed: removed.count, skippedUnknownPupil },
+      'transport assignments replaced',
+    )
+
+    res.json({ updated: keptStudentIds.length, removed: removed.count, skippedUnknownPupil })
+  } catch (error) {
+    console.error('Partner transport push error:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })

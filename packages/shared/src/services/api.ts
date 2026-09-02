@@ -2593,6 +2593,30 @@ export const providerPortalAdmin = {
     }),
 }
 
+// ─── Transport (parent-facing) ───────────────────────────────────────────────
+// The only transport read in Connect, and it takes no arguments: it returns the
+// signed-in guardian's own children and nothing else. See docs/adr/0001.
+export interface TransportLegInfo {
+  leg: 'AM' | 'PM'
+  routeName: string
+  routeCode: string | null
+  /** Null when the school has suppressed it — a separated family where the
+   *  address would otherwise be disclosed to the other parent. */
+  stopName: string | null
+  stopNameHidden: boolean
+  timeLocal: string
+}
+export interface TransportChild {
+  studentId: string
+  studentName: string
+  legs: TransportLegInfo[]
+}
+export interface TransportResponse { children: TransportChild[] }
+
+export const transport = {
+  mine: () => fetchApi<TransportResponse>('/api/transport/mine'),
+}
+
 // ─── Paid provider-run clubs (parent-facing) ─────────────────────────────────
 export interface ClubStudent { id: string; name: string; className: string | null; yearGroupId: string | null }
 export interface ClubActivity {
@@ -2783,6 +2807,7 @@ export default {
   providerPortalAdmin,
   dashboard,
   clubs,
+  transport,
   timetable,
   events,
   schedule,
