@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express'
+import { Prisma } from '@prisma/client'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit, computeChanges } from '../services/audit.js'
@@ -121,7 +122,13 @@ router.patch('/', isAuthenticated, isAdmin, async (req: Request, res: Response) 
       // distinct known catalog keys. Anything else is a 400 (never store junk
       // that the parent bar would silently drop).
       if (body.bottomNavItems === null) {
-        data.bottomNavItems = null
+        // Prisma will not take a bare `null` for a nullable Json column — it
+        // needs DbNull to mean "SQL NULL" rather than "the JSON value null".
+        // Passing null threw a validation error at runtime, and `data` being
+        // Record<string, unknown> meant the compiler never saw it. Since the
+        // settings page PATCHes the whole object, every school that had not yet
+        // customised its bar sent null here and got a 500 for the entire save.
+        data.bottomNavItems = Prisma.DbNull
       } else if (Array.isArray(body.bottomNavItems)) {
         const items = body.bottomNavItems
         const allValid = items.every((k) => typeof k === 'string' && (BOTTOM_NAV_KEYS as readonly string[]).includes(k))

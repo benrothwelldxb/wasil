@@ -341,6 +341,11 @@ function BottomNavSection({ settings, onChange }: { settings: SchoolSettings; on
           const current = slots[i]
           // Offer available items not already used in another slot (plus the current one).
           const options = available.filter(item => item.key === current || !slots.some((s, j) => j !== i && s === item.key))
+          // A slot can hold a destination whose module has since been switched
+          // off. It is not in `available`, so without this the select has no
+          // matching option and the browser silently shows "Default" — the
+          // admin sees their choice replaced by a default they cannot correct.
+          const currentUnavailable = !!current && !available.some(item => item.key === current)
           return (
             <div key={i}>
               <label className="block text-xs font-semibold text-slate-500 mb-1">Slot {i + 1}</label>
@@ -350,10 +355,18 @@ function BottomNavSection({ settings, onChange }: { settings: SchoolSettings; on
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pink-200"
               >
                 <option value="">Default</option>
+                {currentUnavailable && (
+                  <option value={current}>{labelFor(current)} — module turned off</option>
+                )}
                 {options.map(item => (
                   <option key={item.key} value={item.key}>{labelFor(item.key)}</option>
                 ))}
               </select>
+              {currentUnavailable && (
+                <p className="text-xs text-amber-700 mt-1">
+                  Parents won't see this: turn the module back on, or pick something else.
+                </p>
+              )}
             </div>
           )
         })}
