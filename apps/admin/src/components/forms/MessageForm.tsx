@@ -80,7 +80,8 @@ export function MessageForm({
   onAttachmentsChange,
 }: MessageFormProps) {
   const theme = useTheme()
-  const { data: availableForms } = useApi<Form[]>(() => api.forms.listAvailable(), [])
+  const { data: formsResponse, error: formsError } = useApi(() => api.forms.listAvailable(), [])
+  const availableForms = formsResponse?.forms
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
 
@@ -252,6 +253,30 @@ export function MessageForm({
               </option>
             ))}
           </select>
+
+          {/* An empty dropdown has three quite different causes, and saying
+              which one it is saves a support message every time. */}
+          {formsError && (
+            <p className="text-xs text-amber-700 mt-1">
+              Couldn't load your forms just now — this is a problem at our end, not a sign you have none.
+            </p>
+          )}
+          {!formsError && availableForms?.length === 0 && (
+            <p className="text-xs text-gray-500 mt-1">
+              {(formsResponse?.unavailable.published ?? 0) + (formsResponse?.unavailable.alreadyAttached ?? 0) === 0
+                ? 'No forms yet — build one under Forms and leave it unpublished, then attach it here.'
+                : `Nothing to attach. A form can only go on a post while it is still a draft and not already on another post. ` +
+                  [
+                    formsResponse?.unavailable.published
+                      ? `${formsResponse.unavailable.published} already published`
+                      : '',
+                    formsResponse?.unavailable.alreadyAttached
+                      ? `${formsResponse.unavailable.alreadyAttached} already on a post`
+                      : '',
+                  ].filter(Boolean).join(', ') + '.'}
+            </p>
+          )}
+
           {selectedForm && (
             <div className="mt-2 p-2 bg-white rounded border border-gray-200 text-sm">
               <span className="font-medium">{selectedForm.title}</span>

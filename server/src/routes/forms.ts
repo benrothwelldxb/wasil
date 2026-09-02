@@ -151,10 +151,20 @@ router.get('/', isAuthenticated, async (req, res) => {
 })
 
 // Get available DRAFT forms (not yet attached to a message) for admin picker
-router.get('/available', isAdmin, async (req, res) => {
+// isStaff, not isAdmin: anyone who can compose a post (messages.ts POST /) has
+// to be able to see what they can attach to it. Gating this to admins made the
+// dropdown silently empty for staff — a 403 the client swallowed into "no forms
+// exist", which is indistinguishable from the school having none.
+router.get('/available', isStaff, async (req, res) => {
   try {
     const user = req.user!
 
+    // DRAFT only, and only forms not already on a post. Attaching a form to a
+    // post is HOW it gets published and how it gets its audience, so an ACTIVE
+    // form has already been distributed and Message.formId is @unique — one
+    // form belongs to one post. Both rules are deliberate; between them they
+    // can empty this list without explanation, so the response says how many
+    // forms were excluded and why (see `unavailable`).
     const forms = await prisma.form.findMany({
       where: {
         schoolId: user.schoolId,
@@ -164,7 +174,18 @@ router.get('/available', isAdmin, async (req, res) => {
       orderBy: { createdAt: 'desc' },
     })
 
-    res.json(forms.map(form => serializeForm(form)))
+    // Why the list might be short. Without this the composer can only say
+    // "no forms", when the truth is usually "you have four, and all of them
+    // are published or already on a post".
+    const [publishedCount, alreadyAttachedCount] = await Promise.all([
+      prisma.form.count({ where: { schoolId: user.schoolId, status: { not: 'DRAFT' } } }),
+      prisma.form.count({ where: { schoolId: user.schoolId, status: 'DRAFT', message: { isNot: null } } }),
+    ])
+
+    res.json({
+      forms: forms.map(form => serializeForm(form)),
+      unavailable: { published: publishedCount, alreadyAttached: alreadyAttachedCount },
+    })
   } catch (error) {
     console.error('Error fetching available forms:', error)
     res.status(500).json({ error: 'Failed to fetch available forms' })

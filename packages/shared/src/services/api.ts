@@ -501,7 +501,12 @@ export const messages = {
 export const forms = {
   list: () => fetchApi<Form[]>('/api/forms'),
   listAll: () => fetchApi<FormWithResponses[]>('/api/forms/all'),
-  listAvailable: () => fetchApi<Form[]>('/api/forms/available'),
+  /** Forms that can be attached to a post: DRAFT and not already on one.
+   *  `unavailable` explains a short list — how many exist but are excluded. */
+  listAvailable: () =>
+    fetchApi<{ forms: Form[]; unavailable: { published: number; alreadyAttached: number } }>(
+      '/api/forms/available',
+    ),
   getTemplates: () => fetchApi<{ message: string }>('/api/forms/templates'),
   create: (data: {
     title: string
