@@ -1122,6 +1122,7 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
   const [icon, setIcon] = useState('')
   const [assignedUserId, setAssignedUserId] = useState('')
   const [warnBeforeMessaging, setWarnBeforeMessaging] = useState(false)
+  const [alwaysVisible, setAlwaysVisible] = useState(false)
   const [warningMessage, setWarningMessage] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -1131,6 +1132,7 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
     setIcon('')
     setAssignedUserId('')
     setWarnBeforeMessaging(false)
+    setAlwaysVisible(false)
     setWarningMessage('')
     setEditingId(null)
     setShowForm(false)
@@ -1142,6 +1144,7 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
     setIcon(contact.icon || '')
     setAssignedUserId(contact.assignedUserId)
     setWarnBeforeMessaging(contact.warnBeforeMessaging === true)
+    setAlwaysVisible(contact.alwaysVisible === true)
     setWarningMessage(contact.warningMessage || '')
     setEditingId(contact.id)
     setShowForm(true)
@@ -1151,7 +1154,7 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
     if (!name || !assignedUserId) return
     setSaving(true)
     try {
-      const payload = { name, description, icon, assignedUserId, warnBeforeMessaging, warningMessage: warningMessage.trim() || null }
+      const payload = { name, description, icon, assignedUserId, warnBeforeMessaging, warningMessage: warningMessage.trim() || null, alwaysVisible }
       if (editingId) {
         await api.inbox.updateContact(editingId, payload)
       } else {
@@ -1258,6 +1261,26 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
                   <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
                 ))}
               </select>
+
+              {/* Where it sits on the parent's contact list */}
+              <div className="rounded-lg border border-slate-200 p-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={alwaysVisible}
+                    onChange={(e) => setAlwaysVisible(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-[#C4506E]"
+                  />
+                  <span className="text-sm text-slate-700">
+                    Always show this contact to parents
+                    <span className="block text-xs text-slate-400 mt-0.5">
+                      Sits beside the class teacher at the top. Leave off and it goes under
+                      "Other staff", which parents have to expand. Reception usually wants this on;
+                      most contacts don't, or the list is long again.
+                    </span>
+                  </span>
+                </label>
+              </div>
 
               {/* Deflection guard-rail */}
               <div className="rounded-lg border border-slate-200 p-3 space-y-2">
