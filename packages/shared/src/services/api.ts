@@ -1359,6 +1359,13 @@ export const parentInvitations = {
     fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}`, { method: 'DELETE' }),
   resetParentPassword: (id: string) =>
     fetchApi<{ message: string; emailSent: boolean }>(`/api/parent-invitations/parents/${id}/reset-password`, { method: 'POST' }),
+  /** Change a parent's email deliberately. Invalidates any unused sign-in code
+   *  or magic link sent to the old address. */
+  changeParentEmail: (id: string, email: string) =>
+    fetchApi<{ message: string; email: string }>(`/api/parent-invitations/parents/${id}/email`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
   setParentPassword: (id: string, password: string) =>
     fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}/set-password`, {
       method: 'POST',

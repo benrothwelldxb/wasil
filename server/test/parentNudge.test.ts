@@ -165,3 +165,68 @@ describe('POST /api/parent-invitations/nudge', () => {
     )
   })
 })
+
+// Changing an address deliberately, for the cases the sync declines and for
+// when the school needs it now rather than at the next sync.
+describe('POST /api/parent-invitations/parents/:id/email', () => {
+  beforeEach(() => {
+    prismaMock.user.findFirst = vi.fn()
+    prismaMock.user.update = vi.fn().mockResolvedValue({})
+    prismaMock.magicLinkToken = { deleteMany: vi.fn().mockResolvedValue({}) }
+    prismaMock.loginCode = { deleteMany: vi.fn().mockResolvedValue({}) }
+  })
+
+  const post = async (email: unknown) =>
+    request(await makeApp()).post('/api/parent-invitations/parents/p-1/email').send({ email })
+
+  it('changes the address and invalidates codes sent to the old one', async () => {
+    prismaMock.user.findFirst
+      .mockResolvedValueOnce({ id: 'p-1', email: 'old@example.com', name: 'Nessrine' })
+      .mockResolvedValueOnce(null)
+
+    const res = await post('New@Example.com')
+
+    expect(res.status).toBe(200)
+    expect(prismaMock.user.update).toHaveBeenCalledWith({
+      where: { id: 'p-1' },
+      data: { email: 'new@example.com' },
+    })
+    // Otherwise the previous mailbox keeps a usable way in.
+    expect(prismaMock.magicLinkToken.deleteMany).toHaveBeenCalledWith({
+      where: { email: 'old@example.com' },
+    })
+    expect(prismaMock.loginCode.deleteMany).toHaveBeenCalledWith({
+      where: { email: 'old@example.com', consumedAt: null },
+    })
+  })
+
+  it('refuses an address another account already holds', async () => {
+    prismaMock.user.findFirst
+      .mockResolvedValueOnce({ id: 'p-1', email: 'old@example.com', name: 'Nessrine' })
+      .mockResolvedValueOnce({ id: 'someone-else' })
+
+    const res = await post('taken@example.com')
+
+    expect(res.status).toBe(409)
+    expect(prismaMock.user.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects something that is not an address', async () => {
+    const res = await post('not-an-email')
+    expect(res.status).toBe(400)
+    expect(prismaMock.user.update).not.toHaveBeenCalled()
+  })
+
+  it('is a no-op when the address already matches', async () => {
+    prismaMock.user.findFirst.mockResolvedValueOnce({ id: 'p-1', email: 'same@example.com', name: 'N' })
+    const res = await post('same@example.com')
+    expect(res.status).toBe(200)
+    expect(prismaMock.user.update).not.toHaveBeenCalled()
+  })
+
+  it('404 for a parent at another school', async () => {
+    prismaMock.user.findFirst.mockResolvedValueOnce(null)
+    const res = await post('new@example.com')
+    expect(res.status).toBe(404)
+  })
+})

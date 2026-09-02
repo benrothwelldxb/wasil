@@ -392,28 +392,29 @@ async function resolveTeacherUserId(
 }
 
 /**
- * Has this account ever been used to sign in? `User.email` is a login
- * credential as well as a contact address, so re-pointing it on an account
- * someone actually uses would silently move where their sign-in link goes.
+ * Does this account have a credential that ISN'T its email address?
  *
- * Deliberately broad: a password, a recorded login, an OAuth or Hub SSO
- * identity, or a live refresh token all count. A guardian provisioned by this
- * sync has none of them — it is created with no password and cannot log in
- * until invited — so the ordinary case is still free to converge.
+ * The distinction matters more than "has this person ever signed in", which is
+ * what this used to ask and which was the wrong question. Connect's parents sign
+ * in with a code emailed to them, so for almost all of them the address IS the
+ * credential — and refusing to follow Hub does not protect their login, it sends
+ * their sign-in codes to an address they have stopped reading. That locks them
+ * out rather than keeping them in.
+ *
+ * A password, a Google or Microsoft identity, or Hub SSO are different: the
+ * address is not the only way in, and moving it could break or misdirect one of
+ * those. Those still decline and are reported.
+ *
+ * (Hub already provisions these accounts with whatever address it holds, so
+ * trusting its update is no weaker than trusting its creation.)
  */
-async function accountHasLogin(user: {
-  id: string
+function hasNonEmailCredential(user: {
   passwordHash: string | null
-  lastLoginAt: Date | null
   googleId: string | null
   microsoftId: string | null
   hubUserId: string | null
-}): Promise<boolean> {
-  if (user.passwordHash || user.lastLoginAt || user.googleId || user.microsoftId || user.hubUserId) {
-    return true
-  }
-  const token = await prisma.refreshToken.findFirst({ where: { userId: user.id }, select: { id: true } })
-  return !!token
+}): boolean {
+  return !!(user.passwordHash || user.googleId || user.microsoftId || user.hubUserId)
 }
 
 /**
@@ -428,8 +429,11 @@ async function accountHasLogin(user: {
  *
  *   - Hub dropped the address entirely → keep what we have. Never erase a
  *     credential because an upstream field went blank.
- *   - The account has been used as a login → leave it, and report the conflict.
- *     Re-keying a working sign-in belongs to a person, not a nightly job.
+ *   - The account has a credential other than its email — a password, an OAuth
+ *     identity, Hub SSO → leave it, and report the conflict. Re-keying one of
+ *     those belongs to a person, not a nightly job. Having merely signed in
+ *     does NOT count: a code-based parent's address is their credential, and
+ *     following Hub is how they keep access rather than lose it.
  *   - Another Connect user already holds the address → leave it, and report.
  *     `User.email` is unique across the whole database, not per school, so this
  *     is the collision that would otherwise throw mid-sync.
@@ -443,7 +447,6 @@ async function resolveEmailChange(
     id: string
     email: string
     passwordHash: string | null
-    lastLoginAt: Date | null
     googleId: string | null
     microsoftId: string | null
     hubUserId: string | null
@@ -459,7 +462,7 @@ async function resolveEmailChange(
     return null
   }
 
-  if (await accountHasLogin(user)) return conflict('account_has_login')
+  if (hasNonEmailCredential(user)) return conflict('account_has_login')
 
   // Global, not school-scoped: User.email is @unique across the database.
   const taken = await prisma.user.findFirst({ where: { email: incoming }, select: { id: true } })
