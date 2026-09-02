@@ -501,12 +501,10 @@ export const messages = {
 export const forms = {
   list: () => fetchApi<Form[]>('/api/forms'),
   listAll: () => fetchApi<FormWithResponses[]>('/api/forms/all'),
-  /** Forms that can be attached to a post: DRAFT and not already on one.
-   *  `unavailable` explains a short list — how many exist but are excluded. */
+  /** Forms attachable to a post — drafts (a first send) and active ones (a
+   *  reminder). `unavailable.closed` explains an empty list. */
   listAvailable: () =>
-    fetchApi<{ forms: Form[]; unavailable: { published: number; alreadyAttached: number } }>(
-      '/api/forms/available',
-    ),
+    fetchApi<{ forms: Form[]; unavailable: { closed: number } }>('/api/forms/available'),
   getTemplates: () => fetchApi<{ message: string }>('/api/forms/templates'),
   create: (data: {
     title: string

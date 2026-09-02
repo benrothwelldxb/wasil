@@ -250,6 +250,7 @@ export function MessageForm({
             {availableForms?.map(f => (
               <option key={f.id} value={f.id}>
                 {f.title} [{FORM_TYPE_LABELS[f.type] || f.type}]
+                {f.status === 'ACTIVE' ? ' — already sent, this is a reminder' : ''}
               </option>
             ))}
           </select>
@@ -263,17 +264,16 @@ export function MessageForm({
           )}
           {!formsError && availableForms?.length === 0 && (
             <p className="text-xs text-gray-500 mt-1">
-              {(formsResponse?.unavailable.published ?? 0) + (formsResponse?.unavailable.alreadyAttached ?? 0) === 0
-                ? 'No forms yet — build one under Forms and leave it unpublished, then attach it here.'
-                : `Nothing to attach. A form can only go on a post while it is still a draft and not already on another post. ` +
-                  [
-                    formsResponse?.unavailable.published
-                      ? `${formsResponse.unavailable.published} already published`
-                      : '',
-                    formsResponse?.unavailable.alreadyAttached
-                      ? `${formsResponse.unavailable.alreadyAttached} already on a post`
-                      : '',
-                  ].filter(Boolean).join(', ') + '.'}
+              {(formsResponse?.unavailable.closed ?? 0) === 0
+                ? 'No forms yet — build one under Forms, then attach it here.'
+                : `Nothing to attach: all ${formsResponse?.unavailable.closed} of your forms are closed, and a closed form would be a dead link for parents.`}
+            </p>
+          )}
+
+          {selectedForm?.status === 'ACTIVE' && (
+            <p className="text-xs text-gray-500 mt-1">
+              This form is already live, so this post is a reminder. Parents who have already
+              responded will still see that they have.
             </p>
           )}
 

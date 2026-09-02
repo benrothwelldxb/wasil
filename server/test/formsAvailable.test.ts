@@ -69,13 +69,26 @@ describe('GET /api/forms/available', () => {
     expect(res.status).toBe(200)
   })
 
-  it('offers only drafts that are not already on a post', async () => {
+  // A draft is a first send; an active form can go out again on a reminder,
+  // which is most of the reason to attach one. Only closed is withheld.
+  it('offers drafts and active forms, never closed ones', async () => {
     await request(makeApp()).get('/api/forms/available')
     expect(prismaMock.form.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { schoolId: 'school-1', status: 'DRAFT', message: null },
+        where: { schoolId: 'school-1', status: { in: ['DRAFT', 'ACTIVE'] } },
       }),
     )
+  })
+
+  it('offers a form that is already on another post', async () => {
+    // Message.formId is no longer unique, so being attached elsewhere is not
+    // a reason to withhold it — that is what a reminder post is.
+    prismaMock.form.findMany.mockResolvedValue([
+      { id: 'f-1', title: 'Trip consent', type: 'CONSENT', status: 'ACTIVE', fields: [], createdAt: new Date(), updatedAt: new Date(), classIds: [], yearGroupIds: [] },
+    ])
+    const res = await request(makeApp()).get('/api/forms/available')
+    expect(res.body.forms).toHaveLength(1)
+    expect(res.body.forms[0].status).toBe('ACTIVE')
   })
 
   it('returns the forms that can be attached', async () => {
@@ -87,19 +100,19 @@ describe('GET /api/forms/available', () => {
     expect(res.body.forms[0].title).toBe('Trip consent')
   })
 
-  // "No forms" and "four forms, all published" look identical in a dropdown,
-  // and only one of them is the user's fault.
-  it('says how many forms exist but are excluded, and why', async () => {
-    prismaMock.form.count.mockResolvedValueOnce(3).mockResolvedValueOnce(2)
+  // "You have none" and "yours are all finished" are the same empty dropdown
+  // and different problems.
+  it('says how many forms are closed when the list is empty', async () => {
+    prismaMock.form.count.mockResolvedValue(4)
 
     const res = await request(makeApp()).get('/api/forms/available')
 
     expect(res.body.forms).toEqual([])
-    expect(res.body.unavailable).toEqual({ published: 3, alreadyAttached: 2 })
+    expect(res.body.unavailable).toEqual({ closed: 4 })
   })
 
-  it('counts a genuinely empty school as zero excluded, not as an error', async () => {
+  it('a genuinely empty school reports zero closed, not an error', async () => {
     const res = await request(makeApp()).get('/api/forms/available')
-    expect(res.body).toEqual({ forms: [], unavailable: { published: 0, alreadyAttached: 0 } })
+    expect(res.body).toEqual({ forms: [], unavailable: { closed: 0 } })
   })
 })

@@ -159,32 +159,29 @@ router.get('/available', isStaff, async (req, res) => {
   try {
     const user = req.user!
 
-    // DRAFT only, and only forms not already on a post. Attaching a form to a
-    // post is HOW it gets published and how it gets its audience, so an ACTIVE
-    // form has already been distributed and Message.formId is @unique — one
-    // form belongs to one post. Both rules are deliberate; between them they
-    // can empty this list without explanation, so the response says how many
-    // forms were excluded and why (see `unavailable`).
+    // Anything not finished. A DRAFT form is a first send — attaching it to a
+    // post is what publishes it. An ACTIVE one has already gone out and can go
+    // again on a reminder, which is the common reason to attach a form at all.
+    // Only CLOSED is withheld: re-sending a form that no longer takes responses
+    // would put a dead link in front of a parent.
     const forms = await prisma.form.findMany({
       where: {
         schoolId: user.schoolId,
-        status: 'DRAFT',
-        message: null,
+        status: { in: ['DRAFT', 'ACTIVE'] },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     })
 
-    // Why the list might be short. Without this the composer can only say
-    // "no forms", when the truth is usually "you have four, and all of them
-    // are published or already on a post".
-    const [publishedCount, alreadyAttachedCount] = await Promise.all([
-      prisma.form.count({ where: { schoolId: user.schoolId, status: { not: 'DRAFT' } } }),
-      prisma.form.count({ where: { schoolId: user.schoolId, status: 'DRAFT', message: { isNot: null } } }),
-    ])
+    // Why the list might be short: a school whose only forms are closed sees
+    // an empty dropdown, and "you have none" and "yours are all finished" are
+    // different problems with different fixes.
+    const closed = await prisma.form.count({
+      where: { schoolId: user.schoolId, status: 'CLOSED' },
+    })
 
     res.json({
       forms: forms.map(form => serializeForm(form)),
-      unavailable: { published: publishedCount, alreadyAttached: alreadyAttachedCount },
+      unavailable: { closed },
     })
   } catch (error) {
     console.error('Error fetching available forms:', error)

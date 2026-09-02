@@ -507,7 +507,10 @@ model Message {
   notifiedAt  DateTime?
 
   // Attached form
-  formId String? @unique
+  // Not unique: the same form can go on more than one post. A reminder post
+  // carrying the consent form everyone ignored is the ordinary case, and a
+  // form sent to Year 3 in September may go to Year 4 in January.
+  formId String?
   form   Form?   @relation(fields: [formId], references: [id])
 
   acknowledgments MessageAcknowledgment[]
@@ -873,7 +876,9 @@ model Form {
   exportToken          String?   @unique // Secret token for public CSV export (Google Sheets IMPORTDATA)
   exportTokenCreatedAt DateTime? // When the export token was generated (expires after 24h)
 
-  message Message?
+  /// Every post this form has been attached to — the first send and any
+  /// reminders after it.
+  messages Message[]
 
   responses FormResponse[]
 
