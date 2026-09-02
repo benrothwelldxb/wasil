@@ -80,7 +80,8 @@ export function MessageForm({
   onAttachmentsChange,
 }: MessageFormProps) {
   const theme = useTheme()
-  const { data: availableForms } = useApi<Form[]>(() => api.forms.listAvailable(), [])
+  const { data: formsResponse, error: formsError } = useApi(() => api.forms.listAvailable(), [])
+  const availableForms = formsResponse?.forms
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
 
@@ -249,9 +250,33 @@ export function MessageForm({
             {availableForms?.map(f => (
               <option key={f.id} value={f.id}>
                 {f.title} [{FORM_TYPE_LABELS[f.type] || f.type}]
+                {f.status === 'ACTIVE' ? ' — already sent, this is a reminder' : ''}
               </option>
             ))}
           </select>
+
+          {/* An empty dropdown has three quite different causes, and saying
+              which one it is saves a support message every time. */}
+          {formsError && (
+            <p className="text-xs text-amber-700 mt-1">
+              Couldn't load your forms just now — this is a problem at our end, not a sign you have none.
+            </p>
+          )}
+          {!formsError && availableForms?.length === 0 && (
+            <p className="text-xs text-gray-500 mt-1">
+              {(formsResponse?.unavailable.closed ?? 0) === 0
+                ? 'No forms yet — build one under Forms, then attach it here.'
+                : `Nothing to attach: all ${formsResponse?.unavailable.closed} of your forms are closed, and a closed form would be a dead link for parents.`}
+            </p>
+          )}
+
+          {selectedForm?.status === 'ACTIVE' && (
+            <p className="text-xs text-gray-500 mt-1">
+              This form is already live, so this post is a reminder. Parents who have already
+              responded will still see that they have.
+            </p>
+          )}
+
           {selectedForm && (
             <div className="mt-2 p-2 bg-white rounded border border-gray-200 text-sm">
               <span className="font-medium">{selectedForm.title}</span>

@@ -151,20 +151,38 @@ router.get('/', isAuthenticated, async (req, res) => {
 })
 
 // Get available DRAFT forms (not yet attached to a message) for admin picker
-router.get('/available', isAdmin, async (req, res) => {
+// isStaff, not isAdmin: anyone who can compose a post (messages.ts POST /) has
+// to be able to see what they can attach to it. Gating this to admins made the
+// dropdown silently empty for staff — a 403 the client swallowed into "no forms
+// exist", which is indistinguishable from the school having none.
+router.get('/available', isStaff, async (req, res) => {
   try {
     const user = req.user!
 
+    // Anything not finished. A DRAFT form is a first send — attaching it to a
+    // post is what publishes it. An ACTIVE one has already gone out and can go
+    // again on a reminder, which is the common reason to attach a form at all.
+    // Only CLOSED is withheld: re-sending a form that no longer takes responses
+    // would put a dead link in front of a parent.
     const forms = await prisma.form.findMany({
       where: {
         schoolId: user.schoolId,
-        status: 'DRAFT',
-        message: null,
+        status: { in: ['DRAFT', 'ACTIVE'] },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     })
 
-    res.json(forms.map(form => serializeForm(form)))
+    // Why the list might be short: a school whose only forms are closed sees
+    // an empty dropdown, and "you have none" and "yours are all finished" are
+    // different problems with different fixes.
+    const closed = await prisma.form.count({
+      where: { schoolId: user.schoolId, status: 'CLOSED' },
+    })
+
+    res.json({
+      forms: forms.map(form => serializeForm(form)),
+      unavailable: { closed },
+    })
   } catch (error) {
     console.error('Error fetching available forms:', error)
     res.status(500).json({ error: 'Failed to fetch available forms' })
