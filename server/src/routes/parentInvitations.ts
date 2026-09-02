@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { parentsBySignInStatus } from '../services/parentActivation.js'
 import { Router, Request, Response } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
@@ -134,7 +135,7 @@ router.get('/', isAdmin, async (req: Request, res: Response) => {
 router.get('/parents', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!
-    const { search, classId, page = '1', limit = '50' } = req.query
+    const { search, classId, status, page = '1', limit = '50' } = req.query
 
     const pageNum = Math.max(1, parseInt(page as string, 10) || 1)
     const limitNum = Math.min(100, parseInt(limit as string, 10) || 50)
@@ -142,6 +143,14 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
 
     // Test Parents are hidden from the staff parent-management list.
     const where: any = { schoolId: user.schoolId, role: 'PARENT', isTest: false }
+
+    // Whether a parent has ever signed in is derived from three sources, not a
+    // column, so it cannot be a WHERE clause — resolve the whole roster first
+    // and narrow by id. A school's parent list is small enough for that.
+    const { signedIn, neverSignedIn } = await parentsBySignInStatus(user.schoolId)
+    if (status === 'never') where.id = { in: [...neverSignedIn] }
+    else if (status === 'signed-in') where.id = { in: [...signedIn] }
+
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -158,6 +167,7 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
           },
           children: { include: { class: { select: { id: true, name: true } } } },
         },
+        // orderBy below stays name-asc so the chase list reads like the roster.
         orderBy: { name: 'asc' },
         skip,
         take: limitNum,
@@ -181,7 +191,12 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
         name: p.name,
         avatarUrl: p.avatarUrl,
         lastLoginAt: p.lastLoginAt?.toISOString() || null,
+        lastSeenAt: p.lastSeenAt?.toISOString() || null,
         welcomeSentAt: p.welcomeSentAt?.toISOString() || null,
+        lastNudgedAt: p.lastNudgedAt?.toISOString() || null,
+        // The honest answer to "has this person ever got in", including the
+        // ones let in by a code nobody recorded as an invite.
+        hasSignedIn: signedIn.has(p.id),
         hasPassword: !!p.passwordHash,
         createdAt: p.createdAt.toISOString(),
         children: [
@@ -190,6 +205,12 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
         ],
       })),
       pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) },
+      // Roster-wide, not page-wide — these drive the filter tabs.
+      counts: {
+        all: signedIn.size + neverSignedIn.size,
+        signedIn: signedIn.size,
+        neverSignedIn: neverSignedIn.size,
+      },
     })
   } catch (error) {
     console.error('Error fetching parents:', error)
@@ -364,6 +385,87 @@ router.post('/parents/:id/sign-in-code', isAdmin, async (req: Request, res: Resp
 // Deliberately does NOT embed a live code (a bulk send would expire before use)
 // — the email tells them to open the app and request a code. Re-sendable:
 // stamps User.welcomeSentAt each time.
+// Chase parents who have never signed in. Separate from /send-invites: that is
+// the "you've been added" welcome, this is the follow-up for people who got one
+// (or a code at the gate) and never used it.
+//
+// Pass `parentUserIds` to chase a chosen few, or omit it to chase everyone who
+// has never signed in. Never-signed-in is recomputed here rather than trusted
+// from the client, so a stale page cannot email someone who has since got in.
+router.post('/nudge', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { parentUserIds } = (req.body || {}) as { parentUserIds?: string[] }
+
+    const { neverSignedIn } = await parentsBySignInStatus(user.schoolId)
+    let targetIds = [...neverSignedIn]
+    if (Array.isArray(parentUserIds) && parentUserIds.length > 0) {
+      const asked = new Set(parentUserIds)
+      targetIds = targetIds.filter(id => asked.has(id))
+    }
+
+    if (targetIds.length === 0) {
+      return res.json({ sent: 0, skippedNoEmail: 0, skippedAlreadySignedIn: parentUserIds?.length ?? 0 })
+    }
+
+    const parents = await prisma.user.findMany({
+      // isTest is already excluded upstream, repeated here so an explicit id
+      // list can never reach a Test Parent's fake mailbox.
+      where: { id: { in: targetIds }, schoolId: user.schoolId, role: 'PARENT', isTest: false },
+      select: { id: true, email: true },
+    })
+
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { name: true },
+    })
+    const schoolName = school?.name || 'School'
+
+    // What they have actually missed — the messages sent to this school since
+    // they were added. Counted once for the whole batch: it is the same figure
+    // for everyone being chased, and it is what makes the email land.
+    const missedCount = await prisma.message.count({
+      where: { schoolId: user.schoolId, notifiedAt: { not: null } },
+    })
+
+    const { sendParentNudgeEmail } = await import('../services/email.js')
+
+    let sent = 0
+    let skippedNoEmail = 0
+    const emailedIds: string[] = []
+
+    for (const p of parents) {
+      if (!p.email) {
+        skippedNoEmail++
+        continue
+      }
+      await sendParentNudgeEmail({ to: p.email, schoolName, missedCount })
+      emailedIds.push(p.id)
+      sent++
+    }
+
+    if (emailedIds.length > 0) {
+      await prisma.user.updateMany({
+        where: { id: { in: emailedIds } },
+        data: { lastNudgedAt: new Date() },
+      })
+    }
+
+    logAudit({
+      req,
+      action: 'UPDATE',
+      resourceType: 'USER',
+      resourceId: parentUserIds?.length === 1 ? parentUserIds[0] : 'bulk',
+      metadata: { action: 'nudge-never-signed-in', sent, skippedNoEmail, missedCount },
+    })
+
+    res.json({ sent, skippedNoEmail, skippedAlreadySignedIn: (parentUserIds?.length ?? 0) - parents.length })
+  } catch (error) {
+    console.error('Error nudging parents:', error)
+    res.status(500).json({ error: 'Failed to send nudges' })
+  }
+})
+
 router.post('/send-invites', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!

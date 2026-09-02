@@ -221,6 +221,12 @@ model User {
   // Re-sending updates it; used by admin UI to show invite status.
   welcomeSentAt DateTime?
 
+  // When an admin last chased this parent for never having signed in. Separate
+  // from welcomeSentAt on purpose: plenty of parents were let in by a code read
+  // out at the gate and never "invited" at all, so one column cannot answer
+  // both "have we told them about it" and "have we chased them since".
+  lastNudgedAt DateTime?
+
   // "Test Parent" backdoor flag. A flagged parent signs in with a fixed
   // env-gated code (no email) and sees the REAL, LIVE parent app for its
   // linked child's class. MUST be excluded from every staff/admin enumeration

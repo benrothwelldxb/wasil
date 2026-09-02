@@ -1234,6 +1234,29 @@ export const deviceTokens = {
 }
 
 // Parent Invitations
+export interface ParentRow {
+  id: string
+  email: string
+  name: string
+  avatarUrl?: string
+  lastLoginAt?: string | null
+  lastSeenAt?: string | null
+  welcomeSentAt?: string | null
+  lastNudgedAt?: string | null
+  /** Whether this parent has ever actually got into the app — not whether they
+   *  were sent an invite. Covers the ones let in by a shared sign-in code. */
+  hasSignedIn?: boolean
+  hasPassword?: boolean
+  createdAt: string
+  children: Array<{ name: string; className: string; studentId?: string | null }>
+}
+export interface ParentListResponse {
+  parents: ParentRow[]
+  pagination: { page: number; limit: number; total: number; totalPages: number }
+  /** Roster-wide totals, not page-wide — these drive the filter tabs. */
+  counts?: { all: number; signedIn: number; neverSignedIn: number }
+}
+
 export const parentInvitations = {
   // Admin endpoints
   list: (params?: {
@@ -1303,14 +1326,15 @@ export const parentInvitations = {
       method: 'POST',
     }),
 
-  listParents: (params?: { search?: string; classId?: string; page?: number; limit?: number }) => {
+  listParents: (params?: { search?: string; classId?: string; page?: number; limit?: number; status?: 'all' | 'never' | 'signed-in' }) => {
     const searchParams = new URLSearchParams()
     if (params?.search) searchParams.append('search', params.search)
     if (params?.classId) searchParams.append('classId', params.classId)
     if (params?.page) searchParams.append('page', params.page.toString())
     if (params?.limit) searchParams.append('limit', params.limit.toString())
+    if (params?.status) searchParams.append('status', params.status)
     const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
-    return fetchApi<{ parents: Array<{ id: string; email: string; name: string; avatarUrl?: string; lastLoginAt?: string | null; welcomeSentAt?: string | null; hasPassword?: boolean; createdAt: string; children: Array<{ name: string; className: string; studentId?: string | null }> }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/api/parent-invitations/parents${query}`)
+    return fetchApi<ParentListResponse>(`/api/parent-invitations/parents${query}`)
   },
   // Admin "invite parents": send the passwordless welcome email to a selection
   // of parents (or all parents with an email when ids are omitted). Stamps
@@ -1320,6 +1344,14 @@ export const parentInvitations = {
       method: 'POST',
       body: JSON.stringify({ parentUserIds }),
     }),
+  /** Chase parents who have never signed in. Omit ids to chase all of them.
+   *  The server recomputes who qualifies, so a stale page cannot email a parent
+   *  who has since got in. */
+  nudge: (parentUserIds?: string[]) =>
+    fetchApi<{ sent: number; skippedNoEmail: number; skippedAlreadySignedIn: number }>(
+      '/api/parent-invitations/nudge',
+      { method: 'POST', body: JSON.stringify({ parentUserIds }) },
+    ),
   deleteParent: (id: string) =>
     fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}`, { method: 'DELETE' }),
   resetParentPassword: (id: string) =>
