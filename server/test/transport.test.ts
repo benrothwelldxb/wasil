@@ -136,6 +136,47 @@ describe('PUT /api/partner/transport/assignments', () => {
     expect(res.body).toMatchObject({ updated: 1, skippedUnknownPupil: 1 })
   })
 
+  // Desk withholds the address rather than sending it beside a "don't show
+  // this" flag, so a suppressed stop arrives with name: ''. Requiring a name
+  // dropped every pupil at that stop — the children of separated families, who
+  // are exactly the ones the flag protects.
+  it('keeps a suppressed stop that arrives with no address at all', async () => {
+    const res = await put({
+      ...PAYLOAD,
+      routes: [{ id: 'r1', name: 'Bus 3', stops: [
+        { id: 's1', name: '', time_local: '06:52', hide_stop_name: true, pupils: [{ hub_pupil_id: 'hp-1' }] },
+      ] }],
+    })
+
+    expect(res.body.updated).toBe(1)
+    const created = prismaMock.transportAssignment.upsert.mock.calls[0][0].create
+    expect(created.hideStopName).toBe(true)
+    expect(created.routeName).toBe('Bus 3')
+    expect(created.timeLocal).toBe('06:52')
+  })
+
+  // The other half of the same rule: a nameless stop that is NOT suppressed is
+  // still junk and still skipped.
+  it('still skips a stop with no name and no suppression flag', async () => {
+    const res = await put({
+      ...PAYLOAD,
+      routes: [{ id: 'r1', name: 'Bus 3', stops: [
+        { id: 's1', name: '', time_local: '06:52', pupils: [{ hub_pupil_id: 'hp-1' }] },
+      ] }],
+    })
+    expect(res.body.updated).toBe(0)
+  })
+
+  it('still requires a time, suppressed or not', async () => {
+    const res = await put({
+      ...PAYLOAD,
+      routes: [{ id: 'r1', name: 'Bus 3', stops: [
+        { id: 's1', name: '', time_local: '', hide_stop_name: true, pupils: [{ hub_pupil_id: 'hp-1' }] },
+      ] }],
+    })
+    expect(res.body.updated).toBe(0)
+  })
+
   it('carries the suppression flag through', async () => {
     await put({
       ...PAYLOAD,

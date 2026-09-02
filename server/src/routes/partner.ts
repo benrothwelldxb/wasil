@@ -2317,10 +2317,21 @@ router.put('/transport/assignments', requirePartner, async (req, res) => {
       const routeCode = typeof route?.code === 'string' && route.code.trim() ? route.code.trim() : null
       const stops = Array.isArray(route?.stops) ? route.stops : []
       for (const stop of stops as Array<Record<string, unknown>>) {
+        const hideStopName = stop?.hide_stop_name === true
         const stopName = typeof stop?.name === 'string' ? stop.name.trim() : ''
         const timeLocal = typeof stop?.time_local === 'string' ? stop.time_local.trim() : ''
-        if (!stopName || !timeLocal) continue
-        const hideStopName = stop?.hide_stop_name === true
+        // A suppressed stop legitimately arrives with no name. Desk withholds
+        // the address rather than sending it beside a "don't show this" flag —
+        // stronger than this brief asked for, because the address then never
+        // enters another system's database or logs at all.
+        //
+        // So a missing name is only a reason to skip when the stop is NOT
+        // suppressed. Requiring one unconditionally silently dropped every
+        // pupil at a suppressed stop: the children of separated families, who
+        // are exactly the ones the flag exists to protect, would have got no
+        // bus information whatsoever.
+        if (!timeLocal) continue
+        if (!stopName && !hideStopName) continue
         const pupils = Array.isArray(stop?.pupils) ? stop.pupils : []
         for (const pupil of pupils as Array<Record<string, unknown>>) {
           const hubPupilId = typeof pupil?.hub_pupil_id === 'string' ? pupil.hub_pupil_id.trim() : ''

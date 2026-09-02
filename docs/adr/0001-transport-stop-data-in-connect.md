@@ -37,6 +37,10 @@ Two things are true only here, and they are why this needs its own decision rath
 
 6. **Stop names may be suppressed per assignment.** `hideStopName` omits the address from the guardian read, leaving route and time. Connect cannot detect which families need it — it holds no household data, and inferring from "two guardians" would suppress for the many ordinary families who share an address. The school knows and Desk holds the roster, so the flag travels in the push and the decision sits with the people who have the information.
 
+   **Desk went further than this asked for, and it changes the risk.** A suppressed stop arrives with `hide_stop_name: true` *and an empty name*: the address is withheld at source rather than sent beside a flag asking Connect not to render it. So for these families Connect never receives the address at all, and it is absent from this database, its backups and its logs rather than merely unrendered. That is the stronger arrangement and this ADR adopts it as the contract.
+
+   The push handler therefore accepts a stop with no name when the flag is set. It must: requiring one dropped every pupil at a suppressed stop, so the children this clause exists to protect would have received nothing rather than a partial view.
+
 7. **Metadata-only logging.** Counts, never an address or a child's name.
 
 8. **Absent is not empty.** A failed read renders as an error, never as "no bus". Desk's PRD asks for this because a screen that silently shows nothing is worse than one that admits it is broken; Connect has the same bug in its history and the same risk here.
@@ -51,7 +55,7 @@ Two things are true only here, and they are why this needs its own decision rath
 **Negative / accepted trade-off**
 - Children's home addresses are at rest in a second system. Mitigated by: no staff surface, no enumerable shape, one argument-free read, hard-delete retention, and text-only storage.
 - Connect cannot answer any historical transport question. Accepted, matching Desk.
-- Guardrail 6 depends on Desk sending `hide_stop_name`. Until it does, every linked guardian of a child sees the stop name. **This is the residual risk and it is not closed by this ADR** — it is closed when Desk adds the field.
+- ~~Guardrail 6 depends on Desk sending `hide_stop_name`.~~ **Closed.** Desk sends it, and withholds the address with it. The residual risk this ADR opened with no longer stands.
 
 ## Alternatives considered
 
