@@ -103,11 +103,27 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
 
-  useEffect(() => {
+  const load = () =>
     api.schoolSettings.get()
-      .then(s => { setSettings(s); setLoading(false) })
+      .then(s => { setSettings(s); setDirty(false); setLoading(false) })
       .catch(err => { toast.error(err.message || 'Failed to load settings'); setLoading(false) })
-  }, [])
+
+  useEffect(() => { load() }, [])
+
+  // Nothing on this page takes effect until Save, and the button sits at the
+  // top of a long page — so by the time you have changed something near the
+  // bottom it is well off screen. Warn before the change is lost.
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+
+  const discard = async () => {
+    setLoading(true)
+    await load()
+  }
 
   const updateField = <K extends keyof SchoolSettings>(key: K, value: SchoolSettings[K]) => {
     setSettings(prev => prev ? { ...prev, [key]: value } : prev)
@@ -147,7 +163,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-6 pb-28">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-800">School Settings</h1>
@@ -302,6 +318,37 @@ export function SettingsPage() {
       <BottomNavSection settings={settings} onChange={keys => updateField('bottomNavItems', keys)} />
 
       <TestAccountsSection />
+
+      {/* The page is long and nothing applies until Save, so the moment
+          something is unsaved the action follows you rather than staying at
+          the top where it cannot be seen from the controls that need it. */}
+      {dirty && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
+          <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+            <p className="text-sm font-semibold text-slate-700">
+              Unsaved changes — these won't apply until you save.
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={discard}
+                disabled={saving}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+              >
+                Discard
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-5 py-2.5 rounded-xl text-white text-sm font-bold flex items-center gap-2 disabled:opacity-60"
+                style={{ backgroundColor: '#C4506E' }}
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
