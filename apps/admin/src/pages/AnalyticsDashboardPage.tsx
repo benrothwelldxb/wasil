@@ -6,6 +6,7 @@ import type {
   FeatureUsageResponse,
   ByClassResponse,
   NotActivatedResponse,
+  UnreachableFamiliesResponse,
 } from '@wasil/shared'
 import {
   UserCheck,
@@ -21,6 +22,7 @@ import {
   Star,
   Trophy,
   ArrowRight,
+  AlertTriangle,
 } from 'lucide-react'
 
 export function AnalyticsDashboardPage() {
@@ -40,6 +42,10 @@ export function AnalyticsDashboardPage() {
   )
   const { data: byClass, isLoading: loadingClasses } = useApi<ByClassResponse>(
     () => api.analytics.byClass(),
+    []
+  )
+  const { data: unreachable, isLoading: loadingUnreachable } = useApi<UnreachableFamiliesResponse>(
+    () => api.analytics.unreachableFamilies(),
     []
   )
   const { data: notActivated, isLoading: loadingNotActivated } = useApi<NotActivatedResponse>(
@@ -71,6 +77,7 @@ export function AnalyticsDashboardPage() {
           <CohortLeagueTable data={byClass} loading={loadingClasses} brandColor={brandColor} />
         </div>
         <div className="xl:col-span-2">
+          <UnreachableFamiliesSection data={unreachable} loading={loadingUnreachable} />
           <NotActivatedSection data={notActivated} loading={loadingNotActivated} />
         </div>
       </div>
@@ -615,6 +622,148 @@ function CohortLeagueTable({
       ) : (
         <EmptyState height="h-32" text="No classes with linked parents yet" />
       )}
+    </div>
+  )
+}
+
+// --- Families nobody can reach ---
+//
+// Separate from the not-activated list on purpose. That one is per PARENT, so
+// it includes the second guardian of a family that connected the first — plenty
+// of families choose to connect one of two, and chasing them is noise that
+// buries the households nobody can reach at all.
+
+function UnreachableFamiliesSection({
+  data,
+  loading,
+}: {
+  data: UnreachableFamiliesResponse | null
+  loading: boolean
+}) {
+  const handleDownload = () => {
+    if (!data) return
+    const header = 'Children,Class,Guardians,Emails'
+    const rows = data.families.map(f =>
+      [
+        f.children.map(c => c.studentName).join('; '),
+        f.children.map(c => c.className ?? '').join('; '),
+        f.guardians.map(g => g.name).join('; '),
+        f.guardians.map(g => g.email).join('; '),
+      ].map(csvEscape).join(',')
+    )
+    // Children with no guardian account are on the same sheet — they are the
+    // same job for the office, even though the fix is different.
+    const orphanRows = data.noGuardianAccount.map(c =>
+      [c.studentName, c.className ?? '', 'NO GUARDIAN ACCOUNT', ''].map(csvEscape).join(',')
+    )
+    const csv = [header, ...rows, ...orphanRows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'unreachable-families.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const nothingToChase =
+    !!data && data.families.length === 0 && data.noGuardianAccount.length === 0
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-6 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-amber-500" />
+          <h2 className="text-[15px] font-semibold text-slate-800">Families we can't reach</h2>
+        </div>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={nothingToChase || !data}
+          className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Download CSV
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">
+        No guardian in the household has ever signed in. A family that connected one of two
+        guardians is reachable and isn't listed.
+      </p>
+
+      {loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-8 bg-slate-50 rounded animate-pulse" />
+          ))}
+        </div>
+      ) : nothingToChase ? (
+        <p className="text-sm text-slate-500 py-6 text-center">
+          Every family has at least one connected guardian.
+        </p>
+      ) : data ? (
+        <>
+          <div className="flex flex-wrap gap-4 mb-4 text-sm">
+            <span className="text-slate-800">
+              <strong className="text-lg font-semibold">{data.summary.unreachableFamilies}</strong>
+              <span className="text-slate-400"> of {data.summary.totalFamilies} families</span>
+            </span>
+            <span className="text-slate-500">{data.summary.childrenAffected} children affected</span>
+            {data.summary.childrenWithNoGuardianAccount > 0 && (
+              <span className="text-amber-700">
+                {data.summary.childrenWithNoGuardianAccount} with no guardian account at all
+              </span>
+            )}
+          </div>
+
+          <div className="overflow-y-auto max-h-80 -mx-1">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b border-slate-100">
+                  <th className="text-left py-2 px-1 text-xs font-medium text-slate-400 uppercase tracking-wider">Children</th>
+                  <th className="text-left py-2 px-1 text-xs font-medium text-slate-400 uppercase tracking-wider">Guardians to chase</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.families.map(f => (
+                  <tr key={f.guardians.map(g => g.userId).join('|')} className="border-b border-slate-50 last:border-0 align-top">
+                    <td className="py-2 px-1 text-slate-800">
+                      {f.children.map(c => (
+                        <div key={c.studentId} className="truncate max-w-[180px]">
+                          {c.studentName}
+                          {c.className && <span className="text-slate-400"> · {c.className}</span>}
+                        </div>
+                      ))}
+                    </td>
+                    <td className="py-2 px-1 text-slate-500">
+                      {f.guardians.map(g => (
+                        <div key={g.userId} className="truncate max-w-[220px]">
+                          {g.name} <span className="text-slate-400">{g.email}</span>
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+                {/* A different problem: there is nobody to chase until someone
+                    creates or links a guardian account. */}
+                {data.noGuardianAccount.map(c => (
+                  <tr key={c.studentId} className="border-b border-slate-50 last:border-0 align-top">
+                    <td className="py-2 px-1 text-slate-800 truncate max-w-[180px]">
+                      {c.studentName}
+                      {c.className && <span className="text-slate-400"> · {c.className}</span>}
+                    </td>
+                    <td className="py-2 px-1">
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                        No guardian account
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }

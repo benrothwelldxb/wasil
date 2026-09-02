@@ -81,6 +81,7 @@ import type {
   FeatureUsageResponse,
   ByClassResponse,
   NotActivatedResponse,
+  UnreachableFamiliesResponse,
   EmergencyAlert,
   EmergencyAlertCreateData,
   SchoolService,
@@ -1979,6 +1980,11 @@ export const analytics = {
     fetchApi<ByClassResponse>('/api/analytics/by-class'),
   notActivated: () =>
     fetchApi<NotActivatedResponse>('/api/analytics/not-activated'),
+  /** Families nobody can reach — no guardian in the household has ever signed
+   *  in. Distinct from notActivated(), which lists parents and so includes the
+   *  unconnected second guardian of a family that is reachable already. */
+  unreachableFamilies: () =>
+    fetchApi<UnreachableFamiliesResponse>('/api/analytics/unreachable-families'),
 }
 
 // Admin-only "Test Student" backdoor accounts (school-scoped).
