@@ -1839,6 +1839,12 @@ model SchoolContact {
   // thread to this contact. Never blocks — there's always a "continue" path.
   warnBeforeMessaging Boolean  @default(false)
   warningMessage      String?
+  // Shown above the fold in the parent app rather than inside the collapsed
+  // "Other staff" section. Reception is the case this exists for: on a long
+  // contact list a parent should not have to expand anything to reach the front
+  // desk. A flag rather than matching on the name, because "Reception" is one
+  // school's vocabulary and the next one says "Front Office".
+  alwaysVisible       Boolean  @default(false)
   assignedUserId      String
   assignedUser        User     @relation("SchoolContactAssignments", fields: [assignedUserId], references: [id])
   order               Int      @default(0)

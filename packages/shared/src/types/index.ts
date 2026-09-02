@@ -1298,6 +1298,9 @@ export interface SchoolContactInfo {
   assignedUserEmail?: string
   warnBeforeMessaging?: boolean
   warningMessage?: string | null
+  /** Shown above the fold in the parent app rather than inside the collapsed
+   *  "Other staff" section — Reception is the case this exists for. */
+  alwaysVisible?: boolean
   order: number
   archived: boolean
   createdAt: string
@@ -1434,6 +1437,8 @@ export interface AvailableContactsResponse {
     assignedUserName: string
     warnBeforeMessaging?: boolean
     warningMessage?: string | null
+    /** Above the fold, or inside the collapsed "Other staff" section. */
+    alwaysVisible?: boolean
   }>
   children: Array<{
     studentId: string

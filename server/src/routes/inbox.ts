@@ -1558,6 +1558,8 @@ router.get('/contacts/available', isAuthenticated, async (req, res) => {
         assignedUserName: sc.assignedUser.name,
         warnBeforeMessaging: sc.warnBeforeMessaging,
         warningMessage: sc.warningMessage,
+        // Above the fold, or inside the collapsed "Other staff" section.
+        alwaysVisible: sc.alwaysVisible,
       })),
       ilsas,
       children,
@@ -1793,6 +1795,7 @@ router.get('/contacts', isAdmin, async (req, res) => {
       assignedUserEmail: c.assignedUser.email,
       warnBeforeMessaging: c.warnBeforeMessaging,
       warningMessage: c.warningMessage,
+      alwaysVisible: c.alwaysVisible,
       order: c.order,
       archived: c.archived,
       createdAt: c.createdAt.toISOString(),
@@ -1807,7 +1810,7 @@ router.get('/contacts', isAdmin, async (req, res) => {
 router.post('/contacts', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { name, description, icon, assignedUserId, order, warnBeforeMessaging, warningMessage } = req.body
+    const { name, description, icon, assignedUserId, order, warnBeforeMessaging, warningMessage, alwaysVisible } = req.body
 
     if (!name || !assignedUserId) {
       return res.status(400).json({ error: 'name and assignedUserId are required' })
@@ -1827,6 +1830,7 @@ router.post('/contacts', isAdmin, async (req, res) => {
         name,
         description: description || null,
         icon: icon || null,
+        alwaysVisible: alwaysVisible === true,
         assignedUserId,
         order: order ?? 0,
         warnBeforeMessaging: warnBeforeMessaging === true,
@@ -1858,7 +1862,7 @@ router.put('/contacts/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { name, description, icon, assignedUserId, order, warnBeforeMessaging, warningMessage } = req.body
+    const { name, description, icon, assignedUserId, order, warnBeforeMessaging, warningMessage, alwaysVisible } = req.body
 
     const existing = await prisma.schoolContact.findFirst({
       where: { id, schoolId: user.schoolId },
@@ -1886,6 +1890,7 @@ router.put('/contacts/:id', isAdmin, async (req, res) => {
         ...(order !== undefined && { order }),
         ...(warnBeforeMessaging !== undefined && { warnBeforeMessaging: warnBeforeMessaging === true }),
         ...(warningMessage !== undefined && { warningMessage: warningMessage?.trim() || null }),
+        ...(alwaysVisible !== undefined && { alwaysVisible: alwaysVisible === true }),
       },
       include: {
         assignedUser: { select: { id: true, name: true } },
