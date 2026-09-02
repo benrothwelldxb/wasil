@@ -31,6 +31,9 @@ declare global {
 
 // Full user type with relations – used by routes that call loadUserWithRelations()
 export interface UserWithRelations extends Express.User {
+  /** When this parent last opened Admin Notices. The whole User row is
+   *  selected, so this is populated; null means they never have. */
+  noticesLastSeenAt?: Date | null
   children?: Array<{
     id: string
     name: string

@@ -389,6 +389,92 @@ export async function sendParentNudgeEmail(
   return sendEmail({ to: params.to, subject, html, text })
 }
 
+/**
+ * "You have a notice from the School Clinic."
+ *
+ * Deliberately says nothing about the notice itself — not the body, and not the
+ * title either. A clinic's subject line ("Amina's inhaler has run out") or an
+ * accounts one ("Overdue fees") discloses as much as the message does, and
+ * email is the least private channel we have: forwarded, synced to work
+ * laptops, read on a shared screen. The signal goes to the mailbox; the content
+ * stays behind a sign-in.
+ *
+ * This is the reason Admin Notices can stay out of the feed without going
+ * unread — email is how a parent finds out there is something to open.
+ */
+export async function sendAdminNoticeSignalEmail({
+  to,
+  schoolName,
+  department,
+  appName = 'Wasil Connect',
+  appUrl = process.env.PARENT_APP_URL || 'https://app.wasilconnect.com',
+  schoolLogoUrl = `${process.env.PARENT_APP_URL || 'https://app.wasilconnect.com'}/school-logo.png`,
+  wasilLogoUrl = `${process.env.PARENT_APP_URL || 'https://app.wasilconnect.com'}/wasil-logo-grey.png`,
+}: {
+  to: string
+  schoolName: string
+  /** e.g. "School Clinic". Falls back to the school when a sender gave none. */
+  department?: string | null
+  appName?: string
+  appUrl?: string
+  schoolLogoUrl?: string
+  wasilLogoUrl?: string
+}): Promise<boolean> {
+  const from = department?.trim() || schoolName
+  const subject = `You have a notice from ${from}`
+  const BURGUNDY = '#7F0029'
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="color-scheme" content="light"></head>
+<body style="margin:0;padding:0;background-color:#F4EFEC;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F4EFEC;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px -16px rgba(74,20,35,0.18);">
+        <tr><td style="height:5px;background-color:${BURGUNDY};font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td align="center" style="padding:34px 40px 8px 40px;">
+          <img src="${schoolLogoUrl}" width="76" alt="${schoolName} crest" style="display:block;width:76px;height:auto;margin:0 auto 14px auto;">
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:14px;letter-spacing:0.4px;color:${BURGUNDY};font-weight:bold;">${schoolName}</div>
+        </td></tr>
+        <tr><td style="padding:18px 40px 0 40px;">
+          <h1 style="margin:0 0 16px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:22px;line-height:1.3;color:#2A2024;text-align:center;font-weight:700;">A notice from ${from}</h1>
+          <p style="margin:0 0 14px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#4A3E43;">There's a message waiting for you in <strong>Admin Notices</strong> on ${appName}.</p>
+          <p style="margin:0 0 6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#7A6469;">We don't include these in email — open the app to read it.</p>
+        </td></tr>
+        <tr><td align="center" style="padding:24px 40px 8px 40px;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td align="center" bgcolor="${BURGUNDY}" style="border-radius:12px;">
+              <a href="${appUrl}/admin-notices" target="_blank" style="display:inline-block;padding:14px 34px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:12px;">Read it in ${appName}</a>
+            </td>
+          </tr></table>
+        </td></tr>
+        <tr><td style="padding:26px 40px 32px 40px;">
+          <div style="border-top:1px solid #EFE3E6;margin-bottom:18px;font-size:0;line-height:0;">&nbsp;</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td align="center">
+              <img src="${wasilLogoUrl}" width="96" alt="${appName}" style="display:block;width:96px;height:auto;margin:0 auto 6px auto;opacity:0.8;">
+              <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#A8929A;">Powered by ${appName}</div>
+            </td>
+          </tr></table>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+  const text = `A notice from ${from}
+
+There's a message waiting for you in Admin Notices on ${appName}.
+
+We don't include these in email — open the app to read it:
+${appUrl}/admin-notices
+
+Powered by ${appName}`
+
+  return sendEmail({ to, subject, html, text })
+}
+
 export async function sendInvitationEmail({
   to,
   magicLink,

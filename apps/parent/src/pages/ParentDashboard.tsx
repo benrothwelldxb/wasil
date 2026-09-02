@@ -8,9 +8,9 @@ import { useTheme } from '@wasil/shared'
 import { useApi, useMutation } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild, SchoolSettings, DashboardFeature } from '@wasil/shared'
-import { Clock, Sparkles, MapPin, ChevronRight, Calendar, Shield, Cloud, AlertTriangle, Heart, Siren, X, Check } from 'lucide-react'
+import { Clock, Sparkles, MapPin, ChevronRight, Calendar, Shield, Cloud, AlertTriangle, Heart, Siren, X, Check, ClipboardList } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 function SkeletonCard() {
   return (
@@ -475,6 +475,11 @@ export function ParentDashboard() {
 
   return (
     <div className="space-y-5">
+      {/* Admin notices sit outside the feed, so without this a parent has no
+          reason to look. Deliberately a nudge and not a summary — the whole
+          point is that the content stays behind a tap. */}
+      <AdminNoticesBar />
+
       {/* Emergency Alert Banners */}
       {isEnabled('emergencyAlertsEnabled') && activeAlerts && activeAlerts.length > 0 && activeAlerts.filter(a => !dismissedAlerts.has(a.id)).map(alert => {
         const AlertIcon = getAlertIcon(alert.type)
@@ -1197,5 +1202,44 @@ export function ParentDashboard() {
         />
       )}
     </div>
+  )
+}
+
+/**
+ * "You have notices to read." Nothing more.
+ *
+ * The count comes from notices newer than the parent's last visit to the
+ * section; opening it clears the bar. Silent when there is nothing new and
+ * silent when the count fails to load — a bar that cries wolf because a request
+ * timed out is worse than no bar.
+ */
+function AdminNoticesBar() {
+  const navigate = useNavigate()
+  const { data } = useApi<{ count: number }>(() => api.adminNotices.unseenCount(), [])
+  const count = data?.count ?? 0
+  if (count === 0) return null
+
+  return (
+    <button
+      onClick={() => navigate('/admin-notices')}
+      className="w-full flex items-center gap-3 rounded-[22px] px-4 py-3 text-left"
+      style={{ background: '#F3ECF6', border: '1px solid #E3D5E8' }}
+    >
+      <span
+        className="flex items-center justify-center rounded-full flex-none"
+        style={{ width: 34, height: 34, background: '#fff' }}
+      >
+        <ClipboardList size={17} color="#6A5570" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold" style={{ color: '#3D2F42' }}>
+          {count === 1 ? 'You have a new admin notice' : `You have ${count} new admin notices`}
+        </span>
+        <span className="block text-xs" style={{ color: '#6A5570' }}>
+          From the clinic, accounts and other departments — tap to read.
+        </span>
+      </span>
+      <ChevronRight size={18} color="#6A5570" className="flex-none" />
+    </button>
   )
 }

@@ -52,6 +52,8 @@ export function MessagesPage() {
         isPinned: formData.isPinned, isUrgent: formData.isUrgent, requiresAcknowledgment: formData.requiresAcknowledgment,
         scheduledAt: formData.scheduledAt || undefined, expiresAt: formData.expiresAt || undefined,
         formId: formData.formId || undefined,
+        channel: formData.channel === 'ADMIN_NOTICE' ? 'ADMIN_NOTICE' : undefined,
+        department: formData.channel === 'ADMIN_NOTICE' ? (formData.department || undefined) : undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
         ...(formData.hasAction && { actionType: formData.actionType, actionLabel: formData.actionLabel, actionDueDate: formData.actionDueDate, actionAmount: formData.actionAmount }),
       }

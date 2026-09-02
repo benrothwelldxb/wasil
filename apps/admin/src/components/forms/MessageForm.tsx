@@ -29,6 +29,10 @@ export interface MessageFormData {
   actionDueDate: string
   actionAmount: string
   formId?: string
+  /** ADMIN_NOTICE files it under the parent app's Admin Notices section rather
+   *  than the feed, and emails a content-free signal instead of pushing. */
+  channel?: 'FEED' | 'ADMIN_NOTICE'
+  department?: string
 }
 
 export interface AudienceOption {
@@ -238,6 +242,56 @@ export function MessageForm({
           )}
         </div>
 
+        {/* Where it lands. A notice is a different kind of message, not a
+            differently-styled post, so this sits above the content options
+            rather than among the flags. */}
+        <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.channel === 'ADMIN_NOTICE'}
+              onChange={e => onChange({
+                ...formData,
+                channel: e.target.checked ? 'ADMIN_NOTICE' : 'FEED',
+                department: e.target.checked ? formData.department : undefined,
+              })}
+              className="rounded mt-0.5"
+            />
+            <span>
+              <span className="block text-sm font-medium text-gray-800">Send as an admin notice</span>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Goes to the Admin Notices section instead of the feed. Parents get an email saying
+                a notice is waiting — never what it says — and a prompt on their home screen.
+              </span>
+            </span>
+          </label>
+
+          {formData.channel === 'ADMIN_NOTICE' && (
+            <div className="mt-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">From which department?</label>
+              <input
+                list="admin-notice-departments"
+                value={formData.department || ''}
+                onChange={e => onChange({ ...formData, department: e.target.value })}
+                placeholder="School Clinic"
+                maxLength={60}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+              <datalist id="admin-notice-departments">
+                <option value="School Clinic" />
+                <option value="Accounts" />
+                <option value="Admissions" />
+                <option value="Transport" />
+                <option value="School Office" />
+              </datalist>
+              <p className="text-xs text-gray-500 mt-1">
+                Parents see this instead of your name. Keep it consistent — it's how they'll
+                recognise the sender.
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* Attach Form */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Attach Form</label>
@@ -317,7 +371,9 @@ export function MessageForm({
           </div>
           <div className="flex items-center space-x-2">
             <input type="checkbox" id="isUrgent" checked={formData.isUrgent} onChange={(e) => onChange({ ...formData, isUrgent: e.target.checked })} className="rounded" />
-            <label htmlFor="isUrgent" className="text-sm text-gray-700">Mark as urgent</label>
+            <label htmlFor="isUrgent" className="text-sm text-gray-700">
+              {formData.channel === 'ADMIN_NOTICE' ? 'Urgent — also send a notification' : 'Mark as urgent'}
+            </label>
           </div>
           <div className="flex items-center space-x-2">
             <input type="checkbox" id="requiresAcknowledgment" checked={formData.requiresAcknowledgment} onChange={(e) => onChange({ ...formData, requiresAcknowledgment: e.target.checked })} className="rounded" />

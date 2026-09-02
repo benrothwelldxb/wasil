@@ -142,51 +142,54 @@ export async function sendStaffNotification({
  * parent in the school", NOT "everyone". For a staff audience use
  * `sendStaffNotification`.
  */
+/**
+ * Which parents an audience resolves to.
+ *
+ * Extracted from sendNotification so anything else addressing the same audience
+ * — an Admin Notice's email signal, for instance — reaches exactly the same
+ * people. Two implementations of "who is in Year 3" would drift, and the one
+ * that drifted would be the one nobody noticed.
+ */
+export async function resolveAudienceParentIds(target: NotificationTarget): Promise<string[]> {
+  const { targetClass, classId, yearGroupId, groupId, schoolId } = target
+  let parentUserIds: string[] = []
+
+  if (groupId) {
+    const members = await prisma.studentGroupLink.findMany({
+      where: { groupId },
+      select: { student: { select: { parentLinks: { select: { userId: true } } } } },
+    })
+    parentUserIds = [...new Set(members.flatMap(m => m.student.parentLinks.map(pl => pl.userId)))]
+  } else if (targetClass === 'Whole School') {
+    const parents = await prisma.user.findMany({
+      where: { schoolId, role: 'PARENT' },
+      select: { id: true },
+    })
+    parentUserIds = parents.map(p => p.id)
+  } else if (yearGroupId) {
+    // Modern Student/ParentStudentLink tables (ADR 0004); the legacy Child
+    // table is no longer consulted.
+    const students = await prisma.student.findMany({
+      where: { schoolId, class: { yearGroupId } },
+      select: { parentLinks: { select: { userId: true } } },
+    })
+    parentUserIds = [...new Set(students.flatMap(s => s.parentLinks.map(pl => pl.userId)))]
+  } else if (classId) {
+    const students = await prisma.student.findMany({
+      where: { classId },
+      select: { parentLinks: { select: { userId: true } } },
+    })
+    parentUserIds = [...new Set(students.flatMap(s => s.parentLinks.map(pl => pl.userId)))]
+  }
+
+  return parentUserIds
+}
+
 export async function sendNotification({ req, type, title, body, resourceType, resourceId, data, target }: SendNotificationParams): Promise<void> {
   try {
-    const { targetClass, classId, yearGroupId, groupId, schoolId } = target
+    const { schoolId } = target
 
-    // Resolve target audience into parent user IDs
-    let parentUserIds: string[] = []
-
-    if (groupId) {
-      // Parents of students in this group
-      const members = await prisma.studentGroupLink.findMany({
-        where: { groupId },
-        select: {
-          student: {
-            select: {
-              parentLinks: { select: { userId: true } },
-            },
-          },
-        },
-      })
-      parentUserIds = [...new Set(members.flatMap(m => m.student.parentLinks.map(pl => pl.userId)))]
-    } else if (targetClass === 'Whole School') {
-      // All parents in the school
-      const parents = await prisma.user.findMany({
-        where: { schoolId, role: 'PARENT' },
-        select: { id: true },
-      })
-      parentUserIds = parents.map(p => p.id)
-    } else if (yearGroupId) {
-      // Parents of students in classes belonging to this year group. Reads the
-      // modern Student/ParentStudentLink tables (Hub-provisioned pupils) — see
-      // ADR 0004; the legacy Child table is no longer consulted.
-      const students = await prisma.student.findMany({
-        where: { schoolId, class: { yearGroupId } },
-        select: { parentLinks: { select: { userId: true } } },
-      })
-      parentUserIds = [...new Set(students.flatMap(s => s.parentLinks.map(pl => pl.userId)))]
-    } else if (classId) {
-      // Parents of students in this specific class (modern Student tables).
-      const students = await prisma.student.findMany({
-        where: { classId },
-        select: { parentLinks: { select: { userId: true } } },
-      })
-      parentUserIds = [...new Set(students.flatMap(s => s.parentLinks.map(pl => pl.userId)))]
-    }
-
+    let parentUserIds = await resolveAudienceParentIds(target)
     if (parentUserIds.length === 0) return
 
     // Map notification type to preference key
