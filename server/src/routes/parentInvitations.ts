@@ -152,9 +152,34 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
     else if (status === 'signed-in') where.id = { in: [...signedIn] }
 
     if (search) {
+      // Staff look a parent up by their child — "who are Alya Zaidi's parents"
+      // is the question, and the parent's own name is often the thing they are
+      // trying to find. So the child's name searches too.
+      const term = (search as string).trim()
+      // A full name has to match across two columns: "Alya Zaidi" is firstName
+      // Alya AND lastName Zaidi, and neither column contains the whole string.
+      const parts = term.split(/\s+/).filter(Boolean)
+      const studentMatch =
+        parts.length > 1
+          ? {
+              AND: [
+                { firstName: { contains: parts[0], mode: 'insensitive' } },
+                { lastName: { contains: parts[parts.length - 1], mode: 'insensitive' } },
+              ],
+            }
+          : {
+              OR: [
+                { firstName: { contains: term, mode: 'insensitive' } },
+                { lastName: { contains: term, mode: 'insensitive' } },
+              ],
+            }
+
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
+        { name: { contains: term, mode: 'insensitive' } },
+        { email: { contains: term, mode: 'insensitive' } },
+        { studentLinks: { some: { student: studentMatch } } },
+        // The legacy Child rows hold one `name` column rather than two.
+        { children: { some: { name: { contains: term, mode: 'insensitive' } } } },
       ]
     }
 
@@ -451,6 +476,36 @@ router.post('/parents/:id/sign-in-code', isAdmin, async (req: Request, res: Resp
 // Pass `parentUserIds` to chase a chosen few, or omit it to chase everyone who
 // has never signed in. Never-signed-in is recomputed here rather than trusted
 // from the client, so a stale page cannot email someone who has since got in.
+// What the nudge will actually say, before anyone sends it to fifty families.
+// Renders through the SAME builder the send uses, so the preview cannot drift
+// from what goes out — and reports who would receive it.
+router.get('/nudge/preview', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { neverSignedIn } = await parentsBySignInStatus(user.schoolId)
+
+    const [school, recipients, missedCount] = await Promise.all([
+      prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true } }),
+      prisma.user.count({
+        where: { id: { in: [...neverSignedIn] }, isTest: false, email: { not: '' } },
+      }),
+      prisma.message.count({ where: { schoolId: user.schoolId, notifiedAt: { not: null } } }),
+    ])
+
+    const { buildParentNudgeEmail } = await import('../services/email.js')
+    const { subject, html } = buildParentNudgeEmail({
+      to: 'preview@example.com',
+      schoolName: school?.name || 'School',
+      missedCount,
+    })
+
+    res.json({ subject, html, recipientCount: recipients, missedCount })
+  } catch (error) {
+    console.error('Error building nudge preview:', error)
+    res.status(500).json({ error: 'Failed to build preview' })
+  }
+})
+
 router.post('/nudge', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!

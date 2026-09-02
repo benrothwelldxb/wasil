@@ -1347,6 +1347,12 @@ export const parentInvitations = {
       method: 'POST',
       body: JSON.stringify({ parentUserIds }),
     }),
+  /** Exactly what the nudge will say, rendered by the same builder that sends
+   *  it, plus how many parents would receive it. */
+  nudgePreview: () =>
+    fetchApi<{ subject: string; html: string; recipientCount: number; missedCount: number }>(
+      '/api/parent-invitations/nudge/preview',
+    ),
   /** Chase parents who have never signed in. Omit ids to chase all of them.
    *  The server recomputes who qualifies, so a stale page cannot email a parent
    *  who has since got in. */

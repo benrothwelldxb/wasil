@@ -11,7 +11,12 @@ const prismaMock = {
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
 const sendParentNudgeEmail = vi.fn(async () => true)
-vi.mock('../src/services/email', () => ({ sendParentNudgeEmail, sendParentWelcomeEmail: vi.fn(async () => true) }))
+vi.mock('../src/services/email', async () => {
+  // The preview renders through the real builder on purpose — stubbing it would
+  // let the preview drift from what is actually sent without any test noticing.
+  const actual = await vi.importActual<typeof import('../src/services/email')>('../src/services/email')
+  return { ...actual, sendParentNudgeEmail, sendParentWelcomeEmail: vi.fn(async () => true) }
+})
 vi.mock('../src/services/audit', () => ({ logAudit: vi.fn(), computeChanges: vi.fn(() => ({})) }))
 
 // Who has signed in is decided by the shared activation service; here it is
@@ -228,5 +233,76 @@ describe('POST /api/parent-invitations/parents/:id/email', () => {
     prismaMock.user.findFirst.mockResolvedValueOnce(null)
     const res = await post('new@example.com')
     expect(res.status).toBe(404)
+  })
+})
+
+// Nobody should email fifty families without having read the email.
+describe('GET /api/parent-invitations/nudge/preview', () => {
+  beforeEach(() => {
+    parentsBySignInStatus.mockResolvedValue({
+      signedIn: new Set(['p-in']),
+      neverSignedIn: new Set(['p-1', 'p-2']),
+    })
+    prismaMock.user.count = vi.fn().mockResolvedValue(2)
+    prismaMock.message.count.mockResolvedValue(12)
+  })
+
+  it('renders the real email and says who would get it', async () => {
+    const res = await request(await makeApp()).get('/api/parent-invitations/nudge/preview')
+
+    expect(res.status).toBe(200)
+    expect(res.body.recipientCount).toBe(2)
+    expect(res.body.missedCount).toBe(12)
+    expect(res.body.subject).toContain('missing out')
+    // The rendered body, not a description of it.
+    expect(res.body.html).toContain("You're missing out")
+    expect(res.body.html).toContain('12 messages')
+  })
+
+  it('counts only parents who have never signed in', async () => {
+    await request(await makeApp()).get('/api/parent-invitations/nudge/preview')
+    expect(prismaMock.user.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ['p-1', 'p-2'] }, isTest: false }),
+      }),
+    )
+  })
+})
+
+// Staff look a parent up by their child: "who are Alya Zaidi's parents".
+describe('parent search matches a child\'s name', () => {
+  beforeEach(() => {
+    parentsBySignInStatus.mockResolvedValue({ signedIn: new Set(), neverSignedIn: new Set() })
+    prismaMock.user.findMany.mockResolvedValue([])
+    prismaMock.user.count = vi.fn().mockResolvedValue(0)
+  })
+
+  const search = async (q: string) => {
+    await request(await makeApp()).get(`/api/parent-invitations/parents?search=${encodeURIComponent(q)}`)
+    return prismaMock.user.findMany.mock.calls[0][0].where.OR
+  }
+
+  it('searches the parent, the email, and the child', async () => {
+    const or = await search('Alya')
+    expect(or).toEqual(expect.arrayContaining([
+      { name: { contains: 'Alya', mode: 'insensitive' } },
+      { email: { contains: 'Alya', mode: 'insensitive' } },
+      { studentLinks: { some: { student: { OR: [
+        { firstName: { contains: 'Alya', mode: 'insensitive' } },
+        { lastName: { contains: 'Alya', mode: 'insensitive' } },
+      ] } } } },
+    ]))
+  })
+
+  // "Alya Zaidi" is firstName Alya AND lastName Zaidi — neither column holds
+  // the whole string, so a plain contains would find nothing.
+  it('splits a full name across first and last', async () => {
+    const or = await search('Alya Zaidi')
+    expect(or).toEqual(expect.arrayContaining([
+      { studentLinks: { some: { student: { AND: [
+        { firstName: { contains: 'Alya', mode: 'insensitive' } },
+        { lastName: { contains: 'Zaidi', mode: 'insensitive' } },
+      ] } } } },
+    ]))
   })
 })
