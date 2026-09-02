@@ -1566,6 +1566,116 @@ router.post('/messages', requirePartner, async (req, res) => {
 // MessageAcknowledgment rows, i.e. how many parents have "seen"/acknowledged it.
 //
 //   GET /api/partner/messages/sent?hub_user_id=<Hub user id>
+// ─── What parents have been told, school-wide ────────────────────────────────
+//
+//   GET /api/partner/messages?school_id=<hub or connect id>&limit=60
+//     → { messages: [...] }
+//
+// Distinct from /messages/sent below, which is one staff member's own outbox
+// (scoped to senderId). This is the school's record, which is what Desk needs
+// to answer "what have we already told parents" without anyone opening Connect.
+//
+// Deliberately read-only and school-wide: no sender filter, no edit, no delete,
+// no parent-level read receipts. Desk asked for none of those and should not be
+// able to change a parent-facing record it did not create.
+router.get('/messages', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+
+    const school = await partnerSchool(schoolIdParam)
+    // Unknown school is not an error — Desk probes ids across products.
+    if (!school) return res.json({ messages: [] })
+
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? '60'), 10) || 60))
+
+    // Over-fetch the flat rows: a multi-class broadcast is several Message rows
+    // and collapses into one entry below, so `limit` entries need more rows.
+    const rows = await prisma.message.findMany({
+      where: { schoolId: school.id },
+      select: {
+        id: true, title: true, content: true, targetClass: true,
+        classId: true, yearGroupId: true, groupId: true,
+        senderId: true, senderName: true,
+        channel: true, department: true,
+        scheduledAt: true, notifiedAt: true, createdAt: true,
+        sender: { select: { name: true } },
+        class: { select: { name: true, hubClassId: true } },
+        yearGroup: { select: { name: true } },
+        group: { select: { name: true } },
+        _count: { select: { acknowledgments: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit * 4,
+    })
+
+    // One entry per broadcast, not per fan-out row. Connect's own composer
+    // writes a single row, but a partner send writes one per target, so the
+    // same broadcast appears several times. Grouped on sender + title + the
+    // minute it was written, which is what Desk's own merge already does.
+    const groups = new Map<string, typeof rows>()
+    for (const m of rows) {
+      const minute = new Date(m.createdAt).toISOString().slice(0, 16)
+      const key = `${m.senderId}|${m.title}|${minute}`
+      const existing = groups.get(key)
+      if (existing) existing.push(m)
+      else groups.set(key, [m])
+    }
+
+    const messages = [...groups.values()].slice(0, limit).map(members => {
+      const head = members[0]
+      // Hub class ids, never Connect's internal ones — Desk cannot resolve those.
+      const classHubIds = [...new Set(
+        members.map(m => m.class?.hubClassId).filter((h): h is string => !!h),
+      )]
+      const groupIds = [...new Set(members.map(m => m.groupId).filter((g): g is string => !!g))]
+      const yearGroupId = members.find(m => m.yearGroupId)?.yearGroupId ?? null
+      const wholeSchool = members.some(m => m.targetClass === 'Whole School')
+
+      // The chip Desk renders. Built from the parts rather than taken from one
+      // row's targetClass, which only describes that row's slice of the send.
+      const labelParts: string[] = []
+      if (wholeSchool) labelParts.push('Whole School')
+      const classNames = [...new Set(members.map(m => m.class?.name).filter((n): n is string => !!n))]
+      if (classNames.length) labelParts.push(classNames.join(', '))
+      const yearGroupName = members.find(m => m.yearGroup)?.yearGroup?.name
+      if (yearGroupName) labelParts.push(yearGroupName)
+      const groupNames = [...new Set(members.map(m => m.group?.name).filter((n): n is string => !!n))]
+      if (groupNames.length) labelParts.push(groupNames.join(', '))
+
+      return {
+        id: head.id,
+        title: head.title,
+        content: head.content,
+        // A notice is shown as coming from its department, matching what the
+        // parent sees; an ordinary post from the person who sent it.
+        senderName: head.department || head.sender?.name || head.senderName,
+        channel: head.channel,
+        department: head.department,
+        audience: { wholeSchool, classHubIds, groupIds, yearGroupId },
+        audienceLabel: labelParts.join(' · ') || head.targetClass,
+        // When parents were actually told. NULL means it has not gone out yet —
+        // read with scheduledAt, this distinguishes queued from sent without
+        // Desk having to compare a date to the clock.
+        sentAt: head.notifiedAt ? head.notifiedAt.toISOString() : null,
+        scheduledAt: head.scheduledAt ? head.scheduledAt.toISOString() : null,
+        createdAt: head.createdAt.toISOString(),
+        // Summed across the fan-out rows, so a three-class broadcast reports
+        // the acknowledgements for the whole thing.
+        ackCount: members.reduce((n, m) => n + m._count.acknowledgments, 0),
+      }
+    })
+
+    res.json({ messages })
+  } catch (error) {
+    // Never an empty list on failure: Desk's original read swallowed a 404 into
+    // [] and told a school with total confidence that nothing had ever been
+    // sent to parents. An error must be an error on this side too.
+    console.error('Error building partner school messages:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 router.get('/messages/sent', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
