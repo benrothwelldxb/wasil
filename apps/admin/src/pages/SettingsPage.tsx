@@ -103,11 +103,27 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
 
-  useEffect(() => {
+  const load = () =>
     api.schoolSettings.get()
-      .then(s => { setSettings(s); setLoading(false) })
+      .then(s => { setSettings(s); setDirty(false); setLoading(false) })
       .catch(err => { toast.error(err.message || 'Failed to load settings'); setLoading(false) })
-  }, [])
+
+  useEffect(() => { load() }, [])
+
+  // Nothing on this page takes effect until Save, and the button sits at the
+  // top of a long page — so by the time you have changed something near the
+  // bottom it is well off screen. Warn before the change is lost.
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+
+  const discard = async () => {
+    setLoading(true)
+    await load()
+  }
 
   const updateField = <K extends keyof SchoolSettings>(key: K, value: SchoolSettings[K]) => {
     setSettings(prev => prev ? { ...prev, [key]: value } : prev)
@@ -147,7 +163,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-6 pb-28">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-800">School Settings</h1>
@@ -302,6 +318,37 @@ export function SettingsPage() {
       <BottomNavSection settings={settings} onChange={keys => updateField('bottomNavItems', keys)} />
 
       <TestAccountsSection />
+
+      {/* The page is long and nothing applies until Save, so the moment
+          something is unsaved the action follows you rather than staying at
+          the top where it cannot be seen from the controls that need it. */}
+      {dirty && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
+          <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+            <p className="text-sm font-semibold text-slate-700">
+              Unsaved changes — these won't apply until you save.
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={discard}
+                disabled={saving}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+              >
+                Discard
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-5 py-2.5 rounded-xl text-white text-sm font-bold flex items-center gap-2 disabled:opacity-60"
+                style={{ backgroundColor: '#C4506E' }}
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -341,6 +388,11 @@ function BottomNavSection({ settings, onChange }: { settings: SchoolSettings; on
           const current = slots[i]
           // Offer available items not already used in another slot (plus the current one).
           const options = available.filter(item => item.key === current || !slots.some((s, j) => j !== i && s === item.key))
+          // A slot can hold a destination whose module has since been switched
+          // off. It is not in `available`, so without this the select has no
+          // matching option and the browser silently shows "Default" — the
+          // admin sees their choice replaced by a default they cannot correct.
+          const currentUnavailable = !!current && !available.some(item => item.key === current)
           return (
             <div key={i}>
               <label className="block text-xs font-semibold text-slate-500 mb-1">Slot {i + 1}</label>
@@ -350,10 +402,18 @@ function BottomNavSection({ settings, onChange }: { settings: SchoolSettings; on
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pink-200"
               >
                 <option value="">Default</option>
+                {currentUnavailable && (
+                  <option value={current}>{labelFor(current)} — module turned off</option>
+                )}
                 {options.map(item => (
                   <option key={item.key} value={item.key}>{labelFor(item.key)}</option>
                 ))}
               </select>
+              {currentUnavailable && (
+                <p className="text-xs text-amber-700 mt-1">
+                  Parents won't see this: turn the module back on, or pick something else.
+                </p>
+              )}
             </div>
           )
         })}
