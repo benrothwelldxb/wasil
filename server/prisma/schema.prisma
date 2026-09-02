@@ -151,6 +151,7 @@ model School {
   // Google Calendar integration
   googleCalendarRefreshToken String?
   googleCalendarEmail        String?
+  transportAssignments TransportAssignment[]
 }
 
 // Users (Parents, Staff & Admins)
@@ -390,6 +391,7 @@ model Student {
 
   @@unique([schoolId, externalId])
   @@index([schoolId, classId])
+  transportAssignments TransportAssignment[]
 }
 
 // Junction table: Parent-Student link
@@ -990,6 +992,10 @@ enum AuditResourceType {
   // inbox's explicit `?scope=school` audit sweep. Oversight is a deliberate,
   // logged act — not the default inbox view.
   CONVERSATION
+  // A School Services registration changed hands — chiefly payment state marked
+  // from Desk, where the accounts team works and has no Connect session to
+  // trace back to.
+  SCHOOL_SERVICE
 }
 
 model AuditLog {
@@ -1727,7 +1733,12 @@ model SchoolService {
   registrationCloses  DateTime?
   serviceStarts       String? // Date string
   serviceEnds         String? // Date string
-  location            String?
+  location            String? // Where the service runs
+  // Where a parent collects their child afterwards, when that is somewhere
+  // other than where it runs — the gate rather than the hall. Shown to a parent
+  // only once their place is confirmed, because it is what they need on the day
+  // and noise before then.
+  collectionLocation  String?
   staffName           String? // Who runs it
   imageUrl            String?
   sortOrder           Int                   @default(0)
@@ -2289,6 +2300,53 @@ model Provider {
 /// three terms a year is three activity rows, and holding the name and logo on
 /// the activity would mean re-uploading the same logo every term and watching
 /// them drift apart.
+/// A child's bus arrangement for one leg of the day, as pushed by Desk.
+///
+/// Deliberately FLAT. Routes and stops are not modelled as entities here: a
+/// stop table would be a queryable directory of the home address of every child
+/// in the school, which is precisely the artefact worth not having. One row per
+/// (student, leg) means an address exists only as many times as children are
+/// collected from it, and there is no shape to enumerate. See docs/adr/0001.
+///
+/// Desk is the system of record. Connect stores and displays, and shows it to
+/// the child's own guardians and to nobody else — there is no staff-facing
+/// transport surface in Connect at all.
+model TransportAssignment {
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  studentId String
+  // Cascade, not SetNull: a child who leaves takes their address with them.
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  leg       TransportLeg
+
+  routeName String
+  routeCode String?
+  /// The pickup/drop-off point. Door-to-door collection means this is in
+  /// practice a home address, which is why nothing here is staff-readable.
+  stopName  String
+  /// "06:52" — local time, as the driver and the parent read it. Never a
+  /// timestamp: this is a clock time on a route, not an instant.
+  timeLocal String
+
+  /// Set by Desk when the stop name must not be shown to guardians — chiefly a
+  /// separated family where one parent's address would otherwise be disclosed
+  /// to the other. Route and time still show. Connect cannot judge this: it
+  /// holds no household data, and the school does.
+  hideStopName Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([studentId, leg])
+  @@index([schoolId, leg])
+}
+
+enum TransportLeg {
+  AM
+  PM
+}
+
 model ClubOperator {
   id         String        @id @default(cuid())
   name       String

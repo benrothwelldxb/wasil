@@ -137,6 +137,7 @@ interface FormState {
   eligibleClasses: string[]
   eligibleYears: string[]
   location: string
+  collectionLocation: string
   staffName: string
   serviceStarts: string
   serviceEnds: string
@@ -151,7 +152,7 @@ const emptyForm: FormState = {
   costPerSession: '', costPerWeek: '', costPerTerm: '', costDescription: '',
   costIsFrom: false, currency: 'AED', paymentMethod: '', paymentUrl: '',
   capacity: '', eligibleClasses: [], eligibleYears: [],
-  location: '', staffName: '', serviceStarts: '', serviceEnds: '',
+  location: '', collectionLocation: '', staffName: '', serviceStarts: '', serviceEnds: '',
   featuredOnDashboard: false, featuredUntil: '',
 }
 
@@ -229,6 +230,7 @@ export function SchoolServicesPage() {
       eligibleClasses: service.eligibleClasses || [],
       eligibleYears: service.eligibleYears || [],
       location: service.location || '',
+      collectionLocation: service.collectionLocation || '',
       staffName: service.staffName || '',
       serviceStarts: service.serviceStarts || '',
       serviceEnds: service.serviceEnds || '',
@@ -261,6 +263,7 @@ export function SchoolServicesPage() {
         eligibleClasses: form.eligibleClasses.length > 0 ? form.eligibleClasses : null,
         eligibleYears: form.eligibleYears.length > 0 ? form.eligibleYears : null,
         location: form.location || undefined,
+        collectionLocation: form.collectionLocation || undefined,
         staffName: form.staffName || undefined,
         serviceStarts: form.serviceStarts || undefined,
         serviceEnds: form.serviceEnds || undefined,
@@ -845,6 +848,19 @@ export function SchoolServicesPage() {
                 placeholder="Main Hall"
                 className={inputCls}
               />
+            </div>
+            <div>
+              <label className={labelCls}>Collection point</label>
+              <input
+                value={form.collectionLocation}
+                onChange={(e) => setForm((f) => ({ ...f, collectionLocation: e.target.value }))}
+                placeholder="Side gate"
+                className={inputCls}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Where parents collect afterwards, if that differs from where it runs. Shown to a
+                parent once their place is confirmed.
+              </p>
             </div>
             <div>
               <label className={labelCls}>Staff Name</label>

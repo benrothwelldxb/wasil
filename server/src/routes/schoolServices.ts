@@ -100,7 +100,14 @@ router.get('/parent/my-registrations', isAuthenticated, async (req, res) => {
         status: { not: 'CANCELLED' },
       },
       include: {
-        service: { select: { name: true, startTime: true, endTime: true, days: true } },
+        service: {
+          select: {
+            name: true, startTime: true, endTime: true, days: true,
+            location: true, collectionLocation: true, staffName: true,
+            costDescription: true, costPerSession: true, currency: true, paymentMethod: true,
+            paymentUrl: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -109,6 +116,19 @@ router.get('/parent/my-registrations', isAuthenticated, async (req, res) => {
       registrations.map((r) => ({
         ...serializeRegistration(r),
         serviceName: r.service.name,
+        startTime: r.service.startTime,
+        endTime: r.service.endTime,
+        location: r.service.location,
+        // Where to collect afterwards. Only meaningful once the place is
+        // confirmed, and the parent app gates it on that rather than the API
+        // hiding it — an admin looking at the same data should see the whole row.
+        collectionLocation: r.service.collectionLocation,
+        staffName: r.service.staffName,
+        costDescription: r.service.costDescription,
+        costPerSession: r.service.costPerSession,
+        currency: r.service.currency,
+        paymentMethod: r.service.paymentMethod,
+        paymentUrl: r.service.paymentUrl,
       }))
     )
   } catch (error) {
@@ -398,7 +418,7 @@ router.post('/', isAdmin, async (req, res) => {
       costPerSession, costPerWeek, costPerTerm, costDescription,
       capacity, eligibleClasses, eligibleYears, status,
       registrationOpens, registrationCloses, serviceStarts, serviceEnds,
-      location, staffName, imageUrl, sortOrder,
+      location, collectionLocation, staffName, imageUrl, sortOrder,
       featuredOnDashboard, featuredUntil,
     } = req.body
 
@@ -424,6 +444,7 @@ router.post('/', isAdmin, async (req, res) => {
         serviceStarts: serviceStarts || null,
         serviceEnds: serviceEnds || null,
         location: location || null,
+        collectionLocation: collectionLocation || null,
         staffName: staffName || null,
         imageUrl: imageUrl || null,
         sortOrder: sortOrder || 0,
@@ -490,7 +511,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       costPerSession, costPerWeek, costPerTerm, costDescription,
       capacity, eligibleClasses, eligibleYears,
       registrationOpens, registrationCloses, serviceStarts, serviceEnds,
-      location, staffName, imageUrl, sortOrder,
+      location, collectionLocation, staffName, imageUrl, sortOrder,
       featuredOnDashboard, featuredUntil,
     } = req.body
 
@@ -513,6 +534,7 @@ router.put('/:id', isAdmin, async (req, res) => {
     if (serviceStarts !== undefined) data.serviceStarts = serviceStarts || null
     if (serviceEnds !== undefined) data.serviceEnds = serviceEnds || null
     if (location !== undefined) data.location = location || null
+    if (collectionLocation !== undefined) data.collectionLocation = collectionLocation || null
     if (staffName !== undefined) data.staffName = staffName || null
     if (imageUrl !== undefined) data.imageUrl = imageUrl || null
     if (sortOrder !== undefined) data.sortOrder = sortOrder

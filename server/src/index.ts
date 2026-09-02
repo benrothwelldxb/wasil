@@ -59,6 +59,7 @@ import providerAuthRoutes from './routes/providerAuth.js'
 import providersRoutes from './routes/providers.js'
 import providerPortalRoutes from './routes/providerPortal.js'
 import clubsRoutes from './routes/clubs.js'
+import transportRoutes from './routes/transport.js'
 import timetableRoutes from './routes/timetable.js'
 import testAccountsRoutes from './routes/testAccounts.js'
 import prisma from './services/prisma.js'
@@ -203,6 +204,7 @@ app.use('/provider/auth', providerAuthRoutes)
 app.use('/api/providers', providersRoutes)
 app.use('/api/provider-portal', providerPortalRoutes)
 app.use('/api/clubs', clubsRoutes)
+app.use('/api/transport', transportRoutes)
 // Partner API — narrow, count-only surface for external Wasil apps (Desk),
 // authenticated by a Bearer partner token (not a Connect session / Hub JWT).
 // Mounted ahead of the general partner router so the communication surface is
