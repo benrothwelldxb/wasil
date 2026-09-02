@@ -2641,6 +2641,31 @@ export const providerPortalAdmin = {
     }),
 }
 
+// ─── Admin Notices (parent-facing) ───────────────────────────────────────────
+// Messages from a school department — clinic, accounts — kept out of the feed
+// and filed in their own section. The email that announces one deliberately
+// carries no content, so this is the only place to actually read it.
+export interface AdminNotice {
+  id: string
+  title: string
+  content: string
+  /** Shown in place of the sender's name, e.g. "School Clinic". */
+  department: string | null
+  isUrgent: boolean
+  createdAt: string
+  /** Arrived since the parent last opened the section. */
+  isNew: boolean
+  attachments: Array<{ id: string; fileName: string; fileUrl: string; fileType: string; fileSize: number }>
+}
+export interface AdminNoticesResponse { lastSeenAt: string | null; notices: AdminNotice[] }
+
+export const adminNotices = {
+  list: () => fetchApi<AdminNoticesResponse>('/api/messages/notices'),
+  unseenCount: () => fetchApi<{ count: number }>('/api/messages/notices/unseen-count'),
+  /** Stamped when the section is opened — this is what clears the homepage bar. */
+  markSeen: () => fetchApi<{ message: string }>('/api/messages/notices/seen', { method: 'POST' }),
+}
+
 // ─── Transport (parent-facing) ───────────────────────────────────────────────
 // The only transport read in Connect, and it takes no arguments: it returns the
 // signed-in guardian's own children and nothing else. See docs/adr/0001.
@@ -2856,6 +2881,7 @@ export default {
   dashboard,
   clubs,
   transport,
+  adminNotices,
   timetable,
   events,
   schedule,

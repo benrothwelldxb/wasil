@@ -19,6 +19,7 @@ import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { sendNotification } from '../services/notify.js'
+import { signalAdminNotice } from '../services/adminNotices.js'
 import logger from '../services/logger.js'
 import { enqueuePush } from '../services/outbox.js'
 import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
@@ -1401,7 +1402,14 @@ function toIdArray(v: unknown): string[] {
 // fully. We mirror native behaviour exactly and leave the caveat as-is.
 router.post('/messages', requirePartner, async (req, res) => {
   try {
-    const { hub_user_id, title, content, audience, isUrgent, scheduledAt, expiresAt, attachments } = req.body ?? {}
+    const { hub_user_id, title, content, audience, isUrgent, scheduledAt, expiresAt, attachments, channel, department } = req.body ?? {}
+    // A department sending from Desk — the clinic, accounts — files its message
+    // under Admin Notices rather than the feed. Same targeting, same row; only
+    // where a parent finds it differs.
+    const isNotice = channel === 'ADMIN_NOTICE'
+    const noticeDepartment = isNotice && typeof department === 'string' && department.trim()
+      ? department.trim().slice(0, 60)
+      : null
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
@@ -1491,6 +1499,8 @@ router.post('/messages', requirePartner, async (req, res) => {
           scheduledAt: scheduledDate,
           // Live now → stamped; future-dated → null, and the sweep owes it.
           notifiedAt: broadcastLiveNow ? new Date() : null,
+          channel: isNotice ? 'ADMIN_NOTICE' : 'FEED',
+          department: noticeDepartment,
           expiresAt: expiresDate,
         },
       })
@@ -1511,21 +1521,36 @@ router.post('/messages', requirePartner, async (req, res) => {
       // future-dated broadcast is picked up by the publishScheduledMessages
       // sweep when its time arrives, and `notifiedAt` staying null is the marker.
       if (broadcastLiveNow) {
-        await sendNotification({
-          req,
-          type: 'MESSAGE',
-          title: cleanTitle,
-          body: safeContent.substring(0, 200),
-          resourceType: 'MESSAGE',
-          resourceId: message.id,
-          target: {
-            targetClass: t.targetClass,
-            classId: t.classId,
-            yearGroupId: t.yearGroupId,
-            groupId: t.groupId,
-            schoolId: actor.schoolId,
-          },
-        })
+        const target = {
+          targetClass: t.targetClass,
+          classId: t.classId,
+          yearGroupId: t.yearGroupId,
+          groupId: t.groupId,
+          schoolId: actor.schoolId,
+        }
+        if (isNotice) {
+          // Quiet in the app, but always signalled by email — that is what
+          // makes a section outside the feed discoverable. The email carries
+          // the department and nothing else, never the content.
+          await signalAdminNotice({ schoolId: actor.schoolId, department: noticeDepartment, target })
+          // Escalation is the sender's call: a whole-school health message
+          // pushes, a fee reminder does not.
+          if (isUrgent === true) {
+            await sendNotification({
+              req, type: 'MESSAGE',
+              title: noticeDepartment || 'Admin notice',
+              body: cleanTitle,
+              resourceType: 'MESSAGE', resourceId: message.id, target,
+            })
+          }
+        } else {
+          await sendNotification({
+            req, type: 'MESSAGE',
+            title: cleanTitle,
+            body: safeContent.substring(0, 200),
+            resourceType: 'MESSAGE', resourceId: message.id, target,
+          })
+        }
       }
     }
 

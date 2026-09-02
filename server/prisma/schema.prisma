@@ -217,6 +217,11 @@ model User {
   // history for parents who authenticated before it existed.
   lastSeenAt DateTime?
 
+  // When this parent last opened Admin Notices. The homepage bar counts notices
+  // newer than this. A timestamp rather than per-message read rows: the bar
+  // needs a count, not per-item state, and one column beats a table per read.
+  noticesLastSeenAt DateTime?
+
   // Onboarding: when an admin last sent this parent the "you've been added"
   // welcome email (the passwordless sign-in nudge). Null = never invited.
   // Re-sending updates it; used by admin UI to show invite status.
@@ -497,6 +502,16 @@ model Message {
   actionDueDate DateTime?
   actionAmount  String?
 
+  /// Where this lands for a parent. FEED is an ordinary post. ADMIN_NOTICE is
+  /// a message from a school department — the clinic, accounts — which is kept
+  /// out of the feed and filed in its own section, because a fee reminder and a
+  /// medication note are not news and should not compete with it.
+  channel     MessageChannel @default(FEED)
+  /// Which desk it came from, e.g. "School Clinic". Shown to parents in place
+  /// of the sender's name; the sender is still recorded on senderId, so the
+  /// audit trail knows the person while the parent sees the department.
+  department  String?
+
   // Message flags
   isPinned               Boolean @default(false)
   isUrgent               Boolean @default(false)
@@ -529,6 +544,9 @@ model Message {
 
   // The publishScheduledMessages sweep filters on exactly this pair.
   @@index([notifiedAt, scheduledAt])
+  // Both parent reads filter on it: the feed excludes notices, the notices
+  // section is only notices.
+  @@index([schoolId, channel])
   @@index([schoolId, createdAt])
   @@index([classId])
   @@index([yearGroupId])
@@ -543,6 +561,11 @@ model MessageAttachment {
   fileType  String // "image/jpeg", "application/pdf", etc.
   fileSize  Int // bytes
   createdAt DateTime @default(now())
+}
+
+enum MessageChannel {
+  FEED
+  ADMIN_NOTICE
 }
 
 model MessageAcknowledgment {

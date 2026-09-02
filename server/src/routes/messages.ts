@@ -6,6 +6,7 @@ import { isAuthenticated, isAdmin, isStaff, canSendToTarget, canMarkUrgent, load
 import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
+import { signalAdminNotice, unseenNoticeCount } from '../services/adminNotices.js'
 import { translateTexts } from '../services/translation.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
@@ -30,6 +31,8 @@ const createMessageSchema = z.object({
   scheduledAt: z.string().optional(),
   expiresAt: z.string().optional(),
   formId: z.string().optional(),
+  channel: z.enum(['FEED', 'ADMIN_NOTICE']).optional(),
+  department: z.string().max(60).optional(),
   attachments: z.array(z.object({
     fileName: z.string(),
     fileUrl: z.string(),
@@ -109,6 +112,9 @@ router.get('/', isAuthenticated, async (req, res) => {
     const messages = await prisma.message.findMany({
       where: {
         schoolId: user.schoolId,
+        // Admin Notices live in their own section. A fee reminder and a
+        // medication note are not news and should not compete with it.
+        channel: 'FEED',
         OR: [
           { targetClass: 'Whole School' },
           { classId: { in: childClassIds } },
@@ -241,6 +247,99 @@ router.get('/', isAuthenticated, async (req, res) => {
 })
 
 // Get all messages (admin)
+// ─── Admin Notices (parent-facing) ───────────────────────────────────────────
+// The section notices live in, kept out of GET / on purpose. Same audience
+// rules as the feed — a notice is targeted exactly like a post.
+router.get('/notices', isAuthenticated, async (req, res) => {
+  try {
+    const user = (await loadUserWithRelations(req.user!.id))!
+    const childClassIds = [...new Set([
+      ...(user.children?.map(c => c.classId) || []),
+      ...(user.studentLinks?.map(l => l.student.classId).filter((id): id is string => !!id) || []),
+    ])]
+    const studentIds = user.studentLinks?.map(l => l.studentId) || []
+    const now = new Date()
+
+    const childClasses = childClassIds.length > 0
+      ? await prisma.class.findMany({ where: { id: { in: childClassIds } }, select: { yearGroupId: true } })
+      : []
+    const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
+
+    const childGroupLinks = studentIds.length > 0
+      ? await prisma.studentGroupLink.findMany({ where: { studentId: { in: studentIds } }, select: { groupId: true } })
+      : []
+    const childGroupIds = [...new Set(childGroupLinks.map(l => l.groupId))]
+
+    const notices = await prisma.message.findMany({
+      where: {
+        schoolId: user.schoolId,
+        channel: 'ADMIN_NOTICE',
+        OR: [
+          { targetClass: 'Whole School' },
+          { classId: { in: childClassIds } },
+          ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
+          ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
+        ],
+        AND: [
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+          { OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] },
+        ],
+      },
+      include: { attachments: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    })
+
+    const lastSeenAt = user.noticesLastSeenAt ?? null
+    res.json({
+      lastSeenAt: lastSeenAt ? lastSeenAt.toISOString() : null,
+      notices: notices.map(n => ({
+        id: n.id,
+        title: n.title,
+        content: n.content,
+        // What a parent sees in place of the sender's name.
+        department: n.department,
+        isUrgent: n.isUrgent,
+        createdAt: n.createdAt.toISOString(),
+        // Newer than the last visit — the bar counted these.
+        isNew: !lastSeenAt || n.createdAt > lastSeenAt,
+        attachments: n.attachments.map(a => ({
+          id: a.id, fileName: a.fileName, fileUrl: a.fileUrl, fileType: a.fileType, fileSize: a.fileSize,
+        })),
+      })),
+    })
+  } catch (error) {
+    console.error('Error fetching admin notices:', error)
+    // Never degrade to an empty list: "no notices" and "we could not load your
+    // notices" must not look the same when one of them is from the clinic.
+    res.status(500).json({ error: 'Failed to fetch notices' })
+  }
+})
+
+// How many notices this parent has not seen — drives the homepage bar.
+router.get('/notices/unseen-count', isAuthenticated, async (req, res) => {
+  try {
+    res.json({ count: await unseenNoticeCount(req.user!.id) })
+  } catch (error) {
+    console.error('Error counting unseen notices:', error)
+    res.status(500).json({ error: 'Failed to count notices' })
+  }
+})
+
+// Stamped when the parent opens the section, which is what clears the bar.
+router.post('/notices/seen', isAuthenticated, async (req, res) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { noticesLastSeenAt: new Date() },
+    })
+    res.json({ message: 'Marked as seen' })
+  } catch (error) {
+    console.error('Error marking notices seen:', error)
+    res.status(500).json({ error: 'Failed to mark as seen' })
+  }
+})
+
 router.get('/all', isAdmin, async (req, res) => {
   try {
     const user = req.user!
@@ -315,7 +414,8 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMarkUrgent, async (req, res) => {
   try {
     const user = req.user!
-    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, requiresAcknowledgment, scheduledAt, expiresAt, formId, attachments } = req.body
+    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, requiresAcknowledgment, scheduledAt, expiresAt, formId, attachments, channel, department } = req.body
+    const isNotice = channel === 'ADMIN_NOTICE'
 
     // Staff cannot pin messages (only admin)
     const canPin = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
@@ -348,6 +448,8 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
         // Stamped now for a live post; left null for a future-dated one so the
         // publishScheduledMessages sweep knows it still owes an announcement.
         notifiedAt: liveNow ? new Date() : null,
+        channel: isNotice ? 'ADMIN_NOTICE' : 'FEED',
+        department: isNotice && typeof department === 'string' && department.trim() ? department.trim() : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         formId: formId || null,
       },
@@ -382,8 +484,22 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
 
     logAudit({ req, action: 'CREATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title, attachmentCount: createdAttachments.length } })
 
+    const target = { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId }
+
     if (liveNow) {
-      sendNotification({ req, type: 'MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'MESSAGE', resourceId: message.id, target: { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId } })
+      if (isNotice) {
+        // A notice is quiet in the app by design — it does not push unless the
+        // sender escalated it (a whole-school health message, say). What it
+        // always does is email, so the section is discoverable without the
+        // content ever leaving the app.
+        signalAdminNotice({ schoolId: user.schoolId, department: message.department, target })
+          .catch(err => console.error('Admin notice signal failed:', err))
+        if (isUrgent) {
+          sendNotification({ req, type: 'MESSAGE', title: message.department || 'Admin notice', body: message.title, resourceType: 'MESSAGE', resourceId: message.id, target })
+        }
+      } else {
+        sendNotification({ req, type: 'MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'MESSAGE', resourceId: message.id, target })
+      }
     }
 
     res.status(201).json({
