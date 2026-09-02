@@ -731,11 +731,26 @@ describe('syncSchoolFromHub — a guardian who changed their email', () => {
     expect(summary.guardians.emailUpdated).toBe(0)
   })
 
-  // The address is a login credential. Re-keying one on an account someone
-  // actually signs into belongs to a person, not a nightly job.
+  // A parent who has signed in still converges: they sign in with a code sent
+  // to that address, so following Hub is how they KEEP access. Refusing would
+  // send their codes to an address they have stopped reading.
+  it.each([
+    ['a recorded login', { lastLoginAt: new Date('2026-08-01') }],
+    ['a live refresh token', {}],
+  ])('still moves the address for a code-based parent — %s', async (label, over) => {
+    linkAs(provisionedAccount(over))
+    if (label === 'a live refresh token') prismaMock.refreshToken.findFirst.mockResolvedValue({ id: 'rt-1' })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.user.update.mock.calls[0][0].data.email).toBe('ness@nessdealmaker.com')
+    expect(summary.guardians.emailUpdated).toBe(1)
+  })
+
+  // A credential that is NOT the email address is a different matter: moving it
+  // could break or misdirect a way in that does not run through the mailbox.
   it.each([
     ['a password set', { passwordHash: 'argon2...' }],
-    ['a recorded login', { lastLoginAt: new Date('2026-08-01') }],
     ['a Google identity', { googleId: 'g-1' }],
     ['Hub staff SSO', { hubUserId: 'hu-1' }],
   ])('leaves it alone and reports the conflict — %s', async (_label, over) => {
@@ -753,16 +768,6 @@ describe('syncSchoolFromHub — a guardian who changed their email', () => {
         reason: 'account_has_login',
       },
     ])
-  })
-
-  it('a live refresh token counts as having logged in', async () => {
-    linkAs(provisionedAccount())
-    prismaMock.refreshToken.findFirst.mockResolvedValue({ id: 'rt-1' })
-
-    const summary = await syncSchoolFromHub('connect-school-1')
-
-    expect(prismaMock.user.update.mock.calls[0][0].data).not.toHaveProperty('email')
-    expect(summary.guardians.emailConflicts[0].reason).toBe('account_has_login')
   })
 
   // User.email is unique across the whole database, not per school — this is

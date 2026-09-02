@@ -120,8 +120,13 @@ export function ParentsPage() {
   const [parentsPage, setParentsPage] = useState(1)
   const [signInFilter, setSignInFilter] = useState<'all' | 'never' | 'signed-in'>('all')
   const [nudgeAllConfirm, setNudgeAllConfirm] = useState(false)
+  const [nudgePreview, setNudgePreview] = useState<{ subject: string; html: string; recipientCount: number } | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
   const [nudging, setNudging] = useState(false)
   const [nudgingFor, setNudgingFor] = useState<string | null>(null)
+  const [editEmailFor, setEditEmailFor] = useState<{ id: string; name: string; email: string } | null>(null)
+  const [newEmail, setNewEmail] = useState('')
+  const [savingEmail, setSavingEmail] = useState(false)
   const [inviteAllConfirm, setInviteAllConfirm] = useState(false)
   const [sendingInvites, setSendingInvites] = useState(false)
   const [sendingInviteFor, setSendingInviteFor] = useState<string | null>(null)
@@ -225,6 +230,36 @@ export function ParentsPage() {
     }
   }
 
+  // Nobody should email fifty families without having read the email.
+  const openNudgeAll = async () => {
+    setLoadingPreview(true)
+    setNudgeAllConfirm(true)
+    try {
+      setNudgePreview(await api.parentInvitations.nudgePreview())
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not load the preview')
+      setNudgeAllConfirm(false)
+    } finally {
+      setLoadingPreview(false)
+    }
+  }
+
+  const handleChangeEmail = async () => {
+    if (!editEmailFor) return
+    setSavingEmail(true)
+    try {
+      const result = await api.parentInvitations.changeParentEmail(editEmailFor.id, newEmail.trim())
+      toast.success(result.message)
+      setEditEmailFor(null)
+      setNewEmail('')
+      refetchParents()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to change email')
+    } finally {
+      setSavingEmail(false)
+    }
+  }
+
   const handleNudgeAll = async () => {
     setNudging(true)
     try {
@@ -236,6 +271,7 @@ export function ParentsPage() {
             (result.skippedNoEmail > 0 ? ` · ${result.skippedNoEmail} skipped, no email` : ''),
       )
       setNudgeAllConfirm(false)
+      setNudgePreview(null)
       refetchParents()
     } catch (error) {
       toast.error(`Failed to send nudges: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -511,7 +547,7 @@ export function ParentsPage() {
             </button>
             {(signInCounts?.neverSignedIn ?? 0) > 0 && (
               <button
-                onClick={() => setNudgeAllConfirm(true)}
+                onClick={openNudgeAll}
                 className="flex items-center space-x-2 px-4 py-2 text-sm font-medium rounded-lg text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors"
                 title="Email everyone who has never signed in"
               >
@@ -588,7 +624,15 @@ export function ParentsPage() {
                         <span className="text-sm font-medium text-gray-900">{parent.name || '-'}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{parent.email}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      <button
+                        onClick={() => { setEditEmailFor({ id: parent.id, name: parent.name, email: parent.email }); setNewEmail(parent.email) }}
+                        className="text-left hover:text-blue-700 hover:underline"
+                        title="Change this parent's email"
+                      >
+                        {parent.email}
+                      </button>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {parent.children.length > 0 ? (
@@ -843,15 +887,91 @@ export function ParentsPage() {
         />
       )}
 
+      {editEmailFor && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-5 w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold text-gray-900">Change email</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              {editEmailFor.name} signs in with this address, so changing it changes where their
+              sign-in codes go. Any unused code or link sent to the old address stops working.
+            </p>
+            <input
+              type="email"
+              value={newEmail}
+              onChange={e => setNewEmail(e.target.value)}
+              className="w-full mt-3 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="name@example.com"
+              autoFocus
+            />
+            <p className="text-xs text-gray-400 mt-1">Was {editEmailFor.email}</p>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => { setEditEmailFor(null); setNewEmail('') }}
+                className="px-4 py-2 text-sm font-medium text-gray-600 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleChangeEmail}
+                disabled={savingEmail || !newEmail.trim() || newEmail.trim() === editEmailFor.email}
+                className="px-4 py-2 text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              >
+                {savingEmail ? 'Saving…' : 'Change email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {nudgeAllConfirm && (
-        <ConfirmModal
-          title={`Nudge ${signInCounts?.neverSignedIn ?? 0} parents?`}
-          message={`This emails every parent who has never signed in — telling them what they've missed and how to get in. Parents who have signed in are not contacted, even if they were never formally invited. Parents with no email on file are skipped.`}
-          confirmLabel={nudging ? 'Sending...' : 'Send nudges'}
-          isLoading={nudging}
-          onConfirm={handleNudgeAll}
-          onCancel={() => setNudgeAllConfirm(false)}
-        />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="p-5 border-b border-slate-200">
+              <h3 className="text-lg font-bold text-gray-900">
+                Nudge {nudgePreview?.recipientCount ?? signInCounts?.neverSignedIn ?? 0} parents?
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Goes to every parent who has never signed in. Parents who have signed in are not
+                contacted, even if they were never formally invited, and parents with no email are
+                skipped.
+              </p>
+              {nudgePreview && (
+                <p className="text-sm text-gray-700 mt-2">
+                  <span className="font-medium">Subject:</span> {nudgePreview.subject}
+                </p>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-auto bg-slate-100 p-4">
+              {loadingPreview && <p className="text-sm text-gray-500">Loading the email…</p>}
+              {nudgePreview && (
+                // The real rendered email, from the same builder that sends it.
+                <iframe
+                  title="Nudge email preview"
+                  srcDoc={nudgePreview.html}
+                  sandbox=""
+                  className="w-full h-[420px] bg-white rounded border border-slate-200"
+                />
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
+              <button
+                onClick={() => { setNudgeAllConfirm(false); setNudgePreview(null) }}
+                className="px-4 py-2 text-sm font-medium text-gray-600 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleNudgeAll}
+                disabled={nudging || loadingPreview}
+                className="px-4 py-2 text-sm font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
+              >
+                {nudging ? 'Sending…' : `Send to ${nudgePreview?.recipientCount ?? ''} parents`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {signInCodeFor && (

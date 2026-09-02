@@ -288,7 +288,7 @@ Powered by ${appName}`
  * `missedCount` is what makes it land. Where the number is unknown, the copy
  * falls back to a plainer line rather than inventing one.
  */
-export async function sendParentNudgeEmail({
+export function buildParentNudgeEmail({
   to,
   schoolName,
   missedCount,
@@ -304,7 +304,7 @@ export async function sendParentNudgeEmail({
   appUrl?: string
   schoolLogoUrl?: string
   wasilLogoUrl?: string
-}): Promise<boolean> {
+}): { subject: string; html: string; text: string } {
   const subject = `You're missing out on updates from ${schoolName}`
   const BURGUNDY = '#7F0029'
 
@@ -377,7 +377,16 @@ Already tried and got stuck? Reply to this email and the school office will help
 
 Powered by ${appName}`
 
-  return sendEmail({ to, subject, html, text })
+  return { subject, html, text }
+}
+
+/** Sends exactly what `buildParentNudgeEmail` renders — the admin preview calls
+ *  the builder directly, so what is previewed is what is sent. */
+export async function sendParentNudgeEmail(
+  params: Parameters<typeof buildParentNudgeEmail>[0],
+): Promise<boolean> {
+  const { subject, html, text } = buildParentNudgeEmail(params)
+  return sendEmail({ to: params.to, subject, html, text })
 }
 
 export async function sendInvitationEmail({

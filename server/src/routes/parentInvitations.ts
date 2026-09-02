@@ -152,9 +152,34 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
     else if (status === 'signed-in') where.id = { in: [...signedIn] }
 
     if (search) {
+      // Staff look a parent up by their child — "who are Alya Zaidi's parents"
+      // is the question, and the parent's own name is often the thing they are
+      // trying to find. So the child's name searches too.
+      const term = (search as string).trim()
+      // A full name has to match across two columns: "Alya Zaidi" is firstName
+      // Alya AND lastName Zaidi, and neither column contains the whole string.
+      const parts = term.split(/\s+/).filter(Boolean)
+      const studentMatch =
+        parts.length > 1
+          ? {
+              AND: [
+                { firstName: { contains: parts[0], mode: 'insensitive' } },
+                { lastName: { contains: parts[parts.length - 1], mode: 'insensitive' } },
+              ],
+            }
+          : {
+              OR: [
+                { firstName: { contains: term, mode: 'insensitive' } },
+                { lastName: { contains: term, mode: 'insensitive' } },
+              ],
+            }
+
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
+        { name: { contains: term, mode: 'insensitive' } },
+        { email: { contains: term, mode: 'insensitive' } },
+        { studentLinks: { some: { student: studentMatch } } },
+        // The legacy Child rows hold one `name` column rather than two.
+        { children: { some: { name: { contains: term, mode: 'insensitive' } } } },
       ]
     }
 
@@ -260,6 +285,65 @@ router.delete('/parents/:id', isAdmin, async (req: Request, res: Response) => {
 })
 
 // Set a new password for a parent (admin)
+// Change a parent's email deliberately, as a person rather than a nightly job.
+//
+// The Hub sync converges most addresses on its own, but declines where the
+// account has a credential that is not its email — a password, OAuth, Hub SSO —
+// because moving it there could break a way in that does not run through the
+// mailbox. That is exactly the case this exists for, plus the case where the
+// school simply needs it now rather than at the next sync.
+router.post('/parents/:id/email', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const raw = (req.body as { email?: unknown })?.email
+    const email = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'A valid email address is required' })
+    }
+
+    const parent = await prisma.user.findFirst({
+      where: { id: req.params.id, schoolId: user.schoolId, role: 'PARENT' },
+      select: { id: true, email: true, name: true },
+    })
+    if (!parent) return res.status(404).json({ error: 'Parent not found' })
+    if (parent.email.toLowerCase() === email) {
+      return res.json({ message: 'That is already their address', email: parent.email })
+    }
+
+    // User.email is unique across the whole database, not per school, so this
+    // has to be a global check — and a clear 409 beats a raw constraint error.
+    const taken = await prisma.user.findFirst({ where: { email }, select: { id: true } })
+    if (taken) {
+      return res.status(409).json({ error: 'Another account already uses that email address' })
+    }
+
+    const previousEmail = parent.email
+    await prisma.user.update({ where: { id: parent.id }, data: { email } })
+
+    // The address is how this parent signs in, so any code or link already sent
+    // to the old one must stop working — otherwise the previous mailbox keeps a
+    // usable way in.
+    await Promise.all([
+      prisma.magicLinkToken.deleteMany({ where: { email: previousEmail } }),
+      prisma.loginCode.deleteMany({ where: { email: previousEmail, consumedAt: null } }),
+    ])
+
+    logAudit({
+      req,
+      action: 'UPDATE',
+      resourceType: 'USER',
+      resourceId: parent.id,
+      metadata: { action: 'change-parent-email' },
+      changes: { email: { from: previousEmail, to: email } },
+    })
+
+    res.json({ message: `Email updated to ${email}`, email })
+  } catch (error) {
+    console.error('Error changing parent email:', error)
+    res.status(500).json({ error: 'Failed to change email' })
+  }
+})
+
 router.post('/parents/:id/set-password', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!
@@ -392,6 +476,36 @@ router.post('/parents/:id/sign-in-code', isAdmin, async (req: Request, res: Resp
 // Pass `parentUserIds` to chase a chosen few, or omit it to chase everyone who
 // has never signed in. Never-signed-in is recomputed here rather than trusted
 // from the client, so a stale page cannot email someone who has since got in.
+// What the nudge will actually say, before anyone sends it to fifty families.
+// Renders through the SAME builder the send uses, so the preview cannot drift
+// from what goes out — and reports who would receive it.
+router.get('/nudge/preview', isAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!
+    const { neverSignedIn } = await parentsBySignInStatus(user.schoolId)
+
+    const [school, recipients, missedCount] = await Promise.all([
+      prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true } }),
+      prisma.user.count({
+        where: { id: { in: [...neverSignedIn] }, isTest: false, email: { not: '' } },
+      }),
+      prisma.message.count({ where: { schoolId: user.schoolId, notifiedAt: { not: null } } }),
+    ])
+
+    const { buildParentNudgeEmail } = await import('../services/email.js')
+    const { subject, html } = buildParentNudgeEmail({
+      to: 'preview@example.com',
+      schoolName: school?.name || 'School',
+      missedCount,
+    })
+
+    res.json({ subject, html, recipientCount: recipients, missedCount })
+  } catch (error) {
+    console.error('Error building nudge preview:', error)
+    res.status(500).json({ error: 'Failed to build preview' })
+  }
+})
+
 router.post('/nudge', isAdmin, async (req: Request, res: Response) => {
   try {
     const user = req.user!

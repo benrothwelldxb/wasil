@@ -1347,6 +1347,12 @@ export const parentInvitations = {
       method: 'POST',
       body: JSON.stringify({ parentUserIds }),
     }),
+  /** Exactly what the nudge will say, rendered by the same builder that sends
+   *  it, plus how many parents would receive it. */
+  nudgePreview: () =>
+    fetchApi<{ subject: string; html: string; recipientCount: number; missedCount: number }>(
+      '/api/parent-invitations/nudge/preview',
+    ),
   /** Chase parents who have never signed in. Omit ids to chase all of them.
    *  The server recomputes who qualifies, so a stale page cannot email a parent
    *  who has since got in. */
@@ -1359,6 +1365,13 @@ export const parentInvitations = {
     fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}`, { method: 'DELETE' }),
   resetParentPassword: (id: string) =>
     fetchApi<{ message: string; emailSent: boolean }>(`/api/parent-invitations/parents/${id}/reset-password`, { method: 'POST' }),
+  /** Change a parent's email deliberately. Invalidates any unused sign-in code
+   *  or magic link sent to the old address. */
+  changeParentEmail: (id: string, email: string) =>
+    fetchApi<{ message: string; email: string }>(`/api/parent-invitations/parents/${id}/email`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
   setParentPassword: (id: string, password: string) =>
     fetchApi<{ message: string }>(`/api/parent-invitations/parents/${id}/set-password`, {
       method: 'POST',
