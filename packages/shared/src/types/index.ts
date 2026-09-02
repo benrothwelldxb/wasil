@@ -1100,6 +1100,33 @@ export interface NotActivatedResponse {
   parents: NotActivatedParent[]
 }
 
+export interface UnreachableFamilyChild {
+  studentId: string
+  studentName: string
+  className: string | null
+}
+/**
+ * A household where NO guardian has ever signed in — the families worth
+ * chasing. A family that connected one of two guardians is reachable and is
+ * deliberately absent.
+ */
+export interface UnreachableFamiliesResponse {
+  families: Array<{
+    guardians: Array<{ userId: string; name: string; email: string }>
+    children: UnreachableFamilyChild[]
+  }>
+  /** Children with no guardian account at all — nobody to chase until someone
+   *  creates or links one, which is different work from the above. */
+  noGuardianAccount: UnreachableFamilyChild[]
+  summary: {
+    unreachableFamilies: number
+    childrenAffected: number
+    childrenWithNoGuardianAccount: number
+    /** Households with at least one guardian account, for the denominator. */
+    totalFamilies: number
+  }
+}
+
 // "Test Student" backdoor accounts (admin-only, school-scoped). One Test Parent
 // + Test Student per class; the parent signs in with TEST_LOGIN_CODE and sees
 // the real, live parent app for that class.

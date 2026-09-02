@@ -874,4 +874,103 @@ router.get('/not-activated', isAdmin, async (req, res) => {
   }
 })
 
+// GET /api/analytics/unreachable-families — the families nobody can reach.
+//
+// Distinct from /not-activated, which lists PARENTS and therefore includes the
+// second guardian of a family the school already reaches perfectly well. Plenty
+// of families deliberately connect one of two guardians; chasing those is noise
+// that buries the ones that matter.
+//
+// A family is a dead end when NO guardian linked to a child has ever signed in.
+// Grouped by the guardian set, so siblings are one family and one phone call
+// rather than two rows.
+router.get('/unreachable-families', isAdmin, async (req, res) => {
+  try {
+    const schoolId = req.user!.schoolId
+    const cacheKey = `unreachable-families:${schoolId}`
+    const cached = getCached(cacheKey)
+    if (cached) return res.json(cached)
+
+    const { activatedIds } = await loadParentActivation(schoolId)
+
+    const students = await prisma.student.findMany({
+      // Test Students would appear as permanently unreachable families and
+      // never come off the list.
+      where: { schoolId, isTest: false },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        class: { select: { name: true } },
+        parentLinks: {
+          select: { user: { select: { id: true, name: true, email: true } } },
+        },
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    })
+
+    type Child = { studentId: string; studentName: string; className: string | null }
+    const child = (s: (typeof students)[number]): Child => ({
+      studentId: s.id,
+      studentName: `${s.firstName} ${s.lastName}`.trim(),
+      className: s.class?.name ?? null,
+    })
+
+    // Two different problems, and different work to fix. A child with no
+    // guardian account at all has nobody to chase — someone has to create or
+    // link one first — so it is not merely a worse version of the other.
+    const noGuardianAccount: Child[] = []
+    const families = new Map<string, {
+      guardians: Array<{ userId: string; name: string; email: string }>
+      children: Child[]
+    }>()
+    const reachableFamilyKeys = new Set<string>()
+
+    for (const s of students) {
+      const guardians = s.parentLinks.map(l => l.user)
+      if (guardians.length === 0) {
+        noGuardianAccount.push(child(s))
+        continue
+      }
+      // Siblings share a guardian set, so it keys the household.
+      const key = guardians.map(g => g.id).sort().join('|')
+      if (guardians.some(g => activatedIds.has(g.id))) {
+        reachableFamilyKeys.add(key)
+        continue
+      }
+      const existing = families.get(key)
+      if (existing) {
+        existing.children.push(child(s))
+      } else {
+        families.set(key, {
+          guardians: guardians.map(g => ({ userId: g.id, name: g.name, email: g.email })),
+          children: [child(s)],
+        })
+      }
+    }
+
+    const familyList = [...families.values()].sort((a, b) =>
+      (a.children[0]?.studentName ?? '').localeCompare(b.children[0]?.studentName ?? ''),
+    )
+
+    const result = {
+      families: familyList,
+      noGuardianAccount,
+      summary: {
+        unreachableFamilies: familyList.length,
+        childrenAffected: familyList.reduce((n, f) => n + f.children.length, 0),
+        childrenWithNoGuardianAccount: noGuardianAccount.length,
+        // Denominator for "12 of 180" — households with at least one guardian.
+        totalFamilies: familyList.length + reachableFamilyKeys.size,
+      },
+    }
+
+    setCache(cacheKey, result)
+    res.json(result)
+  } catch (error) {
+    console.error('Error fetching unreachable families:', error)
+    res.status(500).json({ error: 'Failed to fetch unreachable families' })
+  }
+})
+
 export default router
