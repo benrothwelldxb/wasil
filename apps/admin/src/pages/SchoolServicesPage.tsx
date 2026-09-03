@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Plus, Edit2, Trash2, Users, Check, Clock, RefreshCw, MoreHorizontal,
 } from 'lucide-react'
@@ -164,19 +165,9 @@ export function SchoolServicesPage() {
   const [form, setForm] = useState<FormState>({ ...emptyForm })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isConfirmingAll, setIsConfirmingAll] = useState(false)
+  // Dismissal lives in RowActionsMenu now: the menu renders in a portal, so an
+  // "is the click inside it" test has to know about a node outside this tree.
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  // Dismiss the row menu on any click outside it — otherwise it survives a
-  // click meant for the row underneath.
-  useEffect(() => {
-    if (!openMenuId) return
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [openMenuId])
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
 
   const { data: services, refetch, isLoading } = useApi<SchoolService[]>(() => api.schoolServices.list(), [])
@@ -465,23 +456,14 @@ export function SchoolServicesPage() {
                         second legitimate next state (e.g. "Revert to Draft").
                         Everything available now lives in one menu. */}
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      <div className="relative inline-block">
-                        <button
-                          onClick={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
-                          className="p-1.5 rounded-warm-btn hover:bg-slate-100 text-warm-text-tertiary hover:text-warm-text-secondary"
-                          aria-label={`Actions for ${s.name}`}
-                          aria-haspopup="menu"
-                          aria-expanded={openMenuId === s.id}
-                        >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-
-                        {openMenuId === s.id && (
-                          <div
-                            ref={menuRef}
-                            role="menu"
-                            className="absolute right-0 top-9 z-20 min-w-[200px] warm-card py-1.5 shadow-lg text-left"
-                          >
+                      <RowActionsMenu
+                        open={openMenuId === s.id}
+                        onToggle={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
+                        onClose={() => setOpenMenuId(null)}
+                        label={`Actions for ${s.name}`}
+                      >
+                        {(
+                          <>
                             {(STATUS_TRANSITIONS[s.status] || []).map((t) => (
                               <button
                                 key={t.next}
@@ -511,9 +493,9 @@ export function SchoolServicesPage() {
                                 <Trash2 className="w-3.5 h-3.5" /> Delete draft
                               </button>
                             )}
-                          </div>
+                          </>
                         )}
-                      </div>
+                      </RowActionsMenu>
                     </td>
                   </tr>
                 ))}
@@ -1045,6 +1027,104 @@ export function SchoolServicesPage() {
           </p>
         )}
       </div>
+    </div>
+  )
+}
+
+
+/**
+ * The row actions menu.
+ *
+ * Rendered through a portal rather than positioned inside the row, because the
+ * table sits in a `warm-card overflow-hidden` — the clip that gives the card its
+ * rounded corners also cut the menu off at the card's edge, so on the last row
+ * it was invisible. No amount of z-index fixes that: the menu was clipped, not
+ * covered.
+ *
+ * Positioning is measured from the button and flips above it when there isn't
+ * room below, which is the same last-row case seen from the other side — the
+ * menu would otherwise open off the bottom of the window.
+ */
+function RowActionsMenu({
+  open,
+  onToggle,
+  onClose,
+  label,
+  children,
+}: {
+  open: boolean
+  onToggle: () => void
+  onClose: () => void
+  label: string
+  children: React.ReactNode
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) { setPos(null); return }
+    const r = buttonRef.current.getBoundingClientRect()
+    // Rough menu height; enough to decide which way to open without measuring
+    // twice, and the exact value only matters near the viewport edge.
+    const ESTIMATED = 190
+    const below = window.innerHeight - r.bottom
+    const openUp = below < ESTIMATED && r.top > below
+    setPos({
+      top: openUp ? r.top - ESTIMATED - 4 : r.bottom + 4,
+      right: window.innerWidth - r.right,
+    })
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      // The portal is outside this component's DOM subtree, so both nodes have
+      // to be checked or clicking the menu closes it.
+      if (menuRef.current?.contains(t) || buttonRef.current?.contains(t)) return
+      onClose()
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    // A fixed-positioned menu would drift away from its button on scroll;
+    // closing is honest and matches what every other menu here does.
+    const onScroll = () => onClose()
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [open, onClose])
+
+  return (
+    <div className="inline-block">
+      <button
+        ref={buttonRef}
+        onClick={onToggle}
+        className="p-1.5 rounded-warm-btn hover:bg-slate-100 text-warm-text-tertiary hover:text-warm-text-secondary"
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <MoreHorizontal className="w-4 h-4" />
+      </button>
+
+      {open && pos && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 50 }}
+          className="min-w-[200px] warm-card py-1.5 shadow-lg text-left"
+        >
+          {children}
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
