@@ -344,7 +344,15 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     ilsas = await syncIlsasForSchool(schoolId)
   } catch (err) {
     console.error('[hubSync] ILSA resync failed (roster sync unaffected):', err)
-    ilsas = null
+    // Reported as a failure, not as null. Null read as "nothing to say", which
+    // rendered identically to a school with no ILSAs — so a crash announced
+    // itself as an empty roster and nobody looked at the logs.
+    ilsas = {
+      failed: true,
+      error: err instanceof Error ? err.message : 'Unknown error',
+      fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
+      skippedNoPupilId: 0, withoutHubUserId: 0, linksActive: 0, linksDeactivated: 0,
+    }
   }
 
   // --- Term-dates refresh --------------------------------------------------

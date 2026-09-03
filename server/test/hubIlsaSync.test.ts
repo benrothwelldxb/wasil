@@ -13,7 +13,14 @@ const prismaMock = {
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
 const misMock = { listIlsas: vi.fn() }
-vi.mock('../src/services/hubMis', () => misMock)
+// Only the network call is stubbed. normaliseIlsa is a pure function and runs
+// for real, so these tests exercise Hub's actual field shape rather than
+// asserting against whatever the fixtures happen to say — which is how the
+// wrong shape passed a green suite in the first place.
+vi.mock('../src/services/hubMis', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/services/hubMis')>()
+  return { ...actual, ...misMock }
+})
 
 const { syncIlsasForSchool } = await import('../src/services/hubIlsaSync')
 
@@ -33,7 +40,9 @@ describe('syncIlsasForSchool', () => {
 
   it('creates a brand-new role-ILSA user and an active link for an active Hub ILSA', async () => {
     misMock.listIlsas.mockResolvedValue([
-      { id: 'hu-ilsa', firstName: 'Ms', lastName: 'Support', email: 'ilsa@x.com', pupilId: 'hp-1', active: true },
+      // Hub's real shape: a record `id` distinct from `hubUserId`, one `name`,
+      // and `pupilIds` as an array.
+      { id: 'rec-1', hubUserId: 'hu-ilsa', name: 'Ms Support', email: 'ilsa@x.com', pupilIds: ['hp-1'], active: true },
     ])
     prismaMock.user.findFirst.mockResolvedValue(null) // not linked, no email match
     prismaMock.user.create.mockResolvedValue({ id: 'ilsa-1' })
@@ -83,7 +92,7 @@ describe('syncIlsasForSchool', () => {
 
   it('deactivates a stale link when Hub returns the ILSA as inactive', async () => {
     misMock.listIlsas.mockResolvedValue([
-      { id: 'hu-ilsa', firstName: 'Ms', lastName: 'Support', email: 'ilsa@x.com', pupilId: 'hp-1', active: false },
+      { id: 'rec-1', hubUserId: 'hu-ilsa', name: 'Ms Support', email: 'ilsa@x.com', pupilIds: ['hp-1'], active: false },
     ])
     prismaMock.user.findFirst.mockResolvedValueOnce({ id: 'ilsa-1' }) // linked
     prismaMock.user.update.mockResolvedValue({})
@@ -111,5 +120,100 @@ describe('what Hub actually sent', () => {
     misMock.listIlsas.mockResolvedValue([])
     const summary = await syncIlsasForSchool('school-1')
     expect(summary.fetched).toBe(0)
+  })
+})
+
+/**
+ * Hub's real field shape.
+ *
+ * This file previously asserted against fixtures that carried the same wrong
+ * assumption as the DTO — `id` as a user id, a singular `pupilId`, split name
+ * fields — so a green suite proved only that the code agreed with itself. These
+ * cover what Hub actually sends, and the failure modes the mismatch caused.
+ */
+describe('Hub ILSA field shape', () => {
+  const base = {
+    id: 'rec-1',
+    hubUserId: 'hu-1',
+    name: 'Ms Support',
+    email: 'ilsa@x.com',
+    pupilIds: ['hp-1'],
+    active: true,
+  }
+
+  beforeEach(() => {
+    prismaMock.user.findFirst.mockResolvedValue(null)
+    prismaMock.user.create.mockResolvedValue({ id: 'ilsa-1' })
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1' })
+    prismaMock.ilsaLink.upsert.mockResolvedValue({ id: 'link-1' })
+    prismaMock.ilsaLink.updateMany.mockResolvedValue({ count: 0 })
+  })
+
+  // The identity bug: `id` is the ILSA record, `hubUserId` is the SSO subject
+  // Desk presents. Storing the former meant nothing could ever resolve.
+  it('stores hubUserId, never the record id', async () => {
+    misMock.listIlsas.mockResolvedValue([base])
+
+    await syncIlsasForSchool('sch-1')
+
+    const created = prismaMock.user.create.mock.calls[0][0].data
+    expect(created.hubUserId).toBe('hu-1')
+    expect(created.hubUserId).not.toBe('rec-1')
+  })
+
+  it('reads the pupil out of the pupilIds array', async () => {
+    misMock.listIlsas.mockResolvedValue([base])
+    await syncIlsasForSchool('sch-1')
+    expect(prismaMock.student.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { hubPupilId: 'hp-1', schoolId: 'sch-1' } }),
+    )
+  })
+
+  it('takes the single name field', async () => {
+    misMock.listIlsas.mockResolvedValue([base])
+    await syncIlsasForSchool('sch-1')
+    expect(prismaMock.user.create.mock.calls[0][0].data.name).toBe('Ms Support')
+  })
+
+  // Tolerated rather than swapped: this is an unvalidated external shape and
+  // guessing wrong once already cost two days.
+  it('still accepts the older singular/split spelling', async () => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'rec-1', hubUserId: 'hu-1', firstName: 'Ms', lastName: 'Support', email: 'ilsa@x.com', pupilId: 'hp-1', active: true },
+    ])
+
+    await syncIlsasForSchool('sch-1')
+
+    expect(prismaMock.user.create.mock.calls[0][0].data.name).toBe('Ms Support')
+    expect(prismaMock.student.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { hubPupilId: 'hp-1', schoolId: 'sch-1' } }),
+    )
+  })
+
+  // The crash: undefined reached a required column and Prisma rejected it,
+  // taking the whole sync down so one bad record looked like an empty roster.
+  it('skips a record with no pupil id instead of throwing', async () => {
+    misMock.listIlsas.mockResolvedValue([{ ...base, pupilIds: [] }])
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.skippedNoPupilId).toBe(1)
+    expect(prismaMock.ilsaLink.upsert).not.toHaveBeenCalled()
+  })
+
+  // Hub leaves hubUserId null until first sign-in. A null must never reach the
+  // lookup: `where: { hubUserId: null }` matches the first user in the school
+  // with none, handing this ILSA someone else's account.
+  it('never looks a user up by a null hubUserId', async () => {
+    misMock.listIlsas.mockResolvedValue([{ ...base, hubUserId: null }])
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    for (const call of prismaMock.user.findFirst.mock.calls) {
+      expect(call[0].where).not.toHaveProperty('hubUserId')
+    }
+    // Provisioned and linked, but not resolvable until a later sync has an id.
+    expect(summary.withoutHubUserId).toBe(1)
+    expect(prismaMock.user.create.mock.calls[0][0].data.hubUserId).toBeUndefined()
   })
 })

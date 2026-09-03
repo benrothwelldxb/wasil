@@ -41,11 +41,19 @@ function summarizeSync(summary: HubSyncSummary): string {
   // difference between an assistant who can message their pupil's parent and
   // one who is told they have nobody to message.
   const il = summary.ilsas
-  if (il?.fetched) {
+  // A crash first, and loudly. Reporting it as "no ILSAs" is how this went
+  // unnoticed: the sync threw on every record and the toast said nothing.
+  if (il?.failed) {
+    parts.push(`ILSA sync failed — ${il.error ?? 'see server logs'}`)
+  } else if (il?.fetched) {
     const detail: string[] = []
     if (il.linksActive) detail.push(`${il.linksActive} linked to a pupil`)
     if (il.skippedNoEmail) detail.push(`${il.skippedNoEmail} skipped, no email`)
     if (il.skippedNoPupil) detail.push(`${il.skippedNoPupil} skipped, pupil not synced`)
+    if (il.skippedNoPupilId) detail.push(`${il.skippedNoPupilId} skipped, no pupil sent`)
+    // The reason an ILSA can exist in Connect and still not be able to message:
+    // Hub has no user id for them until they have signed in once.
+    if (il.withoutHubUserId) detail.push(`${il.withoutHubUserId} not signed into Hub yet`)
     if (il.linksDeactivated) detail.push(`${il.linksDeactivated} unlinked`)
     parts.push(`${il.fetched} ILSA${il.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
   } else if (il && il.linksDeactivated) {
