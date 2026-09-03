@@ -2878,6 +2878,10 @@ export interface HubSyncSummary {
     skippedNoPupil: number
     /** Hub sent no pupil id — malformed, not pending. */
     skippedNoPupilId: number
+    /** Their Connect account exists under another role, which is left alone —
+     *  so they cannot act as an ILSA. Reported because counting them as
+     *  `linked` would read as success. */
+    roleConflict: number
     /** Provisioned, but Hub has no hubUserId for them yet (null until first
      *  sign-in), so they cannot be resolved as a messaging actor until a later
      *  sync picks it up. */

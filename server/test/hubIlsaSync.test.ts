@@ -217,3 +217,55 @@ describe('Hub ILSA field shape', () => {
     expect(prismaMock.user.create.mock.calls[0][0].data.hubUserId).toBeUndefined()
   })
 })
+
+// The failure that reports itself as a success. An ILSA whose Connect account
+// already exists under another role is linked and counted — but resolveIlsaActor
+// requires role ILSA, so they can never actually message anyone. Guardians and
+// staff are provisioned BEFORE ILSAs in the same sync run, so an ILSA sharing an
+// email with a guardian hits this on the very first sync.
+describe('an ILSA whose account already exists under another role', () => {
+  const ilsa = {
+    id: 'rec-1', hubUserId: 'hu-1', name: 'Ms Support',
+    email: 'ilsa@x.com', pupilIds: ['hp-1'], active: true,
+  }
+
+  beforeEach(() => {
+    misMock.listIlsas.mockResolvedValue([ilsa])
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1' })
+    prismaMock.ilsaLink.upsert.mockResolvedValue({ id: 'link-1' })
+    prismaMock.ilsaLink.updateMany.mockResolvedValue({ count: 0 })
+  })
+
+  it('is counted as a role conflict, not silently as linked', async () => {
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) =>
+      where.email ? { id: 'u-1', hubUserId: null, role: 'PARENT' } : null,
+    )
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.roleConflict).toBe(1)
+    // Still linked and still given its pupil link — the account is real and the
+    // conflict may be resolved by a person later.
+    expect(summary.linked).toBe(1)
+  })
+
+  it('leaves the existing role alone', async () => {
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) =>
+      where.email ? { id: 'u-1', hubUserId: null, role: 'PARENT' } : null,
+    )
+
+    await syncIlsasForSchool('sch-1')
+
+    expect(prismaMock.user.update.mock.calls[0][0].data).not.toHaveProperty('role')
+  })
+
+  it('an account already under role ILSA is no conflict', async () => {
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) =>
+      where.email ? { id: 'u-1', hubUserId: null, role: 'ILSA' } : null,
+    )
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.roleConflict).toBe(0)
+  })
+})

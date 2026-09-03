@@ -44,6 +44,12 @@ export interface IlsaSyncSummary {
   skippedNoPupil: number
   /** ILSAs Hub sent with no pupil id at all — malformed rather than pending. */
   skippedNoPupilId: number
+  /** ILSAs whose Connect account already exists under a different role, so it
+   * is left alone (never rewrite a role — a guardian who is also staff keeps
+   * their staff role). They CANNOT be resolved as a messaging actor:
+   * resolveIlsaActor requires role ILSA. Counted because the alternative is
+   * reporting them as `linked`, which reads as success and is not. */
+  roleConflict: number
   /** ILSAs Hub has no hubUserId for yet (null until first sign-in). They are
    * provisioned and linked, but cannot be RESOLVED as a messaging actor until a
    * later sync picks up the id — so a non-zero count here explains why an ILSA
@@ -63,7 +69,8 @@ export interface IlsaSyncSummary {
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
     fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
-    skippedNoPupilId: 0, withoutHubUserId: 0, linksActive: 0, linksDeactivated: 0,
+    skippedNoPupilId: 0, withoutHubUserId: 0, roleConflict: 0,
+    linksActive: 0, linksDeactivated: 0,
   }
 
   const school = await prisma.school.findUnique({
@@ -191,9 +198,14 @@ async function upsertIlsaUser(
   // (2) Email fallback to a pre-existing account in this school.
   const candidate = await prisma.user.findFirst({
     where: { schoolId, email },
-    select: { id: true, hubUserId: true },
+    select: { id: true, hubUserId: true, role: true },
   })
   if (candidate) {
+    // An account under any other role stays under it — the same rule that keeps
+    // a guardian who is also staff on their staff role. But resolveIlsaActor
+    // requires role ILSA, so this person can never act as one, and counting
+    // them as `linked` would report a dead end as a success.
+    if (candidate.role !== 'ILSA') summary.roleConflict++
     // Claim the identity only when Hub has one and it is free — never re-point
     // an existing user's hubUserId at a different person.
     const linkHubUserId =
