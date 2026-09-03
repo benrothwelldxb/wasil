@@ -7,10 +7,11 @@ import { createHash } from 'crypto'
 // count-only unread inbox summary keyed on a Hub user id. Prisma is mocked.
 
 const prismaMock = {
+  messageReaction: { upsert: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn() },
   partnerToken: { findUnique: vi.fn(), update: vi.fn() },
   user: { findUnique: vi.fn(), findFirst: vi.fn() },
   conversation: { count: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-  conversationMessage: { create: vi.fn(), updateMany: vi.fn() },
+  conversationMessage: { create: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn() },
   conversationParticipant: { update: vi.fn() },
   conversationAttachment: { createMany: vi.fn() },
   notification: { create: vi.fn() },
@@ -490,16 +491,18 @@ describe('GET /api/partner/inbox/threads/:id', () => {
           id: 'm-1', senderId: 'p-1', content: 'Hello', createdAt: new Date('2026-08-14T09:00:00.000Z'),
           deletedAt: null, sender: { name: 'Amina Dad' },
           attachments: [{ fileName: 'note.pdf', fileUrl: 'https://x/note.pdf', fileType: 'application/pdf', fileSize: 1234 }],
+          reactions: [],
         },
         {
           id: 'm-2', senderId: 'staff-1', content: 'Hi there', createdAt: new Date('2026-08-14T09:05:00.000Z'),
-          deletedAt: null, sender: { name: 'Ms Noor' }, attachments: [],
+          deletedAt: null, sender: { name: 'Ms Noor' }, attachments: [], reactions: [],
         },
         {
           // Withdrawn by the parent: comes back, but says nothing.
           id: 'm-3', senderId: 'p-1', content: 'Sent by mistake', createdAt: new Date('2026-08-14T09:10:00.000Z'),
           deletedAt: new Date('2026-08-14T09:11:00.000Z'), sender: { name: 'Amina Dad' },
           attachments: [{ fileName: 'oops.pdf', fileUrl: 'https://x/oops.pdf', fileType: 'application/pdf', fileSize: 9 }],
+          reactions: [],
         },
       ],
     })
@@ -542,6 +545,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
           id: 'm-1', senderId: 'p-1', content: 'Hi', createdAt: new Date('2026-08-14T09:00:00.000Z'),
           deletedAt: null, sender: { name: 'Dad' },
           attachments: [{ fileName: 'n.pdf', fileUrl: 'https://x/n.pdf', fileType: 'application/pdf', fileSize: 1 }],
+          reactions: [],
         },
       ],
     })
@@ -549,7 +553,8 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     expect(Object.keys(res.body.thread).sort()).toEqual(['ccStaff', 'className', 'id', 'parentName', 'sharedWith', 'studentName'].sort())
     expect(Object.keys(res.body.messages[0]).sort()).toEqual(
       // `deleted` is absent on a live message (undefined, so JSON drops it);
-      // `deletedAt` is always sent, null when live.
+      // `deletedAt` is always sent, null when live. `reactions` is absent too
+      // when there are none — Desk reads a missing key as "no reactions".
       ['attachments', 'content', 'deletedAt', 'id', 'mine', 'senderName', 'sentAt'].sort(),
     )
     expect(Object.keys(res.body.messages[0].attachments[0]).sort()).toEqual(['name', 'size', 'type', 'url'].sort())
@@ -1279,5 +1284,107 @@ describe('Staff CC visibility (partner)', () => {
     const notifiedUserIds = prismaMock.notification.create.mock.calls.map(c => c[0].data.userId).sort()
     expect(notifiedUserIds).toEqual(['p-1', 'primary-staff'])
     expect(notifiedUserIds).not.toContain('cc-1')
+  })
+})
+
+/**
+ * Reactions on the partner surface.
+ *
+ * The thread read used to strip them deliberately — Desk got a display-only
+ * shape. Desk now renders them, so both apps must agree on what a message says,
+ * which is why the emoji allow-list is imported from the parent inbox rather
+ * than restated here.
+ *
+ * A reaction is NOT an acknowledgement: nothing here touches read state, the
+ * "who has responded" counts, or notifications.
+ */
+describe('reactions on a partner thread', () => {
+  const auth = (r: request.Test) => r.set('Authorization', `Bearer ${TOKEN}`)
+
+  beforeEach(() => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    prismaMock.conversation.findFirst.mockResolvedValue({ id: 'c-1' })
+    prismaMock.conversationMessage.findFirst.mockResolvedValue({ id: 'm-1', deletedAt: null })
+    prismaMock.messageReaction.upsert.mockResolvedValue({})
+    prismaMock.messageReaction.deleteMany.mockResolvedValue({ count: 1 })
+    prismaMock.messageReaction.findMany.mockResolvedValue([
+      { emoji: 'heart', userId: 'staff-1' },
+      { emoji: 'heart', userId: 'p-1' },
+    ])
+  })
+
+  const react = (body: Record<string, unknown>) =>
+    auth(request(makeApp()).post('/api/partner/inbox/threads/c-1/messages/m-1/react'))
+      .send({ hub_user_id: 'hu-staff', emoji: 'heart', ...body })
+
+  it('adds a reaction and returns the summary the read uses', async () => {
+    const res = await react({})
+
+    expect(res.status).toBe(200)
+    // `reacted` is relative to the caller, who is one of the two hearts.
+    expect(res.body.reactions).toEqual({ heart: { count: 2, reacted: true } })
+  })
+
+  it('is idempotent — reacting twice is the same state, not an error', async () => {
+    await react({})
+    expect(prismaMock.messageReaction.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { messageId_userId_emoji: { messageId: 'm-1', userId: 'staff-1', emoji: 'heart' } },
+        update: {},
+      }),
+    )
+  })
+
+  // If either app invented its own list the two would disagree about what a
+  // message says — one rendering a pill the other cannot name.
+  it('refuses an emoji outside the shared allow-list', async () => {
+    const res = await react({ emoji: 'partyparrot' })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('unsupported_emoji')
+    expect(res.body.allowed).toContain('heart')
+    expect(prismaMock.messageReaction.upsert).not.toHaveBeenCalled()
+  })
+
+  it('404s on a thread the actor cannot open', async () => {
+    prismaMock.conversation.findFirst.mockResolvedValue(null)
+    const res = await react({})
+    expect(res.status).toBe(404)
+    expect(prismaMock.messageReaction.upsert).not.toHaveBeenCalled()
+  })
+
+  // Borrowing a visible thread must not reach a message in another one.
+  it('scopes the message lookup to the thread', async () => {
+    await react({})
+    expect(prismaMock.conversationMessage.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'm-1', conversationId: 'c-1' } }),
+    )
+  })
+
+  // A withdrawn message shows no reactions, so it should not gain one.
+  it('409s on a withdrawn message', async () => {
+    prismaMock.conversationMessage.findFirst.mockResolvedValue({ id: 'm-1', deletedAt: new Date() })
+    const res = await react({})
+    expect(res.status).toBe(409)
+    expect(res.body.error).toBe('message_withdrawn')
+  })
+
+  it('403s for an id that is not a recognised actor', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(null)
+    const res = await react({})
+    expect(res.status).toBe(403)
+  })
+
+  it('removes a reaction, and removing a missing one still succeeds', async () => {
+    prismaMock.messageReaction.findMany.mockResolvedValue([])
+
+    const res = await auth(
+      request(makeApp()).delete('/api/partner/inbox/threads/c-1/messages/m-1/react?hub_user_id=hu-staff&emoji=heart'),
+    )
+
+    expect(res.status).toBe(200)
+    expect(res.body.reactions).toEqual({})
+    expect(prismaMock.messageReaction.deleteMany).toHaveBeenCalledWith({
+      where: { messageId: 'm-1', userId: 'staff-1', emoji: 'heart' },
+    })
   })
 })

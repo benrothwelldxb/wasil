@@ -16,7 +16,10 @@ const typingState = new Map<string, Map<string, number>>()
 
 const TYPING_EXPIRY_MS = 4000
 
-const ALLOWED_REACTION_EMOJIS = ['thumbsup', 'heart', 'laugh', 'sad', 'check']
+// Exported so the partner surface reacts from the same list. If Connect and Desk
+// each kept their own, the two apps would disagree about what a message says —
+// one rendering a pill the other cannot name.
+export const ALLOWED_REACTION_EMOJIS = ['thumbsup', 'heart', 'laugh', 'sad', 'check']
 
 function setTyping(conversationId: string, userId: string) {
   if (!typingState.has(conversationId)) typingState.set(conversationId, new Map())
