@@ -2867,11 +2867,21 @@ export interface HubSyncSummary {
    *  a Hub endpoint that isn't deployed reads here as zero, exactly like a
    *  school with no ILSAs — so the count is what tells those apart. */
   ilsas?: {
+    /** Set when the reconcile threw — a failure and an empty roster must not
+     *  render the same way. */
+    failed?: true
+    error?: string
     fetched: number
     created: number
     linked: number
     skippedNoEmail: number
     skippedNoPupil: number
+    /** Hub sent no pupil id — malformed, not pending. */
+    skippedNoPupilId: number
+    /** Provisioned, but Hub has no hubUserId for them yet (null until first
+     *  sign-in), so they cannot be resolved as a messaging actor until a later
+     *  sync picks it up. */
+    withoutHubUserId: number
     linksActive: number
     linksDeactivated: number
   } | null

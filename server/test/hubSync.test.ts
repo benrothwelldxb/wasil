@@ -838,12 +838,14 @@ describe('syncSchoolFromHub — ILSA links', () => {
 
   // Same discipline as the calendar and term folds: a bolt-on must never be
   // able to fail the roster sync.
-  it('an ILSA failure leaves the roster sync intact', async () => {
+  // Reported as a failure, not as null. Null rendered identically to a school
+  // with no ILSAs, so a crash announced itself as an empty roster.
+  it('an ILSA failure is reported as a failure, and leaves the roster sync intact', async () => {
     syncIlsasForSchool.mockRejectedValue(new Error('hub down'))
 
     const summary = await syncSchoolFromHub('connect-school-1')
 
-    expect(summary.ilsas).toBeNull()
+    expect(summary.ilsas).toMatchObject({ failed: true, error: 'hub down' })
     expect(summary.pupils).toBe(1)
     // Still marked fresh — the roster genuinely synced.
     expect(prismaMock.school.update).toHaveBeenCalled()

@@ -114,21 +114,65 @@ export interface HubGuardian {
   pupils: HubGuardianPupilLink[]
 }
 
-// Mirror of Hub's ILSA DTO (subset). An ILSA is a 1:1 Learning Support Assistant
-// engaged by a single pupil's parent — Hub owns the identity and the ILSA↔pupil
-// link. `id` is the Hub user id (correlates to `User.hubUserId`); `pupilId` is a
-// Hub pupil id (correlates to `Student.hubPupilId`) — the ONE pupil this ILSA is
-// scoped to. `active` is false once Hub unlinks/deactivates the ILSA; Connect
-// mirrors that into `IlsaLink.active` to cut off messaging + parent visibility.
-// `email` is null for an ILSA Hub holds no address for — such an ILSA can't back
-// a Connect login and is skipped by the sync (same rule as guardians/staff).
+// Hub's ILSA DTO. An ILSA is a 1:1 Learning Support Assistant engaged by a single
+// pupil's parent — Hub owns the identity and the ILSA↔pupil link. `active` is
+// false once Hub unlinks or deactivates them; Connect mirrors that into
+// `IlsaLink.active` to cut off messaging and parent visibility. An ILSA Hub holds
+// no email for can't back a Connect login and is skipped (as for guardians/staff).
+/**
+ * Written against an assumed shape and wrong about three fields, which is what
+ * cast-not-validated DTOs cost. Hub actually sends:
+ *
+ *   • `id` is the ILSA RECORD id, not a user id. The SSO subject Desk presents
+ *     is `hubUserId`, a different value — matching on `id` could never resolve
+ *     anyone. `hubUserId` is null until that ILSA first signs in.
+ *   • `pupilIds` is an array. Reading `pupilId` gave undefined, which Prisma
+ *     rejected on a required column — so the sync threw rather than returning
+ *     zero, and a throw and an empty roster looked identical downstream.
+ *   • `name` is one field, not `firstName` + `lastName`.
+ *
+ * Both spellings are accepted rather than swapping one guess for another: this
+ * is an external shape nothing validates, and tolerating either costs a `??`.
+ */
 export interface HubIlsa {
-  id: string            // Hub user id → Connect User.hubUserId
-  firstName: string
-  lastName: string
+  /** The ILSA record's own id. NOT a user id — see `hubUserId`. */
+  id: string
+  /** Hub user id → Connect `User.hubUserId`, and the SSO subject Desk sends.
+   *  Null until the ILSA has signed in at least once, so an ILSA synced before
+   *  their first sign-in cannot be resolved until a later sync picks it up. */
+  hubUserId?: string | null
+  name?: string
+  firstName?: string
+  lastName?: string
   email: string | null
-  pupilId: string       // Hub pupil id → Connect Student.hubPupilId (the one pupil)
+  /** The pupils this ILSA is scoped to. One in practice (ADR 0006). */
+  pupilIds?: string[]
+  /** Older/assumed spelling, still accepted. */
+  pupilId?: string
   active: boolean
+}
+
+/** Hub's ILSA as Connect needs it, with the shape differences resolved once. */
+export interface NormalisedIlsa {
+  hubUserId: string | null
+  name: string
+  email: string | null
+  hubPupilId: string | null
+  active: boolean
+}
+
+export function normaliseIlsa(raw: HubIlsa): NormalisedIlsa {
+  const name = raw.name?.trim()
+    || `${raw.firstName ?? ''} ${raw.lastName ?? ''}`.trim()
+    || 'Learning Support Assistant'
+  return {
+    // Never `raw.id` — see the note above.
+    hubUserId: raw.hubUserId?.trim() || null,
+    name,
+    email: raw.email?.trim().toLowerCase() || null,
+    hubPupilId: raw.pupilIds?.[0]?.trim() || raw.pupilId?.trim() || null,
+    active: raw.active,
+  }
 }
 
 // Mirror of Hub's TermDTO (subset) — an academic term's boundaries. Connect

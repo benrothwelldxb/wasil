@@ -19,9 +19,15 @@
 // null) AND removes the parent-side contact, while the Conversation + messages
 // are RETAINED for the oversight/retention window. We never delete a link.
 import prisma from './prisma.js'
-import { listIlsas, type HubIlsa } from './hubMis.js'
+import { listIlsas, normaliseIlsa, type NormalisedIlsa } from './hubMis.js'
 
 export interface IlsaSyncSummary {
+  /** Set when the reconcile threw. Present so a FAILURE and an empty roster
+   * cannot render the same way — reporting a crash as all-zeroes is the exact
+   * absent-vs-empty trap that made this bug take two days to find. */
+  failed?: true
+  /** Why it failed, for the toast. Never the raw stack. */
+  error?: string
   /** How many ILSAs Hub returned, before any of them were skipped. The number
    * to compare against Hub's own roster: `listIlsas` 404-tolerates, so a Hub
    * endpoint that isn't deployed for this school is indistinguishable here from
@@ -36,6 +42,13 @@ export interface IlsaSyncSummary {
   skippedNoEmail: number
   /** ILSAs whose linked Hub pupil isn't synced to a Connect Student yet. */
   skippedNoPupil: number
+  /** ILSAs Hub sent with no pupil id at all — malformed rather than pending. */
+  skippedNoPupilId: number
+  /** ILSAs Hub has no hubUserId for yet (null until first sign-in). They are
+   * provisioned and linked, but cannot be RESOLVED as a messaging actor until a
+   * later sync picks up the id — so a non-zero count here explains why an ILSA
+   * who exists in Connect still can't start a conversation. */
+  withoutHubUserId: number
   /** IlsaLink rows upserted active this run. */
   linksActive: number
   /** IlsaLink rows deactivated this run (Hub unlink/deactivate, or dropped). */
@@ -50,7 +63,7 @@ export interface IlsaSyncSummary {
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
     fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
-    linksActive: 0, linksDeactivated: 0,
+    skippedNoPupilId: 0, withoutHubUserId: 0, linksActive: 0, linksDeactivated: 0,
   }
 
   const school = await prisma.school.findUnique({
@@ -66,13 +79,25 @@ export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSumm
   // still-active in this school is stale and gets deactivated at the end.
   const keptActiveLinkIds: string[] = []
 
-  for (const ilsa of hubIlsas) {
+  for (const raw of hubIlsas) {
+    // Hub's shape differs from what this file was written against; resolve it
+    // once, here, rather than reading raw fields in three places.
+    const ilsa = normaliseIlsa(raw)
+
+    // No pupil id at all. Previously this fell through as `undefined` and Prisma
+    // rejected it on a required column, which threw and took the whole sync down
+    // — so one malformed record looked exactly like Hub sending nothing.
+    if (!ilsa.hubPupilId) {
+      summary.skippedNoPupilId++
+      continue
+    }
+
     const userId = await upsertIlsaUser(ilsa, schoolId, summary)
     if (!userId) continue // no-email ILSA: can't be a login, already counted
 
     // Resolve the ONE linked pupil to a Connect Student (same-school).
     const student = await prisma.student.findFirst({
-      where: { hubPupilId: ilsa.pupilId, schoolId },
+      where: { hubPupilId: ilsa.hubPupilId, schoolId },
       select: { id: true },
     })
     if (!student) {
@@ -89,11 +114,11 @@ export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSumm
           schoolId,
           userId,
           studentId: student.id,
-          hubPupilId: ilsa.pupilId,
+          hubPupilId: ilsa.hubPupilId,
           active: true,
         },
         // Re-activate a previously-deactivated link if Hub re-links the ILSA.
-        update: { active: true, deactivatedAt: null, hubPupilId: ilsa.pupilId },
+        update: { active: true, deactivatedAt: null, hubPupilId: ilsa.hubPupilId },
         select: { id: true },
       })
       keptActiveLinkIds.push(link.id)
@@ -129,18 +154,25 @@ export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSumm
  * Returns the Connect user id, or null when skipped (no email).
  */
 async function upsertIlsaUser(
-  ilsa: HubIlsa,
+  ilsa: NormalisedIlsa,
   schoolId: string,
   summary: IlsaSyncSummary,
 ): Promise<string | null> {
-  const name = `${ilsa.firstName} ${ilsa.lastName}`.trim()
-  const email = ilsa.email?.trim().toLowerCase() || null
+  const { name, email } = ilsa
+
+  // Hub leaves hubUserId null until the ILSA first signs in, and that null must
+  // never reach the query: `where: { hubUserId: null }` matches the first user
+  // in the school who happens to have none, and would hand this ILSA someone
+  // else's account. Absent means "match by email instead", not "match anyone".
+  if (!ilsa.hubUserId) summary.withoutHubUserId++
 
   // (1) Already linked by Hub user id.
-  const linked = await prisma.user.findFirst({
-    where: { hubUserId: ilsa.id, schoolId },
-    select: { id: true },
-  })
+  const linked = ilsa.hubUserId
+    ? await prisma.user.findFirst({
+        where: { hubUserId: ilsa.hubUserId, schoolId },
+        select: { id: true },
+      })
+    : null
   if (linked) {
     await prisma.user.update({
       where: { id: linked.id },
@@ -162,8 +194,12 @@ async function upsertIlsaUser(
     select: { id: true, hubUserId: true },
   })
   if (candidate) {
+    // Claim the identity only when Hub has one and it is free — never re-point
+    // an existing user's hubUserId at a different person.
     const linkHubUserId =
-      !candidate.hubUserId || candidate.hubUserId === ilsa.id ? ilsa.id : undefined
+      ilsa.hubUserId && (!candidate.hubUserId || candidate.hubUserId === ilsa.hubUserId)
+        ? ilsa.hubUserId
+        : undefined
     await prisma.user.update({
       where: { id: candidate.id },
       data: { name, ...(linkHubUserId ? { hubUserId: linkHubUserId } : {}) },
@@ -175,7 +211,11 @@ async function upsertIlsaUser(
   // (3) Brand-new role-ILSA account. No password — an ILSA never holds a Connect
   // session; they act only via the Desk partner routes keyed on hub_user_id.
   const created = await prisma.user.create({
-    data: { email, name, role: 'ILSA', schoolId, hubUserId: ilsa.id },
+    // hubUserId stays null when Hub has none yet: the account and its pupil link
+    // are still worth creating, and a later sync fills the id in once they sign
+    // in. Writing the ILSA record id here instead — which is what this did — put
+    // a value in the column that no SSO subject will ever match.
+    data: { email, name, role: 'ILSA', schoolId, ...(ilsa.hubUserId ? { hubUserId: ilsa.hubUserId } : {}) },
     select: { id: true },
   })
   summary.created++
