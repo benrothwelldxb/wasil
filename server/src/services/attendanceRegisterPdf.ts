@@ -1,4 +1,5 @@
 import prisma from './prisma.js'
+import { formalSchoolName } from './schoolName.js'
 
 interface ClassRegister {
   className: string
@@ -41,7 +42,7 @@ export async function generateDailyRegistersHtml(
   date: string,
 ): Promise<string> {
   const [school, classes, records] = await Promise.all([
-    prisma.school.findUnique({ where: { id: schoolId }, select: { name: true } }),
+    prisma.school.findUnique({ where: { id: schoolId }, select: { name: true, city: true } }),
     prisma.class.findMany({
       where: { schoolId },
       include: {
@@ -64,7 +65,7 @@ export async function generateDailyRegistersHtml(
   const recordMap = new Map(records.map(r => [r.studentId, r]))
 
   const data: DailyRegistersData = {
-    schoolName: school?.name ?? '',
+    schoolName: formalSchoolName(school),
     date,
     classes: classes.map(c => ({
       className: c.name,

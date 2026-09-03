@@ -1,4 +1,5 @@
 import prisma from './prisma.js'
+import { formalSchoolName } from './schoolName.js'
 import { resolveAudienceParentIds } from './notify.js'
 import logger from './logger.js'
 
@@ -36,7 +37,7 @@ export async function signalAdminNotice(params: {
   if (parentUserIds.length === 0) return { sent: 0, skippedNoEmail: 0 }
 
   const [school, parents] = await Promise.all([
-    prisma.school.findUnique({ where: { id: params.schoolId }, select: { name: true } }),
+    prisma.school.findUnique({ where: { id: params.schoolId }, select: { name: true, city: true } }),
     prisma.user.findMany({
       // Test Parents have fake mailboxes and must never be emailed.
       where: { id: { in: parentUserIds }, isTest: false },
@@ -49,7 +50,7 @@ export async function signalAdminNotice(params: {
   if (withEmail.length === 0) return { sent: 0, skippedNoEmail }
 
   const { sendAdminNoticeSignalEmail } = await import('./email.js')
-  const schoolName = school?.name || 'School'
+  const schoolName = formalSchoolName(school)
 
   let sent = 0
   for (const parent of withEmail) {

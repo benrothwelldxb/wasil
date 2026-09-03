@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { formalSchoolName } from '../services/schoolName.js'
 import { parentsBySignInStatus } from '../services/parentActivation.js'
 import { Router, Request, Response } from 'express'
 import prisma from '../services/prisma.js'
@@ -405,7 +406,7 @@ router.post('/parents/:id/reset-password', isAdmin, async (req: Request, res: Re
     const magicLink = `${PARENT_APP_URL}/auth/magic?token=${token}`
 
     const { sendEmail } = await import('../services/email.js')
-    const school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true } })
+    const school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true, city: true } })
 
     const emailSent = await sendEmail({
       to: parent.email,
@@ -485,7 +486,7 @@ router.get('/nudge/preview', isAdmin, async (req: Request, res: Response) => {
     const { neverSignedIn } = await parentsBySignInStatus(user.schoolId)
 
     const [school, recipients, missedCount] = await Promise.all([
-      prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true } }),
+      prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true, city: true } }),
       prisma.user.count({
         where: { id: { in: [...neverSignedIn] }, isTest: false, email: { not: '' } },
       }),
@@ -495,7 +496,7 @@ router.get('/nudge/preview', isAdmin, async (req: Request, res: Response) => {
     const { buildParentNudgeEmail } = await import('../services/email.js')
     const { subject, html } = buildParentNudgeEmail({
       to: 'preview@example.com',
-      schoolName: school?.name || 'School',
+      schoolName: formalSchoolName(school),
       missedCount,
     })
 
@@ -531,7 +532,7 @@ router.post('/nudge', isAdmin, async (req: Request, res: Response) => {
 
     const school = await prisma.school.findUnique({
       where: { id: user.schoolId },
-      select: { name: true },
+      select: { name: true, city: true },
     })
     const schoolName = school?.name || 'School'
 
@@ -599,7 +600,7 @@ router.post('/send-invites', isAdmin, async (req: Request, res: Response) => {
 
     const school = await prisma.school.findUnique({
       where: { id: user.schoolId },
-      select: { name: true },
+      select: { name: true, city: true },
     })
     const schoolName = school?.name || 'School'
 
@@ -666,7 +667,7 @@ router.get('/:id', isAdmin, async (req: Request, res: Response) => {
         },
         createdBy: { select: { id: true, name: true } },
         redeemedByUser: { select: { id: true, name: true, email: true } },
-        school: { select: { name: true } },
+        school: { select: { name: true, city: true } },
       },
     })
 
@@ -702,7 +703,7 @@ router.get('/:id', isAdmin, async (req: Request, res: Response) => {
         : undefined,
       createdBy: { id: invitation.createdBy.id, name: invitation.createdBy.name },
       createdAt: invitation.createdAt.toISOString(),
-      schoolName: invitation.school.name,
+      schoolName: formalSchoolName(invitation.school),
       qrCodeUrl: qrUrl,
       registrationUrl: `${process.env.PARENT_APP_URL}/register?code=${invitation.accessCode}`,
       magicLinkUrl: invitation.magicToken
@@ -823,14 +824,14 @@ router.post('/', isAdmin, async (req: Request, res: Response) => {
         const { buildInvitationEmail } = await import('../services/email.js')
         const { sendEmail } = await import('../services/email.js')
         const PARENT_APP_URL = process.env.PARENT_APP_URL || 'http://localhost:3000'
-        const school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true } })
+        const school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true, city: true } })
         const childrenNames = [
           ...invitation.childLinks.map(cl => cl.childName),
           ...invitation.studentLinks.map(sl => `${sl.student.firstName} ${sl.student.lastName}`),
         ]
         const email = buildInvitationEmail({
           accessCode: invitation.accessCode,
-          schoolName: school?.name || 'School',
+          schoolName: formalSchoolName(school),
           childrenNames,
           parentAppUrl: PARENT_APP_URL,
         })
@@ -1052,13 +1053,13 @@ router.post('/bulk', isAdmin, async (req: Request, res: Response) => {
     if (emailsToSend.length > 0) {
       try {
         const { buildInvitationEmail, sendBatchEmails } = await import('../services/email.js')
-        const school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true } })
+        const school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { name: true, city: true } })
         const PARENT_APP_URL = process.env.PARENT_APP_URL || 'http://localhost:3000'
 
         const emails = emailsToSend.map(inv => {
           const email = buildInvitationEmail({
             accessCode: inv.accessCode,
-            schoolName: school?.name || 'School',
+            schoolName: formalSchoolName(school),
             childrenNames: inv.children,
             parentAppUrl: PARENT_APP_URL,
           })
@@ -1413,7 +1414,7 @@ router.patch('/:id/resend', isAdmin, async (req: Request, res: Response) => {
     const invitation = await prisma.parentInvitation.findFirst({
       where: { id, schoolId: user.schoolId },
       include: {
-        school: { select: { name: true } },
+        school: { select: { name: true, city: true } },
         childLinks: true,
         studentLinks: { include: { student: true } },
       },
@@ -1445,7 +1446,7 @@ router.patch('/:id/resend', isAdmin, async (req: Request, res: Response) => {
       to: invitation.parentEmail,
       magicLink,
       accessCode: invitation.accessCode,
-      schoolName: invitation.school.name,
+      schoolName: formalSchoolName(invitation.school),
       childrenNames,
     })
 

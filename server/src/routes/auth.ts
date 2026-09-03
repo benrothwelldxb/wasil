@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express'
+import { formalSchoolName } from '../services/schoolName.js'
 import passport from 'passport'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
@@ -610,7 +611,7 @@ router.post(
     try {
       const user = await prisma.user.findUnique({
         where: { email },
-        include: { school: { select: { name: true } } },
+        include: { school: { select: { name: true, city: true } } },
       })
 
       // Test accounts have a fake mailbox and sign in with TEST_LOGIN_CODE, so
@@ -625,7 +626,7 @@ router.post(
         await sendLoginCodeEmail({
           to: user.email,
           code,
-          schoolName: user.school?.name,
+          schoolName: formalSchoolName(user.school),
           ttlMinutes: LOGIN_CODE_EXPIRY_MINUTES,
         })
       }
@@ -1094,7 +1095,7 @@ router.post('/magic-link/request', magicLinkLimiter, magicLinkPerEmailLimiter, v
     await sendMagicLinkEmail({
       to: email,
       magicLink,
-      schoolName: user.school.name,
+      schoolName: formalSchoolName(user.school),
       childrenNames,
       isRegistration: false,
     })
@@ -1374,7 +1375,7 @@ router.post('/magic-link/send-registration', magicLinkLimiter, isAdmin, async (r
       to: targetEmail,
       magicLink,
       accessCode: invitation.accessCode,
-      schoolName: invitation.school.name,
+      schoolName: formalSchoolName(invitation.school),
       childrenNames: invitation.childLinks.map(c => c.childName),
     })
 
