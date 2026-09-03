@@ -1467,6 +1467,18 @@ export interface AvailableContactsResponse {
     /** Above the fold, or inside the collapsed "Other staff" section. */
     alwaysVisible?: boolean
   }>
+  /** The Learning Support Assistants linked to THIS parent's own children. An
+   *  ILSA is 1:1 with one pupil and engaged by that pupil's parent (ADR 0006),
+   *  so a guardian sees only their own child's — and `studentId` says which
+   *  child, which the thread endpoint also requires. */
+  ilsas?: Array<{
+    id: string
+    name: string
+    avatarUrl: string | null
+    roleLabel: string
+    studentId: string
+    studentName: string | null
+  }>
   children: Array<{
     studentId: string
     studentName: string
