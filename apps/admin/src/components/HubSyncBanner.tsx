@@ -54,6 +54,9 @@ function summarizeSync(summary: HubSyncSummary): string {
     // The reason an ILSA can exist in Connect and still not be able to message:
     // Hub has no user id for them until they have signed in once.
     if (il.withoutHubUserId) detail.push(`${il.withoutHubUserId} not signed into Hub yet`)
+    // Reads as success otherwise: the account was found and updated, but under
+    // a role that cannot act as an ILSA.
+    if (il.roleConflict) detail.push(`${il.roleConflict} already has another role`)
     if (il.linksDeactivated) detail.push(`${il.linksDeactivated} unlinked`)
     parts.push(`${il.fetched} ILSA${il.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
   } else if (il && il.linksDeactivated) {
