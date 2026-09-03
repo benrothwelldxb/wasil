@@ -10,9 +10,14 @@
 // children (after pupils, so Student.hubPupilId exists to resolve links). This
 // is the DATA layer only: a provisioned parent has NO password and cannot log
 // in yet — login / invitation delivery (magic link or access code) is a
-// documented follow-on, not built here. Hub currently returns 0 guardians, so
-// the guardian step is a safe no-op (all-zero summary, no writes) until data
-// lands upstream.
+// documented follow-on, not built here.
+//
+// (This used to say Hub returned 0 guardians and the step was a dormant no-op.
+// It isn't: a VHPS sync on 3 Sep 2026 fetched 406 and linked 404 of them. The
+// note outlived the condition it described and was still being read as current
+// — including by me, when answering a question about why guardian-linked data
+// looked missing. A comment asserting what an upstream service returns today
+// dates the moment it is written; the summary this returns is the live answer.)
 //
 // Every upsert is keyed on the Hub id we mirror onto each Connect row
 // (`hubYearGroupId` / `hubClassId` / `hubPupilId` / `hubUserId`, all `@unique`),
