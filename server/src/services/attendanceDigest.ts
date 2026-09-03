@@ -1,4 +1,5 @@
 import prisma from './prisma.js'
+import { formalSchoolName } from './schoolName.js'
 import { enqueueEmail } from './outbox.js'
 import { nowInTimezone } from './dateTime.js'
 
@@ -41,7 +42,7 @@ function formatLongDate(dateStr: string): string {
 
 export async function buildDigestData(schoolId: string, date: string): Promise<DigestData> {
   const [school, records, totalStudents] = await Promise.all([
-    prisma.school.findUnique({ where: { id: schoolId }, select: { name: true } }),
+    prisma.school.findUnique({ where: { id: schoolId }, select: { name: true, city: true } }),
     prisma.attendanceRecord.findMany({
       where: {
         schoolId,
@@ -72,7 +73,7 @@ export async function buildDigestData(schoolId: string, date: string): Promise<D
   }))
 
   return {
-    schoolName: school?.name ?? '',
+    schoolName: formalSchoolName(school),
     date,
     formattedDate: formatLongDate(date),
     absent: rows.filter(r => r.status === 'ABSENT'),
