@@ -96,6 +96,17 @@ export function NewConversationPage() {
     .filter(g => g.teachers.length > 0)
   const specialistCount = specialistGroups.reduce((n, g) => n + g.teachers.length, 0)
 
+  // An ILSA is 1:1 with one pupil and engaged by that pupil's parent, so the
+  // server already returns only this guardian's own children's. Grouped by child
+  // because a parent with two children needs to know which one this is for —
+  // and because the thread endpoint requires that studentId.
+  const ilsasByChild = new Map<string, { studentName: string; ilsas: NonNullable<AvailableContactsResponse['ilsas']> }>()
+  for (const ilsa of data?.ilsas ?? []) {
+    const entry = ilsasByChild.get(ilsa.studentId)
+    if (entry) entry.ilsas.push(ilsa)
+    else ilsasByChild.set(ilsa.studentId, { studentName: ilsa.studentName ?? 'your child', ilsas: [ilsa] })
+  }
+
   // Which contacts sit above the fold is the school's call, not a guess from
   // the name here — "Reception" at one school is "Front Office" at the next.
   const pinnedContacts = (data?.schoolContacts ?? []).filter(c => c.alwaysVisible)
@@ -170,6 +181,45 @@ export function NewConversationPage() {
             </div>
           ))}
 
+          {/* Learning support, kept beside the class teacher rather than folded
+              into an expander. A parent who has an ILSA has exactly one, for
+              their own child — burying that to shorten a list they aren't on
+              would be the wrong trade. Shaped distinctly from teachers, as the
+              contacts endpoint intends. */}
+          {[...ilsasByChild.entries()].map(([studentId, group]) => (
+            <div key={studentId} className="space-y-2">
+              <h2 className="text-sm font-semibold px-1" style={{ color: '#7A6469' }}>
+                {group.studentName}'s Learning Support
+              </h2>
+              <div className="bg-white rounded-[22px] overflow-hidden" style={{ border: '1px solid #DCE7F5' }}>
+                {group.ilsas.map((ilsa, idx) => (
+                  <button
+                    key={ilsa.id}
+                    onClick={() => handleSelectTeacher(ilsa.id, studentId)}
+                    className="w-full text-left px-4 py-3.5 flex items-center gap-3 active:bg-gray-50 transition-colors"
+                    style={{ borderBottom: idx < group.ilsas.length - 1 ? '1px solid #EDF4FC' : undefined }}
+                  >
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold"
+                      style={{ backgroundColor: '#EDF4FC', color: '#5B8EC4' }}
+                    >
+                      {ilsa.avatarUrl
+                        ? <img src={ilsa.avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
+                        : getInitials(ilsa.name)}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium" style={{ color: '#2D2225' }}>{ilsa.name}</p>
+                      <p className="text-xs" style={{ color: '#5B8EC4' }}>
+                        {ilsa.roleLabel || 'Learning Support Assistant'}
+                      </p>
+                    </div>
+                    <User className="w-4 h-4 shrink-0" style={{ color: '#D0C5C8' }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
           {/* The front desk, alongside the class teacher rather than below a
               list of everyone else. */}
           {pinnedContacts.length > 0 && (
@@ -230,7 +280,7 @@ export function NewConversationPage() {
           )}
 
           {/* Empty state */}
-          {childTeachers.size === 0 && (!data || data.schoolContacts.length === 0) && (
+          {childTeachers.size === 0 && ilsasByChild.size === 0 && (!data || data.schoolContacts.length === 0) && (
             <div className="text-center py-12">
               <p className="text-sm" style={{ color: '#7A6469' }}>
                 No contacts available. Your school may not have assigned class teachers yet.

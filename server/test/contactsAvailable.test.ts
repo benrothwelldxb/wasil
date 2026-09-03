@@ -115,3 +115,54 @@ describe('GET /api/inbox/contacts/available', () => {
     expect(res.status).toBe(403)
   })
 })
+
+/**
+ * An ILSA is 1:1 with one pupil and engaged by that pupil's parent (ADR 0006),
+ * so a guardian must see their own child's and nobody else's. The server was
+ * already returning these correctly; the parent app simply never rendered them,
+ * which is why an ILSA could message a parent but not be messaged back.
+ */
+describe('Learning Support Assistants on the parent contact list', () => {
+  it('returns the ILSA linked to this parent\'s child, with the pupil named', async () => {
+    prismaMock.ilsaLink.findMany.mockResolvedValue([
+      { studentId: 'stu-1', user: { id: 'ilsa-1', name: 'Sabrina Cabato Dy', avatarUrl: null } },
+    ])
+
+    const res = await request(makeApp()).get('/api/inbox/contacts/available')
+
+    expect(res.body.ilsas).toHaveLength(1)
+    expect(res.body.ilsas[0]).toMatchObject({
+      id: 'ilsa-1',
+      name: 'Sabrina Cabato Dy',
+      roleLabel: 'Learning Support Assistant',
+      // The thread endpoint requires this, and a parent with two children needs
+      // to know which one the ILSA is for.
+      studentId: 'stu-1',
+      studentName: 'Alya Zaidi',
+    })
+  })
+
+  // A revoked link is how the school cuts off access; it must disappear from the
+  // parent's contact list too, not just from the ILSA's side.
+  it('asks only for active links', async () => {
+    prismaMock.ilsaLink.findMany.mockResolvedValue([])
+    await request(makeApp()).get('/api/inbox/contacts/available')
+    expect(prismaMock.ilsaLink.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ active: true }) }),
+    )
+  })
+
+  it('scopes the lookup to this parent\'s own children', async () => {
+    prismaMock.ilsaLink.findMany.mockResolvedValue([])
+    await request(makeApp()).get('/api/inbox/contacts/available')
+    expect(prismaMock.ilsaLink.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ studentId: { in: ['stu-1'] } }) }),
+    )
+  })
+
+  it('is an empty list for a parent with no ILSA', async () => {
+    prismaMock.ilsaLink.findMany.mockResolvedValue([])
+    const res = await request(makeApp()).get('/api/inbox/contacts/available')
+    expect(res.body.ilsas).toEqual([])
+  })
+})
