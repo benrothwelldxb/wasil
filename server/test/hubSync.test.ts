@@ -104,6 +104,7 @@ const ECATERMS_DORMANT = {
 // What syncIlsasForSchool returns while Hub's /ilsas endpoint is dormant: it
 // 404-tolerates, so a school with no ILSA slice yet reconciles to all zeroes.
 const ILSAS_DORMANT = {
+  fetched: 0,
   created: 0,
   linked: 0,
   skippedNoEmail: 0,
@@ -830,9 +831,9 @@ describe('syncSchoolFromHub — ILSA links', () => {
   })
 
   it('reports what it reconciled', async () => {
-    syncIlsasForSchool.mockResolvedValue({ ...ILSAS_DORMANT, created: 1, linksActive: 1 })
+    syncIlsasForSchool.mockResolvedValue({ ...ILSAS_DORMANT, fetched: 1, created: 1, linksActive: 1 })
     const summary = await syncSchoolFromHub('connect-school-1')
-    expect(summary.ilsas).toMatchObject({ created: 1, linksActive: 1 })
+    expect(summary.ilsas).toMatchObject({ fetched: 1, created: 1, linksActive: 1 })
   })
 
   // Same discipline as the calendar and term folds: a bolt-on must never be
