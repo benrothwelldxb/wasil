@@ -37,6 +37,7 @@ import {
 } from './hubMis.js'
 import { resyncCalendarForSchool, type CalendarSyncSummary } from './hubCalendarSync.js'
 import { syncTermDates, type TermDateSyncSummary } from './hubTermSync.js'
+import { syncIlsasForSchool, type IlsaSyncSummary } from './hubIlsaSync.js'
 import { syncEcaTerms, type EcaTermSyncSummary } from './hubEcaTermSync.js'
 
 /** The Connect school isn't linked to a Hub school — nothing to sync. */
@@ -114,6 +115,12 @@ export interface SyncSummary {
    * Hub term. Dormant-safe: `null` when the sync was skipped (school not
    * linked) or threw (an ECA-term failure must never break the roster sync). */
   ecaTerms?: EcaTermSyncSummary | null
+  /** ILSA roster + pupil links (ADR 0006). Folded in so the manual "Sync from
+   * Hub" also reconciles them: until now the ONLY trigger was a Hub `ilsa.*`
+   * webhook, so a school whose ILSAs predate that webhook — or whose webhook
+   * never fired — had no links at all, and an ILSA resolved to no actor.
+   * `null` when the sync was skipped (school not linked) or threw. */
+  ilsas?: IlsaSyncSummary | null
 }
 
 /**
@@ -326,6 +333,20 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     calendar = null
   }
 
+  // --- ILSA roster + pupil links -------------------------------------------
+  // Same reasoning as the calendar fold, with a sharper edge: an ILSA with no
+  // IlsaLink resolves to no actor at all, so every partner call they make is a
+  // 403. A webhook that never fired therefore looks exactly like "this person
+  // has nobody to message". Dormant-safe on its own (Hub 404 → no-op), and
+  // wrapped so an ILSA failure can never fail the roster sync.
+  let ilsas: IlsaSyncSummary | null = null
+  try {
+    ilsas = await syncIlsasForSchool(schoolId)
+  } catch (err) {
+    console.error('[hubSync] ILSA resync failed (roster sync unaffected):', err)
+    ilsas = null
+  }
+
   // --- Term-dates refresh --------------------------------------------------
   // Fold the Hub term-dates sync in too, so the admin "Sync from Hub" button
   // also mirrors (and prunes) the term calendar. Wrapped so a term-date failure
@@ -362,6 +383,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     calendar,
     termDates,
     ecaTerms,
+    ilsas,
   }
 }
 

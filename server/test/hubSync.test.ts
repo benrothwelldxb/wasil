@@ -32,6 +32,11 @@ vi.mock('../src/services/hubCalendarSync', () => ({
   resyncCalendarForSchool: vi.fn(),
 }))
 
+// The ILSA sync has its own suite; mocked here so this one stays DB-free while
+// still asserting the roster sync folds it in.
+const syncIlsasForSchool = vi.fn()
+vi.mock('../src/services/hubIlsaSync', () => ({ syncIlsasForSchool }))
+
 // The term-dates sync has its own suite; here we mock it to assert the roster
 // sync folds it in (and to keep this suite DB-free).
 vi.mock('../src/services/hubTermSync', () => ({
@@ -96,6 +101,17 @@ const ECATERMS_DORMANT = {
   prunedSkippedNonEmpty: 0,
 }
 
+// What syncIlsasForSchool returns while Hub's /ilsas endpoint is dormant: it
+// 404-tolerates, so a school with no ILSA slice yet reconciles to all zeroes.
+const ILSAS_DORMANT = {
+  created: 0,
+  linked: 0,
+  skippedNoEmail: 0,
+  skippedNoPupil: 0,
+  linksActive: 0,
+  linksDeactivated: 0,
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 
@@ -103,6 +119,7 @@ beforeEach(() => {
   prismaMock.school.update.mockResolvedValue(SCHOOL)
   mResyncCalendar.mockResolvedValue(CALENDAR_DORMANT)
   mSyncTermDates.mockResolvedValue(TERMDATES_DORMANT)
+  syncIlsasForSchool.mockResolvedValue(ILSAS_DORMANT)
   mSyncEcaTerms.mockResolvedValue(ECATERMS_DORMANT)
 
   // Upserts echo back a Connect id derived from the Hub id so FK resolution is
@@ -185,6 +202,7 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       calendar: CALENDAR_DORMANT,
       termDates: TERMDATES_DORMANT,
       ecaTerms: ECATERMS_DORMANT,
+      ilsas: ILSAS_DORMANT,
     })
 
     // On success the school is marked fresh (and last-synced is stamped).
@@ -798,5 +816,35 @@ describe('syncSchoolFromHub — a guardian who changed their email', () => {
     expect(prismaMock.user.update.mock.calls[0][0].data).not.toHaveProperty('email')
     expect(summary.guardians.emailUpdated).toBe(0)
     expect(summary.guardians.emailConflicts).toEqual([])
+  })
+})
+
+// An ILSA with no IlsaLink resolves to no partner actor at all, so every call
+// they make is a 403 — which Desk renders as "nobody to message". Until now the
+// ONLY thing that created those links was a Hub `ilsa.*` webhook, so a school
+// whose webhook never fired had no way to get them.
+describe('syncSchoolFromHub — ILSA links', () => {
+  it('reconciles the ILSA roster as part of the manual sync', async () => {
+    await syncSchoolFromHub('connect-school-1')
+    expect(syncIlsasForSchool).toHaveBeenCalledWith('connect-school-1')
+  })
+
+  it('reports what it reconciled', async () => {
+    syncIlsasForSchool.mockResolvedValue({ ...ILSAS_DORMANT, created: 1, linksActive: 1 })
+    const summary = await syncSchoolFromHub('connect-school-1')
+    expect(summary.ilsas).toMatchObject({ created: 1, linksActive: 1 })
+  })
+
+  // Same discipline as the calendar and term folds: a bolt-on must never be
+  // able to fail the roster sync.
+  it('an ILSA failure leaves the roster sync intact', async () => {
+    syncIlsasForSchool.mockRejectedValue(new Error('hub down'))
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(summary.ilsas).toBeNull()
+    expect(summary.pupils).toBe(1)
+    // Still marked fresh — the roster genuinely synced.
+    expect(prismaMock.school.update).toHaveBeenCalled()
   })
 })
