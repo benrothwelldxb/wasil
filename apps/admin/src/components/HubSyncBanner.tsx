@@ -59,10 +59,21 @@ function summarizeSync(summary: HubSyncSummary): string {
     if (il.roleConflict) detail.push(`${il.roleConflict} already has another role`)
     if (il.linksDeactivated) detail.push(`${il.linksDeactivated} unlinked`)
     parts.push(`${il.fetched} ILSA${il.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
-  } else if (il && il.linksDeactivated) {
-    // Hub sent none but we had some: every link was revoked this run, which is
-    // a real event and not the same as "nothing happened".
-    parts.push(`${il.linksDeactivated} ILSA link${il.linksDeactivated !== 1 ? 's' : ''} removed`)
+  } else if (il) {
+    // Reported even at zero, deliberately.
+    //
+    // Saying nothing for an empty roster made silence mean two things at once:
+    // "Hub sent no ILSAs" and "this build predates ILSA reporting". Those need
+    // completely different people to act, and no one could tell them apart from
+    // the toast — which is the whole reason the toast exists.
+    //
+    // `ilsas` is always present now, so any ILSA text at all proves the build,
+    // and its absence means an old one. Mild noise for a school with no ILSAs
+    // buys an unambiguous signal for every school that has them.
+    const removed = il.linksDeactivated
+      ? `, ${il.linksDeactivated} link${il.linksDeactivated !== 1 ? 's' : ''} removed`
+      : ''
+    parts.push(`no ILSAs from Hub${removed}`)
   }
 
   if (parts.length === 0) return 'Synced from Hub — no changes'
