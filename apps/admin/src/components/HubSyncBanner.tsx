@@ -36,6 +36,24 @@ function summarizeSync(summary: HubSyncSummary): string {
     parts.push(`${g.fetched} parent${g.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
   }
 
+  // ILSAs, spelled out the same way and for the same reason. An ILSA with no
+  // IlsaLink resolves to no messaging actor at all, so a shortfall here is the
+  // difference between an assistant who can message their pupil's parent and
+  // one who is told they have nobody to message.
+  const il = summary.ilsas
+  if (il?.fetched) {
+    const detail: string[] = []
+    if (il.linksActive) detail.push(`${il.linksActive} linked to a pupil`)
+    if (il.skippedNoEmail) detail.push(`${il.skippedNoEmail} skipped, no email`)
+    if (il.skippedNoPupil) detail.push(`${il.skippedNoPupil} skipped, pupil not synced`)
+    if (il.linksDeactivated) detail.push(`${il.linksDeactivated} unlinked`)
+    parts.push(`${il.fetched} ILSA${il.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
+  } else if (il && il.linksDeactivated) {
+    // Hub sent none but we had some: every link was revoked this run, which is
+    // a real event and not the same as "nothing happened".
+    parts.push(`${il.linksDeactivated} ILSA link${il.linksDeactivated !== 1 ? 's' : ''} removed`)
+  }
+
   if (parts.length === 0) return 'Synced from Hub — no changes'
   return `Synced from Hub — ${parts.join(', ')}`
 }

@@ -51,7 +51,7 @@ describe('syncIlsasForSchool', () => {
       create: expect.objectContaining({ schoolId: 'sch-1', userId: 'ilsa-1', studentId: 'stu-1', hubPupilId: 'hp-1', active: true }),
       update: { active: true, deactivatedAt: null, hubPupilId: 'hp-1' },
     }))
-    expect(summary).toMatchObject({ created: 1, linksActive: 1 })
+    expect(summary).toMatchObject({ fetched: 1, created: 1, linksActive: 1 })
     // The sweep excludes the link we just reaffirmed.
     expect(prismaMock.ilsaLink.updateMany.mock.calls[0][0].where).toEqual({
       schoolId: 'sch-1', active: true, id: { notIn: ['link-1'] },
@@ -99,5 +99,17 @@ describe('syncIlsasForSchool', () => {
       data: { active: false, deactivatedAt: expect.any(Date) },
     })
     expect(summary.linksDeactivated).toBe(1)
+  })
+})
+
+// listIlsas 404-tolerates, so a Hub endpoint that isn't deployed for a school
+// arrives here identically to a school that genuinely has no ILSAs: zero. The
+// fetched count is what lets an admin tell those apart — without it, "Hub sent
+// us nothing" and "we dropped everything Hub sent" look the same on screen.
+describe('what Hub actually sent', () => {
+  it('reports how many ILSAs came back', async () => {
+    misMock.listIlsas.mockResolvedValue([])
+    const summary = await syncIlsasForSchool('school-1')
+    expect(summary.fetched).toBe(0)
   })
 })

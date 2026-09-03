@@ -22,6 +22,12 @@ import prisma from './prisma.js'
 import { listIlsas, type HubIlsa } from './hubMis.js'
 
 export interface IlsaSyncSummary {
+  /** How many ILSAs Hub returned, before any of them were skipped. The number
+   * to compare against Hub's own roster: `listIlsas` 404-tolerates, so a Hub
+   * endpoint that isn't deployed for this school is indistinguishable here from
+   * a school with no ILSAs — both arrive as zero. Reporting it is what lets an
+   * admin tell "Hub sent none" from "we dropped them all". */
+  fetched: number
   /** ILSA users created brand-new (role ILSA). */
   created: number
   /** ILSA users matched to an existing account by Hub id or email (role kept). */
@@ -43,7 +49,7 @@ export interface IlsaSyncSummary {
  */
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
-    created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
+    fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
     linksActive: 0, linksDeactivated: 0,
   }
 
@@ -54,6 +60,7 @@ export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSumm
   if (!school?.hubSchoolId) return summary
 
   const hubIlsas = await listIlsas(school.hubSchoolId)
+  summary.fetched = hubIlsas.length
 
   // Ids of the IlsaLink rows we (re)affirmed active this run — everything else
   // still-active in this school is stale and gets deactivated at the end.

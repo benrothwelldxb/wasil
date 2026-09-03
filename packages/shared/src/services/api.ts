@@ -2862,6 +2862,19 @@ export interface HubSyncSummary {
   guardians: { fetched: number; created: number; linked: number; skippedNoEmail: number }
   parentLinks: { created: number; skippedNoPupil: number }
   teacherAssignments: { created: number; removed: number; unresolved: number }
+  /** ILSA roster + pupil links (ADR 0006). Absent when the sync was skipped or
+   *  threw. `fetched` is how many Hub returned: because listIlsas 404-tolerates,
+   *  a Hub endpoint that isn't deployed reads here as zero, exactly like a
+   *  school with no ILSAs — so the count is what tells those apart. */
+  ilsas?: {
+    fetched: number
+    created: number
+    linked: number
+    skippedNoEmail: number
+    skippedNoPupil: number
+    linksActive: number
+    linksDeactivated: number
+  } | null
 }
 export interface HubSyncStatus {
   lastSyncedAt: string | null
