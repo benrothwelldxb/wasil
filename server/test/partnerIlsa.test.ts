@@ -172,7 +172,7 @@ describe('GET /api/partner/inbox/threads/:id (ILSA)', () => {
       student: { firstName: 'Amina', lastName: 'Khan', class: { name: '1A' } },
       participants: [],
       messages: [
-        { id: 'm-1', senderId: 'p-1', content: 'Hello', createdAt: new Date('2026-08-14T09:00:00.000Z'), sender: { name: 'Sara Khan' }, attachments: [] },
+        { id: 'm-1', senderId: 'p-1', content: 'Hello', createdAt: new Date('2026-08-14T09:00:00.000Z'), sender: { name: 'Sara Khan' }, attachments: [], reactions: [] },
       ],
     })
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-ilsa?hub_user_id=hu-ilsa'))
@@ -281,8 +281,8 @@ describe('GET /api/partner/oversight/ilsa-threads', () => {
         id: 'c-ilsa', staffId: 'ilsa-1', createdAt: new Date('2026-08-01T09:00:00.000Z'), lastMessageAt: new Date('2026-08-14T10:00:00.000Z'),
         parent: { name: 'Sara Khan' }, staff: { id: 'ilsa-1', name: 'Ms Support' }, participants: [],
         messages: [
-          { id: 'm-1', senderId: 'ilsa-1', content: 'Update', createdAt: new Date('2026-08-14T09:00:00.000Z'), deletedAt: null, sender: { name: 'Ms Support' }, attachments: [] },
-          { id: 'm-2', senderId: 'p-1', content: 'Thanks', createdAt: new Date('2026-08-14T10:00:00.000Z'), deletedAt: null, sender: { name: 'Sara Khan' }, attachments: [] },
+          { id: 'm-1', senderId: 'ilsa-1', content: 'Update', createdAt: new Date('2026-08-14T09:00:00.000Z'), deletedAt: null, sender: { name: 'Ms Support' }, attachments: [], reactions: [] },
+          { id: 'm-2', senderId: 'p-1', content: 'Thanks', createdAt: new Date('2026-08-14T10:00:00.000Z'), deletedAt: null, sender: { name: 'Sara Khan' }, attachments: [], reactions: [] },
         ],
       },
     ])

@@ -9,7 +9,7 @@
 // teacher) — and never other pupil PII. That keeps partners outside the
 // parent-data boundary by design.
 import { Router } from 'express'
-import type { Request } from 'express'
+import type { Request, Response } from 'express'
 import multer from 'multer'
 import { marked } from 'marked'
 import prisma from '../services/prisma.js'
@@ -26,6 +26,7 @@ import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
+import { ALLOWED_REACTION_EMOJIS } from './inbox.js'
 
 const router = Router()
 
@@ -756,6 +757,139 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
   }
 })
 
+/** { [emoji]: { count, reacted } } — the shape the parent inbox already returns,
+ *  built here for the partner surface so both apps render the same thing.
+ *  `undefined` rather than `{}` when empty: Desk renders nothing for a missing
+ *  key, so a thread with no reactions costs no bytes and no special case. */
+function summariseReactions(
+  reactions: Array<{ emoji: string; userId: string }>,
+  viewerId: string,
+): Record<string, { count: number; reacted: boolean }> | undefined {
+  if (reactions.length === 0) return undefined
+  const out: Record<string, { count: number; reacted: boolean }> = {}
+  for (const r of reactions) {
+    const entry = out[r.emoji] ?? (out[r.emoji] = { count: 0, reacted: false })
+    entry.count++
+    if (r.userId === viewerId) entry.reacted = true
+  }
+  return out
+}
+
+// ─── Reacting to a message ───────────────────────────────────────────────────
+//
+//   POST   /api/partner/inbox/threads/:id/messages/:messageId/react  { hub_user_id, emoji }
+//   DELETE /api/partner/inbox/threads/:id/messages/:messageId/react?hub_user_id=&emoji=
+//
+// resolveActor rather than resolveStaffActor, so an ILSA can react in their own
+// thread the way a teacher can in theirs — the same reason the thread read uses
+// it. The visibility gate is the read's gate exactly: if you cannot open the
+// thread you cannot react in it.
+//
+// A reaction is NOT an acknowledgement. It is not a read receipt, it does not
+// answer a message, and nothing here touches the "who has responded" counts or
+// the unread state. It also sends no notification: a heart from a teacher is not
+// worth a push, and the parent sees it next time they open the thread.
+async function resolveReactionTarget(req: Request, res: Response, emoji: unknown) {
+  const hubUserId = typeof req.query.hub_user_id === 'string'
+    ? req.query.hub_user_id.trim()
+    : typeof (req.body as Record<string, unknown>)?.hub_user_id === 'string'
+      ? ((req.body as Record<string, string>).hub_user_id).trim()
+      : ''
+  const actor = await resolveActor(hubUserId, schoolHintOf(req))
+  if (!actor) {
+    res.status(403).json({ error: 'forbidden' })
+    return null
+  }
+
+  if (typeof emoji !== 'string' || !ALLOWED_REACTION_EMOJIS.includes(emoji)) {
+    res.status(400).json({ error: 'unsupported_emoji', allowed: ALLOWED_REACTION_EMOJIS })
+    return null
+  }
+
+  const { id, messageId } = req.params
+  // Same gate as reading the thread — no audit-scope escape hatch here. Reading
+  // someone else's thread for oversight is a logged, deliberate act; writing
+  // into it is not something oversight should permit.
+  const conversation = await prisma.conversation.findFirst({
+    where: threadWhereForActor(id, actor),
+    select: { id: true },
+  })
+  if (!conversation) {
+    res.status(404).json({ error: 'not_found' })
+    return null
+  }
+
+  const message = await prisma.conversationMessage.findFirst({
+    // Scoped to the thread, so a message id from another conversation cannot be
+    // reacted to by borrowing a thread the actor can see.
+    where: { id: messageId, conversationId: conversation.id },
+    select: { id: true, deletedAt: true },
+  })
+  if (!message) {
+    res.status(404).json({ error: 'message_not_found' })
+    return null
+  }
+  // A withdrawn message shows no reactions, so it should not gain one.
+  if (message.deletedAt) {
+    res.status(409).json({ error: 'message_withdrawn' })
+    return null
+  }
+
+  return { actorId: actorUserId(actor), messageId: message.id, emoji }
+}
+
+router.post('/inbox/threads/:id/messages/:messageId/react', requirePartner, async (req, res) => {
+  try {
+    const target = await resolveReactionTarget(req, res, (req.body as Record<string, unknown>)?.emoji)
+    if (!target) return
+
+    // Idempotent: reacting twice with the same emoji is the same state, not an
+    // error. The unique index is [messageId, userId, emoji].
+    await prisma.messageReaction.upsert({
+      where: {
+        messageId_userId_emoji: {
+          messageId: target.messageId,
+          userId: target.actorId,
+          emoji: target.emoji,
+        },
+      },
+      create: { messageId: target.messageId, userId: target.actorId, emoji: target.emoji },
+      update: {},
+    })
+
+    const reactions = await prisma.messageReaction.findMany({
+      where: { messageId: target.messageId },
+      select: { emoji: true, userId: true },
+    })
+    res.json({ reactions: summariseReactions(reactions, target.actorId) ?? {} })
+  } catch (error) {
+    console.error('Error adding partner reaction:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+router.delete('/inbox/threads/:id/messages/:messageId/react', requirePartner, async (req, res) => {
+  try {
+    const target = await resolveReactionTarget(req, res, req.query.emoji)
+    if (!target) return
+
+    // deleteMany, not delete: removing a reaction that is already gone is the
+    // state the caller asked for, not a 404.
+    await prisma.messageReaction.deleteMany({
+      where: { messageId: target.messageId, userId: target.actorId, emoji: target.emoji },
+    })
+
+    const reactions = await prisma.messageReaction.findMany({
+      where: { messageId: target.messageId },
+      select: { emoji: true, userId: true },
+    })
+    res.json({ reactions: summariseReactions(reactions, target.actorId) ?? {} })
+  } catch (error) {
+    console.error('Error removing partner reaction:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 // 2. Read one thread with its messages (mirrors GET /conversations/:id incl. the
 // mark-inbound-read side-effect). Soft-deleted messages are EXCLUDED entirely —
 // Desk gets a curated, display-only shape (names only; no reactions / replyTo /
@@ -791,6 +925,7 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
           include: {
             sender: { select: { name: true } },
             attachments: true,
+            reactions: { select: { emoji: true, userId: true } },
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -867,6 +1002,15 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
           deleted: isDeleted || undefined,
           deletedAt: m.deletedAt?.toISOString() || null,
           sentAt: m.createdAt.toISOString(),
+          // The same { [emoji]: { count, reacted } } summary the parent inbox
+          // builds, with `reacted` relative to the caller. Omitted when empty so
+          // Desk can treat a missing key as "no reactions" — which is what lets
+          // this ship before the write path without changing anything.
+          //
+          // Dropped from a withdrawn message along with its content and files: a
+          // tombstone carrying hearts would be odd, and reacting to something a
+          // parent withdrew is not a thing to preserve.
+          reactions: isDeleted ? undefined : summariseReactions(m.reactions, aId),
           attachments: isDeleted
             ? []
             : m.attachments.map((a) => ({
