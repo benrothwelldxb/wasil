@@ -220,8 +220,18 @@ app.use('/api/admin/test-accounts', testAccountsRoutes)
 
 // Liveness probe — the process is up. Cheap and always returns 200.
 // Use this to decide "should we restart the container?".
+//
+// `commit` answers the question this probe kept failing to answer: which build
+// is actually running. Without it, "my fix isn't working" and "my fix isn't
+// deployed yet" are indistinguishable from the outside, and both look like a
+// bug in the code. Railway injects the SHA; anywhere else it reads "unknown",
+// which is at least honest.
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+  res.json({
+    status: 'ok',
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 8) || process.env.GIT_COMMIT_SHA?.slice(0, 8) || 'unknown',
+    timestamp: new Date().toISOString(),
+  })
 })
 
 // Readiness probe — the process can actually serve traffic.
