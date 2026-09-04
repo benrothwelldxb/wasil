@@ -1888,14 +1888,33 @@ router.get('/groups', requirePartner, async (req, res) => {
 // pupils on `Student.hubPupilId` (the Hub MIS link) and never sees our internal
 // ids, so this is the boundary map — same pattern as hubClassId→Class. Returns
 // the internal ids, or null if ANY id is unknown/cross-school (caller → 400).
-async function resolvePupilHubIds(pupilHubIds: string[], schoolId: string): Promise<string[] | null> {
-  if (pupilHubIds.length === 0) return []
+/**
+ * Hub pupil ids → internal Student ids, and which ones didn't resolve.
+ *
+ * The old version returned null on any miss, so the route answered "unknown or
+ * cross-school pupil" for a roster of eighty without saying which one — leaving
+ * the caller to bisect. It also failed the whole request over a single pupil
+ * who had left, which is a normal thing for a roster to contain.
+ *
+ * Now it reports: callers accept what resolved and name what didn't, the way
+ * the communication-intents endpoint already does.
+ */
+async function resolvePupilHubIds(
+  pupilHubIds: string[],
+  schoolId: string,
+): Promise<{ studentIds: string[]; unknownPupilIds: string[] }> {
+  if (pupilHubIds.length === 0) return { studentIds: [], unknownPupilIds: [] }
   const students = await prisma.student.findMany({
     where: { hubPupilId: { in: pupilHubIds }, schoolId },
-    select: { id: true },
+    select: { id: true, hubPupilId: true },
   })
-  if (students.length !== pupilHubIds.length) return null
-  return students.map(s => s.id)
+  const found = new Set(students.map(s => s.hubPupilId))
+  return {
+    studentIds: students.map(s => s.id),
+    // Deduped, and in the order the caller sent them, so the response reads
+    // against the request rather than against our query.
+    unknownPupilIds: [...new Set(pupilHubIds)].filter(id => !found.has(id)),
+  }
 }
 
 // Create a group in the actor's school with an initial pupil roster. Desk sends
@@ -1905,25 +1924,65 @@ async function resolvePupilHubIds(pupilHubIds: string[], schoolId: string): Prom
 //   POST /api/partner/groups  { hub_user_id, name, pupilHubIds: string[] }
 router.post('/groups', requirePartner, async (req, res) => {
   try {
-    const { hub_user_id, name, pupilHubIds } = req.body ?? {}
+    const { hub_user_id, name, pupilHubIds, categoryId, externalRef } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
     if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' })
 
-    // Map Hub pupil ids → internal Student ids, validating same-school.
-    const studentIds = await resolvePupilHubIds(toIdArray(pupilHubIds), actor.schoolId)
-    if (studentIds === null) return res.status(400).json({ error: 'unknown or cross-school pupil' })
+    // A category the caller asked for must belong to this school; silently
+    // dropping a cross-school one would file a squad under another school's
+    // heading.
+    const category = typeof categoryId === 'string' && categoryId.trim()
+      ? await prisma.groupCategory.findFirst({
+          where: { id: categoryId.trim(), schoolId: actor.schoolId },
+          select: { id: true },
+        })
+      : null
+    if (typeof categoryId === 'string' && categoryId.trim() && !category) {
+      return res.status(400).json({ error: 'unknown category for this school' })
+    }
 
+    // Accept what resolved and report what didn't, rather than refusing the
+    // whole roster over one pupil. A published roster containing someone who
+    // has left is ordinary, and "unknown or cross-school pupil" with no id left
+    // the caller to bisect eighty pupils to find which.
+    const { studentIds, unknownPupilIds } = await resolvePupilHubIds(toIdArray(pupilHubIds), actor.schoolId)
+
+    const ref = typeof externalRef === 'string' && externalRef.trim() ? externalRef.trim() : null
+
+    // Idempotent on externalRef where the caller supplies one: re-publishing the
+    // same roster updates it instead of colliding with @@unique([schoolId, name]),
+    // which is what forced callers to mangle names like "Football (Autumn Term)"
+    // to stay unique.
     let group: { id: string }
+    const existing = ref
+      ? await prisma.group.findFirst({ where: { externalRef: ref, schoolId: actor.schoolId }, select: { id: true } })
+      : null
     try {
-      group = await prisma.group.create({
-        data: { name: name.trim(), schoolId: actor.schoolId },
-        select: { id: true },
-      })
+      group = existing
+        ? await prisma.group.update({
+            where: { id: existing.id },
+            data: { name: name.trim(), ...(category ? { categoryId: category.id } : {}) },
+            select: { id: true },
+          })
+        : await prisma.group.create({
+            data: {
+              name: name.trim(),
+              schoolId: actor.schoolId,
+              ...(category ? { categoryId: category.id } : {}),
+              ...(ref ? { externalRef: ref } : {}),
+            },
+            select: { id: true },
+          })
     } catch (error: unknown) {
       if ((error as { code?: string })?.code === 'P2002') {
-        return res.status(409).json({ error: 'a group with this name already exists' })
+        return res.status(409).json({
+          error: 'a group with this name already exists',
+          // Naming the way out: a caller sending externalRef gets an upsert and
+          // never sees this.
+          hint: 'send an externalRef to make this call idempotent instead',
+        })
       }
       throw error
     }
@@ -1935,7 +1994,12 @@ router.post('/groups', requirePartner, async (req, res) => {
       })
     }
 
-    res.status(201).json({ id: group.id })
+    res.status(201).json({
+      id: group.id,
+      added: studentIds.length,
+      // Present only when something didn't resolve, so a clean call stays clean.
+      ...(unknownPupilIds.length > 0 ? { unknownPupilIds } : {}),
+    })
   } catch (error) {
     console.error('Error creating partner group:', error)
     res.status(500).json({ error: 'internal_error' })
@@ -2003,12 +2067,14 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
     })
     if (!group) return res.status(404).json({ error: 'not_found' })
 
-    // Map both sets of Hub pupil ids → internal Student ids up front (read-only),
-    // so a bad pupil on either side rejects the whole patch before any write.
-    const addStudentIds = await resolvePupilHubIds(toIdArray(addPupilHubIds), actor.schoolId)
-    if (addStudentIds === null) return res.status(400).json({ error: 'unknown or cross-school pupil' })
-    const removeStudentIds = await resolvePupilHubIds(toIdArray(removePupilHubIds), actor.schoolId)
-    if (removeStudentIds === null) return res.status(400).json({ error: 'unknown or cross-school pupil' })
+    // Both sets resolved up front (read-only). Unknown ids are reported rather
+    // than rejecting the patch: a roster update naming one pupil who has left
+    // should still move the other twenty-nine.
+    const add = await resolvePupilHubIds(toIdArray(addPupilHubIds), actor.schoolId)
+    const remove = await resolvePupilHubIds(toIdArray(removePupilHubIds), actor.schoolId)
+    const addStudentIds = add.studentIds
+    const removeStudentIds = remove.studentIds
+    const unknownPupilIds = [...new Set([...add.unknownPupilIds, ...remove.unknownPupilIds])]
 
     if (typeof name === 'string' && name.trim()) {
       try {
@@ -2034,7 +2100,12 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
       })
     }
 
-    res.json({ ok: true })
+    res.json({
+      ok: true,
+      added: addStudentIds.length,
+      removed: removeStudentIds.length,
+      ...(unknownPupilIds.length > 0 ? { unknownPupilIds } : {}),
+    })
   } catch (error) {
     console.error('Error patching partner group:', error)
     res.status(500).json({ error: 'internal_error' })

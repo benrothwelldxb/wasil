@@ -25,6 +25,7 @@ const prismaMock = {
   message: { create: vi.fn(), findMany: vi.fn() },
   messageAttachment: { createMany: vi.fn() },
   group: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  groupCategory: { findFirst: vi.fn() },
   studentGroupLink: { createMany: vi.fn(), deleteMany: vi.fn() },
   yearGroup: { findFirst: vi.fn() },
   auditLog: { create: vi.fn() },
@@ -979,16 +980,19 @@ describe('POST /api/partner/groups', () => {
   })
 
   it('maps Hub pupil ids → internal Student ids and creates links with the internal ids', async () => {
-    prismaMock.student.findMany.mockResolvedValue([{ id: 's-1' }, { id: 's-2' }])
+    prismaMock.student.findMany.mockResolvedValue([
+      { id: 's-1', hubPupilId: 'hp-1' }, { id: 's-2', hubPupilId: 'hp-2' },
+    ])
     prismaMock.group.create.mockResolvedValue({ id: 'g-new' })
     const res = await auth(request(makeApp()).post('/api/partner/groups'))
       .send({ hub_user_id: 'hu-staff', name: 'Choir', pupilHubIds: ['hp-1', 'hp-2'] })
     expect(res.status).toBe(201)
-    expect(res.body).toEqual({ id: 'g-new' })
+    expect(res.body).toEqual({ id: 'g-new', added: 2 })
     // Resolved by hubPupilId, scoped to the actor's school.
     expect(prismaMock.student.findMany).toHaveBeenCalledWith({
       where: { hubPupilId: { in: ['hp-1', 'hp-2'] }, schoolId: 'sch-1' },
-      select: { id: true },
+      // hubPupilId is selected so a miss can be named, not just counted.
+      select: { id: true, hubPupilId: true },
     })
     expect(prismaMock.group.create).toHaveBeenCalledWith({
       data: { name: 'Choir', schoolId: 'sch-1' },
@@ -1001,10 +1005,69 @@ describe('POST /api/partner/groups', () => {
     })
   })
 
-  it('a cross-school / unknown pupil → 400 and no group created', async () => {
-    prismaMock.student.findMany.mockResolvedValue([{ id: 's-1' }]) // only one of two resolves
+  // Was a 400 that rejected the whole roster and named nothing, leaving the
+  // caller to bisect eighty pupils to find the one that didn't resolve. A
+  // published roster containing someone who has left is ordinary.
+  it('creates the group with the pupils that resolved, and names the ones that did not', async () => {
+    prismaMock.student.findMany.mockResolvedValue([{ id: 's-1', hubPupilId: 'hp-1' }])
+
     const res = await auth(request(makeApp()).post('/api/partner/groups'))
       .send({ hub_user_id: 'hu-staff', name: 'Choir', pupilHubIds: ['hp-1', 'hp-x'] })
+
+    expect(res.status).toBe(201)
+    expect(res.body).toMatchObject({ added: 1, unknownPupilIds: ['hp-x'] })
+    expect(prismaMock.studentGroupLink.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [{ studentId: 's-1', groupId: 'g-new' }] }),
+    )
+  })
+
+  // A clean call should read clean — no empty array to check for.
+  it('omits unknownPupilIds entirely when everything resolved', async () => {
+    prismaMock.student.findMany.mockResolvedValue([
+      { id: 's-1', hubPupilId: 'hp-1' }, { id: 's-2', hubPupilId: 'hp-2' },
+    ])
+    const res = await auth(request(makeApp()).post('/api/partner/groups'))
+      .send({ hub_user_id: 'hu-staff', name: 'Choir', pupilHubIds: ['hp-1', 'hp-2'] })
+    expect(res.body).not.toHaveProperty('unknownPupilIds')
+  })
+
+  // The reason callers were mangling names to stay unique.
+  it('an externalRef upserts instead of colliding on the name', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    prismaMock.group.findFirst.mockResolvedValue({ id: 'g-existing' })
+    prismaMock.group.update.mockResolvedValue({ id: 'g-existing' })
+
+    const res = await auth(request(makeApp()).post('/api/partner/groups'))
+      .send({ hub_user_id: 'hu-staff', name: 'Football', pupilHubIds: [], externalRef: 'active:roster:1' })
+
+    expect(res.status).toBe(201)
+    expect(res.body.id).toBe('g-existing')
+    expect(prismaMock.group.create).not.toHaveBeenCalled()
+    expect(prismaMock.group.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'g-existing' }, data: expect.objectContaining({ name: 'Football' }) }),
+    )
+  })
+
+  it('files the group under a category when one is given', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    prismaMock.groupCategory.findFirst.mockResolvedValue({ id: 'cat-1' })
+
+    await auth(request(makeApp()).post('/api/partner/groups'))
+      .send({ hub_user_id: 'hu-staff', name: 'Squad', pupilHubIds: [], categoryId: 'cat-1' })
+
+    expect(prismaMock.group.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ categoryId: 'cat-1' }) }),
+    )
+  })
+
+  // Silently dropping it would file a squad under another school's heading.
+  it('rejects a category belonging to another school', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    prismaMock.groupCategory.findFirst.mockResolvedValue(null)
+
+    const res = await auth(request(makeApp()).post('/api/partner/groups'))
+      .send({ hub_user_id: 'hu-staff', name: 'Squad', pupilHubIds: [], categoryId: 'cat-other' })
+
     expect(res.status).toBe(400)
     expect(prismaMock.group.create).not.toHaveBeenCalled()
   })
@@ -1092,7 +1155,7 @@ describe('PATCH /api/partner/groups/:id', () => {
     const res = await auth(request(makeApp()).patch('/api/partner/groups/g-1'))
       .send({ hub_user_id: 'hu-staff', name: 'Choir B', addPupilHubIds: ['hp-1'], removePupilHubIds: ['hp-9'] })
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ ok: true })
+    expect(res.body).toMatchObject({ ok: true })
     expect(prismaMock.group.update).toHaveBeenCalledWith({ where: { id: 'g-1' }, data: { name: 'Choir B' } })
     expect(prismaMock.studentGroupLink.createMany).toHaveBeenCalledWith({
       data: [{ studentId: 's-1', groupId: 'g-1' }],
@@ -1103,13 +1166,18 @@ describe('PATCH /api/partner/groups/:id', () => {
     })
   })
 
-  it('a cross-school pupil in addPupilHubIds → 400, no writes', async () => {
-    prismaMock.student.findMany.mockResolvedValueOnce([]) // hp-x resolves to nothing
+  // Was a 400 that abandoned the whole patch. A roster update naming one pupil
+  // who has left should still move the other twenty-nine, and say which it
+  // could not place.
+  it('applies what resolved and names the pupil that did not', async () => {
+    prismaMock.student.findMany.mockResolvedValue([{ id: 's-1', hubPupilId: 'hp-1' }])
+
     const res = await auth(request(makeApp()).patch('/api/partner/groups/g-1'))
-      .send({ hub_user_id: 'hu-staff', addPupilHubIds: ['hp-x'] })
-    expect(res.status).toBe(400)
-    expect(prismaMock.group.update).not.toHaveBeenCalled()
-    expect(prismaMock.studentGroupLink.createMany).not.toHaveBeenCalled()
+      .send({ hub_user_id: 'hu-staff', addPupilHubIds: ['hp-1', 'hp-x'] })
+
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ added: 1, unknownPupilIds: ['hp-x'] })
+    expect(prismaMock.studentGroupLink.createMany).toHaveBeenCalled()
   })
 
   it('a rename clash → 409', async () => {
