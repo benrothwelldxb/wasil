@@ -72,6 +72,29 @@ export interface HubClass {
 // Mirror of Hub's PupilDTO (subset). Note: Hub's v1 MIS pupil surface carries
 // no allergy/medical/UPN fields, so those Connect columns are never written
 // from a sync (see hubSync mapping notes).
+/**
+ * Attendance, as Hub serves it (Hub handoff, 4 Sep 2026).
+ *
+ * Hub does not calculate this. A school admin uploads the MIS export — Nexquare
+ * at VH — and Hub serves the number verbatim. Three distinctions the handoff is
+ * explicit about, and all three are the difference between honest and not:
+ *
+ *   • `attendance: null` means Hub holds no figure for that pupil. The field
+ *     being ABSENT means our token lacks the `pupils:attendance` scope — we
+ *     were not told. Neither is 0%.
+ *   • `asOf` is the date the figure DESCRIBES, not when it was uploaded, and
+ *     not freshness. A figure can be asOf last term because nobody has uploaded
+ *     since. It must be shown wherever the percentage is.
+ *   • `percentage` is 0–100, not a fraction, and is not to be recomputed into
+ *     sessions or days — that data is not here.
+ */
+export interface HubPupilAttendance {
+  /** Percent present, 0–100. Both 0 and 100 are legitimate values. */
+  percentage: number
+  /** YYYY-MM-DD — the date this figure is about. */
+  asOf: string
+}
+
 export interface HubPupil {
   id: string
   misId: string | null   // school MIS Student ID / UPN — maps to Connect Student.externalId
@@ -79,6 +102,10 @@ export interface HubPupil {
   lastName: string
   className: string | null
   yearGroupName: string | null
+  /** Present only once `pupils:attendance` is granted; null when Hub holds no
+   *  figure for this pupil. Optional here so Connect works either way rather
+   *  than depending on a deployment order. */
+  attendance?: HubPupilAttendance | null
 }
 
 // Mirror of Hub's StaffDTO (subset). `hubUserId` is null until the staff member

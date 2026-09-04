@@ -68,6 +68,11 @@ export interface SyncSummary {
    * cards are matched to pupils by UPN in the filename, so when that column
    * looks empty this says whether Hub is sending them at all. */
   pupilMisIds: { withMisId: number; missing: number }
+  /** Attendance figures mirrored from Hub. `scopeGranted` is false when the
+   * field never appeared — our token lacks `pupils:attendance`, which is a
+   * different problem from nobody having uploaded an export. Coverage is
+   * partial by nature even when it is granted. */
+  attendance: { withFigure: number; noFigure: number; scopeGranted: boolean }
   /** Staff, split by whether the Connect user was created or updated/linked. */
   staff: { created: number; updated: number }
   /** Guardians provisioned as Connect PARENT users. `fetched` = how many Hub
@@ -189,6 +194,11 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   // uploads match filenames against, so an empty column is indistinguishable
   // from a broken importer unless the sync says which it was.
   const misIds = { withMisId: 0, missing: 0 }
+  // Attendance coverage. Partial by nature: a pupil has no figure when they
+  // weren't in the MIS export, joined after it, or their UPN didn't match, and
+  // the field is absent entirely until `pupils:attendance` is granted. Reported
+  // so "nobody has uploaded" and "we lack the scope" don't both read as silence.
+  const attendance = { withFigure: 0, noFigure: 0, scopeGranted: false }
   // hubPupilId → Connect Student id, so the guardian pass can resolve each
   // guardian→pupil edge to a real Student without re-querying.
   const studentIdByHubPupil = new Map<string, string>()
@@ -200,6 +210,24 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
       const misId = p.misId?.trim() || null
       if (misId) misIds.withMisId++
       else misIds.missing++
+
+      // Three states, not two. The field being ABSENT means our token lacks the
+      // scope — Hub didn't tell us. `null` means Hub has no figure for this
+      // pupil. Only a present object is a figure, and neither of the other two
+      // is 0%.
+      const hasScope = p.attendance !== undefined
+      if (hasScope) attendance.scopeGranted = true
+      const figure = p.attendance ?? null
+      if (hasScope) {
+        if (figure) attendance.withFigure++
+        else attendance.noFigure++
+      }
+      // Written only when Hub actually told us something. Without the scope the
+      // columns are left exactly as they were, so losing the scope does not
+      // silently blank every pupil's attendance.
+      const attendanceWrite = hasScope
+        ? { attendancePercentage: figure?.percentage ?? null, attendanceAsOf: figure?.asOf ?? null }
+        : {}
       const row = await prisma.student.upsert({
         where: { hubPupilId: p.id },
         create: {
@@ -209,6 +237,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
           externalId: misId,
           schoolId,
           classId,
+          ...attendanceWrite,
         },
         update: {
           firstName: p.firstName,
@@ -219,6 +248,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
           // also how a working report-card match could stop working overnight.
           ...(misId ? { externalId: misId } : {}),
           classId,
+          ...attendanceWrite,
         },
       })
       studentIdByHubPupil.set(p.id, row.id)
@@ -390,6 +420,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     classes: hubClasses.length,
     pupils,
     pupilMisIds: misIds,
+    attendance,
     staff: { created, updated },
     guardians: guardianSummary,
     parentLinks: parentLinkSummary,

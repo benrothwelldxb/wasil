@@ -266,7 +266,15 @@ export function AttendancePage() {
             {summaryData.map((child) => {
               const total = child.present + child.absent + child.late + child.excused
               const safeTotal = total || 1
-              const presentPct = Math.round(((child.present + child.excused) / safeTotal) * 100)
+              const localPct = Math.round(((child.present + child.excused) / safeTotal) * 100)
+
+              // The school's own figure, from its MIS via Hub. Where it exists
+              // it wins outright: the school registers attendance in a different
+              // app, so Connect's register is not the source of truth and a
+              // percentage derived from it can disagree with the school's.
+              // Showing both would only invite that disagreement.
+              const official = typeof child.attendancePercentage === 'number'
+              const presentPct = official ? Math.round(child.attendancePercentage as number) : localPct
               return (
                 <div
                   key={child.studentId}
@@ -303,7 +311,17 @@ export function AttendancePage() {
                     />
                   </div>
                   <p className="text-[11px] font-semibold mt-1" style={{ color: '#A8929A' }}>
-                    {presentPct}% attendance rate this term
+                    {official ? (
+                      <>
+                        {/* Dated, always. A human uploads the MIS export, so
+                            this can be days or weeks old, and a bare percentage
+                            would quietly imply today. */}
+                        {presentPct}% attendance
+                        {child.attendanceAsOf ? ` — school figure as at ${formatAsOf(child.attendanceAsOf)}` : ' — school figure'}
+                      </>
+                    ) : (
+                      `${presentPct}% attendance rate this term`
+                    )}
                   </p>
                 </div>
               )
@@ -462,4 +480,14 @@ export function AttendancePage() {
       )}
     </div>
   )
+}
+
+
+/** "2026-09-01" → "1 Sep". Parsed as parts rather than through Date, so a
+ *  timezone can't shift a school's attendance figure by a day. */
+function formatAsOf(asOf: string): string {
+  const [y, m, d] = asOf.split('-').map(Number)
+  if (!y || !m || !d) return asOf
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  return `${d} ${months[m - 1] ?? m}`
 }

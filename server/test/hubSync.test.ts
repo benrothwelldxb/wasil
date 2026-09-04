@@ -197,6 +197,7 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       pupils: 1,
       staff: { created: 0, updated: 0 },
       pupilMisIds: { withMisId: 1, missing: 0 },
+      attendance: { withFigure: 0, noFigure: 0, scopeGranted: false },
       guardians: { fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, emailUpdated: 0, emailConflicts: [] },
       parentLinks: { created: 0, skippedNoPupil: 0 },
       teacherAssignments: { created: 0, removed: 0, unresolved: 0 },
@@ -849,5 +850,68 @@ describe('syncSchoolFromHub — ILSA links', () => {
     expect(summary.pupils).toBe(1)
     // Still marked fresh — the roster genuinely synced.
     expect(prismaMock.school.update).toHaveBeenCalled()
+  })
+})
+
+/**
+ * Attendance, mirrored from Hub (Hub handoff, 4 Sep 2026).
+ *
+ * Three states, and collapsing any two of them is the bug the handoff warns
+ * about: a figure, `null` (Hub holds none for this pupil), and the field being
+ * absent entirely (our token lacks `pupils:attendance` — we were never told).
+ * None of the last two is 0%.
+ */
+describe('syncSchoolFromHub — attendance figures', () => {
+  const pupilWith = (attendance: unknown) => {
+    mPupils.mockResolvedValue([
+      { id: 'hp1', misId: '100123', firstName: 'Amina', lastName: 'Khan', className: '1A', yearGroupName: 'Year 1',
+        ...(attendance === 'absent' ? {} : { attendance }) },
+    ])
+  }
+
+  it('stores the figure and the date it describes', async () => {
+    pupilWith({ percentage: 94.2, asOf: '2026-09-01' })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    const write = prismaMock.student.upsert.mock.calls[0][0]
+    expect(write.create.attendancePercentage).toBe(94.2)
+    expect(write.create.attendanceAsOf).toBe('2026-09-01')
+    expect(summary.attendance).toMatchObject({ withFigure: 1, noFigure: 0, scopeGranted: true })
+  })
+
+  // Hub holds no figure for this pupil — not in the export, joined after it, or
+  // the UPN didn't match. A first-class state, and not zero.
+  it('clears the figure when Hub sends null, and counts it', async () => {
+    pupilWith(null)
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    const write = prismaMock.student.upsert.mock.calls[0][0]
+    expect(write.create.attendancePercentage).toBeNull()
+    expect(summary.attendance).toMatchObject({ withFigure: 0, noFigure: 1, scopeGranted: true })
+  })
+
+  // The field being ABSENT is a different thing: we lack the scope. Writing
+  // nulls here would blank every pupil's attendance the day a scope lapsed.
+  it('writes nothing at all when the field is absent', async () => {
+    pupilWith('absent')
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    const write = prismaMock.student.upsert.mock.calls[0][0]
+    expect(write.create).not.toHaveProperty('attendancePercentage')
+    expect(write.update).not.toHaveProperty('attendancePercentage')
+    expect(summary.attendance.scopeGranted).toBe(false)
+  })
+
+  // 0 is a legitimate figure, and must not be mistaken for "no figure".
+  it('treats zero as a real figure', async () => {
+    pupilWith({ percentage: 0, asOf: '2026-09-01' })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.student.upsert.mock.calls[0][0].create.attendancePercentage).toBe(0)
+    expect(summary.attendance.withFigure).toBe(1)
   })
 })
