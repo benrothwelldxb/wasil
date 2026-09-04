@@ -773,6 +773,16 @@ router.get('/my-children', isAuthenticated, async (req: Request, res: Response) 
       return res.json([])
     }
 
+    // Gated here, not only in the app: a school that has not chosen to publish
+    // attendance should not have its figures sitting in a response a parent can
+    // read. The column is still synced from Hub either way — turning the toggle
+    // on shows what is already there rather than waiting for the next sync.
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { attendanceFigureVisibleToParents: true },
+    })
+    const showFigure = school?.attendanceFigureVisibleToParents === true
+
     // Two weeks ago
     const twoWeeksAgo = new Date()
     twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
@@ -831,8 +841,8 @@ router.get('/my-children', isAuthenticated, async (req: Request, res: Response) 
         // asOf goes with it, always. It is the date the figure DESCRIBES, and a
         // human has to upload the export, so it can be weeks old — a bare
         // percentage would quietly imply today.
-        attendancePercentage: student.attendancePercentage ?? null,
-        attendanceAsOf: student.attendanceAsOf ?? null,
+        attendancePercentage: showFigure ? student.attendancePercentage ?? null : null,
+        attendanceAsOf: showFigure ? student.attendanceAsOf ?? null : null,
         recentRecords: recent.map(r => ({
           id: r.id,
           studentId: r.studentId,

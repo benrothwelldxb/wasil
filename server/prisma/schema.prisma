@@ -78,6 +78,14 @@ model School {
   attendanceDigestTime         String? // HH:MM in school timezone, e.g. "09:00"
   attendanceDigestLastSentDate String? // YYYY-MM-DD, dedupes daily send
 
+  // Whether parents see the school's own attendance percentage (mirrored from
+  // Hub, which serves the MIS's figure). Defaults OFF: publishing a child's
+  // attendance to their parents is a decision a school makes, not something a
+  // sync should start doing on the day a scope is granted. Independent of
+  // attendanceEnabled, which gates absence requests — a school may well want
+  // those without publishing figures.
+  attendanceFigureVisibleToParents Boolean @default(false)
+
   // Periodically ask parents to confirm their mobile number is still current.
   // Days between prompts. 0 disables the prompt entirely.
   contactConfirmDays Int @default(180)

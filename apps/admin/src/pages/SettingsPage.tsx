@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { Save, Mail, Clock, Globe, Phone, FlaskConical, Copy, Trash2, RefreshCw, AlertTriangle, Check } from 'lucide-react'
+import { Save, Mail, Clock, Globe, Phone, FlaskConical, Copy, Trash2, RefreshCw, AlertTriangle, Check,
+  Percent,
+} from 'lucide-react'
 import { useToast, api, PARENT_BOTTOM_NAV_CATALOG, DEFAULT_BOTTOM_NAV_KEYS, isNavItemAvailable } from '@wasil/shared'
 import type { SchoolSettings, SchoolModuleFlag, TestAccountInfo, BottomNavKey } from '@wasil/shared'
 
@@ -211,6 +213,31 @@ export function SettingsPage() {
       </section>
 
       {/* Attendance digest */}
+      <section className="bg-white rounded-xl border border-slate-200 p-5">
+        <h2 className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
+          <Percent className="w-4 h-4" />
+          Attendance figure for parents
+        </h2>
+        <p className="text-xs text-slate-500 mb-4">
+          Show each parent their own child's attendance percentage, as reported by the school's
+          attendance system. Connect displays the figure and calculates nothing.
+        </p>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-slate-700">Show attendance to parents</span>
+          <Toggle
+            checked={settings.attendanceFigureVisibleToParents}
+            onChange={v => updateField('attendanceFigureVisibleToParents', v)}
+          />
+        </div>
+        {/* The freshness caveat belongs where the decision is made. Someone has
+            to upload the export by hand, so the figure can be days or weeks old
+            — parents are shown the date it describes alongside it. */}
+        <p className="text-xs text-slate-400 mt-2">
+          The figure is dated wherever parents see it, because it only updates when someone
+          uploads the export — usually weekly. A pupil with no figure sees nothing rather than 0%.
+        </p>
+      </section>
+
       <section className="bg-white rounded-xl border border-slate-200 p-5">
         <h2 className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
           <Mail className="w-4 h-4" />

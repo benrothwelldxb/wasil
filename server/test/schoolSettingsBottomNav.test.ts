@@ -113,3 +113,36 @@ describe('bottomNavItems', () => {
     expect(written()).not.toHaveProperty('bottomNavItems')
   })
 })
+
+/**
+ * Publishing a child's attendance to their parents is a decision a school
+ * makes. It defaults off, and the toggle gates the API response rather than
+ * only the app — a school that hasn't chosen it should not have its figures
+ * sitting in a payload a parent can read.
+ */
+describe('attendanceFigureVisibleToParents', () => {
+  it('saves the toggle', async () => {
+    const res = await request(makeApp())
+      .patch('/api/school-settings')
+      .send({ attendanceFigureVisibleToParents: true })
+
+    expect(res.status).toBe(200)
+    expect(written().attendanceFigureVisibleToParents).toBe(true)
+  })
+
+  it('can be turned back off', async () => {
+    await request(makeApp())
+      .patch('/api/school-settings')
+      .send({ attendanceFigureVisibleToParents: false })
+    expect(written().attendanceFigureVisibleToParents).toBe(false)
+  })
+
+  it('ignores a non-boolean rather than storing junk', async () => {
+    const res = await request(makeApp())
+      .patch('/api/school-settings')
+      .send({ attendanceFigureVisibleToParents: 'yes', inboxEnabled: true })
+
+    expect(res.status).toBe(200)
+    expect(written()).not.toHaveProperty('attendanceFigureVisibleToParents')
+  })
+})
