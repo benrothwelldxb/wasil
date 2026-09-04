@@ -1568,6 +1568,14 @@ export interface ChildAttendanceSummary {
   late: number
   excused: number
   recentRecords: AttendanceRecord[]
+  /** The school MIS's own attendance figure, 0–100, mirrored from Hub. `null`
+   *  means no figure — Hub holds none for this pupil, or Connect's token lacks
+   *  the `pupils:attendance` scope. It is never 0%. */
+  attendancePercentage?: number | null
+  /** YYYY-MM-DD — the date the figure DESCRIBES, not when it was uploaded and
+   *  not freshness. Shown wherever the percentage is: a human uploads the MIS
+   *  export, so the figure can be weeks old and a bare number implies today. */
+  attendanceAsOf?: string | null
 }
 
 // ECA Types

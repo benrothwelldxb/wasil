@@ -823,6 +823,16 @@ router.get('/my-children', isAuthenticated, async (req: Request, res: Response) 
         absent: counts.absent,
         late: counts.late,
         excused: counts.excused,
+        // The school MIS's own figure, mirrored from Hub. Null means no figure
+        // — Hub holds none for this pupil, or Connect's token lacks the
+        // `pupils:attendance` scope. It is never 0%, and the parent app renders
+        // "no figure" rather than a number.
+        //
+        // asOf goes with it, always. It is the date the figure DESCRIBES, and a
+        // human has to upload the export, so it can be weeks old — a bare
+        // percentage would quietly imply today.
+        attendancePercentage: student.attendancePercentage ?? null,
+        attendanceAsOf: student.attendanceAsOf ?? null,
         recentRecords: recent.map(r => ({
           id: r.id,
           studentId: r.studentId,

@@ -397,6 +397,17 @@ model Student {
   @@unique([schoolId, externalId])
   @@index([schoolId, classId])
   transportAssignments TransportAssignment[]
+
+  // Attendance, mirrored from Hub (Hub handoff, 4 Sep 2026). Hub serves the
+  // school MIS's own figure; Connect stores it and shows it, and calculates
+  // nothing. NULL means no figure — either Hub holds none for this pupil, or
+  // our token lacks the `pupils:attendance` scope. It never means 0%.
+  attendancePercentage Float?
+  // The date the figure DESCRIBES, not when it was uploaded and not freshness.
+  // Stored as YYYY-MM-DD exactly as Hub sends it, and shown wherever the
+  // percentage is shown — a bare percentage quietly implies today, and this
+  // number can be weeks old because a human has to upload it.
+  attendanceAsOf       String?
 }
 
 // Junction table: Parent-Student link
