@@ -53,6 +53,7 @@ const SETTINGS_SELECT = {
   knowledgeBaseEnabled: true,
   attendanceDigestEnabled: true,
   attendanceDigestTime: true,
+  attendanceFigureVisibleToParents: true,
   contactConfirmDays: true,
   bottomNavItems: true,
 } as const
@@ -101,6 +102,9 @@ router.patch('/', isAuthenticated, isAdmin, async (req: Request, res: Response) 
     }
     if (typeof body.attendanceDigestEnabled === 'boolean') {
       data.attendanceDigestEnabled = body.attendanceDigestEnabled
+    }
+    if (typeof body.attendanceFigureVisibleToParents === 'boolean') {
+      data.attendanceFigureVisibleToParents = body.attendanceFigureVisibleToParents
     }
     if (typeof body.attendanceDigestTime === 'string') {
       const time = body.attendanceDigestTime.trim()

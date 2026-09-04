@@ -1737,6 +1737,11 @@ export interface SchoolSettings extends SchoolModuleFlags {
   attendanceDigestEnabled: boolean
   attendanceDigestTime: string | null // HH:MM
   contactConfirmDays: number // days between contact-details prompts; 0 disables
+  /** Whether parents see the school's own attendance percentage (mirrored from
+   *  Hub). Off by default — publishing a child's attendance to their parents is
+   *  a decision a school makes. Independent of `attendanceEnabled`, which gates
+   *  absence requests. */
+  attendanceFigureVisibleToParents: boolean
   // The three middle items of the parent app's bottom tab bar (Home + these 3 +
   // More). Ordered catalog keys (see PARENT_BOTTOM_NAV_CATALOG). null = default.
   bottomNavItems: BottomNavKey[] | null
