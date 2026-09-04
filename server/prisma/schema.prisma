@@ -1185,6 +1185,15 @@ model Group {
 
   @@unique([schoolId, name])
   @@index([schoolId, isActive])
+
+  /// The publishing system's own id for this group, e.g. an Active club roster.
+  /// Unique per school so a re-publish upserts instead of colliding with
+  /// @@unique([schoolId, name]) — which is what forced callers to mangle names
+  /// like "Football (Autumn Term)" just to stay unique. Null for a group made
+  /// by hand in Connect, which is most of them.
+  externalRef String?
+
+  @@unique([schoolId, externalRef])
 }
 
 // Student membership in groups
