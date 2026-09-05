@@ -33,6 +33,7 @@ const MODULE_GROUPS: ModuleGroup[] = [
     label: 'Programmes',
     flags: [
       { key: 'ecaEnabled', label: 'Activities (ECA)', description: 'After-school activities & registration' },
+      { key: 'clubsEnabled', label: 'Clubs', description: 'Paid clubs run by outside providers' },
       { key: 'consultationsEnabled', label: 'Consultations', description: "Parents' evening bookings" },
       { key: 'schoolServicesEnabled', label: 'School Services', description: 'Bus, after-school clubs and similar' },
       { key: 'lunchMenuEnabled', label: 'Lunch Menu', description: 'Cafeteria menus' },

@@ -63,6 +63,12 @@ model School {
   pulseEnabled           Boolean @default(true)
   attendanceEnabled      Boolean @default(true)
   ecaEnabled             Boolean @default(true)
+  // Paid clubs run by outside providers, which is a different thing from the
+  // school's own ECA even though both live in EcaActivity. They shared
+  // `ecaEnabled` until a school wanted one without the other — and a school
+  // retiring its own ECA would have silently taken the clubs page, and the
+  // bookings parents have already paid for, out of the parent menu with it.
+  clubsEnabled           Boolean @default(true)
   consultationsEnabled   Boolean @default(true)
   schoolServicesEnabled  Boolean @default(true)
   lunchMenuEnabled       Boolean @default(true)

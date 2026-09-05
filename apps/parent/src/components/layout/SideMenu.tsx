@@ -202,7 +202,7 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   if (isEnabled('lunchMenuEnabled')) {
     services.push({ icon: UtensilsCrossed, labelKey: 'nav.lunchMenu', path: '/lunch-menu' })
   }
-  if (isEnabled('ecaEnabled')) {
+  if (isEnabled('clubsEnabled')) {
     services.push({ icon: Sparkles, labelKey: 'nav.clubs', path: '/clubs' })
   }
   if (services.length > 0) sections.push({ label: 'Services', items: services })

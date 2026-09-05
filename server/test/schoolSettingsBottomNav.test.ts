@@ -146,3 +146,31 @@ describe('attendanceFigureVisibleToParents', () => {
     expect(written()).not.toHaveProperty('attendanceFigureVisibleToParents')
   })
 })
+
+/**
+ * Paid provider-run clubs are a separate decision from the school's own ECA.
+ *
+ * They shared `ecaEnabled`, so a school retiring its own after-school
+ * activities would also have removed the clubs page from the parent menu —
+ * including for parents who had already booked and paid through it.
+ */
+describe('clubsEnabled', () => {
+  it('saves independently of ecaEnabled', async () => {
+    const res = await request(makeApp())
+      .patch('/api/school-settings')
+      .send({ ecaEnabled: false, clubsEnabled: true })
+
+    expect(res.status).toBe(200)
+    expect(written()).toMatchObject({ ecaEnabled: false, clubsEnabled: true })
+  })
+
+  it('the clubs destination is gated on clubsEnabled, not ecaEnabled', async () => {
+    // Straight from the types module: the shared package's index pulls in
+    // browser storage, which has no business in a server test.
+    const { PARENT_BOTTOM_NAV_CATALOG: catalog } = await import('../../packages/shared/src/types/index')
+    const clubs = catalog.find(i => i.key === 'clubs')
+    expect(clubs?.moduleFlag).toBe('clubsEnabled')
+    // The school's own ECA keeps its own destination and its own flag.
+    expect(catalog.find(i => i.key === 'activities')?.moduleFlag).toBe('ecaEnabled')
+  })
+})
