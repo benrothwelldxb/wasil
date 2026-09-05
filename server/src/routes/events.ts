@@ -88,6 +88,47 @@ function resolveTargeting(body: {
   return { rows, scalarClassId: classId, scalarYearGroupId: yearGroupId }
 }
 
+/**
+ * How long a moved event keeps saying so.
+ *
+ * Long enough that a parent who checks weekly still sees it; short enough that
+ * a card isn't announcing a change from half a term ago as though it were news.
+ */
+const CHANGE_VISIBLE_DAYS = 14
+
+export function changeWindowStart(): Date {
+  return new Date(Date.now() - CHANGE_VISIBLE_DAYS * 24 * 60 * 60 * 1000)
+}
+
+/** The classes, year groups and groups a parent's children belong to — the
+ *  three inputs to visibility. Shared so a second endpoint can't drift from the
+ *  first about who is allowed to see what. */
+async function parentAudience(user: {
+  children?: { classId: string }[] | null
+  studentLinks?: { studentId: string; student?: { classId?: string | null } | null }[] | null
+}): Promise<{ allClassIds: string[]; childYearGroupIds: string[]; childGroupIds: string[] }> {
+  const childClassIds = user.children?.map((c) => c.classId) || []
+  const studentClassIds =
+    user.studentLinks?.map((l) => l.student?.classId).filter((id): id is string => !!id) || []
+  const allClassIds = [...new Set([...childClassIds, ...studentClassIds])]
+  const studentIds = user.studentLinks?.map((l) => l.studentId) || []
+
+  const childClasses = allClassIds.length > 0
+    ? await prisma.class.findMany({ where: { id: { in: allClassIds } }, select: { yearGroupId: true } })
+    : []
+  const childYearGroupIds = [...new Set(childClasses.map((c) => c.yearGroupId).filter(Boolean))] as string[]
+
+  const childGroupLinks = studentIds.length > 0
+    ? await prisma.studentGroupLink.findMany({
+        where: { studentId: { in: studentIds } },
+        select: { groupId: true },
+      })
+    : []
+  const childGroupIds = [...new Set(childGroupLinks.map((l) => l.groupId))]
+
+  return { allClassIds, childYearGroupIds, childGroupIds }
+}
+
 // The parent-visibility OR clause. Whole-school (label 'Whole School'/'all'),
 // OR an EventTarget row matching a child's class/year-group, OR the legacy
 // scalar classId/yearGroupId still matching (safety for un-backfilled rows),
@@ -317,6 +358,7 @@ router.get('/', isAuthenticated, async (req, res) => {
     }
 
     const getTranslated = (text: string) => translationMap.get(text) || text
+    const changeCutoff = changeWindowStart()
 
     res.json(events.map(event => ({
       id: event.id,
@@ -331,6 +373,14 @@ router.get('/', isAuthenticated, async (req, res) => {
       groupId: event.groupId,
       targets: serializeTargets(event.targets),
       hubCalendarEventId: event.hubCalendarEventId,
+      // Only while recent: an event that moved last term is just an event.
+      changedAt: event.changedAt && event.changedAt >= changeCutoff ? event.changedAt.toISOString() : null,
+      previousDate:
+        event.changedAt && event.changedAt >= changeCutoff && event.previousDate
+          ? event.previousDate.toISOString().split('T')[0]
+          : null,
+      previousTime: event.changedAt && event.changedAt >= changeCutoff ? event.previousTime : null,
+      previousLocation: event.changedAt && event.changedAt >= changeCutoff ? event.previousLocation : null,
       proposalStatus: event.proposalStatus ?? null,
       source: deriveSource(event),
       schoolId: event.schoolId,
@@ -344,6 +394,66 @@ router.get('/', isAuthenticated, async (req, res) => {
   } catch (error) {
     console.error('Error fetching events:', error)
     res.status(500).json({ error: 'Failed to fetch events' })
+  }
+})
+
+/**
+ * Calendar events that have moved recently and haven't happened yet.
+ *
+ * Feeds a small strip on the parent dashboard. Deliberately not a push and not
+ * a notification row: a date change matters, but not enough to interrupt three
+ * hundred families' evenings, and calendar events arrive from Hub in bulk all
+ * term. This is a thing a parent finds, not a thing that finds them.
+ *
+ * `latestChangedAt` is what the client remembers when it dismisses: a change
+ * newer than the dismissed stamp brings the strip back, so dismissing "Sports
+ * Day moved" doesn't also silence next week's change.
+ *
+ *   GET /api/events/recent-changes
+ */
+router.get('/recent-changes', isAuthenticated, async (req, res) => {
+  try {
+    const user = (await loadUserWithRelations(req.user!.id))!
+    const { allClassIds, childYearGroupIds, childGroupIds } = await parentAudience(user)
+
+    const now = new Date()
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+
+    const events = await prisma.event.findMany({
+      where: {
+        schoolId: user.schoolId,
+        proposalStatus: null,
+        changedAt: { gte: changeWindowStart() },
+        // Only what a parent can still act on. An event that moved and has
+        // since happened is history, not news.
+        date: { gte: today },
+        OR: buildVisibilityOR(allClassIds, childYearGroupIds, childGroupIds),
+      },
+      orderBy: [{ changedAt: 'desc' }, { date: 'asc' }],
+      take: 5,
+      select: {
+        id: true, title: true, date: true, time: true, location: true,
+        changedAt: true, previousDate: true, previousTime: true, previousLocation: true,
+      },
+    })
+
+    res.json({
+      changes: events.map((e) => ({
+        id: e.id,
+        title: e.title,
+        date: e.date.toISOString().split('T')[0],
+        time: e.time,
+        location: e.location,
+        previousDate: e.previousDate ? e.previousDate.toISOString().split('T')[0] : null,
+        previousTime: e.previousTime,
+        previousLocation: e.previousLocation,
+        changedAt: e.changedAt!.toISOString(),
+      })),
+      latestChangedAt: events[0]?.changedAt?.toISOString() ?? null,
+    })
+  } catch (error) {
+    console.error('Error fetching recent calendar changes:', error)
+    res.status(500).json({ error: 'Failed to fetch calendar changes' })
   }
 })
 

@@ -37,6 +37,12 @@ export interface CalendarSyncSummary {
   /** In-window hub-sourced Connect events deleted because Hub no longer returns
    * them (moved out of window or removed upstream). */
   pruned: number
+  /** Future events whose date, time or location moved on an event we already
+   * held — marked so the card and the dashboard can say so. */
+  changesMarked: number
+  /** Set when so many events moved at once that this is a bulk edit or a Hub
+   * re-key rather than that many real reschedules, so none were marked. */
+  changesSuppressed: number
   /** The /changes cursor persisted for this school (null if Hub sent none). */
   cursor: number | null
 }
@@ -49,6 +55,25 @@ export interface CalendarSyncSummary {
 const PARENT_FACING_AUDIENCES = new Set(['WHOLE_SCHOOL', 'GUARDIAN_FACING'])
 function isParentFacing(audience?: string): boolean {
   return !audience || PARENT_FACING_AUDIENCES.has(audience)
+}
+
+/**
+ * Above this many moved events in a single sync, treat it as one bulk edit
+ * rather than that many reschedules and mark none of them.
+ *
+ * A judgement call, not a measurement: a term's dates being corrected, or Hub
+ * re-keying its calendar, both look identical to real reschedules from here.
+ * Set low deliberately — under-reporting a genuine bulk move is recoverable
+ * (the dates are still right, the flags are just absent); telling every family
+ * that forty events moved is not.
+ */
+const BULK_CHANGE_THRESHOLD = 10
+
+/** Midnight today, UTC — events store midnight-UTC of the local calendar date,
+ *  so this compares like with like. */
+function startOfToday(): Date {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 }
 
 /** A default forward-looking window when a caller (webhook) has none: from a
@@ -86,6 +111,8 @@ export async function syncCalendar(
     skippedNonParentFacing: 0,
     pruned: 0,
     cursor: null,
+    changesMarked: 0,
+    changesSuppressed: 0,
   })
 
   // Dormant: token entirely unset — don't even resolve the school.
@@ -108,6 +135,23 @@ export async function syncCalendar(
   for (const c of classes) classByName.set(c.name.trim().toLowerCase(), c.id)
   const ygByName = new Map<string, string>()
   for (const y of yearGroups) ygByName.set(y.name.trim().toLowerCase(), y.id)
+
+  // Existing hub-sourced events, read BEFORE the upserts overwrite them: this
+  // is the only moment the previous date/time/location still exists.
+  const existingRows = await prisma.event.findMany({
+    where: { schoolId: school.id, hubCalendarEventId: { not: null } },
+    select: { hubCalendarEventId: true, date: true, time: true, location: true },
+  })
+  const before = new Map(existingRows.map((e) => [e.hubCalendarEventId!, e]))
+
+  /** Changes noticed this run, applied after the loop so a bulk edit can be
+   *  recognised as one before any of it is shown to a parent. */
+  const moved: Array<{
+    hubCalendarEventId: string
+    previousDate: Date
+    previousTime: string | null
+    previousLocation: string | null
+  }> = []
 
   let upserted = 0
   let targetsResolved = 0
@@ -142,6 +186,24 @@ export async function syncCalendar(
       targetClass: resolved.label,
       classId: single?.classId ?? null,
       yearGroupId: single?.yearGroupId ?? null,
+    }
+
+    // Did this move? Only for an event we already held (a new one has not
+    // "changed"), only forward (a parent cannot act on last month's), and only
+    // on the three fields a parent plans around.
+    const prior = before.get(dto.id)
+    if (prior && date.getTime() >= startOfToday().getTime()) {
+      const dateMoved = prior.date.getTime() !== date.getTime()
+      const timeMoved = (prior.time ?? null) !== time
+      const placeMoved = (prior.location ?? null) !== (dto.location ?? null)
+      if (dateMoved || timeMoved || placeMoved) {
+        moved.push({
+          hubCalendarEventId: dto.id,
+          previousDate: prior.date,
+          previousTime: prior.time ?? null,
+          previousLocation: prior.location ?? null,
+        })
+      }
     }
 
     // Reconciliation (Stage 4 / Phase B): a synced CalendarEvent may be the
@@ -187,6 +249,34 @@ export async function syncCalendar(
     }
   }
 
+  // Apply the change markers — or don't.
+  //
+  // One admin fixing a term's dates, or Hub re-keying its events, moves many at
+  // once. That is one edit, not forty reschedules, and marking them all would
+  // fill a parent's dashboard with a wall of "moved" that says nothing about
+  // any particular event. Above the threshold we record the fact and mark
+  // nothing; the events themselves are still correct, only the flags are
+  // withheld.
+  let changesMarked = 0
+  let changesSuppressed = 0
+  if (moved.length > BULK_CHANGE_THRESHOLD) {
+    changesSuppressed = moved.length
+  } else {
+    const noticedAt = new Date()
+    for (const m of moved) {
+      await prisma.event.updateMany({
+        where: { schoolId: school.id, hubCalendarEventId: m.hubCalendarEventId },
+        data: {
+          changedAt: noticedAt,
+          previousDate: m.previousDate,
+          previousTime: m.previousTime,
+          previousLocation: m.previousLocation,
+        },
+      })
+      changesMarked++
+    }
+  }
+
   // Prune orphans: delete hub-sourced events in THIS window that Hub no longer
   // returns (deleted upstream, or moved to a different date now outside — or
   // still inside — the window). Guards, all essential:
@@ -218,7 +308,7 @@ export async function syncCalendar(
     })
   }
 
-  return { skipped: false, upserted, targetsResolved, targetsSkipped, skippedNonParentFacing, pruned, cursor }
+  return { skipped: false, upserted, targetsResolved, targetsSkipped, skippedNonParentFacing, pruned, cursor, changesMarked, changesSuppressed }
 }
 
 /** Convenience for the webhook: resync a school over the default window. Always

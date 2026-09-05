@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MessageCard } from '../components/messages'
+import { CalendarChangesStrip } from '../components/CalendarChangesStrip'
 import { PulseBanner, PulseSurveyModal } from '../components/pulse'
 // ScheduleWidget no longer used — schedule items shown inline in child cards
 import { useAuth } from '@wasil/shared'
@@ -948,6 +949,10 @@ export function ParentDashboard() {
           ))}
         </div>
       )}
+
+      {/* A calendar event moved. Small and dismissable by design: worth
+          finding, not worth interrupting anyone for. */}
+      <CalendarChangesStrip />
 
       {/* Parent Pulse Banner */}
       {isEnabled('pulseEnabled') && openPulse && (
