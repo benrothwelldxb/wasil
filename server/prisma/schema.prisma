@@ -632,6 +632,19 @@ model Event {
   school       School     @relation(fields: [schoolId], references: [id])
   requiresRsvp Boolean    @default(false)
 
+  // A Hub-side edit that a parent may have planned around. Set by the calendar
+  // sync when a material field moves on an event we already held: `changedAt`
+  // is when we noticed, and the `previous*` columns are what it moved FROM, so
+  // a card can say "Moved from Tue 14 Oct" rather than silently showing the new
+  // date to someone who wrote the old one on the fridge.
+  //
+  // Only date, time and location — a corrected typo in a description is not
+  // something to tell three hundred families about.
+  changedAt        DateTime?
+  previousDate     DateTime?
+  previousTime     String?
+  previousLocation String?
+
   // Wasil Hub calendar link (Stage 4 / Phase A). When set, this event is
   // mirrored (read-only) from Hub's CalendarEvent and must NOT be edited or
   // deleted in Connect — its presence is the read-only marker.
@@ -663,6 +676,7 @@ model Event {
   updatedAt DateTime @updatedAt
 
   @@index([schoolId, date])
+  @@index([schoolId, changedAt])
   @@index([parentEventId])
 }
 

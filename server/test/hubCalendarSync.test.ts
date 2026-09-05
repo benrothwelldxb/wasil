@@ -9,7 +9,7 @@ const prismaMock = {
   school: { findUnique: vi.fn(), update: vi.fn() },
   class: { findMany: vi.fn() },
   yearGroup: { findMany: vi.fn() },
-  event: { upsert: vi.fn(), findFirst: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
+  event: { upsert: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
   eventTarget: { deleteMany: vi.fn(), createMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
@@ -64,6 +64,11 @@ beforeEach(() => {
   // Reconciliation (Phase B): default to "no matching pending proposal" so the
   // normal upsert path runs; adoption tests override findFirst per-case.
   prismaMock.event.findFirst.mockResolvedValue(null)
+  // Read before the upserts, to spot events whose date/time/location moved.
+  // Empty here: these tests are about the upsert and the prune, and change
+  // markers have their own file.
+  prismaMock.event.findMany.mockResolvedValue([])
+  prismaMock.event.updateMany.mockResolvedValue({ count: 0 })
   prismaMock.event.update.mockImplementation(async ({ where }: any) => ({ id: where.id, hubCalendarEventId: 'hev-1' }))
   prismaMock.event.deleteMany.mockResolvedValue({ count: 0 })
   prismaMock.eventTarget.deleteMany.mockResolvedValue({ count: 0 })
@@ -210,6 +215,8 @@ describe('syncCalendar — dormant', () => {
       targetsSkipped: 0,
       skippedNonParentFacing: 0,
       pruned: 0,
+      changesMarked: 0,
+      changesSuppressed: 0,
       cursor: null,
     })
     expect(mGetEvents).not.toHaveBeenCalled()

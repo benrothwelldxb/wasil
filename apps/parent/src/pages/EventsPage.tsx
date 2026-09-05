@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Calendar, MapPin, Clock, Users, Check, X, HelpCircle, Download, CalendarPlus, List, Grid3X3, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Calendar, MapPin, Clock, Users, Check, X, HelpCircle, Download, CalendarPlus, List, Grid3X3, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useApi, useMutation } from '@wasil/shared'
 import { useAuth } from '@wasil/shared'
@@ -353,6 +353,8 @@ export function EventsPage() {
                               )}
                             </div>
 
+                            <ChangedNote event={event} />
+
                             {/* RSVP */}
                             {event.requiresRsvp && (
                               <div className="flex items-center gap-2 mt-3">
@@ -646,6 +648,7 @@ function CalendarView({ calendarMonth, setCalendarMonth, eventsByDate, selectedD
                       </span>
                     )}
                   </div>
+                  <ChangedNote event={event} />
                   {event.requiresRsvp && (
                     <div className="flex items-center gap-2 mt-3">
                       <button
@@ -689,5 +692,47 @@ function CalendarView({ calendarMonth, setCalendarMonth, eventsByDate, selectedD
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * What this event moved from.
+ *
+ * Hub pushes calendar changes and Connect re-syncs silently, so without this a
+ * parent who wrote the old date down finds the new one and no reason to doubt
+ * their own memory. Only shown while the change is recent — the server stops
+ * sending it once it has aged out.
+ */
+function ChangedNote({ event }: { event: Event }) {
+  if (!event.changedAt) return null
+
+  const parts: string[] = []
+  if (event.previousDate && event.previousDate !== event.date) {
+    parts.push(
+      `moved from ${new Date(event.previousDate + 'T00:00:00').toLocaleDateString('en-GB', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+      })}`,
+    )
+  }
+  // Only worth saying when the date held: "moved from Tue 14 Oct, 15:00" reads
+  // as one change; a time on its own is the whole story.
+  if (event.previousTime && event.previousTime !== event.time && parts.length === 0) {
+    parts.push(`moved from ${event.previousTime}`)
+  }
+  if (event.previousLocation && event.previousLocation !== event.location) {
+    parts.push(`was ${event.previousLocation}`)
+  }
+  if (parts.length === 0) return null
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-[11px] font-bold"
+      style={{ backgroundColor: '#FFF6E9', color: '#B0762C' }}
+    >
+      <RefreshCw className="h-3 w-3" />
+      {parts.join(' · ')}
+    </span>
   )
 }

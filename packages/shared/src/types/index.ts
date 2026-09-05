@@ -321,6 +321,13 @@ export interface Event {
   // Wasil Hub calendar link. When set, the event is mirrored read-only from Hub
   // and must be edited in Hub, not Connect. `source` is the convenience flag.
   hubCalendarEventId?: string | null
+  /** Set when this event's date, time or location moved recently and the
+   *  change is still worth surfacing. Null once it has aged out — an event that
+   *  moved last term is just an event. */
+  changedAt?: string | null
+  previousDate?: string | null
+  previousTime?: string | null
+  previousLocation?: string | null
   // Teacher event proposals (Phase B). A proposal (proposalStatus set) is visible
   // only to staff, never to parents, until Hub approves it — then it syncs back,
   // proposalStatus clears to null and source becomes 'hub'. On rejection Hub's

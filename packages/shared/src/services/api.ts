@@ -568,8 +568,29 @@ export const forms = {
 }
 
 // Events
+/** One recently-moved event, for the parent dashboard's calendar strip. */
+export interface CalendarChange {
+  id: string
+  title: string
+  date: string
+  time: string | null
+  location: string | null
+  previousDate: string | null
+  previousTime: string | null
+  previousLocation: string | null
+  changedAt: string
+}
+
+export interface CalendarChanges {
+  changes: CalendarChange[]
+  /** The newest change's stamp — what the client remembers on dismiss, so a
+   *  later change brings the strip back rather than being silenced with it. */
+  latestChangedAt: string | null
+}
+
 export const events = {
   list: () => fetchApi<Event[]>('/api/events'),
+  recentChanges: () => fetchApi<CalendarChanges>('/api/events/recent-changes'),
   listAll: () => fetchApi<Event[]>('/api/events/all'),
   create: (data: {
     title: string
