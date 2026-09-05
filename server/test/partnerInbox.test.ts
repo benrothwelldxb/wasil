@@ -25,7 +25,7 @@ const prismaMock = {
   message: { create: vi.fn(), findMany: vi.fn() },
   messageAttachment: { createMany: vi.fn() },
   group: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
-  groupCategory: { findFirst: vi.fn() },
+  groupCategory: { findFirst: vi.fn(), findMany: vi.fn() },
   studentGroupLink: { createMany: vi.fn(), deleteMany: vi.fn() },
   yearGroup: { findFirst: vi.fn() },
   auditLog: { create: vi.fn() },
@@ -1072,6 +1072,47 @@ describe('POST /api/partner/groups', () => {
     expect(prismaMock.group.create).not.toHaveBeenCalled()
   })
 
+  // Active (and any publisher) has its own category vocabulary and no way to
+  // know a given school's GroupCategory ids, which are per-school free text.
+  it('files the group under a category matched by name, ignoring case and padding', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    prismaMock.groupCategory.findMany.mockResolvedValue([
+      { id: 'cat-music', name: 'Music' }, { id: 'cat-sport', name: ' Sports ' },
+    ])
+
+    await auth(request(makeApp()).post('/api/partner/groups'))
+      .send({ hub_user_id: 'hu-staff', name: 'Squad', pupilHubIds: [], categoryName: 'sports' })
+
+    expect(prismaMock.group.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ categoryId: 'cat-sport' }) }),
+    )
+  })
+
+  // A squad under the wrong heading is worse than a squad under none — and the
+  // caller can't be expected to know this school's headings, so it isn't a 400.
+  it('a category name this school does not have leaves it uncategorised and says so', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    prismaMock.groupCategory.findMany.mockResolvedValue([{ id: 'cat-music', name: 'Music' }])
+
+    const res = await auth(request(makeApp()).post('/api/partner/groups'))
+      .send({ hub_user_id: 'hu-staff', name: 'Squad', pupilHubIds: [], categoryName: 'service' })
+
+    expect(res.status).toBe(201)
+    expect(res.body.unmatchedCategoryName).toBe('service')
+    expect(prismaMock.group.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.not.objectContaining({ categoryId: expect.anything() }) }),
+    )
+  })
+
+  // We do not invent a school's headings on a partner's say-so.
+  it('never creates a category', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    prismaMock.groupCategory.findMany.mockResolvedValue([])
+    await auth(request(makeApp()).post('/api/partner/groups'))
+      .send({ hub_user_id: 'hu-staff', name: 'Squad', pupilHubIds: [], categoryName: 'Sport' })
+    expect(prismaMock.groupCategory.create).toBeUndefined()
+  })
+
   it('duplicate group name in-school → 409', async () => {
     prismaMock.student.findMany.mockResolvedValue([])
     prismaMock.group.create.mockRejectedValue({ code: 'P2002' })
@@ -1146,6 +1187,34 @@ describe('PATCH /api/partner/groups/:id', () => {
     prismaMock.group.findFirst.mockResolvedValue(null)
     const res = await auth(request(makeApp()).patch('/api/partner/groups/g-x')).send({ hub_user_id: 'hu-staff', name: 'New' })
     expect(res.status).toBe(404)
+  })
+
+  // Recovery: a publisher that has lost the Connect id can re-address the group
+  // by the ref it published under, instead of creating a second one.
+  it('addresses the group by externalRef when the path segment is not an id', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    prismaMock.group.findFirst
+      .mockResolvedValueOnce(null)             // not a Connect id
+      .mockResolvedValueOnce({ id: 'g-7' })    // but it is a ref we hold
+    prismaMock.group.update.mockResolvedValue({ id: 'g-7' })
+
+    const res = await auth(request(makeApp()).patch('/api/partner/groups/active:roster:42'))
+      .send({ hub_user_id: 'hu-staff', name: 'Football' })
+
+    expect(res.status).toBe(200)
+    // Both lookups stay school-scoped, and the write lands on the resolved id.
+    expect(prismaMock.group.findFirst).toHaveBeenNthCalledWith(2,
+      expect.objectContaining({ where: { externalRef: 'active:roster:42', schoolId: STAFF.schoolId } }))
+    expect(prismaMock.group.update).toHaveBeenCalledWith({ where: { id: 'g-7' }, data: { name: 'Football' } })
+  })
+
+  // An id must never fall through to some other group that happens to use it
+  // as a ref.
+  it('prefers the Connect id when both could match', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    prismaMock.group.findFirst.mockResolvedValue({ id: 'g-1' })
+    await auth(request(makeApp()).patch('/api/partner/groups/g-1')).send({ hub_user_id: 'hu-staff', name: 'X' })
+    expect(prismaMock.group.findFirst).toHaveBeenCalledTimes(1)
   })
 
   it('renames and adds/removes members by Hub pupil id (mapped to internal ids)', async () => {

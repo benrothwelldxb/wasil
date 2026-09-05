@@ -1917,6 +1917,46 @@ async function resolvePupilHubIds(
   }
 }
 
+/**
+ * Find a group by Connect id, falling back to its externalRef.
+ *
+ * A publisher stores the Connect id from the create response and normally
+ * addresses by it. This is for recovery: if it loses the id, its only other
+ * move is to create again and hope the upsert reunites them. The ref it chose
+ * is already unique per school, so it can re-address the group we hold.
+ *
+ * Id wins when both could match, so an id never silently resolves to some other
+ * school's idea of a ref. Both lookups are school-scoped.
+ */
+async function findGroupByIdOrRef(idOrRef: string, schoolId: string) {
+  const byId = await prisma.group.findFirst({ where: { id: idOrRef, schoolId }, select: { id: true } })
+  if (byId) return byId
+  // Guarded on non-empty: `where: { externalRef: '' }` is a real query, but an
+  // empty path segment can't reach here anyway — Express won't route it.
+  if (!idOrRef) return null
+  return prisma.group.findFirst({ where: { externalRef: idOrRef, schoolId }, select: { id: true } })
+}
+
+/**
+ * A category by name, for callers that have no way to know our ids.
+ *
+ * GroupCategory is per-school free text — one school's "Sports" is another's
+ * "Sport" and a third has none — so there is no shared vocabulary to publish
+ * against. A caller sends the word it uses; we match an existing category
+ * exactly (case- and space-insensitively) or file the group under nothing and
+ * say so. We do not create categories on a partner's say-so, and we do not
+ * guess: a squad under the wrong heading is worse than a squad under none.
+ */
+async function resolveCategoryName(categoryName: string, schoolId: string) {
+  const wanted = categoryName.trim().toLowerCase()
+  if (!wanted) return null
+  const categories = await prisma.groupCategory.findMany({
+    where: { schoolId },
+    select: { id: true, name: true },
+  })
+  return categories.find(c => c.name.trim().toLowerCase() === wanted) ?? null
+}
+
 // Create a group in the actor's school with an initial pupil roster. Desk sends
 // Hub pupil ids (`pupilHubIds`); we map them to internal Student ids at the
 // boundary and store StudentGroupLink rows on the internal ids.
@@ -1924,7 +1964,7 @@ async function resolvePupilHubIds(
 //   POST /api/partner/groups  { hub_user_id, name, pupilHubIds: string[] }
 router.post('/groups', requirePartner, async (req, res) => {
   try {
-    const { hub_user_id, name, pupilHubIds, categoryId, externalRef } = req.body ?? {}
+    const { hub_user_id, name, pupilHubIds, categoryId, categoryName, externalRef } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
@@ -1942,6 +1982,15 @@ router.post('/groups', requirePartner, async (req, res) => {
     if (typeof categoryId === 'string' && categoryId.trim() && !category) {
       return res.status(400).json({ error: 'unknown category for this school' })
     }
+
+    // `categoryName` is the alternative for callers with no way to know our ids.
+    // Unlike a bad categoryId this is not an error — the caller can't be
+    // expected to know a given school's headings — so an unmatched name leaves
+    // the group uncategorised and is reported back.
+    const wantsName = !category && typeof categoryName === 'string' && !!categoryName.trim()
+    const named = wantsName ? await resolveCategoryName(categoryName, actor.schoolId) : null
+    const resolvedCategory = category ?? named
+    const unmatchedCategoryName = wantsName && !named ? categoryName.trim() : null
 
     // Accept what resolved and report what didn't, rather than refusing the
     // whole roster over one pupil. A published roster containing someone who
@@ -1963,14 +2012,14 @@ router.post('/groups', requirePartner, async (req, res) => {
       group = existing
         ? await prisma.group.update({
             where: { id: existing.id },
-            data: { name: name.trim(), ...(category ? { categoryId: category.id } : {}) },
+            data: { name: name.trim(), ...(resolvedCategory ? { categoryId: resolvedCategory.id } : {}) },
             select: { id: true },
           })
         : await prisma.group.create({
             data: {
               name: name.trim(),
               schoolId: actor.schoolId,
-              ...(category ? { categoryId: category.id } : {}),
+              ...(resolvedCategory ? { categoryId: resolvedCategory.id } : {}),
               ...(ref ? { externalRef: ref } : {}),
             },
             select: { id: true },
@@ -1999,6 +2048,7 @@ router.post('/groups', requirePartner, async (req, res) => {
       added: studentIds.length,
       // Present only when something didn't resolve, so a clean call stays clean.
       ...(unknownPupilIds.length > 0 ? { unknownPupilIds } : {}),
+      ...(unmatchedCategoryName ? { unmatchedCategoryName } : {}),
     })
   } catch (error) {
     console.error('Error creating partner group:', error)
@@ -2015,8 +2065,11 @@ router.get('/groups/:id', requirePartner, async (req, res) => {
     const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
+    const addressed = await findGroupByIdOrRef(req.params.id, actor.schoolId)
+    if (!addressed) return res.status(404).json({ error: 'not_found' })
+
     const group = await prisma.group.findFirst({
-      where: { id: req.params.id, schoolId: actor.schoolId },
+      where: { id: addressed.id, schoolId: actor.schoolId },
       include: {
         studentMembers: {
           include: {
@@ -2060,12 +2113,11 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
-    const { id } = req.params
-    const group = await prisma.group.findFirst({
-      where: { id, schoolId: actor.schoolId },
-      select: { id: true },
-    })
+    // `:id` is a Connect group id or, for a caller recovering from a lost id,
+    // the externalRef it published under.
+    const group = await findGroupByIdOrRef(req.params.id, actor.schoolId)
     if (!group) return res.status(404).json({ error: 'not_found' })
+    const id = group.id
 
     // Both sets resolved up front (read-only). Unknown ids are reported rather
     // than rejecting the patch: a roster update naming one pupil who has left
