@@ -1531,6 +1531,168 @@ router.get('/parent/terms', isAuthenticated, async (req, res) => {
   }
 })
 
+/**
+ * The school's activity programme, as a parent reads it.
+ *
+ * Display only. Connect shows what is running and when; the choice, the ranking
+ * and the allocation happen elsewhere, and this route deliberately exposes no
+ * way to join — a parent signs up at the school's own link.
+ *
+ * Grouped by day rather than listed, because a club that meets Monday and
+ * Wednesday is one club that appears on two days. The old screen held a single
+ * day per activity and rendered a twice-weekly club as once-weekly.
+ *
+ *   GET /api/eca/parent/programme?studentId=<id>
+ */
+router.get('/parent/programme', isAuthenticated, async (req, res) => {
+  try {
+    const user = (await loadUserWithRelations(req.user!.id))!
+    const studentId = typeof req.query.studentId === 'string' ? req.query.studentId.trim() : ''
+
+    // Only this parent's children, so a studentId from elsewhere reads as no
+    // child rather than as someone else's.
+    const link = studentId
+      ? await prisma.parentStudentLink.findFirst({
+          where: { userId: user.id, studentId },
+          include: { student: { select: { id: true, class: { select: { yearGroupId: true } } } } },
+        })
+      : null
+    const yearGroupId = link?.student.class?.yearGroupId ?? null
+
+    // The term by its dates, not by the workflow status: those statuses belong
+    // to the registration flow that no longer runs here, and a term stuck in
+    // ALLOCATION_COMPLETE is still the term a parent is living in.
+    const now = new Date()
+    const current =
+      (await prisma.ecaTerm.findFirst({
+        where: { schoolId: user.schoolId, startDate: { lte: now }, endDate: { gte: now } },
+        orderBy: { startDate: 'desc' },
+      })) ??
+      (await prisma.ecaTerm.findFirst({
+        where: { schoolId: user.schoolId, startDate: { gt: now } },
+        orderBy: { startDate: 'asc' },
+      }))
+
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { activitiesSignUpUrl: true },
+    })
+    const signUpUrl = school?.activitiesSignUpUrl ?? null
+
+    if (!current) {
+      // No term is a real answer, and a different one from "no activities".
+      return res.json({ term: null, days: [], signUpUrl })
+    }
+
+    const activities = await prisma.ecaActivity.findMany({
+      where: {
+        ecaTermId: current.id,
+        schoolId: user.schoolId,
+        isActive: true,
+        isPublished: true,
+        // School-run only. Paid provider clubs are their own page, with their
+        // own booking and payment, and mixing them here would put "sign up at
+        // the school's link" next to "pay this provider".
+        providerId: null,
+      },
+      include: {
+        category: { select: { name: true } },
+        meetings: { orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] },
+      },
+      orderBy: { name: 'asc' },
+    })
+
+    // Stored either as a JSON array or as a stringified one, depending on which
+    // path wrote it.
+    const yearGroupIdsOf = (raw: unknown): string[] => {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []
+    }
+
+    const eligible = activities.filter(a => {
+      const ids = yearGroupIdsOf(a.eligibleYearGroupIds)
+      // Empty means open to every year group, not open to none.
+      if (ids.length === 0) return true
+      // With no child selected we show the whole programme rather than nothing.
+      if (!yearGroupId) return true
+      return ids.includes(yearGroupId)
+    })
+
+    // Names for the year groups actually referenced, so the card can say
+    // "Year 3, Year 4" instead of showing ids or inferring a label from a
+    // number — FS1 is not year -1 to anyone but a database.
+    const referenced = [...new Set(eligible.flatMap(a => yearGroupIdsOf(a.eligibleYearGroupIds)))]
+    const yearGroups = referenced.length
+      ? await prisma.yearGroup.findMany({
+          where: { id: { in: referenced }, schoolId: user.schoolId },
+          select: { id: true, name: true, order: true },
+          orderBy: { order: 'asc' },
+        })
+      : []
+    const nameOf = new Map(yearGroups.map(y => [y.id, y.name]))
+
+    const card = (a: (typeof eligible)[number]) => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      categoryName: a.category?.name ?? null,
+      location: a.location,
+      isCancelled: a.isCancelled,
+      cancelReason: a.cancelReason,
+      inviteOnly: a.activityType === 'INVITE_ONLY',
+      // Connect does not hold pupil gender, so this is shown as a restriction
+      // and never used to filter — a boys-only club is listed and labelled,
+      // not silently hidden from half the school.
+      eligibleGender: a.eligibleGender,
+      yearGroupNames: yearGroupIdsOf(a.eligibleYearGroupIds)
+        .map(id => nameOf.get(id))
+        .filter((n): n is string => !!n),
+    })
+
+    // One entry per meeting: a twice-weekly club appears on both its days.
+    const byDay = new Map<number, Array<ReturnType<typeof card> & { startTime: string; endTime: string }>>()
+    for (const a of eligible) {
+      for (const m of a.meetings) {
+        const row = { ...card(a), startTime: m.startTime, endTime: m.endTime }
+        const existing = byDay.get(m.dayOfWeek)
+        if (existing) existing.push(row)
+        else byDay.set(m.dayOfWeek, [row])
+      }
+      // An activity with no meeting row still exists and still runs; falling
+      // back to the legacy column keeps it visible instead of vanishing
+      // because nothing has re-published it yet.
+      if (a.meetings.length === 0) {
+        const row = { ...card(a), startTime: a.customStartTime ?? '', endTime: a.customEndTime ?? '' }
+        const existing = byDay.get(a.dayOfWeek)
+        if (existing) existing.push(row)
+        else byDay.set(a.dayOfWeek, [row])
+      }
+    }
+
+    const days = [...byDay.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([dayOfWeek, items]) => ({
+        dayOfWeek,
+        activities: items.sort((x, y) => x.startTime.localeCompare(y.startTime) || x.name.localeCompare(y.name)),
+      }))
+
+    res.json({
+      term: {
+        id: current.id,
+        name: current.name,
+        academicYear: current.academicYear,
+        startDate: current.startDate.toISOString(),
+        endDate: current.endDate.toISOString(),
+      },
+      days,
+      signUpUrl,
+    })
+  } catch (error) {
+    console.error('Error fetching parent ECA programme:', error)
+    res.status(500).json({ error: 'Failed to fetch activity programme' })
+  }
+})
+
 // Get term with eligible activities for parent's children
 router.get('/parent/terms/:id', isAuthenticated, async (req, res) => {
   try {

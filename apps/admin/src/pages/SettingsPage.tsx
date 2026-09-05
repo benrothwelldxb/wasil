@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Save, Mail, Clock, Globe, Phone, FlaskConical, Copy, Trash2, RefreshCw, AlertTriangle, Check,
-  Percent,
+  Percent, Sparkles,
 } from 'lucide-react'
 import { useToast, api, PARENT_BOTTOM_NAV_CATALOG, DEFAULT_BOTTOM_NAV_KEYS, isNavItemAvailable } from '@wasil/shared'
 import type { SchoolSettings, SchoolModuleFlag, TestAccountInfo, BottomNavKey } from '@wasil/shared'
@@ -276,6 +276,27 @@ export function SettingsPage() {
             </p>
           </div>
         )}
+      </section>
+
+      {/* Where activity sign-up actually happens */}
+      <section className="bg-white rounded-xl border border-slate-200 p-5">
+        <h2 className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
+          <Sparkles className="w-4 h-4" />
+          Activity Sign-up Link
+        </h2>
+        <p className="text-xs text-slate-400 mb-3">
+          Connect shows parents what is running and when. Signing up happens wherever
+          the school runs it — paste that link and parents get a button on the
+          Activities screen. Leave blank and the screen is read-only.
+        </p>
+        <input
+          type="url"
+          inputMode="url"
+          placeholder="https://..."
+          value={settings.activitiesSignUpUrl || ''}
+          onChange={e => updateField('activitiesSignUpUrl', e.target.value || null)}
+          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pink-200"
+        />
       </section>
 
       {/* Contact-details confirmation */}

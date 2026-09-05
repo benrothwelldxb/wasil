@@ -124,10 +124,6 @@ export function ParentDashboard() {
     () => api.eca.parent.getAllocations(),
     []
   )
-  const { data: ecaTerms } = useApi<EcaTerm[]>(
-    () => api.eca.parent.listTerms(),
-    []
-  )
   // Poll emergency alerts every 30s without flickering
   const [activeAlerts, setActiveAlerts] = useState<EmergencyAlert[] | null>(null)
   const fetchAlerts = useCallback(async () => {
@@ -267,27 +263,6 @@ export function ParentDashboard() {
     }
     return count > 0 ? count : null
   }, [messages])
-
-  // Check for open ECA registration
-  const openRegistrationTerm = useMemo(() => {
-    if (!ecaTerms) return null
-    const now = new Date()
-    return ecaTerms.find(term => {
-      if (term.status !== 'REGISTRATION_OPEN' || !term.registrationCloses) return false
-      const closes = new Date(term.registrationCloses)
-      return closes > now
-    }) || null
-  }, [ecaTerms])
-
-  // Calculate days left for registration
-  const registrationDaysLeft = useMemo(() => {
-    if (!openRegistrationTerm || !openRegistrationTerm.registrationCloses) return null
-    const now = new Date()
-    const closes = new Date(openRegistrationTerm.registrationCloses)
-    const diffTime = closes.getTime() - now.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    return diffDays > 0 ? diffDays : null
-  }, [openRegistrationTerm])
 
   // Events happening TODAY (school calendar — now Hub-sourced). Surfaced on the
   // "today" strip, taking over the role the retired one-off schedule items had.
@@ -972,31 +947,6 @@ export function ParentDashboard() {
             </Link>
           ))}
         </div>
-      )}
-
-      {/* ECA Registration Banner */}
-      {isEnabled('ecaEnabled') && openRegistrationTerm && (
-        <Link
-          to="/activities"
-          className="block rounded-[22px] p-5 relative overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, #C4506E, #E8785B)' }}
-        >
-          <div className="absolute -top-2 -right-2 text-[90px] opacity-10 pointer-events-none">&#127912;</div>
-          <h3 className="text-[19px] font-extrabold text-white relative z-10">
-            {t('eca.registrationOpen', 'Activity sign-ups are open!')}
-          </h3>
-          <p className="text-sm font-medium text-white/90 relative z-10">
-            {t('eca.registrationOpenBanner', 'Choose clubs and activities for next term')}
-          </p>
-          {registrationDaysLeft && (
-            <span
-              className="inline-flex items-center gap-1.5 mt-[10px] px-[14px] py-1.5 rounded-xl text-[13px] font-bold text-white relative z-10"
-              style={{ backgroundColor: 'rgba(255,255,255,0.22)' }}
-            >
-              &#9200; {t('eca.daysLeft', 'Closes in {{count}} days', { count: registrationDaysLeft })}
-            </span>
-          )}
-        </Link>
       )}
 
       {/* Parent Pulse Banner */}

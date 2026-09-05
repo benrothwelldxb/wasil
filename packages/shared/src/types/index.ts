@@ -1743,6 +1743,10 @@ export interface SchoolSettings extends SchoolModuleFlags {
    *  a decision a school makes. Independent of `attendanceEnabled`, which gates
    *  absence requests. */
   attendanceFigureVisibleToParents: boolean
+  /** Where a parent goes to sign up for a school-run activity. Connect shows
+   *  the programme and does not run the choice, so without this the Activities
+   *  screen is a list a parent can read and not join. */
+  activitiesSignUpUrl: string | null
   // The three middle items of the parent app's bottom tab bar (Home + these 3 +
   // More). Ordered catalog keys (see PARENT_BOTTOM_NAV_CATALOG). null = default.
   bottomNavItems: BottomNavKey[] | null
