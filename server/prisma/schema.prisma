@@ -1183,7 +1183,19 @@ model Group {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([schoolId, name])
+  // NOTE: (schoolId, name) is still unique, but only for groups a school made
+  // by hand — enforced by a PARTIAL index (`WHERE "externalRef" IS NULL`) that
+  // Prisma cannot express, so it lives in the migration and NOT here.
+  //
+  // If you run `prisma migrate dev` and it offers to recreate a plain unique on
+  // (schoolId, name), refuse: that is Prisma not knowing about the partial
+  // index, and accepting it would break every published group. See
+  // 20260904150000_group_name_unique_for_manual_only.
+  //
+  // Why partial: a club that runs every term wants to be called "Football" each
+  // time. A full unique forced publishers to mangle names — "Football (Autumn
+  // Term)" — purely to get past the constraint, which put a workaround in front
+  // of parents. Published groups are identified by externalRef instead.
   @@index([schoolId, isActive])
 
   /// The publishing system's own id for this group, e.g. an Active club roster.
