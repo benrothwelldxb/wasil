@@ -1718,6 +1718,7 @@ export type SchoolModuleFlag =
   | 'pulseEnabled'
   | 'attendanceEnabled'
   | 'ecaEnabled'
+  | 'clubsEnabled'
   | 'consultationsEnabled'
   | 'schoolServicesEnabled'
   | 'lunchMenuEnabled'
@@ -1775,7 +1776,7 @@ export const PARENT_BOTTOM_NAV_CATALOG: ParentNavCatalogItem[] = [
   { key: 'consultations', path: '/consultations', label: 'Consult', moduleFlag: 'consultationsEnabled' },
   { key: 'schoolServices', path: '/school-services', label: 'Services', moduleFlag: 'schoolServicesEnabled' },
   { key: 'lunchMenu', path: '/lunch-menu', label: 'Lunch', moduleFlag: 'lunchMenuEnabled' },
-  { key: 'clubs', path: '/clubs', label: 'Clubs', moduleFlag: 'ecaEnabled' },
+  { key: 'clubs', path: '/clubs', label: 'Clubs', moduleFlag: 'clubsEnabled' },
   { key: 'messages', path: '/inbox', label: 'Messages', moduleFlag: 'inboxEnabled' },
   { key: 'resources', path: '/resources', label: 'Resources', moduleFlag: ['policiesEnabled', 'filesEnabled', 'linksEnabled', 'knowledgeBaseEnabled'] },
 ]
