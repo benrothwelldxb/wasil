@@ -20,7 +20,7 @@ import { TermDatesPage } from './pages/TermDatesPage'
 import { EventsPage } from './pages/EventsPage'
 import { PrincipalUpdatesPage } from './pages/PrincipalUpdatesPage'
 import { ResourcesPage } from './pages/ResourcesPage'
-import { EcaPage } from './pages/EcaPage'
+import { ActivitiesPage } from './pages/ActivitiesPage'
 import { ClubsPage } from './pages/ClubsPage'
 import { TransportPage } from './pages/TransportPage'
 import { AdminNoticesPage } from './pages/AdminNoticesPage'
@@ -298,7 +298,7 @@ export default function App() {
       <Route path="/links" element={<Navigate to="/resources" replace />} />
       <Route
         path="/activities"
-        element={<ProtectedRoute><AppLayout><EcaPage /></AppLayout></ProtectedRoute>}
+        element={<ProtectedRoute><AppLayout><ActivitiesPage /></AppLayout></ProtectedRoute>}
       />
       <Route
         path="/clubs"

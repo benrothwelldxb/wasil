@@ -56,6 +56,7 @@ const SETTINGS_SELECT = {
   attendanceDigestEnabled: true,
   attendanceDigestTime: true,
   attendanceFigureVisibleToParents: true,
+  activitiesSignUpUrl: true,
   contactConfirmDays: true,
   bottomNavItems: true,
 } as const
@@ -107,6 +108,14 @@ router.patch('/', isAuthenticated, isAdmin, async (req: Request, res: Response) 
     }
     if (typeof body.attendanceFigureVisibleToParents === 'boolean') {
       data.attendanceFigureVisibleToParents = body.attendanceFigureVisibleToParents
+    }
+    if (typeof body.activitiesSignUpUrl === 'string') {
+      const url = body.activitiesSignUpUrl.trim()
+      // Only http(s), and blank clears it. A parent tapping "Sign up" is
+      // following the school's word, so this is not the place to accept
+      // whatever scheme happens to be pasted in.
+      if (url === '') data.activitiesSignUpUrl = null
+      else if (/^https?:\/\//i.test(url)) data.activitiesSignUpUrl = url
     }
     if (typeof body.attendanceDigestTime === 'string') {
       const time = body.attendanceDigestTime.trim()

@@ -1607,7 +1607,45 @@ export const groups = {
 }
 
 // ECA (Extra-Curricular Activities)
+/** One activity as it appears on a day of the parent's programme screen. */
+export interface ParentProgrammeActivity {
+  id: string
+  name: string
+  description: string | null
+  categoryName: string | null
+  location: string | null
+  startTime: string
+  endTime: string
+  isCancelled: boolean
+  cancelReason: string | null
+  inviteOnly: boolean
+  eligibleGender: 'MIXED' | 'BOYS_ONLY' | 'GIRLS_ONLY'
+  yearGroupNames: string[]
+}
+
+export interface ParentProgrammeDay {
+  dayOfWeek: number
+  activities: ParentProgrammeActivity[]
+}
+
+/**
+ * The school's activity programme, read-only. Connect shows what runs and
+ * when; signing up happens at the school's own link. `term: null` means no term
+ * is running, which is a different answer from a term with no activities.
+ */
+export interface ParentProgramme {
+  term: { id: string; name: string; academicYear: string; startDate: string; endDate: string } | null
+  days: ParentProgrammeDay[]
+  signUpUrl: string | null
+}
+
 export const eca = {
+  // Parent-facing programme (display only — no choice, no allocation).
+  parentProgramme: (studentId?: string) =>
+    fetchApi<ParentProgramme>(
+      `/api/eca/parent/programme${studentId ? `?studentId=${encodeURIComponent(studentId)}` : ''}`,
+    ),
+
   // Admin endpoints
   getSettings: () => fetchApi<EcaSettings>('/api/eca/settings'),
   updateSettings: (data: {

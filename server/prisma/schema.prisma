@@ -69,6 +69,10 @@ model School {
   // retiring its own ECA would have silently taken the clubs page, and the
   // bookings parents have already paid for, out of the parent menu with it.
   clubsEnabled           Boolean @default(true)
+  // Where a parent goes to actually sign up for a school-run activity. Connect
+  // displays the programme and does not run the choice, so without this the
+  // Activities screen is a dead end for a parent who wants a place.
+  activitiesSignUpUrl    String?
   consultationsEnabled   Boolean @default(true)
   schoolServicesEnabled  Boolean @default(true)
   lunchMenuEnabled       Boolean @default(true)
