@@ -1383,6 +1383,18 @@ model EcaActivity {
   providerBookings     EcaProviderBooking[]
   isCancelled          Boolean              @default(false)
   cancelReason         String?
+  // Published here by an outside system (Active) rather than created in
+  // Connect. `source` says which — null means a human made it here. The ref is
+  // that system's own id for the activity and is what a re-publish addresses,
+  // so a name can change without becoming a second activity.
+  source               String?
+  externalRef          String?
+  // The version we last ACCEPTED from that system, which is deliberately not
+  // `updatedAt`: an edit made on our side bumps updatedAt, and comparing
+  // against it would raise the bar and start silently rejecting the publisher's
+  // legitimate pushes. A push is applied only when strictly newer than this.
+  sourceVersion        DateTime?
+  meetings             EcaActivityMeeting[]
   selections           EcaSelection[]
   allocations          EcaAllocation[]
   waitlists            EcaWaitlist[]
@@ -1392,9 +1404,29 @@ model EcaActivity {
   updatedAt            DateTime             @updatedAt
 
   @@index([ecaTermId, dayOfWeek, timeSlot])
+  @@unique([schoolId, externalRef])
   @@index([schoolId, isActive])
   @@index([providerId])
   @@index([operatorId])
+}
+
+/// When an activity meets. A club can meet twice a week and is still one club,
+/// not two — EcaActivity's own dayOfWeek/timeSlot can only hold one session, so
+/// a twice-weekly club rendered as a single day was quietly wrong.
+///
+/// EcaActivity.dayOfWeek and the custom times mirror the FIRST meeting so every
+/// existing screen keeps working untouched; anything that wants the whole
+/// picture reads this. Replaced wholesale on each publish — a meeting has no
+/// identity of its own worth preserving.
+model EcaActivityMeeting {
+  id            String      @id @default(cuid())
+  ecaActivityId String
+  ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  dayOfWeek     Int // 0=Sun, 1=Mon
+  startTime     String // "15:30", school-local, as the school writes it
+  endTime       String
+
+  @@index([ecaActivityId])
 }
 
 enum EcaTimeSlot {

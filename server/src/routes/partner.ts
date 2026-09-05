@@ -18,6 +18,10 @@ import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
+import {
+  normaliseMeetings, timeSlotFor, genderFor, activityTypeFor, capacityFor,
+  statusFor, parseVersion, isNewer, hubYearGroupIdsOf,
+} from '../services/activityPush.js'
 import { sendNotification } from '../services/notify.js'
 import { signalAdminNotice } from '../services/adminNotices.js'
 import logger from '../services/logger.js'
@@ -2761,6 +2765,176 @@ router.put('/transport/assignments', requirePartner, async (req, res) => {
     res.json({ updated: keptStudentIds.length, removed: removed.count, skippedUnknownPupil })
   } catch (error) {
     console.error('Partner transport push error:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// ─── Catalogue push ─────────────────────────────────────────────────────────
+//
+// An outside system (Active) publishes its activities into Connect so parents
+// see the school's programme in the app they already use. Connect DISPLAYS
+// these: it does not run the choice, the ranking or the allocation, and it
+// deliberately cannot show places remaining, because a publish-only consumer
+// has no way to know it and a wrong number looks exactly like a right one.
+//
+//   PUT /api/partner/activities/:externalRef
+//
+// Addressed by the publisher's own ref so a rename edits the activity instead
+// of creating a second one. Idempotent, and safe to retry out of order: a push
+// is applied only when strictly newer than the version we last accepted.
+router.put('/activities/:externalRef', requirePartner, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const actor = await resolveStaffActor(
+      typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : '',
+      schoolHintOf(req),
+    )
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    const externalRef = (req.params.externalRef ?? '').trim()
+    if (!externalRef) return res.status(400).json({ error: 'externalRef required' })
+
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) return res.status(400).json({ error: 'name required' })
+
+    // No version, no write. Accepting an unversioned push would let a stalled
+    // retry silently revert a newer edit, which is the one thing the version
+    // exists to prevent.
+    const version = parseVersion(body.version)
+    if (!version) return res.status(400).json({ error: 'version required (ISO-8601)' })
+
+    const existing = await prisma.ecaActivity.findFirst({
+      where: { schoolId: actor.schoolId, externalRef },
+      select: { id: true, sourceVersion: true, providerId: true },
+    })
+
+    // A published ref must never land on a provider-run club. The refs are
+    // namespaced so this shouldn't collide, but the cost of being wrong is
+    // overwriting a club parents have paid for, so it's checked rather than
+    // assumed.
+    if (existing?.providerId) {
+      return res.status(409).json({ error: 'ref belongs to a provider-run club' })
+    }
+
+    if (existing && !isNewer(version, existing.sourceVersion)) {
+      // Not an error: an out-of-order retry recomputing to older state is
+      // ordinary, and the publisher should mark the row delivered.
+      return res.json({ id: existing.id, ignored: true, reason: 'stale_version' })
+    }
+
+    // Hub owns term identity; Connect syncs it. We don't invent a term from a
+    // partner push — a term conjured here would be a second, competing record
+    // of something Hub already owns. Until the sync has run there is nowhere
+    // correct to file the activity, so say so and let the retry succeed later.
+    const hubTermId = typeof body.hubTermId === 'string' ? body.hubTermId.trim() : ''
+    if (!hubTermId) return res.status(400).json({ error: 'hubTermId required' })
+    const term = await prisma.ecaTerm.findFirst({
+      where: { schoolId: actor.schoolId, hubTermId },
+      select: { id: true },
+    })
+    if (!term) {
+      return res.status(409).json({
+        error: 'unknown_term',
+        hubTermId,
+        hint: 'this term has not synced from Hub into Connect yet — retry after the next sync',
+      })
+    }
+
+    // Unknown year groups are reported, not fatal: a programme naming one year
+    // group we haven't synced should still publish for the other four.
+    const wantedYearGroups = hubYearGroupIdsOf(body.eligibleYearGroups)
+    const yearGroups = wantedYearGroups.length
+      ? await prisma.yearGroup.findMany({
+          where: { schoolId: actor.schoolId, hubYearGroupId: { in: wantedYearGroups } },
+          select: { id: true, hubYearGroupId: true },
+        })
+      : []
+    const foundYearGroups = new Set(yearGroups.map(y => y.hubYearGroupId))
+    const unknownYearGroupIds = wantedYearGroups.filter(id => !foundYearGroups.has(id))
+
+    // Same rule as the groups API: match a heading this school actually has, or
+    // file under none and say which word missed.
+    const categoryWord = typeof body.category === 'string' ? body.category : ''
+    const category = categoryWord ? await resolveCategoryName(categoryWord, actor.schoolId) : null
+    const unmatchedCategoryName = categoryWord && !category ? categoryWord.trim() : null
+
+    // A group must be this school's, and can back only one activity. A taken
+    // one is reported rather than fatal — the catalogue entry is still right.
+    let groupId: string | null = null
+    let ignoredGroupId: string | null = null
+    if (typeof body.groupId === 'string' && body.groupId.trim()) {
+      const wanted = body.groupId.trim()
+      const group = await prisma.group.findFirst({
+        where: { id: wanted, schoolId: actor.schoolId },
+        select: { id: true, ecaActivity: { select: { id: true } } },
+      })
+      const takenByAnother = group?.ecaActivity && group.ecaActivity.id !== existing?.id
+      if (group && !takenByAnother) groupId = group.id
+      else ignoredGroupId = wanted
+    }
+
+    const meetings = normaliseMeetings(body.meetings)
+    const first = meetings[0]
+    const { minCapacity, maxCapacity } = capacityFor(body.capacity)
+    const status = statusFor(body.status)
+
+    const data = {
+      name,
+      description: typeof body.description === 'string' ? body.description.trim() || null : null,
+      ecaTermId: term.id,
+      categoryId: category?.id ?? null,
+      location: typeof body.venue === 'string' ? body.venue.trim() || null : null,
+      activityType: activityTypeFor(body.inviteOnly),
+      eligibleGender: genderFor(body.eligibleGender),
+      eligibleYearGroupIds: yearGroups.map(y => y.id),
+      minCapacity,
+      maxCapacity,
+      ...status,
+      // Mirrors of the first meeting, so every screen that already reads a
+      // single day and time keeps working. `meetings` below is the truth.
+      dayOfWeek: first?.dayOfWeek ?? 0,
+      timeSlot: first ? timeSlotFor(first.startTime) : undefined,
+      customStartTime: first?.startTime ?? null,
+      customEndTime: first?.endTime ?? null,
+      ...(groupId ? { groupId } : {}),
+      source: typeof body.source === 'string' && body.source.trim() ? body.source.trim() : 'partner',
+      sourceVersion: version,
+      // Never set by a push: these are the provider half, and a school-run
+      // activity acquiring a payment link because a field arrived would be a
+      // payments decision made by accident.
+      providerId: null,
+      cost: null,
+      paymentUrl: null,
+    }
+
+    const activity = existing
+      ? await prisma.ecaActivity.update({ where: { id: existing.id }, data, select: { id: true } })
+      : await prisma.ecaActivity.create({
+          data: { ...data, schoolId: actor.schoolId, externalRef, timeSlot: data.timeSlot ?? 'AFTER_SCHOOL' },
+          select: { id: true },
+        })
+
+    // Replaced wholesale: a meeting has no identity worth preserving, and a
+    // club that drops its Wednesday session must actually lose it.
+    await prisma.ecaActivityMeeting.deleteMany({ where: { ecaActivityId: activity.id } })
+    if (meetings.length > 0) {
+      await prisma.ecaActivityMeeting.createMany({
+        data: meetings.map(m => ({ ...m, ecaActivityId: activity.id })),
+      })
+    }
+
+    res.status(existing ? 200 : 201).json({
+      id: activity.id,
+      created: !existing,
+      // Each present only when there is something to say, so a clean publish
+      // reads clean.
+      ...(unknownYearGroupIds.length > 0 ? { unknownYearGroupIds } : {}),
+      ...(unmatchedCategoryName ? { unmatchedCategoryName } : {}),
+      ...(ignoredGroupId ? { ignoredGroupId } : {}),
+      ...(meetings.length === 0 ? { warning: 'no valid meetings in payload' } : {}),
+    })
+  } catch (error) {
+    console.error('Error consuming partner activity push:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })
