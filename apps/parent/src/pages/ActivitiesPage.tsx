@@ -59,6 +59,7 @@ export function ActivitiesPage() {
   const activeChildId = children.some((c) => c.id === selectedChildId)
     ? selectedChildId
     : children[0]?.id ?? ''
+  const activeChildName = children.find((c) => c.id === activeChildId)?.name ?? null
 
   const { data, isLoading } = useApi<ParentProgramme | null>(
     () => api.eca.parentProgramme(activeChildId || undefined),
@@ -78,6 +79,16 @@ export function ActivitiesPage() {
             ? `${data.term.name} · ${data.term.academicYear}`
             : t('activities.subtitle', 'After-school clubs and activities')}
         </p>
+        {/* Says what the list IS before a parent infers it. The child chips
+            filter on eligibility, so a club appearing under a child's name
+            means "she could join this", not "she is in this" — and Connect has
+            no way to know the second. Left unsaid, the chips quietly imply
+            enrolment we cannot show. */}
+        {activeChildName && (
+          <p className="text-[13px] font-semibold mt-0.5" style={{ color: '#A8929A' }}>
+            {t('activities.offeringFor', 'What {{name}} can join', { name: activeChildName })}
+          </p>
+        )}
       </div>
 
       {/* Child selector (only when there's more than one) */}
@@ -150,10 +161,13 @@ export function ActivitiesPage() {
             </a>
           )}
 
+          {/* The offering, not a place in it. Connect is not told who is in
+              which club, so a screen that let a parent assume otherwise would
+              be answering a question it cannot see. */}
           <p className="text-[12px] font-medium text-center" style={{ color: '#C0B2B6' }}>
             {t(
               'activities.footer',
-              'Places and times are set by the school — this list shows what is running this term.',
+              "This is what the school is running this term — not the clubs your child already has a place in.",
             )}
           </p>
         </div>
