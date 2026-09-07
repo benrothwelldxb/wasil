@@ -32,6 +32,9 @@ interface ConsultationForm {
   slotDuration: number
   breakDuration: number
   targetClass: string
+  /** When the evening runs. Every teacher added inherits this. */
+  defaultStartTime: string
+  defaultEndTime: string
 }
 
 const emptyForm: ConsultationForm = {
@@ -42,6 +45,8 @@ const emptyForm: ConsultationForm = {
   slotDuration: 10,
   breakDuration: 0,
   targetClass: '',
+  defaultStartTime: '15:30',
+  defaultEndTime: '18:30',
 }
 
 interface TeacherForm {
@@ -198,8 +203,18 @@ export function ConsultationsPage() {
     } else {
       setEditingTeacherId(null)
       setTeacherForm(emptyTeacherForm)
-      // Start with empty windows for each date
-      setAvailabilityWindows([])
+      // Pre-fill from the event's own times, one window per date — the whole
+      // point of setting them on the event. Falls back to empty for events
+      // created before the event carried times, where there is nothing to
+      // inherit and inventing a default would be a guess at the school's day.
+      const start = selectedConsultation?.defaultStartTime
+      const end = selectedConsultation?.defaultEndTime
+      if (selectedConsultation && start && end) {
+        const dates = getWeekdayDates(selectedConsultation.date, selectedConsultation.endDate || undefined)
+        setAvailabilityWindows(dates.map(date => ({ date, startTime: start, endTime: end })))
+      } else {
+        setAvailabilityWindows([])
+      }
     }
     setShowTeacherForm(true)
   }
@@ -275,6 +290,8 @@ export function ConsultationsPage() {
         date: form.date,
         endDate: form.endDate || undefined,
         slotDuration: form.slotDuration,
+        defaultStartTime: form.defaultStartTime || null,
+        defaultEndTime: form.defaultEndTime || null,
         breakDuration: form.breakDuration,
         targetClass: form.targetClass || undefined,
       })
@@ -483,7 +500,17 @@ export function ConsultationsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 pt-3 border-t border-gray-100">
+          <div className="grid grid-cols-4 gap-4 pt-3 border-t border-gray-100">
+            {/* What a teacher added now will inherit — worth seeing before
+                adding thirty of them. */}
+            <div>
+              <p className="text-xs text-gray-500">Sessions</p>
+              <p className="font-semibold">
+                {selectedConsultation.defaultStartTime && selectedConsultation.defaultEndTime
+                  ? `${selectedConsultation.defaultStartTime}–${selectedConsultation.defaultEndTime}`
+                  : <span className="text-gray-400 font-normal">Set per teacher</span>}
+              </p>
+            </div>
             <div>
               <p className="text-xs text-gray-500">Slot Duration</p>
               <p className="font-semibold">{selectedConsultation.slotDuration} min</p>
@@ -1219,6 +1246,35 @@ export function ConsultationsPage() {
               />
             </div>
           </div>
+
+          {/* When the evening runs. Set here once; every teacher added inherits
+              it. These used to exist only per teacher, so setting up parents'
+              evening meant deciding the times in your head and then typing them
+              once per teacher. */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sessions run from</label>
+              <input
+                type="time"
+                value={form.defaultStartTime}
+                onChange={(e) => setForm({ ...form, defaultStartTime: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">until</label>
+              <input
+                type="time"
+                value={form.defaultEndTime}
+                onChange={(e) => setForm({ ...form, defaultEndTime: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+          <p className="-mt-2 text-xs text-gray-400">
+            Every teacher you add starts with these times, on every date of the event. Change an
+            individual afterwards if they differ.
+          </p>
 
           <div className="grid grid-cols-2 gap-4">
             <div>

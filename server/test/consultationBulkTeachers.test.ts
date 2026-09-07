@@ -13,7 +13,7 @@ import request from 'supertest'
  * skipping and reporting, never failing the batch, and never silently.
  */
 const prismaMock = {
-  consultationEvent: { findFirst: vi.fn() },
+  consultationEvent: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   consultationTeacher: { findMany: vi.fn(), create: vi.fn() },
   user: { findMany: vi.fn() },
 }
@@ -164,5 +164,54 @@ describe('the single-teacher call is unchanged', () => {
     prismaMock.consultationTeacher.findMany.mockResolvedValue([{ teacherId: 'u_1' }])
     const res = await post(body({ teacherId: 'u_1' }))
     expect(res.status).toBe(404)
+  })
+})
+
+/**
+ * The evening's own times.
+ *
+ * Slot and break duration already lived on the event; start and end only
+ * existed per teacher, so setting up parents' evening meant holding the times
+ * in your head and typing them once per teacher.
+ */
+describe("the event's default session times", () => {
+  beforeEach(() => {
+    prismaMock.consultationEvent.create.mockImplementation(async ({ data }: any) => ({ id: 'ce-new', ...data }))
+  })
+
+  const create = (b: Record<string, unknown>) =>
+    request(makeApp()).post('/api/consultations').send({ title: "Autumn Parents' Evening", date: '2026-10-14', ...b })
+
+  it('stores them on the event', async () => {
+    const res = await create({ defaultStartTime: '15:30', defaultEndTime: '18:30' })
+    expect(res.status).toBe(201)
+    expect(prismaMock.consultationEvent.create.mock.calls[0][0].data).toMatchObject({
+      defaultStartTime: '15:30', defaultEndTime: '18:30',
+    })
+  })
+
+  // "No default set" and "runs from midnight" must not be the same value.
+  it('leaves them null when blank rather than storing an empty string', async () => {
+    await create({ defaultStartTime: '', defaultEndTime: '' })
+    expect(prismaMock.consultationEvent.create.mock.calls[0][0].data).toMatchObject({
+      defaultStartTime: null, defaultEndTime: null,
+    })
+  })
+
+  // A bad value here would generate every teacher's whole slot grid at the
+  // wrong times, which is far more work to unpick than a rejected field.
+  it('drops an unparseable time instead of storing it', async () => {
+    await create({ defaultStartTime: 'half three', defaultEndTime: '25:00' })
+    expect(prismaMock.consultationEvent.create.mock.calls[0][0].data).toMatchObject({
+      defaultStartTime: null, defaultEndTime: null,
+    })
+  })
+
+  it('an event created without them is still valid', async () => {
+    const res = await create({})
+    expect(res.status).toBe(201)
+    expect(prismaMock.consultationEvent.create.mock.calls[0][0].data).toMatchObject({
+      defaultStartTime: null, defaultEndTime: null,
+    })
   })
 })

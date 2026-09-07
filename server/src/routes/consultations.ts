@@ -8,6 +8,12 @@ import { serializeBookingForParent } from '../services/consultationSerializers.j
 
 const router = Router()
 
+/** "15:30" or nothing. Anything unparseable is dropped rather than stored, so a
+ *  bad value can't generate a teacher's whole slot grid at the wrong times. */
+function asTime(v: unknown): string | null {
+  return typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v.trim()) ? v.trim() : null
+}
+
 // Helper: generate time slots between startTime and endTime
 function generateSlots(
   startTime: string,
@@ -497,7 +503,8 @@ router.get('/google-auth-url', isAdmin, async (req, res) => {
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
-    const { title, description, date, endDate, slotDuration, breakDuration, targetClass } = req.body
+    const { title, description, date, endDate, slotDuration, breakDuration, targetClass,
+      defaultStartTime, defaultEndTime } = req.body
 
     const event = await prisma.consultationEvent.create({
       data: {
@@ -509,6 +516,10 @@ router.post('/', isAdmin, async (req, res) => {
         slotDuration: slotDuration || 10,
         breakDuration: breakDuration || 0,
         targetClass: targetClass || null,
+        // Blank stays null rather than becoming "", so "no default set" is
+        // distinguishable from "runs from midnight".
+        defaultStartTime: asTime(defaultStartTime),
+        defaultEndTime: asTime(defaultEndTime),
       },
     })
 
@@ -638,7 +649,8 @@ router.put('/:id', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { title, description, date, endDate, status, slotDuration, breakDuration, targetClass } = req.body
+    const { title, description, date, endDate, status, slotDuration, breakDuration, targetClass,
+      defaultStartTime, defaultEndTime } = req.body
 
     const existing = await prisma.consultationEvent.findFirst({
       where: { id, schoolId: user.schoolId },
@@ -655,6 +667,8 @@ router.put('/:id', isAdmin, async (req, res) => {
         ...(description !== undefined && { description: description || null }),
         ...(date !== undefined && { date }),
         ...(endDate !== undefined && { endDate: endDate || null }),
+        ...(defaultStartTime !== undefined && { defaultStartTime: asTime(defaultStartTime) }),
+        ...(defaultEndTime !== undefined && { defaultEndTime: asTime(defaultEndTime) }),
         ...(status !== undefined && { status }),
         ...(slotDuration !== undefined && { slotDuration }),
         ...(breakDuration !== undefined && { breakDuration }),
