@@ -46,6 +46,8 @@ const emptyForm: ConsultationForm = {
 
 interface TeacherForm {
   teacherId: string
+  /** Add mode takes many; edit mode still addresses one via `teacherId`. */
+  teacherIds: string[]
   location: string
   locationType: ConsultationLocationType
   startTime: string
@@ -54,6 +56,7 @@ interface TeacherForm {
 
 const emptyTeacherForm: TeacherForm = {
   teacherId: '',
+  teacherIds: [],
   location: '',
   locationType: 'IN_PERSON',
   startTime: '15:30',
@@ -167,6 +170,7 @@ export function ConsultationsPage() {
       setEditingTeacherId(existingTeacher.id)
       setTeacherForm({
         teacherId: existingTeacher.teacherId,
+        teacherIds: [existingTeacher.teacherId],
         location: existingTeacher.location || '',
         locationType: existingTeacher.locationType || 'IN_PERSON',
         startTime: existingTeacher.startTime,
@@ -309,7 +313,8 @@ export function ConsultationsPage() {
   }
 
   const handleAddTeacher = async () => {
-    if (!selectedId || !teacherForm.teacherId) return
+    const chosen = editingTeacherId ? [teacherForm.teacherId] : teacherForm.teacherIds
+    if (!selectedId || chosen.length === 0) return
     // Validate that there's at least one complete window
     const validWindows = availabilityWindows.filter(w => w.startTime && w.endTime)
     if (validWindows.length === 0) {
@@ -335,14 +340,24 @@ export function ConsultationsPage() {
         // Update existing teacher's availability windows
         await api.consultations.updateTeacherAvailability(selectedId, editingTeacherId, validWindows)
       } else {
-        await api.consultations.addTeacher(selectedId, {
-          teacherId: teacherForm.teacherId,
+        const result = await api.consultations.addTeachers(selectedId, {
+          teacherIds: chosen,
           location: teacherForm.location || undefined,
           locationType: teacherForm.locationType,
           startTime: earliestStart,
           endTime: latestEnd,
           availabilityWindows: validWindows,
         })
+        // Say what didn't happen. Silently adding 27 of 30 would leave an admin
+        // believing the whole staff was on the event.
+        if (result.skipped.length > 0) {
+          const names = result.skipped
+            .map(sk => staffList?.find(st => st.id === sk.teacherId)?.name ?? sk.teacherId)
+            .join(', ')
+          toast.success(`Added ${result.added.length}. Already on this event: ${names}`)
+        } else {
+          toast.success(`Added ${result.added.length} teacher${result.added.length === 1 ? '' : 's'}`)
+        }
       }
       setTeacherForm(emptyTeacherForm)
       setAvailabilityWindows([])
@@ -885,21 +900,82 @@ export function ConsultationsPage() {
               </div>
 
               <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
-                  <select
-                    value={teacherForm.teacherId}
-                    onChange={(e) => setTeacherForm({ ...teacherForm, teacherId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 text-sm"
-                    style={{ borderRadius: '14px' }}
-                    disabled={!!editingTeacherId}
-                  >
-                    <option value="">Select a teacher...</option>
-                    {staffList?.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                </div>
+                {editingTeacherId ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
+                    <select
+                      value={teacherForm.teacherId}
+                      className="w-full px-3 py-2 border border-gray-200 text-sm"
+                      style={{ borderRadius: '14px' }}
+                      disabled
+                    >
+                      <option value="">Select a teacher...</option>
+                      {staffList?.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    {/* Everyone shares the window, the location and the slot
+                        grid, so adding thirty teachers is one form, not thirty. */}
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Teachers
+                        {teacherForm.teacherIds.length > 0 && (
+                          <span className="ml-1 text-gray-400 font-normal">
+                            ({teacherForm.teacherIds.length} selected)
+                          </span>
+                        )}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setTeacherForm({
+                          ...teacherForm,
+                          teacherIds:
+                            teacherForm.teacherIds.length === (staffList?.length ?? 0)
+                              ? []
+                              : (staffList ?? []).map(st => st.id),
+                        })}
+                        className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+                      >
+                        {teacherForm.teacherIds.length === (staffList?.length ?? 0) && (staffList?.length ?? 0) > 0
+                          ? 'Clear all'
+                          : 'Select all'}
+                      </button>
+                    </div>
+                    <div
+                      className="border border-gray-200 max-h-56 overflow-y-auto divide-y divide-gray-100"
+                      style={{ borderRadius: '14px' }}
+                    >
+                      {(staffList ?? []).map(st => {
+                        const checked = teacherForm.teacherIds.includes(st.id)
+                        return (
+                          <label
+                            key={st.id}
+                            className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => setTeacherForm({
+                                ...teacherForm,
+                                teacherIds: checked
+                                  ? teacherForm.teacherIds.filter(x => x !== st.id)
+                                  : [...teacherForm.teacherIds, st.id],
+                              })}
+                              className="h-4 w-4"
+                            />
+                            <span className="text-sm text-gray-700">{st.name}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      They all get the same window and location. Change an individual afterwards if they differ.
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Location Type</label>
@@ -1046,9 +1122,9 @@ export function ConsultationsPage() {
                 </button>
                 <button
                   onClick={handleAddTeacher}
-                  disabled={isSubmitting || !teacherForm.teacherId}
+                  disabled={isSubmitting || (editingTeacherId ? !teacherForm.teacherId : teacherForm.teacherIds.length === 0)}
                   className="flex-1 py-2 px-4 text-sm font-semibold text-white"
-                  style={{ borderRadius: '14px', backgroundColor: theme.colors.brandColor, opacity: isSubmitting || !teacherForm.teacherId ? 0.6 : 1 }}
+                  style={{ borderRadius: '14px', backgroundColor: theme.colors.brandColor, opacity: isSubmitting || (editingTeacherId ? !teacherForm.teacherId : teacherForm.teacherIds.length === 0) ? 0.6 : 1 }}
                 >
                   {isSubmitting ? 'Saving...' : editingTeacherId ? 'Update Teacher' : 'Add Teacher'}
                 </button>

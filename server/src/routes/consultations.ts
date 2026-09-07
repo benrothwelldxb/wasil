@@ -704,7 +704,7 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { teacherId, location, locationType, startTime, endTime, availabilityWindows } = req.body
+    const { teacherId, teacherIds, location, locationType, startTime, endTime, availabilityWindows } = req.body
 
     const consultation = await prisma.consultationEvent.findFirst({
       where: { id, schoolId: user.schoolId },
@@ -714,16 +714,51 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Consultation not found' })
     }
 
-    // Check teacher exists and is staff
-    const teacher = await prisma.user.findFirst({
+    // One teacher or many. Setting up a primary school's parents' evening was
+    // ~30 passes through this form typing the same times, because teachers
+    // configure nothing — the window and location are the same for all of them
+    // and the slot grid is generated identically.
+    const batch = Array.isArray(teacherIds)
+    const requested: string[] = batch
+      ? [...new Set((teacherIds as unknown[]).filter((t): t is string => typeof t === 'string' && !!t.trim()).map(t => t.trim()))]
+      : typeof teacherId === 'string' && teacherId.trim()
+        ? [teacherId.trim()]
+        : []
+
+    if (requested.length === 0) {
+      return res.status(400).json({ error: batch ? 'teacherIds must contain at least one id' : 'Teacher not found' })
+    }
+
+    const staff = await prisma.user.findMany({
       where: {
-        id: teacherId,
+        id: { in: requested },
         schoolId: user.schoolId,
         role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
       },
+      select: { id: true },
     })
+    const isStaffHere = new Set(staff.map(t => t.id))
 
-    if (!teacher) {
+    // Already on this event — skipped rather than fatal. An admin who added
+    // three people by hand and then reaches for "everyone" should not have to
+    // work out which three.
+    const alreadyOn = await prisma.consultationTeacher.findMany({
+      where: { consultationId: id, teacherId: { in: requested } },
+      select: { teacherId: true },
+    })
+    const existing = new Set(alreadyOn.map(t => t.teacherId))
+
+    const skipped: Array<{ teacherId: string; reason: string }> = []
+    const toAdd: string[] = []
+    for (const t of requested) {
+      if (!isStaffHere.has(t)) skipped.push({ teacherId: t, reason: 'not a staff member at this school' })
+      else if (existing.has(t)) skipped.push({ teacherId: t, reason: 'already on this event' })
+      else toAdd.push(t)
+    }
+
+    // A single-teacher call keeps its original 404, so nothing that already
+    // calls this route sees a new shape.
+    if (!batch && toAdd.length === 0) {
       return res.status(404).json({ error: 'Teacher not found' })
     }
 
@@ -747,10 +782,12 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
       }
     }
 
+    const added = []
+    for (const eachTeacherId of toAdd) {
     const consultationTeacher = await prisma.consultationTeacher.create({
       data: {
         consultationId: id,
-        teacherId,
+        teacherId: eachTeacherId,
         location: location || null,
         locationType: locationType || 'IN_PERSON',
         startTime,
@@ -784,7 +821,7 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
       },
     })
 
-    res.status(201).json({
+    added.push({
       id: consultationTeacher.id,
       consultationId: consultationTeacher.consultationId,
       teacherId: consultationTeacher.teacherId,
@@ -797,6 +834,11 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
       availabilityWindows: consultationTeacher.availabilityWindows,
       createdAt: consultationTeacher.createdAt.toISOString(),
     })
+    }
+
+    // `teacherIds` gets the batch shape; a legacy single `teacherId` call gets
+    // exactly what it got before, so existing callers are untouched.
+    res.status(201).json(batch ? { added, skipped } : added[0])
   } catch (error) {
     console.error('Error adding teacher:', error)
     res.status(500).json({ error: 'Failed to add teacher' })

@@ -1973,6 +1973,27 @@ export const consultations = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  /**
+   * Several teachers in one pass. Setup is identical for all of them — the
+   * window, the location and the generated slot grid — so a primary school was
+   * making ~30 trips through the same form.
+   *
+   * A teacher already on the event is skipped and reported, never a failure for
+   * the whole batch: an admin who added three by hand and then reaches for
+   * "everyone" should not have to work out which three.
+   */
+  addTeachers: (id: string, data: {
+    teacherIds: string[]
+    location?: string
+    locationType?: string
+    startTime: string
+    endTime: string
+    availabilityWindows?: { date: string; startTime: string; endTime: string }[]
+  }) =>
+    fetchApi<{ added: ConsultationTeacher[]; skipped: { teacherId: string; reason: string }[] }>(
+      `/api/consultations/${id}/teachers`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
   removeTeacher: (id: string, ctId: string) =>
     fetchApi<{ message: string }>(`/api/consultations/${id}/teachers/${ctId}`, {
       method: 'DELETE',
