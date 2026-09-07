@@ -1650,6 +1650,11 @@ export interface ConsultationEvent {
   endDate?: string | null
   status: ConsultationStatus
   slotDuration: number
+  /** When the evening runs. Set on the event, inherited by every teacher added
+   *  — the times belong to the evening, not to each teacher. Null on events
+   *  created before this existed. */
+  defaultStartTime?: string | null
+  defaultEndTime?: string | null
   breakDuration: number
   targetClass?: string | null
   teachers?: ConsultationTeacher[]

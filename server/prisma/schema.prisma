@@ -1655,6 +1655,12 @@ model ConsultationEvent {
   status        ConsultationStatus    @default(DRAFT)
   slotDuration  Int                   @default(10) // minutes per slot
   breakDuration Int                   @default(0) // minutes break between slots
+  // When the evening runs. Set once on the event, then every teacher added
+  // inherits it — the times are a property of the evening, not of each
+  // teacher, and typing them thirty times was the actual friction. A teacher
+  // who differs still gets their own windows; this is only the starting point.
+  defaultStartTime String? // "15:30"
+  defaultEndTime   String? // "18:30"
   targetClass   String? // null = whole school, or specific class name
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt

@@ -1938,6 +1938,8 @@ export const consultations = {
     slotDuration?: number
     breakDuration?: number
     targetClass?: string
+    defaultStartTime?: string | null
+    defaultEndTime?: string | null
   }) =>
     fetchApi<ConsultationEvent>('/api/consultations', {
       method: 'POST',
@@ -1952,6 +1954,8 @@ export const consultations = {
     slotDuration?: number
     breakDuration?: number
     targetClass?: string
+    defaultStartTime?: string | null
+    defaultEndTime?: string | null
   }) =>
     fetchApi<ConsultationEvent>(`/api/consultations/${id}`, {
       method: 'PUT',
