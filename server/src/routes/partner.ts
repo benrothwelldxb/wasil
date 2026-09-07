@@ -2939,4 +2939,140 @@ router.put('/activities/:externalRef', requirePartner, async (req, res) => {
   }
 })
 
+/**
+ * One teacher's consultation slots, in Desk's vocabulary.
+ *
+ * Scoped to the actor's own ConsultationTeacher rows — a partner token plus
+ * someone else's hub_user_id gets that person's grid, never a school-wide read,
+ * and never anything a teacher could not already see in Connect.
+ *
+ * The names and the note travel with a booked slot because the teacher is
+ * about to sit down with those people and that note was written for them to
+ * read. Nothing else about the parent or the child crosses.
+ */
+async function consultationSlotsFor(
+  actor: { id: string; schoolId: string },
+  fromRaw: unknown,
+  toRaw: unknown,
+) {
+  const DATE = /^\d{4}-\d{2}-\d{2}$/
+  const from = typeof fromRaw === 'string' && DATE.test(fromRaw) ? fromRaw : null
+  const to = typeof toRaw === 'string' && DATE.test(toRaw) ? toRaw : null
+
+  const teacherRows = await prisma.consultationTeacher.findMany({
+    where: {
+      teacherId: actor.id,
+      consultation: { schoolId: actor.schoolId },
+    },
+    include: {
+      consultation: { select: { id: true, title: true, status: true } },
+      slots: {
+        // Dates are stored YYYY-MM-DD, so a string comparison IS a date
+        // comparison — and an undefined bound drops the filter rather than
+        // matching null, which would silently return nothing.
+        where: from || to ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : undefined,
+        include: {
+          booking: {
+            select: {
+              studentName: true,
+              notes: true,
+              meetingLink: true,
+              parent: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+      },
+    },
+  })
+
+  const slots = teacherRows.flatMap(t =>
+    t.slots.map(s => ({
+      event_id: t.consultation.id,
+      event_title: t.consultation.title,
+      status: t.consultation.status,
+      date: s.date,
+      start_time: s.startTime,
+      end_time: s.endTime,
+      location: t.location,
+      location_type: t.locationType,
+      is_break: s.isBreak,
+      booked: !!s.booking,
+      // Present only on a booked slot — an unbooked one has no one to name,
+      // and sending nulls would invite a screen that renders an empty name.
+      ...(s.booking
+        ? {
+            student_name: s.booking.studentName,
+            parent_name: s.booking.parent?.name ?? null,
+            notes: s.booking.notes,
+            meeting_link: s.booking.meetingLink,
+          }
+        : {}),
+    })),
+  )
+
+  // Across several events, each teacher row was sorted on its own.
+  return slots.sort((a, b) =>
+    (a.date ?? '').localeCompare(b.date ?? '') || a.start_time.localeCompare(b.start_time),
+  )
+}
+
+
+// ─── Consultations (parents' evening), read-only ────────────────────────────
+//
+// A teacher's own appointment list, so Desk can show it beside their lessons,
+// duties and cover. Connect owns parents' evening end to end — the model, the
+// booking, the emails, the reminders, the parent screens — and this is a
+// serialiser over it, not a handover.
+//
+// Deliberately read-only. Desk does not book, cancel or move a slot: a
+// parent's booking is Connect's to hold, and two systems able to move the same
+// appointment is how a parent turns up to an empty room.
+//
+//   GET /api/partner/consultations?hub_user_id=<hub user id>&from=&to=
+//
+// Times are HH:MM and dates YYYY-MM-DD, exactly as stored — no timezone maths
+// at the boundary, which is where this usually goes wrong.
+router.get('/consultations', requirePartner, async (req, res) => {
+  try {
+    const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
+    const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    const slots = await consultationSlotsFor(actor, req.query.from, req.query.to)
+    res.json({ slots })
+  } catch (error) {
+    console.error('Error building partner consultations:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// The one-line version, so Desk's "Today" can say "6 of 12 booked" without
+// reading every slot.
+//
+//   GET /api/partner/consultations/summary?hub_user_id=<hub user id>&from=&to=
+router.get('/consultations/summary', requirePartner, async (req, res) => {
+  try {
+    const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
+    const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    const slots = await consultationSlotsFor(actor, req.query.from, req.query.to)
+    // Breaks are shown on a teacher's grid but are not appointments, so they
+    // count towards neither figure — "6 of 12 booked" should mean twelve
+    // families could have come, not twelve rows on a screen.
+    const appointments = slots.filter(s => !s.is_break)
+    const booked = appointments.filter(s => s.booked)
+
+    res.json({
+      next_slot: booked[0] ?? appointments[0] ?? null,
+      booked_count: booked.length,
+      unbooked_count: appointments.length - booked.length,
+    })
+  } catch (error) {
+    console.error('Error building partner consultation summary:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 export default router
