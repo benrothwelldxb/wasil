@@ -252,7 +252,9 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
 router.post('/parent/book', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
-    const { slotId, studentId, studentName, notes } = req.body
+    // `studentName` is deliberately not read from the body — the school's name
+    // for the child is resolved below.
+    const { slotId, studentId, notes } = req.body
 
     // Verify slot exists and is available
     const slot = await prisma.consultationSlot.findUnique({
@@ -288,10 +290,51 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
       return res.status(400).json({ error: 'Slot is already booked' })
     }
 
-    // Check if parent already has a booking with this teacher
+    // Whose child is this?
+    //
+    // studentId and studentName arrived straight from the request body and
+    // were stored unchecked, which was already wrong — a booking could name any
+    // child, and the teacher would see whatever the client typed. It became
+    // load-bearing once the one-booking rule started keying on the child: an
+    // unvalidated id would let anyone book around it.
+    //
+    // A parent's children come from either the Hub-linked ParentStudentLink or
+    // the legacy Child rows, and the parent app sends ids from both, so both
+    // are accepted.
+    const wantedStudentId = typeof studentId === 'string' ? studentId.trim() : ''
+    if (!wantedStudentId) {
+      return res.status(400).json({ error: 'Please choose which child this booking is for' })
+    }
+
+    const link = await prisma.parentStudentLink.findFirst({
+      where: { userId: user.id, studentId: wantedStudentId },
+      select: { student: { select: { firstName: true, lastName: true } } },
+    })
+    const legacyChild = link
+      ? null
+      : await prisma.child.findFirst({
+          where: { id: wantedStudentId, parentId: user.id },
+          select: { name: true },
+        })
+
+    if (!link && !legacyChild) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    // The school's name for the child, never the client's. A teacher's list
+    // should read as the school knows the child, not as a parent typed them.
+    const resolvedStudentName = link
+      ? `${link.student.firstName} ${link.student.lastName}`.trim()
+      : legacyChild!.name
+
+    // One booking per CHILD per teacher — not per parent per teacher, which is
+    // what this used to be and got two things wrong. Siblings in the same class
+    // could not both be booked, because the second one looked like the parent
+    // double-booking; and the same child could be booked twice by two different
+    // guardians, quietly costing another family a slot.
     const existingBooking = await prisma.consultationBooking.findFirst({
       where: {
-        parentId: user.id,
+        studentId: wantedStudentId,
         slot: {
           consultationTeacherId: slot.consultationTeacherId,
         },
@@ -299,7 +342,9 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
     })
 
     if (existingBooking) {
-      return res.status(400).json({ error: 'You already have a booking with this teacher. Please cancel your existing booking first.' })
+      return res.status(400).json({
+        error: `${resolvedStudentName} already has an appointment with this teacher. Cancel that one first to move it.`,
+      })
     }
 
     // Create the booking
@@ -319,7 +364,7 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
 
         const meetResult = await createGoogleMeetEvent({
           refreshToken: school.googleCalendarRefreshToken,
-          summary: `${slot.consultationTeacher.teacher.name} - ${studentName} Consultation`,
+          summary: `${slot.consultationTeacher.teacher.name} - ${resolvedStudentName} Consultation`,
           description: `Parent consultation booking via Wasil`,
           startTime: startISO,
           endTime: endISO,
@@ -336,8 +381,8 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
       data: {
         slotId,
         parentId: user.id,
-        studentId,
-        studentName,
+        studentId: wantedStudentId,
+        studentName: resolvedStudentName,
         notes: notes || null,
         meetingLink,
       },
@@ -354,7 +399,7 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
     const emailDetails = {
       schoolId: user.schoolId,
       teacherName: teacher.name,
-      childName: studentName,
+      childName: resolvedStudentName,
       date: consultationDate,
       time: slotTime,
       location: meetingLink || location,
@@ -374,7 +419,7 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
       schoolId: user.schoolId,
       teacherName: teacher.name,
       parentName: user.name || 'Parent',
-      childName: studentName,
+      childName: resolvedStudentName,
       date: consultationDate,
       time: slotTime,
     }).catch(e => console.error('[Consultation] Push notification failed:', e))
