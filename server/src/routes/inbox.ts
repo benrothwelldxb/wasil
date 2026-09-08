@@ -61,8 +61,23 @@ function serializeMessage(
     reactions: Array<{ emoji: string; userId: string }>
   },
   currentUserId: string,
+  /**
+   * Read receipts run one way: staff may see whether a parent has read theirs,
+   * a parent may not see whether staff have read theirs.
+   *
+   * Not a display choice — a parent who can see that their message was read an
+   * hour ago and not answered is being handed a grievance the school never
+   * agreed to, and staff read messages between lessons without being free to
+   * reply. So the stamp on a parent's OWN sent message is withheld here, in the
+   * payload, rather than left in it for a future screen to render by accident.
+   *
+   * Their read state on messages they RECEIVED still travels: that is their own
+   * and says nothing about anyone else.
+   */
+  viewerIsParent = false,
 ) {
   const isDeleted = m.deletedAt !== null
+  const hideReadReceipt = viewerIsParent && m.senderId === currentUserId
 
   // Build reaction summary: { [emoji]: { count, reacted } }
   const reactionMap: Record<string, { count: number; reacted: boolean }> = {}
@@ -83,7 +98,7 @@ function serializeMessage(
     content: isDeleted ? '' : m.content,
     deleted: isDeleted || undefined,
     deletedAt: m.deletedAt?.toISOString() || null,
-    readAt: m.readAt?.toISOString() || null,
+    readAt: hideReadReceipt ? null : m.readAt?.toISOString() || null,
     createdAt: m.createdAt.toISOString(),
     replyTo: m.replyTo
       ? {
@@ -281,7 +296,8 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
       // requester is one of them (an added guardian) rather than the owner.
       participants: conversation.participants.map(p => ({ userId: p.userId, name: p.user.name, role: p.role })),
       shared: !!myParticipant && !isPrimaryParent && !isStaffParty,
-      messages: conversation.messages.map(m => serializeMessage(m as Parameters<typeof serializeMessage>[0], user.id)),
+      messages: conversation.messages.map(m =>
+        serializeMessage(m as Parameters<typeof serializeMessage>[0], user.id, user.role === 'PARENT')),
     })
   } catch (error) {
     console.error('Error fetching conversation:', error)
@@ -1177,7 +1193,8 @@ router.get('/conversations/:id/search', isAuthenticated, async (req, res) => {
       take: 50,
     })
 
-    res.json(messages.map(m => serializeMessage(m as Parameters<typeof serializeMessage>[0], user.id)))
+    res.json(messages.map(m =>
+      serializeMessage(m as Parameters<typeof serializeMessage>[0], user.id, user.role === 'PARENT')))
   } catch (error) {
     console.error('Error searching messages:', error)
     res.status(500).json({ error: 'Failed to search messages' })

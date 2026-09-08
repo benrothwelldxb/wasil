@@ -634,7 +634,7 @@ const THREAD_LIST_INCLUDE = {
 
 // Shape one conversation row into a Desk thread-list item. `actorId` is the
 // requester (staff, CC'd staff, or ILSA) and drives the unread computation.
-type ThreadRowMessages = { messages: { readAt: Date | null; createdAt: Date }[] }
+type ThreadRowMessages = { messages: { senderId: string; readAt: Date | null; createdAt: Date }[] }
 function mapThreadItem(
   c: {
     id: string
@@ -653,9 +653,19 @@ function mapThreadItem(
   // ConversationMessage.readAt model unchanged.
   const myPart = c.participants.find((p) => p.userId === actorId && p.role === 'STAFF')
   const useParticipant = !!myPart && c.staffId !== actorId
+  const inbound = c.messages.filter((m) => m.senderId !== actorId)
   const unread = useParticipant
-    ? c.messages.filter((m) => (myPart!.lastReadAt ? m.createdAt > myPart!.lastReadAt : true)).length
-    : c.messages.filter((m) => m.readAt === null).length
+    ? inbound.filter((m) => (myPart!.lastReadAt ? m.createdAt > myPart!.lastReadAt : true)).length
+    : inbound.filter((m) => m.readAt === null).length
+
+  // "Have they read the one I sent?" — the actor's own most recent message and
+  // whether the parent has opened the thread since. Scannable from the list, so
+  // a teacher chasing a reply can see which families have seen the question and
+  // which have not, without opening every thread.
+  const mine = c.messages.filter((m) => m.senderId === actorId)
+  const lastMine = mine.length > 0
+    ? mine.reduce((latest, m) => (m.createdAt > latest.createdAt ? m : latest))
+    : null
   return {
     id: c.id,
     parentName: c.parent.name,
@@ -664,6 +674,12 @@ function mapThreadItem(
     className: c.student?.class?.name ?? null,
     lastMessageText: c.lastMessageText,
     lastMessageAt: c.lastMessageAt.toISOString(),
+    // Absent when the actor has never written in this thread — which is a
+    // different thing from having written and not been read, and must not
+    // render as "unread".
+    yourLastMessage: lastMine
+      ? { sentAt: lastMine.createdAt.toISOString(), readAt: lastMine.readAt?.toISOString() ?? null }
+      : undefined,
     unread,
     // Number of additional CO-GUARDIANS this thread is shared with (STAFF CCs
     // are excluded — they are not co-guardians). 0 = ordinary 1-to-1.
@@ -698,8 +714,8 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
         include: {
           ...THREAD_LIST_INCLUDE,
           messages: {
-            where: { senderId: { not: actor.ilsa.id }, deletedAt: null },
-            select: { readAt: true, createdAt: true },
+            where: { deletedAt: null },
+            select: { senderId: true, readAt: true, createdAt: true },
           },
         },
         orderBy: { lastMessageAt: 'desc' },
@@ -744,8 +760,10 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
       include: {
         ...THREAD_LIST_INCLUDE,
         messages: {
-          where: { senderId: { not: staff.id }, deletedAt: null },
-          select: { readAt: true, createdAt: true },
+          // Both directions now: inbound drives the unread count, outbound
+          // answers "have they read mine yet".
+          where: { deletedAt: null },
+          select: { senderId: true, readAt: true, createdAt: true },
         },
       },
       orderBy: { lastMessageAt: 'desc' },
@@ -1006,6 +1024,14 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
           deleted: isDeleted || undefined,
           deletedAt: m.deletedAt?.toISOString() || null,
           sentAt: m.createdAt.toISOString(),
+          // When the OTHER party opened the thread after this was sent. On a
+          // message the actor sent, that is the parent — which is the whole
+          // question. Null means not yet.
+          //
+          // It survives a withdrawal: whether a parent saw something before it
+          // was taken back is exactly what a teacher needs to know afterwards,
+          // and is the one fact about a tombstone worth keeping.
+          readAt: m.readAt?.toISOString() ?? null,
           // The same { [emoji]: { count, reacted } } summary the parent inbox
           // builds, with `reacted` relative to the caller. Omitted when empty so
           // Desk can treat a missing key as "no reactions" — which is what lets
