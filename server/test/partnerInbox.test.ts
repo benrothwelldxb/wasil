@@ -349,6 +349,8 @@ describe('GET /api/partner/inbox/threads', () => {
     ])
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff'))
     expect(Object.keys(res.body.threads[0]).sort()).toEqual(
+      // `yourLastMessage` is absent here because this actor has never written
+      // in the thread (messages: []), which is the case this fixture sets up.
       ['ccd', 'className', 'hubClassId', 'id', 'lastMessageAt', 'lastMessageText', 'parentName', 'sharedCount', 'studentName', 'unread'].sort(),
     )
   })
@@ -495,7 +497,10 @@ describe('GET /api/partner/inbox/threads/:id', () => {
           reactions: [],
         },
         {
+          // The staff message, which the parent has since read — the case the
+          // read receipt exists for.
           id: 'm-2', senderId: 'staff-1', content: 'Hi there', createdAt: new Date('2026-08-14T09:05:00.000Z'),
+          readAt: new Date('2026-08-14T19:42:00.000Z'),
           deletedAt: null, sender: { name: 'Ms Noor' }, attachments: [], reactions: [],
         },
         {
@@ -521,15 +526,22 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     expect(res.body.messages).toEqual([
       {
         id: 'm-1', senderName: 'Amina Dad', mine: false, content: 'Hello', sentAt: '2026-08-14T09:00:00.000Z',
-        deletedAt: null,
+        deletedAt: null, readAt: null,
         attachments: [{ name: 'note.pdf', url: 'https://x/note.pdf', type: 'application/pdf', size: 1234 }],
       },
-      { id: 'm-2', senderName: 'Ms Noor', mine: true, content: 'Hi there', sentAt: '2026-08-14T09:05:00.000Z', deletedAt: null, attachments: [] },
+      {
+        id: 'm-2', senderName: 'Ms Noor', mine: true, content: 'Hi there', sentAt: '2026-08-14T09:05:00.000Z',
+        deletedAt: null, attachments: [],
+        // "They read it at 19:42" — on a message the teacher sent, this is the
+        // parent having opened the thread.
+        readAt: '2026-08-14T19:42:00.000Z',
+      },
       // The withdrawal keeps its place and its authorship, and carries NO
       // content and NO attachment URLs — sending either would undo it.
       {
         id: 'm-3', senderName: 'Amina Dad', mine: false, content: '', deleted: true,
         deletedAt: '2026-08-14T09:11:00.000Z', sentAt: '2026-08-14T09:10:00.000Z', attachments: [],
+        readAt: null,
       },
     ])
   })
@@ -556,7 +568,10 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       // `deleted` is absent on a live message (undefined, so JSON drops it);
       // `deletedAt` is always sent, null when live. `reactions` is absent too
       // when there are none — Desk reads a missing key as "no reactions".
-      ['attachments', 'content', 'deletedAt', 'id', 'mine', 'senderName', 'sentAt'].sort(),
+      // `readAt` joined the shape: when the OTHER party opened the thread after
+      // this message was sent. On `mine: true` that is the parent, which is the
+      // whole point — "did they read the one asking to meet".
+      ['attachments', 'content', 'deletedAt', 'id', 'mine', 'readAt', 'senderName', 'sentAt'].sort(),
     )
     expect(Object.keys(res.body.messages[0].attachments[0]).sort()).toEqual(['name', 'size', 'type', 'url'].sort())
   })
