@@ -18,6 +18,7 @@ import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
+import { withdrawMessage, WITHDRAW_WINDOW_MS } from '../services/messageWithdrawal.js'
 import {
   normaliseMeetings, timeSlotFor, genderFor, activityTypeFor, capacityFor,
   statusFor, parseVersion, isNewer, hubYearGroupIdsOf,
@@ -3096,6 +3097,77 @@ router.get('/consultations/summary', requirePartner, async (req, res) => {
     })
   } catch (error) {
     console.error('Error building partner consultation summary:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// 4. Withdraw one of your own messages (mirrors Connect's own delete).
+//
+// The rules are Connect's and stay Connect's: own messages only, inside fifteen
+// minutes, soft delete. Desk hides a button that would fail; it does not get to
+// decide the answer.
+//
+// Calls the SAME path as the native withdrawal rather than repeating the soft
+// delete, because a withdrawal is three writes — the message, the thread
+// preview, and the notification body that carried the first 200 characters of
+// it. An endpoint that did the first two would leave the recipient's bell
+// holding text the sender was told had been taken back.
+//
+//   DELETE /api/partner/inbox/threads/:id/messages/:messageId  { hub_user_id }
+router.delete('/inbox/threads/:id/messages/:messageId', requirePartner, async (req, res) => {
+  try {
+    const hubUserId =
+      typeof (req.body as Record<string, unknown> | undefined)?.hub_user_id === 'string'
+        ? ((req.body as Record<string, string>).hub_user_id).trim()
+        : typeof req.query.hub_user_id === 'string'
+          ? req.query.hub_user_id.trim()
+          : ''
+    const actor = await resolveActor(hubUserId, schoolHintOf(req))
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    const aId = actorUserId(actor)
+
+    const { id, messageId } = req.params
+
+    // The thread must be one this actor can see at all, before we say anything
+    // about a message in it — otherwise "not yours" and "doesn't exist" leak
+    // the difference to someone who should see neither.
+    const thread = await prisma.conversation.findFirst({
+      where: threadWhereForActor(id, actor),
+      select: { id: true },
+    })
+    if (!thread) return res.status(404).json({ error: 'not_found' })
+
+    const result = await withdrawMessage({ conversationId: id, messageId, actorId: aId })
+
+    if (!result.ok) {
+      // Distinguishable, because they are different sentences to a teacher:
+      // one is "that isn't yours", the other is "you've missed the window",
+      // and only the second is worth explaining.
+      if (result.reason === 'not_found') return res.status(404).json({ error: 'not_found' })
+      if (result.reason === 'not_sender') {
+        return res.status(403).json({ error: 'not_sender', message: 'Only the sender can withdraw a message' })
+      }
+      return res.status(409).json({
+        error: 'window_expired',
+        message: 'A message can only be withdrawn within 15 minutes of sending',
+        windowMinutes: WITHDRAW_WINDOW_MS / 60000,
+      })
+    }
+
+    // The tombstone in the shape Desk already renders, so it can patch the
+    // message in place rather than refetch the thread.
+    res.json({
+      message: {
+        id: result.message.id,
+        deleted: true,
+        content: '',
+        deletedAt: result.message.deletedAt.toISOString(),
+        sentAt: result.message.createdAt.toISOString(),
+        attachments: [],
+      },
+    })
+  } catch (error) {
+    console.error('Error withdrawing partner message:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })
