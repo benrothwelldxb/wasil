@@ -529,7 +529,11 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
           body: content.trim().substring(0, 200),
           resourceType: 'CONVERSATION',
           resourceId: id,
-          data: { conversationId: id, route: `/inbox/${id}` },
+          // `messageId` so a later withdrawal can find THIS row and rewrite
+          // it. Without it the notification is only addressable by
+          // conversation, and blanking a whole thread's notifications because
+          // one message was withdrawn would take the others with it.
+          data: { conversationId: id, messageId: message.id, route: `/inbox/${id}` },
           schoolId: conversation.schoolId,
         },
       })
@@ -1250,6 +1254,28 @@ router.delete('/conversations/:id/messages/:messageId', isAuthenticated, async (
     await prisma.conversation.update({
       where: { id },
       data: { lastMessageText: newest?.content.trim().substring(0, 200) ?? null },
+    })
+
+    // And from the NOTIFICATION, which carried the first 200 characters of the
+    // message. The thread said "This message was deleted" while the recipient's
+    // bell still held the text — so the dialog's promise to the sender, that
+    // recipients would see only a tombstone, was not true.
+    //
+    // Rewritten rather than deleted: a ping followed by no trace is its own
+    // confusion, and the recipient knowing that something arrived and was taken
+    // back is the same fact the thread shows them.
+    //
+    // Rows are addressed by the message id stamped in `data` at send time.
+    // Nothing older carries it — but nothing older can reach here either, since
+    // withdrawal is refused after fifteen minutes, so every withdrawable
+    // message was sent long after this shipped.
+    await prisma.notification.updateMany({
+      where: {
+        resourceType: 'CONVERSATION',
+        resourceId: id,
+        data: { path: ['messageId'], equals: messageId },
+      },
+      data: { body: 'This message was deleted' },
     })
 
     res.json({ success: true })

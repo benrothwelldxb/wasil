@@ -635,7 +635,10 @@ describe('POST /api/partner/inbox/threads/:id/messages', () => {
         body: 'Hello parent',
         resourceType: 'CONVERSATION',
         resourceId: 'c-1',
-        data: { conversationId: 'c-1', route: '/inbox/c-1' },
+        // `messageId` so a withdrawal in Connect can find and rewrite this
+        // row — the notification carried the message text, and blanking the
+        // thread's notifications by conversation alone would take the others.
+        data: { conversationId: 'c-1', messageId: 'msg-9', route: '/inbox/c-1' },
         schoolId: 'sch-1',
       },
     })

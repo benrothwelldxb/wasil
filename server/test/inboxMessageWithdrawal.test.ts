@@ -13,6 +13,7 @@ import request from 'supertest'
 const prismaMock = {
   conversationMessage: { findFirst: vi.fn(), update: vi.fn() },
   conversation: { update: vi.fn() },
+  notification: { updateMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/services/firebase', () => ({ sendPushNotification: vi.fn(), removeInvalidTokens: vi.fn() }))
@@ -54,6 +55,7 @@ beforeEach(() => {
   CURRENT_USER = { ...SENDER }
   prismaMock.conversationMessage.update.mockResolvedValue({})
   prismaMock.conversation.update.mockResolvedValue({})
+  prismaMock.notification.updateMany.mockResolvedValue({ count: 1 })
 })
 
 describe('DELETE /conversations/:id/messages/:messageId', () => {
@@ -120,5 +122,48 @@ describe('DELETE /conversations/:id/messages/:messageId', () => {
     expect((await del()).status).toBe(403)
     expect(prismaMock.conversationMessage.update).not.toHaveBeenCalled()
     expect(prismaMock.conversation.update).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The notification carried the message too.
+ *
+ * Sending writes a Notification row whose body is the first 200 characters of
+ * the message. Withdrawal didn't touch it, so the thread said "This message was
+ * deleted" while the recipient's bell still held the text — and Connect's own
+ * delete dialog promises the sender that recipients "will see 'This message was
+ * deleted'", which wasn't true.
+ */
+describe('the notification is withdrawn too', () => {
+  beforeEach(() => {
+    prismaMock.conversationMessage.findFirst
+      .mockResolvedValueOnce(ownRecentMessage())
+      .mockResolvedValueOnce({ content: 'Thanks, see you then' })
+  })
+
+  it('rewrites the body of the notification for THIS message', async () => {
+    const res = await del()
+    expect(res.status).toBe(200)
+    expect(prismaMock.notification.updateMany).toHaveBeenCalledWith({
+      where: {
+        resourceType: 'CONVERSATION',
+        resourceId: 'c-1',
+        // Addressed by the message id stamped at send time. Matching on the
+        // conversation alone would blank every notification in the thread
+        // because one message was withdrawn.
+        data: { path: ['messageId'], equals: 'm-2' },
+      },
+      data: { body: 'This message was deleted' },
+    })
+  })
+
+  // Rewritten, not deleted: a ping followed by no trace is its own confusion,
+  // and "something arrived and was taken back" is the same fact the thread
+  // shows. It also matches the wording the sender was promised.
+  it('says exactly what the thread says', async () => {
+    await del()
+    const written = prismaMock.notification.updateMany.mock.calls[0][0]
+    expect(written.data).toEqual({ body: 'This message was deleted' })
+    expect(written.where).not.toHaveProperty('deletedAt')
   })
 })
