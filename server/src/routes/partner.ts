@@ -1153,7 +1153,10 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
           body: content.trim().substring(0, 200),
           resourceType: 'CONVERSATION',
           resourceId: id,
-          data: { conversationId: id, route: `/inbox/${id}` },
+          // `messageId` so a withdrawal in Connect can find and rewrite this
+          // row — a message sent from Desk is withdrawn through Connect, so
+          // the notification it raised has to be addressable the same way.
+          data: { conversationId: id, messageId: message.id, route: `/inbox/${id}` },
           schoolId: conversation.schoolId,
         },
       })
