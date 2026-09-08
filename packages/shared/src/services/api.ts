@@ -2200,6 +2200,23 @@ export const inbox = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  /**
+   * Upload one attachment for an inbox message, then pass what comes back into
+   * `sendMessage`.
+   *
+   * The route has always existed and accepted any signed-in user; nothing in
+   * any client called it, so attachments only ever travelled staff → parent.
+   * Two steps rather than one multipart send because the message may carry
+   * several files and the composer shows each one as it lands.
+   */
+  uploadAttachment: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return fetchApi<{ fileName: string; fileUrl: string; fileType: string; fileSize: number }>(
+      '/api/inbox/upload',
+      { method: 'POST', body: formData },
+    )
+  },
   sendMessage: (conversationId: string, data: { content: string; replyToId?: string; attachments?: Array<{ fileName: string; fileUrl: string; fileType: string; fileSize: number }> }) =>
     fetchApi<ConversationMessageItem>(`/api/inbox/conversations/${conversationId}/messages`, {
       method: 'POST',

@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import multer from 'multer'
+import { singleAttachment } from '../middleware/attachmentUpload.js'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../middleware/auth.js'
 import { uploadFile, generateKey } from '../services/storage.js'
@@ -41,10 +41,6 @@ function getTypingUsers(conversationId: string, excludeUserId: string): string[]
   return active
 }
 
-const attachmentUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 16 * 1024 * 1024 },
-})
 
 // Helper: serialize a message with soft-delete handling, replyTo, and reactions
 function serializeMessage(
@@ -1787,7 +1783,7 @@ router.get('/unread-count', isAuthenticated, async (req, res) => {
 })
 
 // Upload attachment (reuses existing R2/multer pattern) — with filename sanitization
-router.post('/upload', isAuthenticated, attachmentUpload.single('file'), async (req, res) => {
+router.post('/upload', isAuthenticated, singleAttachment(), async (req, res) => {
   try {
     const uploaded = req.file
     if (!uploaded) {
