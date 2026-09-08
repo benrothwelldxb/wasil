@@ -241,16 +241,50 @@ export function ConversationPage() {
     prevMsgCount.current = count
   }, [conversation?.messages?.length])
 
+  /**
+   * Files chosen but not yet sent. Uploaded as they are picked, so the parent
+   * sees each one land — a photograph of a letter can take a moment on a phone,
+   * and a spinner on the send button with no explanation reads as a hang.
+   */
+  const [pending, setPending] = useState<Array<{ fileName: string; fileUrl: string; fileType: string; fileSize: number }>>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handlePickFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setUploadError(null)
+    setUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        const uploaded = await api.inbox.uploadAttachment(file)
+        setPending(prev => [...prev, uploaded])
+      }
+    } catch (err) {
+      // The server says why — too large, or a type it won't take. Showing its
+      // words beats a generic failure, because the parent can act on them.
+      setUploadError(err instanceof Error ? err.message : 'That file could not be attached.')
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
   const handleSend = async () => {
-    if (!messageText.trim() || sending || !id) return
+    // An attachment on its own is a message — a photographed letter often needs
+    // no words with it.
+    if ((!messageText.trim() && pending.length === 0) || sending || !id) return
 
     setSending(true)
     try {
       const newMsg = await api.inbox.sendMessage(id, {
         content: messageText.trim(),
         replyToId: replyingTo?.id,
+        attachments: pending.length > 0 ? pending : undefined,
       })
       setMessageText('')
+      setPending([])
+      setUploadError(null)
       setReplyingTo(null)
       setConversation(prev => prev ? {
         ...prev,
@@ -1041,6 +1075,31 @@ export function ConversationPage() {
           borderTop: replyingTo ? 'none' : '1px solid #F0E4E6',
         }}
       >
+        {/* What's attached but not yet sent, each removable — a wrong photo
+            chosen on a phone is common and should not need the message
+            abandoning. */}
+        {pending.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {pending.map((a, i) => (
+              <span
+                key={`${a.fileUrl}-${i}`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold"
+                style={{ backgroundColor: '#FFF0F3', color: '#C4506E' }}
+              >
+                <Paperclip className="w-3 h-3 shrink-0" />
+                <span className="truncate max-w-[140px]">{a.fileName}</span>
+                <button onClick={() => setPending(prev => prev.filter((_, j) => j !== i))} aria-label={`Remove ${a.fileName}`}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {uploadError && (
+          <p className="mt-2 text-[12px] font-semibold" style={{ color: '#C4506E' }}>{uploadError}</p>
+        )}
+
         <div
           className="flex items-end gap-2 mt-2 rounded-2xl px-3 py-2"
           style={{
@@ -1048,6 +1107,22 @@ export function ConversationPage() {
             border: '1.5px solid #F0E4E6',
           }}
         >
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => handlePickFiles(e.target.files)}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || sending}
+            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+            style={{ color: uploading ? '#D8CDD0' : '#A8929A' }}
+            aria-label="Attach a file"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
           <textarea
             ref={inputRef}
             value={messageText}
@@ -1065,10 +1140,10 @@ export function ConversationPage() {
           />
           <button
             onClick={handleSend}
-            disabled={!messageText.trim() || sending}
+            disabled={(!messageText.trim() && pending.length === 0) || sending || uploading}
             className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all"
             style={{
-              backgroundColor: messageText.trim() ? '#C4506E' : '#F0E4E6',
+              backgroundColor: messageText.trim() || pending.length > 0 ? '#C4506E' : '#F0E4E6',
             }}
           >
             <Send

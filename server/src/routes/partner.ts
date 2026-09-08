@@ -10,7 +10,7 @@
 // parent-data boundary by design.
 import { Router } from 'express'
 import type { Request, Response } from 'express'
-import multer from 'multer'
+import { singleAttachment } from '../middleware/attachmentUpload.js'
 import { marked } from 'marked'
 import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
@@ -41,10 +41,6 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 // convert that markdown to HTML and run it through the SAME sanitizer the admin
 // composer uses, so a partner broadcast stores the same safe-HTML content model
 // as a native one (bold/italic/lists survive; anything unsafe is discarded).
-const attachmentUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 16 * 1024 * 1024 }, // 16MB, matches native
-})
 
 /** Desk markdown → sanitized HTML (broadcast content model is HTML). */
 function markdownToSafeHtml(md: string): string {
@@ -2231,7 +2227,7 @@ router.delete('/groups/:id', requirePartner, async (req, res) => {
 //
 //   POST /api/partner/inbox/upload  (multipart/form-data, field "file")
 //     → { fileName, fileUrl, fileType, fileSize }
-router.post('/inbox/upload', requirePartner, attachmentUpload.single('file'), async (req, res) => {
+router.post('/inbox/upload', requirePartner, singleAttachment(), async (req, res) => {
   try {
     const uploaded = req.file
     if (!uploaded) {

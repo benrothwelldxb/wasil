@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import multer from 'multer'
+import { singleAttachment } from '../middleware/attachmentUpload.js'
 import { z } from 'zod'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff, canSendToTarget, canMarkUrgent, loadUserWithRelations } from '../middleware/auth.js'
@@ -43,13 +43,9 @@ const createMessageSchema = z.object({
 
 const updateMessageSchema = createMessageSchema.partial()
 
-const attachmentUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 16 * 1024 * 1024 }, // 16MB
-})
 
 // Upload attachment file to R2 (staff/admin only)
-router.post('/upload', isStaff, attachmentUpload.single('file'), async (req, res) => {
+router.post('/upload', isStaff, singleAttachment(), async (req, res) => {
   try {
     const uploaded = req.file
     if (!uploaded) {

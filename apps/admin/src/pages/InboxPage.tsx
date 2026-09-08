@@ -629,14 +629,43 @@ function ConversationThread({ conversationId, onBack }: { conversationId: string
     prevMsgCount.current = count
   }, [conversation?.messages?.length])
 
+  /** Uploaded but not yet sent. Same two-step as the parent app. */
+  const [pending, setPending] = useState<Array<{ fileName: string; fileUrl: string; fileType: string; fileSize: number }>>([])
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handlePickFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        const uploaded = await api.inbox.uploadAttachment(file)
+        setPending(prev => [...prev, uploaded])
+      }
+    } catch (err) {
+      // The server's own words — too large, or a type it won't take.
+      toast.error(err instanceof Error ? err.message : 'That file could not be attached')
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
   const handleSend = async () => {
-    if (!messageText.trim() || sending) return
+    // A document on its own is a message.
+    if ((!messageText.trim() && pending.length === 0) || sending) return
     setSending(true)
     try {
-      const payload: { content: string; replyToId?: string } = { content: messageText.trim() }
+      const payload: {
+        content: string
+        replyToId?: string
+        attachments?: Array<{ fileName: string; fileUrl: string; fileType: string; fileSize: number }>
+      } = { content: messageText.trim() }
       if (replyingTo) payload.replyToId = replyingTo.id
+      if (pending.length > 0) payload.attachments = pending
       const newMsg = await api.inbox.sendMessage(conversationId, payload)
       setMessageText('')
+      setPending([])
       setReplyingTo(null)
       setConversation(prev => prev ? { ...prev, messages: [...prev.messages, newMsg] } : prev)
     } catch (error) {
@@ -1078,7 +1107,32 @@ function ConversationThread({ conversationId, onBack }: { conversationId: string
 
       {/* Input */}
       <div className="px-4 py-3 border-t border-slate-100">
+        {pending.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {pending.map((a, i) => (
+              <span
+                key={`${a.fileUrl}-${i}`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600"
+              >
+                <Paperclip className="w-3 h-3 shrink-0" />
+                <span className="truncate max-w-[160px]">{a.fileName}</span>
+                <button onClick={() => setPending(prev => prev.filter((_, j) => j !== i))} aria-label={`Remove ${a.fileName}`}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2 bg-slate-50 rounded-xl px-3 py-2 border border-slate-200">
+          <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => handlePickFiles(e.target.files)} />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || sending}
+            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-slate-400 hover:text-slate-600"
+            aria-label="Attach a file"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
           <textarea
             value={messageText}
             onChange={(e) => { lastTypedRef.current = Date.now(); sendTypingSignal(); setMessageText(e.target.value) }}
@@ -1090,13 +1144,13 @@ function ConversationThread({ conversationId, onBack }: { conversationId: string
           />
           <button
             onClick={handleSend}
-            disabled={!messageText.trim() || sending}
+            disabled={(!messageText.trim() && pending.length === 0) || sending || uploading}
             className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors"
             style={{
-              backgroundColor: messageText.trim() ? '#C4506E' : '#E2E8F0',
+              backgroundColor: messageText.trim() || pending.length > 0 ? '#C4506E' : '#E2E8F0',
             }}
           >
-            <Send className="w-4 h-4" style={{ color: messageText.trim() ? '#FFFFFF' : '#94A3B8' }} />
+            <Send className="w-4 h-4" style={{ color: messageText.trim() || pending.length > 0 ? '#FFFFFF' : '#94A3B8' }} />
           </button>
         </div>
       </div>
