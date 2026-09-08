@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { singleAttachment } from '../middleware/attachmentUpload.js'
+import { withdrawMessage } from '../services/messageWithdrawal.js'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../middleware/auth.js'
 import { uploadFile, generateKey } from '../services/storage.js'
@@ -1207,72 +1208,15 @@ router.delete('/conversations/:id/messages/:messageId', isAuthenticated, async (
     const user = req.user!
     const { id, messageId } = req.params
 
-    const message = await prisma.conversationMessage.findFirst({
-      where: { id: messageId, conversationId: id },
-    })
-
-    if (!message) {
-      return res.status(404).json({ error: 'Message not found' })
-    }
-
-    // Only the sender can delete
-    if (message.senderId !== user.id) {
-      return res.status(403).json({ error: 'Only the sender can delete a message' })
-    }
-
-    // Time limit: 15 minutes
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000)
-    if (message.createdAt < fifteenMinutesAgo) {
+    // The three writes a withdrawal needs — soft delete, preview fallback,
+    // notification rewrite — live in one place so the partner endpoint cannot
+    // do two of them.
+    const result = await withdrawMessage({ conversationId: id, messageId, actorId: user.id })
+    if (!result.ok) {
+      if (result.reason === 'not_found') return res.status(404).json({ error: 'Message not found' })
+      if (result.reason === 'not_sender') return res.status(403).json({ error: 'Only the sender can delete a message' })
       return res.status(403).json({ error: 'Messages can only be deleted within 15 minutes of sending' })
     }
-
-    await prisma.conversationMessage.update({
-      where: { id: messageId },
-      data: {
-        deletedAt: new Date(),
-        deletedBy: user.id,
-      },
-    })
-
-    // Withdraw it from the thread PREVIEW too. Conversation.lastMessageText is
-    // denormalised at send time, so without this the withdrawn words carried on
-    // showing in every inbox list — the parent app's and Desk's — next to a
-    // thread that now says the message was withdrawn. The preview falls back to
-    // the most recent message still standing, or empties if there is none.
-    //
-    // lastMessageAt is deliberately NOT rewound: it orders the inbox, and a
-    // thread should not jump down the list because its last line was withdrawn.
-    const newest = await prisma.conversationMessage.findFirst({
-      where: { conversationId: id, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      select: { content: true },
-    })
-    await prisma.conversation.update({
-      where: { id },
-      data: { lastMessageText: newest?.content.trim().substring(0, 200) ?? null },
-    })
-
-    // And from the NOTIFICATION, which carried the first 200 characters of the
-    // message. The thread said "This message was deleted" while the recipient's
-    // bell still held the text — so the dialog's promise to the sender, that
-    // recipients would see only a tombstone, was not true.
-    //
-    // Rewritten rather than deleted: a ping followed by no trace is its own
-    // confusion, and the recipient knowing that something arrived and was taken
-    // back is the same fact the thread shows them.
-    //
-    // Rows are addressed by the message id stamped in `data` at send time.
-    // Nothing older carries it — but nothing older can reach here either, since
-    // withdrawal is refused after fifteen minutes, so every withdrawable
-    // message was sent long after this shipped.
-    await prisma.notification.updateMany({
-      where: {
-        resourceType: 'CONVERSATION',
-        resourceId: id,
-        data: { path: ['messageId'], equals: messageId },
-      },
-      data: { body: 'This message was deleted' },
-    })
 
     res.json({ success: true })
   } catch (error) {
