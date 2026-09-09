@@ -65,7 +65,7 @@ const SETTINGS_SELECT = {
 // PARENT_BOTTOM_NAV_CATALOG (kept inline so the server stays free of a frontend
 // dependency). At most three may be chosen (the bar has three middle slots).
 const BOTTOM_NAV_KEYS = [
-  'events', 'termDates', 'principalUpdates', 'attendance', 'timetable',
+  'events', 'posts', 'termDates', 'principalUpdates', 'attendance', 'timetable',
   'activities', 'consultations', 'schoolServices', 'lunchMenu', 'clubs',
   'messages', 'resources',
 ] as const

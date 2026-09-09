@@ -1771,7 +1771,7 @@ export interface SchoolSettings extends SchoolModuleFlags {
 // flag, or an array meaning "available if ANY is on" (e.g. Resources aggregates
 // four modules). Keep keys stable — they're persisted on School.bottomNavItems.
 export type BottomNavKey =
-  | 'events' | 'termDates' | 'principalUpdates' | 'attendance' | 'timetable'
+  | 'events' | 'posts' | 'termDates' | 'principalUpdates' | 'attendance' | 'timetable'
   | 'activities' | 'consultations' | 'schoolServices' | 'lunchMenu' | 'clubs'
   | 'messages' | 'resources'
 
@@ -1784,6 +1784,7 @@ export interface ParentNavCatalogItem {
 
 export const PARENT_BOTTOM_NAV_CATALOG: ParentNavCatalogItem[] = [
   { key: 'events', path: '/events', label: 'Calendar', moduleFlag: 'eventsEnabled' },
+  { key: 'posts', path: '/posts', label: 'Posts', moduleFlag: 'postsEnabled' },
   { key: 'termDates', path: '/term-dates', label: 'Term Dates', moduleFlag: 'termDatesEnabled' },
   { key: 'principalUpdates', path: '/principal-updates', label: 'Updates', moduleFlag: 'weeklyUpdatesEnabled' },
   { key: 'attendance', path: '/attendance', label: 'Attendance', moduleFlag: 'attendanceEnabled' },
