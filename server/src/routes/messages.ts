@@ -91,6 +91,21 @@ router.post('/upload', isStaff, singleAttachment(), async (req, res) => {
  */
 const DASHBOARD_WINDOW_DAYS = 30
 
+/**
+ * And how long a PINNED one stays.
+ *
+ * Pinning was exempt from the window entirely, which meant forever: nobody
+ * unpins, so a pinned post from last September would still have been sitting on
+ * the dashboard this September, and enough of them rebuild the wall the window
+ * was meant to clear.
+ *
+ * Longer, because pinning is the school saying "this one matters for a while" —
+ * but not unbounded, because a post that should be visible permanently is not a
+ * post, it is a resource, and Connect already has Policies and Resources for
+ * that. A term is the unit a school thinks in.
+ */
+const PINNED_WINDOW_DAYS = 90
+
 /** A backstop, so a school that posts constantly still gets a finite dashboard.
  *  Ordered pinned → urgent → newest, so a cap keeps what matters most. */
 const DASHBOARD_MAX = 50
@@ -244,6 +259,7 @@ router.get('/', isAuthenticated, async (req, res) => {
     const now = new Date()
     const audience = await resolveParentAudience(user)
     const windowStart = new Date(now.getTime() - DASHBOARD_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+    const pinnedWindowStart = new Date(now.getTime() - PINNED_WINDOW_DAYS * 24 * 60 * 60 * 1000)
 
     const messages = await prisma.message.findMany({
       where: {
@@ -257,8 +273,8 @@ router.get('/', isAuthenticated, async (req, res) => {
           {
             OR: [
               { createdAt: { gte: windowStart } },
-              // A pinned post is the school saying "this one stays".
-              { isPinned: true },
+              // Pinned lasts longer, not forever.
+              { AND: [{ isPinned: true }, { createdAt: { gte: pinnedWindowStart } }] },
               // And the safety catch: a post still ASKING something of this
               // parent does not age out. Hiding an unsigned consent form
               // because it is five weeks old would be the tidy-up doing real

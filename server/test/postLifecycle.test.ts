@@ -94,10 +94,27 @@ describe('the dashboard shows what is current', () => {
     expect(prismaMock.message.findMany.mock.calls[0][0].take).toBe(50)
   })
 
-  // The school saying "this one stays".
-  it('exempts pinned posts from the window', async () => {
+  // Pinning keeps a post up for longer, but not forever: nobody unpins, so an
+  // unbounded exemption meant last September's pin was still on the dashboard
+  // this September, rebuilding the wall the window was meant to clear.
+  it('keeps pinned posts longer than ordinary ones, and not indefinitely', async () => {
     await request(makeApp()).get('/api/messages')
-    expect(windowClause()).toContainEqual({ isPinned: true })
+    const pinned = windowClause().find(
+      (c: { AND?: Array<Record<string, unknown>> }) => c.AND?.[0] && 'isPinned' in c.AND[0],
+    )
+    expect(pinned.AND[0]).toEqual({ isPinned: true })
+
+    const pinnedFloor = pinned.AND[1].createdAt.gte
+    expect(pinnedFloor).toBeInstanceOf(Date)
+    const days = (Date.now() - pinnedFloor.getTime()) / 86_400_000
+    expect(days).toBeGreaterThan(89.9)
+    expect(days).toBeLessThan(90.1)
+  })
+
+  // The exemption that must stay unbounded is the other one.
+  it('never exempts a pinned post from the window entirely', async () => {
+    await request(makeApp()).get('/api/messages')
+    expect(windowClause()).not.toContainEqual({ isPinned: true })
   })
 
   // The safety catch: a post still ASKING something of this parent does not age
@@ -113,7 +130,9 @@ describe('the dashboard shows what is current', () => {
   // anything else.
   it('does not exempt one this parent has already acknowledged', async () => {
     await request(makeApp()).get('/api/messages')
-    const ackClause = windowClause().find((c: Record<string, unknown>) => 'AND' in c)
+    const ackClause = windowClause().find(
+      (c: { AND?: Array<Record<string, unknown>> }) => c.AND?.[0] && 'requiresAcknowledgment' in c.AND[0],
+    )
     expect(ackClause.AND[1].acknowledgments.none.userId).toBe('p-1')
   })
 
