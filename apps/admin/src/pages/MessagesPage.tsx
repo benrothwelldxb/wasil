@@ -23,6 +23,15 @@ export function MessagesPage() {
     scheduledAt: '', expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '',
   })
   const [attachments, setAttachments] = useState<AttachmentData[]>([])
+  /**
+   * Which posts to list.
+   *
+   * "Pinned" is the one that earns its place: pinning is what keeps a post on
+   * parents' dashboards past the ordinary window, and nobody unpins, so without
+   * a way to SEE what is pinned the only way to find out was to scroll a
+   * parent's app.
+   */
+  const [filter, setFilter] = useState<'all' | 'pinned' | 'urgent' | 'scheduled'>('all')
 
   const activeGroups = (groups || []).filter(g => g.isActive)
   const audienceOptions: AudienceOption[] = [
@@ -115,6 +124,40 @@ export function MessagesPage() {
     }
   }
 
+  const pinnedCount = (messages || []).filter(m => m.isPinned).length
+
+  const visibleMessages = (messages || []).filter(m => {
+    if (filter === 'pinned') return m.isPinned
+    if (filter === 'urgent') return m.isUrgent
+    if (filter === 'scheduled') return m.isScheduled
+    return true
+  })
+
+  // One click, because unpinning through the edit form means opening it,
+  // finding the checkbox and re-saving the whole post — enough friction that
+  // nobody would, which is how they accumulated.
+  const handleUnpin = async (message: Message) => {
+    try {
+      await api.messages.update(message.id, {
+        title: message.title,
+        content: message.content,
+        targetClass: message.targetClass,
+        isPinned: false,
+      })
+      refetchMessages()
+      toast.success('Unpinned')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to unpin')
+    }
+  }
+
+  const FILTERS: Array<{ key: typeof filter; label: string; count?: number }> = [
+    { key: 'all', label: 'All', count: messages?.length },
+    { key: 'pinned', label: 'Pinned', count: pinnedCount },
+    { key: 'urgent', label: 'Urgent', count: (messages || []).filter(m => m.isUrgent).length },
+    { key: 'scheduled', label: 'Scheduled', count: (messages || []).filter(m => m.isScheduled).length },
+  ]
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -138,15 +181,53 @@ export function MessagesPage() {
         />
       )}
 
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {FILTERS.map(f => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors"
+            style={filter === f.key
+              ? { backgroundColor: theme.colors.brandColor, color: '#FFFFFF', borderColor: theme.colors.brandColor }
+              : { backgroundColor: '#FFFFFF', color: '#64748B', borderColor: '#E2E8F0' }}
+          >
+            {f.label}
+            {typeof f.count === 'number' && <span className="ml-1.5 opacity-70">{f.count}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Pinned posts stay on parents' dashboards for 90 days rather than the
+          usual 30 — long enough to matter, not forever. Said here because the
+          person pinning is the only one who can see the consequence. */}
+      {filter === 'pinned' && pinnedCount > 0 && (
+        <p className="text-xs text-slate-400 mb-3">
+          Pinned posts stay on parents' dashboards for up to 90 days, then move to their Posts page.
+        </p>
+      )}
+
       <div className="space-y-3">
-        {messages?.map((message) => (
+        {visibleMessages.length === 0 && (
+          <p className="text-sm text-slate-400 py-6 text-center">
+            {filter === 'all' ? 'No posts yet.' : `No ${filter} posts.`}
+          </p>
+        )}
+        {visibleMessages.map((message) => (
           <div key={message.id} className="bg-white rounded-lg border border-slate-200 p-4">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center space-x-2">
                   <span className="text-xs px-2 py-1 rounded-full text-white" style={{ backgroundColor: theme.colors.brandColor }}>{message.targetClass}</span>
                   {message.isScheduled && <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">Scheduled</span>}
-                  {message.isPinned && <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">Pinned</span>}
+                  {message.isPinned && (
+                    <button
+                      onClick={() => handleUnpin(message)}
+                      className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200"
+                      title="Unpin this post"
+                    >
+                      Pinned &times;
+                    </button>
+                  )}
                   {message.isUrgent && <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Urgent</span>}
                   {message.formId && <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">Form</span>}
                   {message.attachments && message.attachments.length > 0 && (
