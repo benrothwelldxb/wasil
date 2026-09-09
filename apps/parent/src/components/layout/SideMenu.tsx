@@ -26,8 +26,7 @@ import {
   ClipboardCheck,
   CalendarDays,
   Download,
-  Share,
-} from 'lucide-react'
+  Share, Newspaper } from 'lucide-react'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import * as api from '@wasil/shared'
@@ -182,6 +181,9 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   }
   if (isEnabled('attendanceEnabled')) {
     schoolLife.push({ icon: ClipboardCheck, labelKey: 'nav.attendance', path: '/attendance' })
+  }
+  if (isEnabled('postsEnabled')) {
+    schoolLife.push({ icon: Newspaper, labelKey: 'nav.posts', path: '/posts' })
   }
   if (isEnabled('scheduleEnabled')) {
     schoolLife.push({ icon: CalendarDays, labelKey: 'nav.timetable', path: '/timetable' })

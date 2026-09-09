@@ -72,116 +72,113 @@ router.post('/upload', isStaff, singleAttachment(), async (req, res) => {
   }
 })
 
-// Get messages (filtered by user's children's classes and groups)
-router.get('/', isAuthenticated, async (req, res) => {
-  try {
-    const user = (await loadUserWithRelations(req.user!.id))!
-    // Class IDs must union BOTH the legacy children[] relation AND the Hub
-    // studentLinks — Hub-provisioned parents link children only via studentLinks
-    // and have zero legacy children, so children-only derivation left them with
-    // no class-targeted content. Deduped so legacy-children parents are unaffected.
-    const childClassIds = [...new Set([
-      ...(user.children?.map(c => c.classId) || []),
-      ...(user.studentLinks?.map(l => l.student.classId).filter((id): id is string => !!id) || []),
-    ])]
-    const studentIds = user.studentLinks?.map(l => l.studentId) || []
-    const now = new Date()
+/**
+ * How long a post stays on the dashboard.
+ *
+ * The dashboard is a parent's home screen and was showing the entire archive —
+ * every post the school had ever written, oldest at the bottom, all of it
+ * downloaded on every load. A school a term in was asking parents to scroll
+ * past a book fair from September to find today's.
+ *
+ * Applied at READ time, not by archiving rows: nothing is deleted, a post from
+ * March is still there on the Posts page, and a window that turns out to be
+ * wrong can be changed without having undone anything. It also means the
+ * existing backlog clears the moment this ships, with no migration.
+ *
+ * Thirty days is about a half-term. Deliberately not a per-school setting yet —
+ * one more thing to configure, and nobody knows the right number until a term
+ * of real use.
+ */
+const DASHBOARD_WINDOW_DAYS = 30
 
-    // Get year group IDs from children's classes
-    const childClasses = childClassIds.length > 0
-      ? await prisma.class.findMany({
-          where: { id: { in: childClassIds } },
-          select: { yearGroupId: true },
-        })
-      : []
-    const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
+/** A backstop, so a school that posts constantly still gets a finite dashboard.
+ *  Ordered pinned → urgent → newest, so a cap keeps what matters most. */
+const DASHBOARD_MAX = 50
 
-    // Get groups where parent's children are members
-    const childGroupLinks = studentIds.length > 0
-      ? await prisma.studentGroupLink.findMany({
-          where: { studentId: { in: studentIds } },
-          select: { groupId: true },
-        })
-      : []
-    const childGroupIds = [...new Set(childGroupLinks.map(l => l.groupId))]
+/** Which classes, year groups and groups a parent's children belong to. */
+async function resolveParentAudience(user: {
+  children?: { classId: string }[] | null
+  studentLinks?: { studentId: string; student: { classId?: string | null } }[] | null
+}) {
+  // Class IDs must union BOTH the legacy children[] relation AND the Hub
+  // studentLinks — Hub-provisioned parents link children only via studentLinks
+  // and have zero legacy children, so children-only derivation left them with
+  // no class-targeted content. Deduped so legacy-children parents are unaffected.
+  const childClassIds = [...new Set([
+    ...(user.children?.map(c => c.classId) || []),
+    ...(user.studentLinks?.map(l => l.student.classId).filter((id): id is string => !!id) || []),
+  ])]
+  const studentIds = user.studentLinks?.map(l => l.studentId) || []
 
-    const messages = await prisma.message.findMany({
-      where: {
-        schoolId: user.schoolId,
-        // Admin Notices live in their own section. A fee reminder and a
-        // medication note are not news and should not compete with it.
-        channel: 'FEED',
-        OR: [
-          { targetClass: 'Whole School' },
-          { classId: { in: childClassIds } },
-          ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
-          ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
-        ],
-        // Filter out expired and not-yet-scheduled messages for parents
-        AND: [
-          {
-            OR: [
-              { expiresAt: null },
-              { expiresAt: { gt: now } },
-            ],
-          },
-          {
-            OR: [
-              { scheduledAt: null },
-              { scheduledAt: { lte: now } },
-            ],
-          },
-        ],
-      },
-      include: {
-        sender: { select: { id: true, name: true } },
-        acknowledgments: {
-          where: { userId: user.id },
-        },
-        _count: { select: { acknowledgments: true } },
-        form: {
-          include: {
-            responses: {
-              where: { userId: user.id },
-            },
-          },
-        },
-        attachments: true,
-      },
-      orderBy: [
-        { isPinned: 'desc' },
-        { isUrgent: 'desc' },
-        { createdAt: 'desc' },
-      ],
+  const childClasses = childClassIds.length > 0
+    ? await prisma.class.findMany({ where: { id: { in: childClassIds } }, select: { yearGroupId: true } })
+    : []
+  const childYearGroupIds = [...new Set(childClasses.map(c => c.yearGroupId).filter(Boolean))] as string[]
+
+  const childGroupLinks = studentIds.length > 0
+    ? await prisma.studentGroupLink.findMany({ where: { studentId: { in: studentIds } }, select: { groupId: true } })
+    : []
+  const childGroupIds = [...new Set(childGroupLinks.map(l => l.groupId))]
+
+  return { childClassIds, childYearGroupIds, childGroupIds }
+}
+
+function audienceOR(a: { childClassIds: string[]; childYearGroupIds: string[]; childGroupIds: string[] }) {
+  return [
+    { targetClass: 'Whole School' },
+    { classId: { in: a.childClassIds } },
+    ...(a.childYearGroupIds.length > 0 ? [{ yearGroupId: { in: a.childYearGroupIds } }] : []),
+    ...(a.childGroupIds.length > 0 ? [{ groupId: { in: a.childGroupIds } }] : []),
+  ]
+}
+
+/** Live for a parent right now: not expired, not still scheduled. */
+function liveForParent(now: Date) {
+  return [
+    { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+    { OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] },
+  ]
+}
+
+function messageInclude(userId: string) {
+  return {
+    sender: { select: { id: true, name: true } },
+    acknowledgments: { where: { userId } },
+    _count: { select: { acknowledgments: true } },
+    form: { include: { responses: { where: { userId } } } },
+    attachments: true,
+  } as const
+}
+
+/** Titles, bodies and form text in the parent's language, when it isn't English. */
+async function buildTranslator(
+  messages: Array<{ title: string; content: string; form?: { title: string; description: string | null } | null }>,
+  targetLang: string,
+) {
+  const map = new Map<string, string>()
+  if (targetLang !== 'en' && messages.length > 0) {
+    const texts: string[] = []
+    messages.forEach(msg => {
+      texts.push(msg.title, msg.content)
+      if (msg.form?.title) texts.push(msg.form.title)
+      if (msg.form?.description) texts.push(msg.form.description)
     })
+    const translations = await translateTexts(texts, targetLang)
+    let i = 0
+    messages.forEach(msg => {
+      map.set(msg.title, translations[i++])
+      map.set(msg.content, translations[i++])
+      if (msg.form?.title) map.set(msg.form.title, translations[i++])
+      if (msg.form?.description) map.set(msg.form.description, translations[i++])
+    })
+  }
+  return (text: string) => map.get(text) || text
+}
 
-    // Translate messages if user has non-English language preference
-    const targetLang = user.preferredLanguage || 'en'
-
-    // Build translation map for titles and contents
-    const translationMap = new Map<string, string>()
-    if (targetLang !== 'en') {
-      const textsToTranslate: string[] = []
-      messages.forEach(msg => {
-        textsToTranslate.push(msg.title, msg.content)
-        if (msg.form?.title) textsToTranslate.push(msg.form.title)
-        if (msg.form?.description) textsToTranslate.push(msg.form.description)
-      })
-
-      const translations = await translateTexts(textsToTranslate, targetLang)
-
-      let translationIndex = 0
-      messages.forEach(msg => {
-        translationMap.set(msg.title, translations[translationIndex++])
-        translationMap.set(msg.content, translations[translationIndex++])
-        if (msg.form?.title) translationMap.set(msg.form.title, translations[translationIndex++])
-        if (msg.form?.description) translationMap.set(msg.form.description, translations[translationIndex++])
-      })
-    }
-
-    const getTranslated = (text: string) => translationMap.get(text) || text
-
-    res.json(messages.map(msg => ({
+/** One post as a parent reads it. Shared so the dashboard and the Posts page
+ *  cannot drift into rendering the same post differently. */
+function serializeParentMessage(msg: any, getTranslated: (t: string) => string) {
+  return {
       id: msg.id,
       title: getTranslated(msg.title),
       content: getTranslated(msg.content),
@@ -223,7 +220,9 @@ router.get('/', isAuthenticated, async (req, res) => {
           createdAt: msg.form.responses[0].createdAt.toISOString(),
         } : null,
       } : undefined,
-      attachments: msg.attachments.map(a => ({
+      attachments: msg.attachments.map((a: {
+        id: string; messageId: string; fileName: string; fileUrl: string; fileType: string; fileSize: number; createdAt: Date
+      }) => ({
         id: a.id,
         messageId: a.messageId,
         fileName: a.fileName,
@@ -235,10 +234,100 @@ router.get('/', isAuthenticated, async (req, res) => {
       acknowledged: msg.acknowledgments.length > 0,
       acknowledgmentCount: msg._count.acknowledgments,
       createdAt: msg.createdAt.toISOString(),
-    })))
+  }
+}
+
+// The dashboard feed: what is CURRENT. Older posts live on the Posts page.
+router.get('/', isAuthenticated, async (req, res) => {
+  try {
+    const user = (await loadUserWithRelations(req.user!.id))!
+    const now = new Date()
+    const audience = await resolveParentAudience(user)
+    const windowStart = new Date(now.getTime() - DASHBOARD_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+
+    const messages = await prisma.message.findMany({
+      where: {
+        schoolId: user.schoolId,
+        // Admin Notices live in their own section. A fee reminder and a
+        // medication note are not news and should not compete with it.
+        channel: 'FEED',
+        OR: audienceOR(audience),
+        AND: [
+          ...liveForParent(now),
+          {
+            OR: [
+              { createdAt: { gte: windowStart } },
+              // A pinned post is the school saying "this one stays".
+              { isPinned: true },
+              // And the safety catch: a post still ASKING something of this
+              // parent does not age out. Hiding an unsigned consent form
+              // because it is five weeks old would be the tidy-up doing real
+              // harm — the clutter is worth less than the form.
+              { AND: [{ requiresAcknowledgment: true }, { acknowledgments: { none: { userId: user.id } } }] },
+            ],
+          },
+        ],
+      },
+      include: messageInclude(user.id),
+      orderBy: [{ isPinned: 'desc' }, { isUrgent: 'desc' }, { createdAt: 'desc' }],
+      take: DASHBOARD_MAX,
+    })
+
+    const getTranslated = await buildTranslator(messages, user.preferredLanguage || 'en')
+    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated)))
   } catch (error) {
     console.error('Error fetching messages:', error)
     res.status(500).json({ error: 'Failed to fetch messages' })
+  }
+})
+
+/**
+ * Everything the parent may see, oldest included — the Posts page.
+ *
+ * Cursor-paginated rather than a bare limit: a school posts daily and an offset
+ * would skip or repeat a post whenever a new one landed mid-scroll.
+ *
+ * Expired posts stay out. `expiresAt` is the school saying "stop showing this",
+ * and honouring that in one place and not the other would make the rule mean
+ * two things.
+ */
+router.get('/archive', isAuthenticated, async (req, res) => {
+  try {
+    const user = (await loadUserWithRelations(req.user!.id))!
+    const now = new Date()
+    const audience = await resolveParentAudience(user)
+
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 50)
+    const cursor = typeof req.query.cursor === 'string' && req.query.cursor.trim() ? req.query.cursor.trim() : null
+
+    const messages = await prisma.message.findMany({
+      where: {
+        schoolId: user.schoolId,
+        channel: 'FEED',
+        OR: audienceOR(audience),
+        AND: liveForParent(now),
+      },
+      include: messageInclude(user.id),
+      // Strictly by date here, not pinned-first: this is a record of what was
+      // said and when, and reordering it by importance would make the months
+      // read wrongly.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    })
+
+    // One extra was fetched purely to answer "is there more", and is not sent.
+    const hasMore = messages.length > limit
+    const page = hasMore ? messages.slice(0, limit) : messages
+
+    const getTranslated = await buildTranslator(page, user.preferredLanguage || 'en')
+    res.json({
+      messages: page.map(msg => serializeParentMessage(msg, getTranslated)),
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+    })
+  } catch (error) {
+    console.error('Error fetching message archive:', error)
+    res.status(500).json({ error: 'Failed to fetch posts' })
   }
 })
 

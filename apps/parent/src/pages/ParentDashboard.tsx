@@ -1010,6 +1010,19 @@ export function ParentDashboard() {
                 {t('dashboard.noMessages')}
               </p>
             )}
+
+            {/* The dashboard shows what's current; older posts are still there,
+                on their own page. Always offered, even when the feed is empty —
+                an empty dashboard is exactly when a parent wonders where
+                everything went. */}
+            <Link
+              to="/posts"
+              className="flex items-center justify-center gap-1.5 w-full py-3 text-[13px] font-bold"
+              style={{ color: '#7A6469' }}
+            >
+              {t('dashboard.olderPosts', 'Older posts')}
+              <ChevronRight className="w-4 h-4" />
+            </Link>
           </div>
         </>
       )}

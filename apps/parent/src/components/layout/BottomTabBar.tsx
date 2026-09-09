@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Home, MoreVertical, Calendar, CalendarDays, CalendarCheck, CalendarClock,
   Megaphone, ClipboardCheck, Star, Sparkles, Clock, UtensilsCrossed,
-  MessageCircle, BookOpen, type LucideIcon,
+  MessageCircle, BookOpen, Newspaper, type LucideIcon,
 } from 'lucide-react'
 import { useApi } from '@wasil/shared'
 import {
@@ -20,6 +20,7 @@ interface BottomTabBarProps {
 // shared package stays free of a lucide dependency.
 const NAV_ICONS: Record<BottomNavKey, LucideIcon> = {
   events: Calendar,
+  posts: Newspaper,
   termDates: CalendarDays,
   principalUpdates: Megaphone,
   attendance: ClipboardCheck,

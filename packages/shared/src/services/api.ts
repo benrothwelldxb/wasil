@@ -434,8 +434,26 @@ export const auth = {
 }
 
 // Messages
+/** One page of the parent Posts archive. */
+export interface MessageArchivePage {
+  messages: Message[]
+  /** Pass back as `cursor` for the next page; null when there are no more. */
+  nextCursor: string | null
+}
+
 export const messages = {
+  /** The dashboard feed: what is CURRENT. Older posts are on the Posts page. */
   list: () => fetchApi<Message[]>('/api/messages'),
+  /**
+   * Everything a parent may see, newest first, including posts older than the
+   * dashboard window. Cursor-paginated — a school posts daily, and an offset
+   * would skip or repeat a post whenever a new one landed mid-scroll.
+   */
+  archive: (cursor?: string | null, limit = 20) => {
+    const params = new URLSearchParams({ limit: String(limit) })
+    if (cursor) params.set('cursor', cursor)
+    return fetchApi<MessageArchivePage>(`/api/messages/archive?${params.toString()}`)
+  },
   listAll: () => fetchApi<Message[]>('/api/messages/all'),
   uploadAttachment: (file: File) => {
     const formData = new FormData()

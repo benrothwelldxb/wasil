@@ -21,6 +21,7 @@ import { EventsPage } from './pages/EventsPage'
 import { PrincipalUpdatesPage } from './pages/PrincipalUpdatesPage'
 import { ResourcesPage } from './pages/ResourcesPage'
 import { ActivitiesPage } from './pages/ActivitiesPage'
+import { PostsPage } from './pages/PostsPage'
 import { ClubsPage } from './pages/ClubsPage'
 import { TransportPage } from './pages/TransportPage'
 import { AdminNoticesPage } from './pages/AdminNoticesPage'
@@ -296,6 +297,10 @@ export default function App() {
       <Route path="/policies" element={<Navigate to="/resources" replace />} />
       <Route path="/files" element={<Navigate to="/resources" replace />} />
       <Route path="/links" element={<Navigate to="/resources" replace />} />
+      <Route
+        path="/posts"
+        element={<ProtectedRoute><AppLayout><PostsPage /></AppLayout></ProtectedRoute>}
+      />
       <Route
         path="/activities"
         element={<ProtectedRoute><AppLayout><ActivitiesPage /></AppLayout></ProtectedRoute>}
