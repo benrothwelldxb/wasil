@@ -88,6 +88,12 @@ function summarizeSync(summary: HubSyncSummary): string {
       )
     }
     if (il.linksDeactivated) detail.push(`${il.linksDeactivated} unlinked`)
+    // Who Hub sent, listed. `8 ILSAs from Hub` is only reassuring if the eight
+    // are the eight you expected, and every other line here can only describe
+    // people who were in that list.
+    if (il.fetchedEmails?.length) {
+      detail.push(`Hub sent: ${il.fetchedEmails.join(', ')}`)
+    }
     parts.push(`${il.fetched} ILSA${il.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
   } else if (il) {
     // Reported even at zero, deliberately.

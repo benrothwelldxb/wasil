@@ -385,7 +385,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     ilsas = {
       failed: true,
       error: err instanceof Error ? err.message : 'Unknown error',
-      fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
+      fetched: 0, fetchedEmails: [], created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
       skippedNoPupilId: 0, withoutHubUserId: 0, withoutHubUserIdEmails: [], roleConflict: 0, roleConflicts: [], idMismatch: [], repairedLegacyId: [],
       linksActive: 0, linksDeactivated: 0,
     }
