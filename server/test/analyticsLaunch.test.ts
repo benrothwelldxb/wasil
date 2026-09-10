@@ -251,11 +251,45 @@ describe('GET /api/analytics/not-activated', () => {
     // p1 (activated) must be excluded.
     expect(res.body.parents.find((p: { userId: string }) => p.userId === 'p1')).toBeUndefined()
 
-    // The link lookup must be scoped to the non-activated ids only.
-    const linkCall = prismaMock.parentStudentLink.findMany.mock.calls[0][0] as {
-      where: { userId: { in: string[] } }
-    }
+    // The CLASS lookup must be scoped to the non-activated ids only. (The
+    // roster query in loadParentActivation reads the same table first, for
+    // every parent, to find guardians whose children have all left.)
+    const linkCall = prismaMock.parentStudentLink.findMany.mock.calls
+      .map(c => c[0] as { where: { userId: { in: string[] }; student?: unknown }; orderBy?: unknown })
+      .find(a => a.orderBy != null)!
     expect(linkCall.where.userId.in.sort()).toEqual(['p2', 'p3'])
+    // …and a pupil who has left is not the class to phone about.
+    expect(linkCall.where.student).toEqual({ leftAt: null })
+  })
+
+  // The bug this list actually had: children who left the school were still
+  // being counted, because the roster sync never recorded that they had gone
+  // and nothing here asked. Their guardians are not an activation problem.
+  it('drops a guardian whose children have all left, and keeps one with any child on roll', async () => {
+    prismaMock.user.findMany.mockResolvedValue([
+      { id: 'gone', email: 'gone@x.com', name: 'Gone', lastSeenAt: null, welcomeSentAt: null },
+      { id: 'mixed', email: 'mixed@x.com', name: 'Mixed', lastSeenAt: null, welcomeSentAt: null },
+      // No link at all: a linking gap, not a departure — still worth chasing.
+      { id: 'nolink', email: 'nolink@x.com', name: 'NoLink', lastSeenAt: null, welcomeSentAt: null },
+    ])
+    prismaMock.parentStudentLink.findMany.mockImplementation(async (args: any) =>
+      // The roster query (no orderBy) sees every link; the class lookup is
+      // already filtered to pupils on roll.
+      args.orderBy
+        ? [{ userId: 'mixed', student: { class: { name: 'Y2 Blue' } } }]
+        : [
+            { userId: 'gone', student: { leftAt: new Date() } },
+            { userId: 'mixed', student: { leftAt: new Date() } },
+            { userId: 'mixed', student: { leftAt: null } },
+          ],
+    )
+
+    const res = await request(makeApp()).get('/api/analytics/not-activated')
+    expect(res.status).toBe(200)
+    expect(res.body.parents).toEqual([
+      { userId: 'mixed', name: 'Mixed', email: 'mixed@x.com', className: 'Y2 Blue' },
+      { userId: 'nolink', name: 'NoLink', email: 'nolink@x.com', className: null },
+    ])
   })
 
   it('excludes parents activated only via login history (no lastSeenAt)', async () => {

@@ -15,6 +15,7 @@ const prismaMock = {
   student: { findMany: vi.fn() },
   refreshToken: { findMany: vi.fn() },
   loginCode: { findMany: vi.fn() },
+  parentStudentLink: { findMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -53,6 +54,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   schoolId = `school-${++schoolCounter}`
   prismaMock.user.findMany.mockResolvedValue([])
+  prismaMock.parentStudentLink.findMany.mockResolvedValue([])
   activatedParentIds.mockResolvedValue(new Set<string>())
 })
 
@@ -119,6 +121,17 @@ describe('GET /api/analytics/unreachable-families', () => {
     expect(res.body.summary.childrenWithNoGuardianAccount).toBe(1)
     // Not counted as a family — there is no household account to reach.
     expect(res.body.summary.totalFamilies).toBe(1)
+  })
+
+  // Pupils who have left are not families anyone needs to reach — and until the
+  // sync recorded leaving at all, they sat here permanently.
+  it('asks only for pupils on roll', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+
+    await request(makeApp()).get('/api/analytics/unreachable-families')
+
+    const where = prismaMock.student.findMany.mock.calls[0][0].where
+    expect(where).toMatchObject({ isTest: false, leftAt: null })
   })
 
   it('excludes Test Students, which would never come off the list', async () => {

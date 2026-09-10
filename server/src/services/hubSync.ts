@@ -73,6 +73,12 @@ export interface SyncSummary {
    * different problem from nobody having uploaded an export. Coverage is
    * partial by nature even when it is granted. */
   attendance: { withFigure: number; noFigure: number; scopeGranted: boolean }
+  /** Pupils who have left. `marked` = on-roll Students that Hub no longer
+   * returns for a class it DID send us pupils for, now stamped `leftAt`;
+   * `returned` = pupils Hub sent back, un-marked. `classesTrusted` /
+   * `classesTotal` says how much of the roster the sweep could actually judge —
+   * a class Hub returned nothing for is never used to conclude anyone left. */
+  leavers: { marked: number; returned: number; classesTrusted: number; classesTotal: number }
   /** Staff, split by whether the Connect user was created or updated/linked. */
   staff: { created: number; updated: number }
   /** Guardians provisioned as Connect PARENT users. `fetched` = how many Hub
@@ -202,10 +208,14 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   // hubPupilId → Connect Student id, so the guardian pass can resolve each
   // guardian→pupil edge to a real Student without re-querying.
   const studentIdByHubPupil = new Map<string, string>()
+  // Connect class ids Hub actually sent pupils for. Only these are trusted by
+  // the leaver sweep below — see the reasoning there.
+  const classesWithPupils: string[] = []
   for (const cls of hubClasses) {
     const classId = classIdByHub.get(cls.id)
     if (!classId) continue
     const hubPupils = await listPupils(hubSchoolId, { classId: cls.id })
+    if (hubPupils.length > 0) classesWithPupils.push(classId)
     for (const p of hubPupils) {
       const misId = p.misId?.trim() || null
       if (misId) misIds.withMisId++
@@ -255,6 +265,47 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
       pupils++
     }
   }
+
+  // --- 3b. Leavers ---------------------------------------------------------
+  // Hub models leaving as an enrolment status, but its per-class pupil list is
+  // scoped to an ACTIVE enrolment in the CURRENT academic year — so a pupil
+  // marked as left in Hub does not come back flagged, they simply stop being
+  // returned. Upserting alone could never notice that: the Student row, its
+  // guardian links and therefore the whole family stayed on the roster forever,
+  // which is how children who had left were still being counted in analytics.
+  //
+  // Absence is the signal, so it is only trusted where we have fresh data to
+  // read it from: a class Hub returned at least one pupil for. A class that
+  // came back EMPTY is not evidence that everyone in it left — it is equally a
+  // Hub blip, a lost subscription, or the gap at rollover before this year's
+  // enrolments exist, when every class returns nothing and this sweep would
+  // otherwise empty the school in one run. The safe failure is a leaver we
+  // haven't spotted yet, never a class marked gone; `classesTrusted` vs
+  // `classesTotal` reports how much of the roster was actually judged.
+  //
+  // Hand-created Students (no hubPupilId) are Connect's own and never swept.
+  const seenStudentIds = [...studentIdByHubPupil.values()]
+  const marked = classesWithPupils.length > 0
+    ? await prisma.student.updateMany({
+        where: {
+          schoolId,
+          hubPupilId: { not: null },
+          leftAt: null,
+          classId: { in: classesWithPupils },
+          id: { notIn: seenStudentIds },
+        },
+        data: { leftAt: new Date() },
+      })
+    : { count: 0 }
+  // A pupil Hub sends back is on roll again — a re-admission, or a leaver
+  // marked in error and corrected in Hub. Clearing it here is what makes the
+  // mark self-healing rather than a one-way door needing a hand-written UPDATE.
+  const returned = seenStudentIds.length > 0
+    ? await prisma.student.updateMany({
+        where: { schoolId, id: { in: seenStudentIds }, leftAt: { not: null } },
+        data: { leftAt: null },
+      })
+    : { count: 0 }
 
   // --- 4. Guardians → parent accounts + links ------------------------------
   // Provision each Hub guardian as a Connect PARENT user and link it to its
@@ -421,6 +472,12 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     pupils,
     pupilMisIds: misIds,
     attendance,
+    leavers: {
+      marked: marked.count,
+      returned: returned.count,
+      classesTrusted: classesWithPupils.length,
+      classesTotal: hubClasses.length,
+    },
     staff: { created, updated },
     guardians: guardianSummary,
     parentLinks: parentLinkSummary,

@@ -2991,6 +2991,11 @@ export interface HubSyncSummary {
   yearGroups: number
   classes: number
   pupils: number
+  /** Pupils who have left. Hub's pupil list only carries pupils on roll this
+   *  year, so a leaver is detected by absence — and only in classes Hub did
+   *  send pupils for (`classesTrusted` of `classesTotal`), never from an empty
+   *  class, which is as likely to be a Hub blip as a departure. */
+  leavers?: { marked: number; returned: number; classesTrusted: number; classesTotal: number }
   staff: { created: number; updated: number }
   guardians: { fetched: number; created: number; linked: number; skippedNoEmail: number }
   parentLinks: { created: number; skippedNoPupil: number }
