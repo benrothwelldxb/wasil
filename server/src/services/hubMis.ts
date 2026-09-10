@@ -181,6 +181,11 @@ export interface HubIlsa {
 
 /** Hub's ILSA as Connect needs it, with the shape differences resolved once. */
 export interface NormalisedIlsa {
+  /** The ILSA RECORD's id — carried only so the sync can recognise its own old
+   *  bug. A previous version wrote this into `User.hubUserId`, where no SSO
+   *  subject will ever match it; finding it there is proof of that artefact
+   *  rather than a guess, which is what makes repairing it safe. */
+  hubRecordId: string
   hubUserId: string | null
   name: string
   email: string | null
@@ -193,7 +198,8 @@ export function normaliseIlsa(raw: HubIlsa): NormalisedIlsa {
     || `${raw.firstName ?? ''} ${raw.lastName ?? ''}`.trim()
     || 'Learning Support Assistant'
   return {
-    // Never `raw.id` — see the note above.
+    hubRecordId: raw.id,
+    // Never `raw.id` for hubUserId — see the note above.
     hubUserId: raw.hubUserId?.trim() || null,
     name,
     email: raw.email?.trim().toLowerCase() || null,

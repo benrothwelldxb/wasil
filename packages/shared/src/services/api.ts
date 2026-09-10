@@ -3005,6 +3005,13 @@ export interface HubSyncSummary {
      *  decides whether this is a real person with another job at the school or
      *  an artefact to correct. */
     roleConflicts?: Array<{ email: string; role: string }>
+    /** Accounts holding a different hubUserId from the one Hub sends. The claim
+     *  is refused (correctly) — but they cannot be resolved, so the sync
+     *  reporting them as linked was reporting a dead end as a success. */
+    idMismatch?: Array<{ email: string; held: string; expected: string }>
+    /** Mismatches repaired automatically because the held value was provably
+     *  this ILSA's Hub record id — an artefact of an older bug here. */
+    repairedLegacyId?: Array<{ email: string; was: string }>
     /** Provisioned, but Hub has no hubUserId for them yet (null until first
      *  sign-in), so they cannot be resolved as a messaging actor until a later
      *  sync picks it up. */

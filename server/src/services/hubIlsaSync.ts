@@ -60,6 +60,27 @@ export interface IlsaSyncSummary {
    * answers, and the difference should not require someone with database
    * access. */
   roleConflicts: Array<{ email: string; role: string }>
+  /**
+   * ILSAs whose Connect account holds a DIFFERENT hubUserId from the one Hub
+   * sends, where the claim was therefore refused.
+   *
+   * The refusal is right — never re-point one person's identity at another —
+   * but until now it happened in silence: the account matched by email, the
+   * link went active, and the sync reported it as one of the linked. Every run
+   * did the same and said success, while `resolveIlsaActor` looked up the id
+   * Hub sends, found nothing, and 403'd forever.
+   *
+   * A legitimate refusal reporting itself as a success is the same fault as
+   * the role conflict that used to hide, in a different place.
+   */
+  idMismatch: Array<{ email: string; held: string; expected: string }>
+  /**
+   * Mismatches this sync REPAIRED, because the value being held was provably
+   * this same ILSA's Hub record id — what an older version of this code wrote
+   * into the column by mistake. That is not another person's identity; it is a
+   * value no SSO subject can ever match, so replacing it re-points nothing.
+   */
+  repairedLegacyId: Array<{ email: string; was: string }>
   /** ILSAs Hub has no hubUserId for yet (null until first sign-in). They are
    * provisioned and linked, but cannot be RESOLVED as a messaging actor until a
    * later sync picks up the id — so a non-zero count here explains why an ILSA
@@ -79,7 +100,7 @@ export interface IlsaSyncSummary {
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
     fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
-    skippedNoPupilId: 0, withoutHubUserId: 0, roleConflict: 0, roleConflicts: [],
+    skippedNoPupilId: 0, withoutHubUserId: 0, roleConflict: 0, roleConflicts: [], idMismatch: [], repairedLegacyId: [],
     linksActive: 0, linksDeactivated: 0,
   }
 
@@ -230,10 +251,43 @@ async function upsertIlsaUser(
     }
     // Claim the identity only when Hub has one and it is free — never re-point
     // an existing user's hubUserId at a different person.
-    const linkHubUserId =
+    let linkHubUserId =
       ilsa.hubUserId && (!candidate.hubUserId || candidate.hubUserId === ilsa.hubUserId)
         ? ilsa.hubUserId
         : undefined
+
+    // The refusal above used to be silent, which is what made it expensive: the
+    // account still matched, the link still went active, and the sync still
+    // said "linked" — while every partner call for this person 403'd, because
+    // the resolver looks up the id Hub sends and this row holds another.
+    if (ilsa.hubUserId && candidate.hubUserId && candidate.hubUserId !== ilsa.hubUserId) {
+      // One case is provably OUR OWN old bug rather than a collision: an
+      // earlier version wrote the ILSA record's id into this column, and no SSO
+      // subject will ever match that. Recognising it exactly — not guessing
+      // from its shape — is what makes replacing it a repair instead of a
+      // re-point.
+      const isLegacyRecordId = candidate.hubUserId === ilsa.hubRecordId
+      // Even then, only when the correct id is not already someone else's.
+      // `hubUserId` is unique, and a collision here means two accounts disagree
+      // about who this person is — which a sync must report, never resolve.
+      const takenBy = isLegacyRecordId
+        ? await prisma.user.findFirst({
+            where: { hubUserId: ilsa.hubUserId, NOT: { id: candidate.id } },
+            select: { id: true },
+          })
+        : null
+
+      if (isLegacyRecordId && !takenBy) {
+        linkHubUserId = ilsa.hubUserId
+        summary.repairedLegacyId.push({ email, was: candidate.hubUserId })
+      } else {
+        summary.idMismatch.push({
+          email,
+          held: candidate.hubUserId,
+          expected: ilsa.hubUserId,
+        })
+      }
+    }
     await prisma.user.update({
       where: { id: candidate.id },
       data: { name, ...(linkHubUserId ? { hubUserId: linkHubUserId } : {}) },

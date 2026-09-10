@@ -65,6 +65,22 @@ function summarizeSync(summary: HubSyncSummary): string {
         : ''
       detail.push(`${il.roleConflict} cannot message — already has another role${who}`)
     }
+    // The refusal is correct; the silence was the bug. Named with both ids,
+    // because "1 id mismatch" is not something anyone can act on.
+    if (il.idMismatch?.length) {
+      detail.push(
+        `${il.idMismatch.length} cannot message — account holds a different Hub id: ` +
+          il.idMismatch.map(m => `${m.email} (has ${m.held}, expected ${m.expected})`).join(', '),
+      )
+    }
+    // Reported even though it succeeded: a sync that quietly rewrites an
+    // identity column should say whose, and to what.
+    if (il.repairedLegacyId?.length) {
+      detail.push(
+        `${il.repairedLegacyId.length} Hub id repaired: ` +
+          il.repairedLegacyId.map(r => `${r.email} (was ${r.was})`).join(', '),
+      )
+    }
     if (il.linksDeactivated) detail.push(`${il.linksDeactivated} unlinked`)
     parts.push(`${il.fetched} ILSA${il.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
   } else if (il) {
