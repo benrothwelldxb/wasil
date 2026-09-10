@@ -50,10 +50,16 @@ export interface IlsaSyncSummary {
    * resolveIlsaActor requires role ILSA. Counted because the alternative is
    * reporting them as `linked`, which reads as success and is not. */
   roleConflict: number
-  /** The email addresses behind `roleConflict`, because a count alone leaves an
-   * admin with a number and nowhere to look. These are the people who will get
-   * a 403 from Desk however many times the sync says "linked". */
-  roleConflictEmails: string[]
+  /** Who the conflicts are, and WHICH role each is under.
+   *
+   * The name alone still leaves the decision needing a database query, and the
+   * role is what decides it: an account under PARENT or STAFF is a real person
+   * with a real other job at the school, and changing their role has
+   * consequences elsewhere; an account under some role nobody intended is an
+   * artefact and trivially corrected. Same message, two completely different
+   * answers, and the difference should not require someone with database
+   * access. */
+  roleConflicts: Array<{ email: string; role: string }>
   /** ILSAs Hub has no hubUserId for yet (null until first sign-in). They are
    * provisioned and linked, but cannot be RESOLVED as a messaging actor until a
    * later sync picks up the id — so a non-zero count here explains why an ILSA
@@ -73,7 +79,7 @@ export interface IlsaSyncSummary {
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
     fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
-    skippedNoPupilId: 0, withoutHubUserId: 0, roleConflict: 0, roleConflictEmails: [],
+    skippedNoPupilId: 0, withoutHubUserId: 0, roleConflict: 0, roleConflicts: [],
     linksActive: 0, linksDeactivated: 0,
   }
 
@@ -196,7 +202,7 @@ async function upsertIlsaUser(
     // The warning appeared once, weeks before anyone looked, and never again.
     if (linked.role !== 'ILSA') {
       summary.roleConflict++
-      summary.roleConflictEmails.push(linked.email)
+      summary.roleConflicts.push({ email: linked.email, role: linked.role })
     }
     summary.linked++
     return linked.id
@@ -220,7 +226,7 @@ async function upsertIlsaUser(
     // them as `linked` would report a dead end as a success.
     if (candidate.role !== 'ILSA') {
       summary.roleConflict++
-      summary.roleConflictEmails.push(email)
+      summary.roleConflicts.push({ email, role: candidate.role })
     }
     // Claim the identity only when Hub has one and it is free — never re-point
     // an existing user's hubUserId at a different person.
