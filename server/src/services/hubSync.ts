@@ -386,7 +386,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
       failed: true,
       error: err instanceof Error ? err.message : 'Unknown error',
       fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
-      skippedNoPupilId: 0, withoutHubUserId: 0, roleConflict: 0,
+      skippedNoPupilId: 0, withoutHubUserId: 0, roleConflict: 0, roleConflictEmails: [],
       linksActive: 0, linksDeactivated: 0,
     }
   }

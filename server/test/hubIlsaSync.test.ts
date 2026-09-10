@@ -268,4 +268,50 @@ describe('an ILSA whose account already exists under another role', () => {
 
     expect(summary.roleConflict).toBe(0)
   })
+
+  /**
+   * The conflict used to conceal itself after the first run.
+   *
+   * The check lived only on the email path. That path also CLAIMS the
+   * hubUserId — so the very next sync matched on the id instead, where nothing
+   * looked at the role, and reported the same dead end as a clean success. The
+   * warning appeared once, weeks before anyone thought to look, and never
+   * again, while the person kept getting a 403 from Desk.
+   */
+  describe('matched by hubUserId rather than email', () => {
+    const matchedById = (role: string) =>
+      prismaMock.user.findFirst.mockImplementation(async ({ where }: any) =>
+        where.hubUserId ? { id: 'u-1', email: 'claudia@example.ae', role } : null,
+      )
+
+    it('still reports the conflict on every run, not just the first', async () => {
+      matchedById('PARENT')
+
+      const first = await syncIlsasForSchool('sch-1')
+      const second = await syncIlsasForSchool('sch-1')
+
+      expect(first.roleConflict).toBe(1)
+      expect(second.roleConflict).toBe(1)
+    })
+
+    // A count alone leaves an admin with a number and nowhere to look.
+    it('names who cannot message', async () => {
+      matchedById('STAFF')
+      const summary = await syncIlsasForSchool('sch-1')
+      expect(summary.roleConflictEmails).toEqual(['claudia@example.ae'])
+    })
+
+    it('is still counted as linked — the account is real', async () => {
+      matchedById('PARENT')
+      const summary = await syncIlsasForSchool('sch-1')
+      expect(summary.linked).toBe(1)
+    })
+
+    it('an ILSA matched by id under role ILSA is no conflict', async () => {
+      matchedById('ILSA')
+      const summary = await syncIlsasForSchool('sch-1')
+      expect(summary.roleConflict).toBe(0)
+      expect(summary.roleConflictEmails).toEqual([])
+    })
+  })
 })

@@ -160,7 +160,7 @@ describe('partner inbox — Hub-confirmed non-teaching staff', () => {
     prismaMock.conversation.count.mockResolvedValue(3)
     const res = await auth(request(makeApp()).get(`/api/partner/inbox/summary?hub_user_id=${RECEPTION_HUB_ID}`))
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ unread: 3 })
+    expect(res.body).toEqual({ unread: 3, known: true })
     expect(prismaMock.conversation.count.mock.calls[0][0].where).toMatchObject({ staffId: 'u-new', kind: 'STAFF' })
   })
 
@@ -168,7 +168,7 @@ describe('partner inbox — Hub-confirmed non-teaching staff', () => {
     hubMisMock.listStaff.mockResolvedValue([])
     const res = await auth(request(makeApp()).get('/api/partner/inbox/summary?hub_user_id=ghost'))
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ unread: 0 })
+    expect(res.body).toEqual({ unread: 0, known: false })
   })
 
   it('403s when Hub does not list the id as staff — and provisions nothing', async () => {

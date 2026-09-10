@@ -122,7 +122,7 @@ describe('GET /api/partner/inbox/summary', () => {
     const res = await auth(request(makeApp()).get('/api/partner/inbox/summary?hub_user_id=hub-abc'))
 
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ unread: 3 })
+    expect(res.body).toEqual({ unread: 3, known: true })
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({ where: { hubUserId: 'hub-abc' }, select: { id: true } })
     // Count is scoped to the staff member's own non-archived threads with an
     // unread, non-deleted inbound message — never content.
@@ -137,11 +137,15 @@ describe('GET /api/partner/inbox/summary', () => {
     })
   })
 
-  it('unknown user → { unread: 0 }, not an error (and no count query)', async () => {
+  // Still a 200, because Desk polls many ids and some are unmapped — but
+  // `known: false`, because a bare zero reads exactly like "nothing waiting".
+  // An ILSA who could not be resolved at all showed a calm empty badge here
+  // while every other route 403'd, which is how one stayed broken for weeks.
+  it('unknown user → { unread: 0, known: false }, not an error (and no count query)', async () => {
     prismaMock.user.findUnique.mockResolvedValue(null)
     const res = await auth(request(makeApp()).get('/api/partner/inbox/summary?hub_user_id=ghost'))
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ unread: 0 })
+    expect(res.body).toEqual({ unread: 0, known: false })
     expect(prismaMock.conversation.count).not.toHaveBeenCalled()
   })
 })
