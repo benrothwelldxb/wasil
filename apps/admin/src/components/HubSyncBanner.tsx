@@ -91,7 +91,16 @@ function summarizeSync(summary: HubSyncSummary): string {
     // Who Hub sent, listed. `8 ILSAs from Hub` is only reassuring if the eight
     // are the eight you expected, and every other line here can only describe
     // people who were in that list.
-    if (il.fetchedEmails?.length) {
+    if (il.fetchedHubUserIds?.length) {
+      // With the id, because an ILSA can be fetched, linked and reported clean
+      // and still be unreachable when the id Hub's list carries is not the id
+      // the partner caller sends. Only the value shows that; no count can.
+      detail.push(
+        `Hub sent: ${il.fetchedHubUserIds
+          .map(i => `${i.email} [${i.hubUserId ? `${i.hubUserId.slice(0, 8)}…` : 'no id'}]`)
+          .join(', ')}`,
+      )
+    } else if (il.fetchedEmails?.length) {
       detail.push(`Hub sent: ${il.fetchedEmails.join(', ')}`)
     }
     parts.push(`${il.fetched} ILSA${il.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)

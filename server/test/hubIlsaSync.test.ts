@@ -531,3 +531,57 @@ describe('the fetched roster', () => {
     expect(summary.fetchedEmails).toEqual([])
   })
 })
+
+/**
+ * The id, not just the name.
+ *
+ * An ILSA can be fetched, matched, linked and reported completely clean and
+ * still be unreachable — if the hubUserId Hub's ILSA LIST carries for them is
+ * not the one the partner caller sends. Connect stores one, Desk asks with the
+ * other, both are internally consistent, and every counter here says success.
+ * No count can show that. Only the value can.
+ */
+describe('the recorded Hub user id', () => {
+  beforeEach(() => {
+    prismaMock.user.findFirst.mockResolvedValue(null)
+    prismaMock.user.create.mockResolvedValue({ id: 'u-1' })
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1' })
+    prismaMock.ilsaLink.upsert.mockResolvedValue({ id: 'link-1' })
+  })
+
+  it('reports the id against each address', async () => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'rec-1', hubUserId: 'ncWYLfVnnSACfLLVx9twUyn1AlxbqcLk', name: 'C', email: 'claudia@x.ae', pupilIds: ['hp-1'], active: true },
+    ])
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.fetchedHubUserIds).toEqual([
+      { email: 'claudia@x.ae', hubUserId: 'ncWYLfVnnSACfLLVx9twUyn1AlxbqcLk' },
+    ])
+  })
+
+  // Read through normaliseIlsa rather than off the raw row, so it reports what
+  // the sync will actually STORE. Confusing those two is what put a record id
+  // in this column once already.
+  it('reports the id the sync would store, never the record id', async () => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'cmtkcv82l48vura0l23g8zt57', hubUserId: 'hu-real', name: 'C', email: 'claudia@x.ae', pupilIds: ['hp-1'], active: true },
+    ])
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.fetchedHubUserIds[0].hubUserId).toBe('hu-real')
+    expect(summary.fetchedHubUserIds[0].hubUserId).not.toBe('cmtkcv82l48vura0l23g8zt57')
+  })
+
+  it('reports null for an ILSA Hub sent no id for', async () => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'rec-2', hubUserId: null, name: 'P', email: 'pnwamaka@x.ae', pupilIds: ['hp-1'], active: true },
+    ])
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.fetchedHubUserIds).toEqual([{ email: 'pnwamaka@x.ae', hubUserId: null }])
+  })
+})
