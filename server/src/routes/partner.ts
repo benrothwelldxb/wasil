@@ -18,6 +18,7 @@ import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
+import { resolveIlsa } from '../services/ilsaResolution.js'
 import { withdrawMessage, WITHDRAW_WINDOW_MS } from '../services/messageWithdrawal.js'
 import {
   normaliseMeetings, timeSlotFor, genderFor, activityTypeFor, capacityFor,
@@ -104,19 +105,11 @@ async function resolveStaffActor(
 type IlsaActor = { id: string; schoolId: string; name: string; studentId: string; hubPupilId: string }
 
 async function resolveIlsaActor(hubUserId: string): Promise<IlsaActor | null> {
-  if (!hubUserId) return null
-  const u = await prisma.user.findUnique({
-    where: { hubUserId },
-    select: { id: true, role: true, schoolId: true, name: true },
-  })
-  if (!u || u.role !== 'ILSA') return null
-  const link = await prisma.ilsaLink.findFirst({
-    where: { userId: u.id, active: true },
-    select: { studentId: true, hubPupilId: true },
-    orderBy: { createdAt: 'asc' },
-  })
-  if (!link) return null
-  return { id: u.id, schoolId: u.schoolId, name: u.name, studentId: link.studentId, hubPupilId: link.hubPupilId }
+  // The rules live in one place, shared with the ILSA sync, so the sync can
+  // check that an ILSA it just provisioned can actually message — and so the
+  // two can never disagree about what "resolvable" means.
+  const r = await resolveIlsa(hubUserId)
+  return r.ok ? r.actor : null
 }
 
 // The unified actor for the shared inbox routes: a partner request is EITHER a

@@ -6,9 +6,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const prismaMock = {
   school: { findUnique: vi.fn() },
-  user: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  user: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
   student: { findFirst: vi.fn() },
-  ilsaLink: { upsert: vi.fn(), updateMany: vi.fn() },
+  ilsaLink: { upsert: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -28,6 +28,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   prismaMock.school.findUnique.mockResolvedValue({ hubSchoolId: 'hub-1' })
   prismaMock.ilsaLink.updateMany.mockResolvedValue({ count: 0 })
+  // The post-sync check: by default everything provisioned resolves, so tests
+  // about the loop itself are not also asserting the verification.
+  prismaMock.user.findUnique.mockResolvedValue({ id: 'u-1', role: 'ILSA', schoolId: 'sch-1', name: 'Ms Support' })
+  prismaMock.ilsaLink.findFirst.mockResolvedValue({ studentId: 'stu-1', hubPupilId: 'hp-1' })
 })
 
 describe('syncIlsasForSchool', () => {
@@ -583,5 +587,69 @@ describe('the recorded Hub user id', () => {
     const summary = await syncIlsasForSchool('sch-1')
 
     expect(summary.fetchedHubUserIds).toEqual([{ email: 'pnwamaka@x.ae', hubUserId: null }])
+  })
+})
+
+/**
+ * The sync checks whether it worked.
+ *
+ * Every other counter reports a STEP. This one reports the outcome: after all
+ * the matching and linking, can these people actually message? Six counters
+ * were added here in one day, each finding a fault the previous had concealed,
+ * and none would have been needed if the sync had ever asked that.
+ */
+describe('verifying its own outcome', () => {
+  beforeEach(() => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'r1', hubUserId: 'hu-ok', name: 'A', email: 'a@x.ae', pupilIds: ['hp-1'], active: true },
+    ])
+    prismaMock.user.findFirst.mockResolvedValue(null)
+    prismaMock.user.create.mockResolvedValue({ id: 'u-1' })
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1' })
+    prismaMock.ilsaLink.upsert.mockResolvedValue({ id: 'link-1' })
+  })
+
+  it('reports nobody unresolvable when everything worked, and says how many it checked', async () => {
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.unresolvable).toEqual([])
+    // "None unresolvable" and "nobody was checked" must not read the same.
+    expect(summary.verified).toBe(1)
+  })
+
+  // The case this whole sequence was chasing: every counter clean, still 403.
+  it('catches an ILSA who passed every other counter and still cannot message', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(null) // nothing holds that Hub id
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.roleConflict).toBe(0)
+    expect(summary.idMismatch).toEqual([])
+    expect(summary.withoutHubUserId).toBe(0)
+    expect(summary.unresolvable).toEqual([
+      { email: 'a@x.ae', hubUserId: 'hu-ok', why: 'no Connect account holds this Hub id' },
+    ])
+  })
+
+  it('names a wrong role, and which role', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'u-1', role: 'PARENT', schoolId: 'sch-1', name: 'A' })
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.unresolvable[0].why).toBe('account role is PARENT, not ILSA')
+  })
+
+  it('names a missing pupil link', async () => {
+    prismaMock.ilsaLink.findFirst.mockResolvedValue(null)
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.unresolvable[0].why).toBe('no active pupil link')
+  })
+
+  // Already reported by name, and there is nothing to resolve.
+  it('does not check an ILSA Hub sent no id for', async () => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'r2', hubUserId: null, name: 'B', email: 'b@x.ae', pupilIds: ['hp-1'], active: true },
+    ])
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.verified).toBe(0)
+    expect(summary.unresolvable).toEqual([])
+    expect(summary.withoutHubUserId).toBe(1)
   })
 })

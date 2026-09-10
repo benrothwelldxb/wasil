@@ -3006,6 +3006,11 @@ export interface HubSyncSummary {
     /** The Hub user id recorded for each — the only thing that shows Connect and
      *  the partner caller disagreeing about who someone is. */
     fetchedHubUserIds?: Array<{ email: string; hubUserId: string | null }>
+    /** Provisioned but still unable to message, checked after the fact with the
+     *  same rule the partner routes use. The only line here that reports an
+     *  outcome rather than a step. */
+    unresolvable?: Array<{ email: string; hubUserId: string; why: string }>
+    verified?: number
     withoutHubUserIdEmails?: string[]
     roleConflict: number
     /** Who those conflicts are and which role each is under — the role is what

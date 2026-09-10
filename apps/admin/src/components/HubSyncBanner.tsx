@@ -91,6 +91,14 @@ function summarizeSync(summary: HubSyncSummary): string {
     // Who Hub sent, listed. `8 ILSAs from Hub` is only reassuring if the eight
     // are the eight you expected, and every other line here can only describe
     // people who were in that list.
+    // The line that matters most, so it goes first: these people were
+    // provisioned by this very sync and still cannot message anyone.
+    if (il.unresolvable?.length) {
+      detail.unshift(
+        `${il.unresolvable.length} STILL CANNOT MESSAGE: ` +
+          il.unresolvable.map(u => `${u.email} — ${u.why}`).join('; '),
+      )
+    }
     if (il.fetchedHubUserIds?.length) {
       // With the id, because an ILSA can be fetched, linked and reported clean
       // and still be unreachable when the id Hub's list carries is not the id

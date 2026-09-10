@@ -20,6 +20,7 @@
 // are RETAINED for the oversight/retention window. We never delete a link.
 import prisma from './prisma.js'
 import { listIlsas, normaliseIlsa, type NormalisedIlsa } from './hubMis.js'
+import { resolveIlsa, describeIlsaFailure } from './ilsaResolution.js'
 
 export interface IlsaSyncSummary {
   /** Set when the reconcile threw. Present so a FAILURE and an empty roster
@@ -62,6 +63,23 @@ export interface IlsaSyncSummary {
    * reported by name above.
    */
   fetchedHubUserIds: Array<{ email: string; hubUserId: string | null }>
+  /**
+   * ILSAs this sync provisioned who still CANNOT message, checked afterwards by
+   * running the same resolution the partner routes run.
+   *
+   * Everything else here reports a step the sync took. This reports whether the
+   * steps worked. Six counters were added to this summary in a single day, each
+   * finding a fault the previous one had concealed, and none would have been
+   * needed if the sync had ever asked the only question that matters: can this
+   * person now send a message?
+   *
+   * Empty is the answer we want, and an empty array is not the same as the
+   * check not having run — which is why `verified` is reported beside it.
+   */
+  unresolvable: Array<{ email: string; hubUserId: string; why: string }>
+  /** How many ILSAs the check above actually examined, so "none unresolvable"
+   * cannot be confused with "nobody was checked". */
+  verified: number
   /** ILSA users created brand-new (role ILSA). */
   created: number
   /** ILSA users matched to an existing account by Hub id or email (role kept). */
@@ -141,7 +159,7 @@ export interface IlsaSyncSummary {
  */
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
-    fetched: 0, fetchedEmails: [], fetchedHubUserIds: [], created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
+    fetched: 0, fetchedEmails: [], fetchedHubUserIds: [], unresolvable: [], verified: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
     skippedNoPupilId: 0, withoutHubUserId: 0, withoutHubUserIdEmails: [], roleConflict: 0, roleConflicts: [], idMismatch: [], repairedLegacyId: [],
     linksActive: 0, linksDeactivated: 0,
   }
@@ -233,6 +251,20 @@ export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSumm
     data: { active: false, deactivatedAt: new Date() },
   })
   summary.linksDeactivated = sweep.count
+
+  // Did any of that work?
+  //
+  // Everything above reports what this sync DID. This asks what the partner
+  // routes will now answer, using the same rule they use, for every ILSA Hub
+  // gave a user id. An ILSA who reaches here unresolvable has passed every
+  // counter cleanly and still cannot message anyone.
+  for (const { email, hubUserId } of summary.fetchedHubUserIds) {
+    // No id is already reported by name, and there is nothing to resolve.
+    if (!hubUserId) continue
+    summary.verified++
+    const r = await resolveIlsa(hubUserId)
+    if (!r.ok) summary.unresolvable.push({ email, hubUserId, why: describeIlsaFailure(r) })
+  }
 
   return summary
 }
