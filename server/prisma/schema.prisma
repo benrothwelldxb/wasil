@@ -468,6 +468,7 @@ model YearGroup {
   updatedAt      DateTime       @updatedAt
 
   @@unique([schoolId, name])
+  serviceGroups Group[] @relation("ServiceGroupYearGroup")
 }
 
 // Classes/Year Groups
@@ -1198,6 +1199,21 @@ model Group {
   school      School         @relation(fields: [schoolId], references: [id])
   isActive    Boolean        @default(true)
 
+  // A group whose membership is OWNED by a school service's confirmed
+  // registrations — "everyone in aftercare", kept true rather than snapshotted.
+  //
+  // Recomputed when the group is used rather than maintained on every write:
+  // registrations change in nine places across three files, including the
+  // partner API when Accounts confirm or take payment in Desk, and a group that
+  // is quietly stale is worse than no group at all — you would broadcast to
+  // last month's list believing it was current.
+  sourceServiceId String?
+  sourceService   SchoolService? @relation(fields: [sourceServiceId], references: [id], onDelete: SetNull)
+  /// Optional narrowing, because message targeting takes ONE audience: a group
+  /// for "Foundation Stage aftercare" has to be the filter, not the send.
+  sourceYearGroupId String?
+  sourceYearGroup   YearGroup? @relation("ServiceGroupYearGroup", fields: [sourceYearGroupId], references: [id], onDelete: SetNull)
+
   studentMembers StudentGroupLink[]
   staffManagers  StaffGroupAssignment[]
   messages       Message[]
@@ -1833,6 +1849,8 @@ enum AlertStatus {
 // ============================================
 
 model SchoolService {
+  /// Messaging groups derived from this service's confirmed registrations.
+  messagingGroups     Group[]
   id                  String                @id @default(uuid())
   schoolId            String
   school              School                @relation(fields: [schoolId], references: [id])

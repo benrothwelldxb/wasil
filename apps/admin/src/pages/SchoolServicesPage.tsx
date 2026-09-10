@@ -173,6 +173,35 @@ export function SchoolServicesPage() {
   const { data: services, refetch, isLoading } = useApi<SchoolService[]>(() => api.schoolServices.list(), [])
   const { data: classes } = useApi<Class[]>(() => api.classes.list(), [])
   const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
+  /** The service a messaging group is being made from, if the dialog is open. */
+  const [groupFromService, setGroupFromService] = useState<{ id: string; name: string } | null>(null)
+  const [groupYearGroupId, setGroupYearGroupId] = useState('')
+  const [creatingGroup, setCreatingGroup] = useState(false)
+
+  const handleCreateGroup = async () => {
+    if (!groupFromService) return
+    setCreatingGroup(true)
+    try {
+      const g = await api.groups.createFromService({
+        serviceId: groupFromService.id,
+        yearGroupId: groupYearGroupId || undefined,
+      })
+      // The member count matters more than the name: it is the one number that
+      // tells an admin whether the audience is who they pictured, before they
+      // send anything to it.
+      toast.success(
+        g.created
+          ? `Created "${g.name}" — ${g.members} ${g.members === 1 ? 'child' : 'children'}`
+          : `"${g.name}" already exists — ${g.members} ${g.members === 1 ? 'child' : 'children'}`,
+      )
+      setGroupFromService(null)
+      setGroupYearGroupId('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not create the group')
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
   const [detail, setDetail] = useState<SchoolServiceWithStats | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
@@ -484,6 +513,13 @@ export function SchoolServicesPage() {
                             >
                               <Edit2 className="w-3.5 h-3.5" /> Edit details
                             </button>
+                            <button
+                              role="menuitem"
+                              onClick={() => { setOpenMenuId(null); setGroupFromService({ id: s.id, name: s.name }) }}
+                              className="w-full text-left px-3.5 py-2 text-sm text-warm-text-secondary hover:bg-slate-50 flex items-center gap-2"
+                            >
+                              <Users className="w-3.5 h-3.5" /> Messaging group…
+                            </button>
                             {s.status === 'DRAFT' && (
                               <button
                                 role="menuitem"
@@ -501,6 +537,62 @@ export function SchoolServicesPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Making a messaging group from this service's confirmed places. */}
+        {groupFromService && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+            onClick={() => setGroupFromService(null)}
+          >
+            <div
+              className="bg-white rounded-2xl p-5 w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-base font-bold text-warm-text-primary">Messaging group</h3>
+              <p className="text-sm text-warm-text-secondary mt-1">
+                A group of everyone with a <strong>confirmed</strong> place in {groupFromService.name}. It keeps
+                itself up to date, so a child who joins or leaves is added or removed without anyone editing it.
+              </p>
+
+              <label className="block text-xs font-semibold text-warm-text-secondary mt-4 mb-1">
+                Narrow to a year group (optional)
+              </label>
+              <select
+                value={groupYearGroupId}
+                onChange={(e) => setGroupYearGroupId(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-warm-border text-sm bg-white"
+              >
+                <option value="">Everyone in the service</option>
+                {(yearGroups || []).map((yg) => (
+                  <option key={yg.id} value={yg.id}>{yg.name}</option>
+                ))}
+              </select>
+              {/* Said here because it is the reason the filter exists at all,
+                  and it is not obvious from anywhere else. */}
+              <p className="text-xs text-warm-text-secondary mt-1.5">
+                A post goes to one audience, so "Foundation Stage aftercare" has to be its own group rather than
+                something you narrow when sending.
+              </p>
+
+              <div className="flex justify-end gap-2 mt-5">
+                <button
+                  onClick={() => { setGroupFromService(null); setGroupYearGroupId('') }}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-warm-text-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateGroup}
+                  disabled={creatingGroup}
+                  className="px-4 py-2 rounded-xl text-sm font-bold text-white"
+                  style={{ backgroundColor: '#C4506E', opacity: creatingGroup ? 0.6 : 1 }}
+                >
+                  {creatingGroup ? 'Creating…' : 'Create group'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
