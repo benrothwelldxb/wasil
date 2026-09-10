@@ -275,8 +275,15 @@ router.get('/inbox/summary', requirePartner, async (req, res) => {
     // so a reception/office user's badge works before they've opened Desk's
     // inbox (and is backed by the same linked/provisioned user thereafter).
     if (!staff) staff = await resolveStaffActor(hubUserId, schoolHintOf(req))
-    // Unknown user is not an error — Desk polls many ids, some unmapped.
-    if (!staff) return res.json({ unread: 0 })
+    // Unknown user is not an error — Desk polls many ids, some unmapped, and a
+    // 403 here would turn ordinary polling into a stream of failures.
+    //
+    // But a bare `{ unread: 0 }` reads exactly like a real zero, so an ILSA who
+    // cannot be resolved at all shows a calm empty badge instead of a problem —
+    // which is how one of them stayed unresolvable for weeks while every other
+    // route 403'd. `known: false` is the difference between "nothing waiting"
+    // and "we have never heard of this person".
+    if (!staff) return res.json({ unread: 0, known: false })
 
     const unread = await prisma.conversation.count({
       where: {
@@ -293,7 +300,7 @@ router.get('/inbox/summary', requirePartner, async (req, res) => {
 
     // Cheap + cacheable — Desk polls at most once a minute per active user.
     res.set('Cache-Control', 'private, max-age=30')
-    res.json({ unread })
+    res.json({ unread, known: true })
   } catch (error) {
     console.error('Error building partner inbox summary:', error)
     res.status(500).json({ error: 'internal_error' })

@@ -3001,6 +3001,9 @@ export interface HubSyncSummary {
      *  so they cannot act as an ILSA. Reported because counting them as
      *  `linked` would read as success. */
     roleConflict: number
+    /** Who those conflicts are. A count alone leaves an admin with a number and
+     *  nowhere to look. */
+    roleConflictEmails?: string[]
     /** Provisioned, but Hub has no hubUserId for them yet (null until first
      *  sign-in), so they cannot be resolved as a messaging actor until a later
      *  sync picks it up. */

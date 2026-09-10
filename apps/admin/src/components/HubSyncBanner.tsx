@@ -56,7 +56,13 @@ function summarizeSync(summary: HubSyncSummary): string {
     if (il.withoutHubUserId) detail.push(`${il.withoutHubUserId} not signed into Hub yet`)
     // Reads as success otherwise: the account was found and updated, but under
     // a role that cannot act as an ILSA.
-    if (il.roleConflict) detail.push(`${il.roleConflict} already has another role`)
+    // Named, not counted. "1 already has another role" leaves an admin with a
+    // number and nowhere to look; the person it names is the one getting a 403
+    // from Desk however many times this says "linked".
+    if (il.roleConflict) {
+      const who = il.roleConflictEmails?.length ? `: ${il.roleConflictEmails.join(', ')}` : ''
+      detail.push(`${il.roleConflict} cannot message — already has another role${who}`)
+    }
     if (il.linksDeactivated) detail.push(`${il.linksDeactivated} unlinked`)
     parts.push(`${il.fetched} ILSA${il.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
   } else if (il) {
