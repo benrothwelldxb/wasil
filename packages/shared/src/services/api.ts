@@ -3000,6 +3000,7 @@ export interface HubSyncSummary {
     /** Their Connect account exists under another role, which is left alone —
      *  so they cannot act as an ILSA. Reported because counting them as
      *  `linked` would read as success. */
+    withoutHubUserIdEmails?: string[]
     roleConflict: number
     /** Who those conflicts are and which role each is under — the role is what
      *  decides whether this is a real person with another job at the school or

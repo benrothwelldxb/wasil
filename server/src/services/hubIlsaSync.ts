@@ -86,6 +86,20 @@ export interface IlsaSyncSummary {
    * later sync picks up the id — so a non-zero count here explains why an ILSA
    * who exists in Connect still can't start a conversation. */
   withoutHubUserId: number
+  /**
+   * WHO those are — the last counter here that was only ever a number.
+   *
+   * It has read "1 not signed into Hub yet" in every banner for weeks and
+   * everybody, including the code's author, read past it as somebody else. It
+   * is the one line that would have named the problem, and it named nobody.
+   *
+   * The count alone is also ambiguous in a way the name resolves: it means
+   * "Hub's ILSA list sent us no hubUserId for this person", which is usually
+   * "they have not signed in yet" but is indistinguishable from "Hub holds
+   * their id and this payload omits it". Those need completely different people
+   * to act.
+   */
+  withoutHubUserIdEmails: string[]
   /** IlsaLink rows upserted active this run. */
   linksActive: number
   /** IlsaLink rows deactivated this run (Hub unlink/deactivate, or dropped). */
@@ -100,7 +114,7 @@ export interface IlsaSyncSummary {
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
     fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
-    skippedNoPupilId: 0, withoutHubUserId: 0, roleConflict: 0, roleConflicts: [], idMismatch: [], repairedLegacyId: [],
+    skippedNoPupilId: 0, withoutHubUserId: 0, withoutHubUserIdEmails: [], roleConflict: 0, roleConflicts: [], idMismatch: [], repairedLegacyId: [],
     linksActive: 0, linksDeactivated: 0,
   }
 
@@ -202,7 +216,13 @@ async function upsertIlsaUser(
   // never reach the query: `where: { hubUserId: null }` matches the first user
   // in the school who happens to have none, and would hand this ILSA someone
   // else's account. Absent means "match by email instead", not "match anyone".
-  if (!ilsa.hubUserId) summary.withoutHubUserId++
+  if (!ilsa.hubUserId) {
+    summary.withoutHubUserId++
+    // Named, because this counter is the difference between "waiting on a
+    // person to sign in" and "waiting on Hub to send a field", and the number
+    // alone reads as the first even when it is the second.
+    if (email) summary.withoutHubUserIdEmails.push(email)
+  }
 
   // (1) Already linked by Hub user id.
   const linked = ilsa.hubUserId
