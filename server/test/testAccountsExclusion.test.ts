@@ -91,8 +91,9 @@ describe('analytics exclude isTest', () => {
   it('/overview: totalParents and totalStudents both filter isTest:false', async () => {
     const res = await request(makeApp()).get('/api/analytics/overview?_=2')
     expect(res.status).toBe(200)
-    // First user.count is totalParents.
-    const parentWhere = prismaMock.user.count.mock.calls[0][0].where
+    // totalParents comes from the shared activation roster (user.findMany), so
+    // the funnel, the chase list and this page count the same parents.
+    const parentWhere = prismaMock.user.findMany.mock.calls[0][0].where
     expect(parentWhere).toMatchObject({ role: 'PARENT', isTest: false })
     // Some student.count call must carry isTest:false.
     const studentWheres = prismaMock.student.count.mock.calls.map((c: any) => c[0].where)
@@ -102,7 +103,11 @@ describe('analytics exclude isTest', () => {
   it('/by-class: link lookup excludes both test parents and test students', async () => {
     const res = await request(makeApp()).get('/api/analytics/by-class?_=3')
     expect(res.status).toBe(200)
-    const where = prismaMock.parentStudentLink.findMany.mock.calls[0][0].where
+    // The league-table lookup is the one that joins parents to classes; the
+    // roster query in loadParentActivation reads the same table first.
+    const where = prismaMock.parentStudentLink.findMany.mock.calls
+      .map((c: any) => c[0].where)
+      .find((w: any) => w.user != null)
     expect(where.user).toMatchObject({ role: 'PARENT', isTest: false })
     expect(where.student).toMatchObject({ isTest: false })
   })

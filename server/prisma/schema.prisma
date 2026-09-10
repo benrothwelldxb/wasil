@@ -409,11 +409,20 @@ model Student {
   // not break delivery.
   isTest Boolean @default(false)
 
+  // Hub says this pupil is no longer on roll. Set by the roster sync when Hub
+  // stops returning them for any current class — Hub scopes its pupil list to an
+  // ACTIVE enrolment in the CURRENT academic year, so a leaver simply vanishes
+  // from it. Null = on roll. A soft mark, never a delete: their messages,
+  // threads, reports and attendance history all hang off this row, and a pupil
+  // Hub sends back has it cleared on the next sync.
+  leftAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([schoolId, externalId])
   @@index([schoolId, classId])
+  @@index([schoolId, leftAt])
   transportAssignments TransportAssignment[]
 
   // Attendance, mirrored from Hub (Hub handoff, 4 Sep 2026). Hub serves the

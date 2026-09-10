@@ -18,6 +18,12 @@ function summarizeSync(summary: HubSyncSummary): string {
   if (summary.teacherAssignments.created) {
     parts.push(`${summary.teacherAssignments.created} teacher assignment${summary.teacherAssignments.created !== 1 ? 's' : ''}`)
   }
+  // Leavers, said out loud. A pupil coming OFF the roster is the one change a
+  // school will not otherwise see happen — nothing on any page announces it,
+  // and it silently moves every count on the analytics page.
+  const lv = summary.leavers
+  if (lv?.marked) parts.push(`${lv.marked} pupil${lv.marked !== 1 ? 's' : ''} marked as left`)
+  if (lv?.returned) parts.push(`${lv.returned} back on roll`)
   if (summary.staff.created) parts.push(`${summary.staff.created} staff added`)
   if (summary.staff.updated) parts.push(`${summary.staff.updated} staff updated`)
 

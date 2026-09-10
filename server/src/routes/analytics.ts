@@ -44,12 +44,35 @@ async function loadParentActivation(schoolId: string): Promise<{
   }>
   activatedIds: Set<string>
 }> {
-  const parents = await prisma.user.findMany({
+  const all = await prisma.user.findMany({
     // Exclude Test Parents so they never inflate the activation funnel,
     // by-class table, or not-activated chase list (all derive from here).
     where: { schoolId, role: 'PARENT', isTest: false },
     select: { id: true, email: true, name: true, lastSeenAt: true, welcomeSentAt: true },
   })
+
+  // Parents of leavers come off every list here. A guardian whose children have
+  // all left the school is not an activation failure and is not someone to
+  // chase — they were never going to sign in, and holding them in the
+  // denominator pushed the activation rate down forever.
+  //
+  // Only a parent with links, ALL of them to pupils Hub has marked as left, is
+  // dropped. A parent with no link at all stays: that is a linking gap (a
+  // guardian Hub sent whose pupil isn't synced), which is a real chase — the
+  // opposite of a family that has gone.
+  const links = await prisma.parentStudentLink.findMany({
+    where: { userId: { in: all.map(p => p.id) } },
+    select: { userId: true, student: { select: { leftAt: true } } },
+  })
+  const linked = new Set<string>()
+  const hasCurrentChild = new Set<string>()
+  for (const l of links) {
+    linked.add(l.userId)
+    // Null (and only null) is on roll — anything else is a date, i.e. gone.
+    if (!l.student.leftAt) hasCurrentChild.add(l.userId)
+  }
+  const parents = all.filter(p => !linked.has(p.id) || hasCurrentChild.has(p.id))
+
   // Shared with the admin parents list, so the chase list and this funnel can
   // never disagree about who has got in.
   const activatedIds = await activatedParentIds(parents)
@@ -68,10 +91,12 @@ router.get('/overview', isAdmin, async (req, res) => {
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-    // Total parents
-    const totalParents = await prisma.user.count({
-      where: { schoolId, role: 'PARENT', isTest: false },
-    })
+    // Total parents — the same roster the activation funnel and the chase list
+    // use, so this page can't say 180 parents in one card and 177 in the next.
+    // That also drops guardians whose children have all left the school.
+    const { parents } = await loadParentActivation(schoolId)
+    const totalParents = parents.length
+    const parentIds = new Set(parents.map(p => p.id))
 
     // Active parents: those who acknowledged a message or submitted a form response in last 30 days
     const [activeAckUsers, activeFormUsers] = await Promise.all([
@@ -92,10 +117,14 @@ router.get('/overview', isAdmin, async (req, res) => {
         distinct: ['userId'],
       }),
     ])
-    const activeUserIds = new Set([
-      ...activeAckUsers.map(a => a.userId),
-      ...activeFormUsers.map(f => f.userId),
-    ])
+    // Acks and form responses aren't parent-only, and a leaver's guardian can
+    // still hold a recent one. Intersecting with the roster above keeps the
+    // numerator inside its own denominator — the adoption rate could otherwise
+    // read above 100%.
+    const activeUserIds = new Set(
+      [...activeAckUsers.map(a => a.userId), ...activeFormUsers.map(f => f.userId)]
+        .filter(id => parentIds.has(id)),
+    )
     // Also count parents who have a refresh token updated recently (proxy for login)
     const recentTokenUsers = await prisma.refreshToken.findMany({
       where: {
@@ -105,14 +134,15 @@ router.get('/overview', isAdmin, async (req, res) => {
       select: { userId: true },
       distinct: ['userId'],
     })
-    recentTokenUsers.forEach(t => activeUserIds.add(t.userId))
+    recentTokenUsers.forEach(t => { if (parentIds.has(t.userId)) activeUserIds.add(t.userId) })
     const activeParents = activeUserIds.size
 
     const adoptionRate = totalParents > 0 ? Math.round((activeParents / totalParents) * 1000) / 10 : 0
 
-    // Total students (Test Students excluded — never inflate pupil counts).
+    // Total students (Test Students and leavers excluded — never inflate pupil
+    // counts with pupils who aren't on roll).
     const totalStudents = await prisma.student.count({
-      where: { schoolId, isTest: false },
+      where: { schoolId, isTest: false, leftAt: null },
     })
 
     // Messages this month
@@ -172,7 +202,7 @@ router.get('/overview', isAdmin, async (req, res) => {
 
     // ECA participation rate
     const [eligibleStudents, studentsWithAllocations] = await Promise.all([
-      prisma.student.count({ where: { schoolId, isTest: false } }),
+      prisma.student.count({ where: { schoolId, isTest: false, leftAt: null } }),
       prisma.ecaAllocation.findMany({
         where: {
           ecaTerm: { schoolId },
@@ -796,8 +826,12 @@ router.get('/by-class', isAdmin, async (req, res) => {
     const { activatedIds } = await loadParentActivation(schoolId)
 
     const links = await prisma.parentStudentLink.findMany({
-      // Exclude Test Parents and Test Students from the per-class league table.
-      where: { user: { schoolId, role: 'PARENT', isTest: false }, student: { schoolId, isTest: false } },
+      // Exclude Test Parents, Test Students and leavers from the per-class
+      // league table — none of them are parents this class has to reach.
+      where: {
+        user: { schoolId, role: 'PARENT', isTest: false },
+        student: { schoolId, isTest: false, leftAt: null },
+      },
       select: {
         userId: true,
         student: { select: { class: { select: { id: true, name: true } } } },
@@ -848,7 +882,9 @@ router.get('/not-activated', isAdmin, async (req, res) => {
 
     // First linked child's class name per parent (earliest link wins).
     const links = await prisma.parentStudentLink.findMany({
-      where: { userId: { in: notActivatedIds } },
+      // A pupil who has left is not the class to phone about — and a parent
+      // whose children have ALL left is already gone from `parents` above.
+      where: { userId: { in: notActivatedIds }, student: { leftAt: null } },
       orderBy: { createdAt: 'asc' },
       select: { userId: true, student: { select: { class: { select: { name: true } } } } },
     })
@@ -895,8 +931,9 @@ router.get('/unreachable-families', isAdmin, async (req, res) => {
 
     const students = await prisma.student.findMany({
       // Test Students would appear as permanently unreachable families and
-      // never come off the list.
-      where: { schoolId, isTest: false },
+      // never come off the list — and so would leavers, who are nobody's
+      // unreachable family: the school stopped needing to reach them.
+      where: { schoolId, isTest: false, leftAt: null },
       select: {
         id: true,
         firstName: true,

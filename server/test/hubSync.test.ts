@@ -9,7 +9,7 @@ const prismaMock = {
   school: { findUnique: vi.fn(), update: vi.fn() },
   yearGroup: { upsert: vi.fn(), create: vi.fn() },
   class: { upsert: vi.fn(), create: vi.fn() },
-  student: { upsert: vi.fn(), create: vi.fn() },
+  student: { upsert: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
   user: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
   refreshToken: { findFirst: vi.fn() },
   parentStudentLink: { upsert: vi.fn(), create: vi.fn() },
@@ -134,6 +134,7 @@ beforeEach(() => {
   prismaMock.student.upsert.mockImplementation(async ({ where }: any) => ({
     id: 'cs-' + where.hubPupilId,
   }))
+  prismaMock.student.updateMany.mockResolvedValue({ count: 0 })
 
   // Default roster: one year group, one class in it, one pupil in that class,
   // no staff. Individual tests override.
@@ -198,6 +199,9 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       staff: { created: 0, updated: 0 },
       pupilMisIds: { withMisId: 1, missing: 0 },
       attendance: { withFigure: 0, noFigure: 0, scopeGranted: false },
+      // The one pupil Hub returned is on roll, and its class counted as
+      // trusted — so the sweep ran and found nobody to mark.
+      leavers: { marked: 0, returned: 0, classesTrusted: 1, classesTotal: 1 },
       guardians: { fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, emailUpdated: 0, emailConflicts: [] },
       parentLinks: { created: 0, skippedNoPupil: 0 },
       teacherAssignments: { created: 0, removed: 0, unresolved: 0 },
@@ -913,5 +917,60 @@ describe('syncSchoolFromHub — attendance figures', () => {
 
     expect(prismaMock.student.upsert.mock.calls[0][0].create.attendancePercentage).toBe(0)
     expect(summary.attendance.withFigure).toBe(1)
+  })
+})
+
+// A pupil who leaves is not reported by Hub as having left — Hub's pupil list
+// is scoped to an ACTIVE enrolment in the current year, so they simply stop
+// appearing. Absence is therefore the only signal there is, and the whole risk
+// of the sweep is telling "gone" apart from "Hub told us nothing".
+describe('syncSchoolFromHub — leavers', () => {
+  /** The sweep call (the one that STAMPS leftAt), or undefined if it never ran. */
+  const sweepCall = () =>
+    prismaMock.student.updateMany.mock.calls
+      .map(c => c[0] as any)
+      .find(a => a.data?.leftAt instanceof Date)
+
+  it('marks pupils Hub no longer returns for a class it did send pupils for', async () => {
+    prismaMock.student.updateMany.mockResolvedValue({ count: 3 })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    const sweep = sweepCall()
+    expect(sweep.where).toMatchObject({
+      schoolId: 'connect-school-1',
+      hubPupilId: { not: null },
+      leftAt: null,
+      classId: { in: ['cc-hc1'] },
+      // Everyone Hub DID return this run is spared.
+      id: { notIn: ['cs-hp1'] },
+    })
+    expect(summary.leavers).toMatchObject({ marked: 3, classesTrusted: 1, classesTotal: 1 })
+  })
+
+  // The dangerous case. At rollover — and on any Hub hiccup — every class comes
+  // back empty; concluding from that would mark the entire school as left in a
+  // single run.
+  it('never concludes anyone left from a class that returned no pupils', async () => {
+    mPupils.mockResolvedValue([])
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(sweepCall()).toBeUndefined()
+    expect(summary.leavers).toMatchObject({ marked: 0, classesTrusted: 0, classesTotal: 1 })
+  })
+
+  // A pupil Hub sends back is on roll again, without anyone editing the row by
+  // hand — otherwise a leaver marked in error in Hub is stuck in Connect.
+  it('clears the mark for a pupil Hub returns again', async () => {
+    prismaMock.student.updateMany.mockResolvedValue({ count: 1 })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    const unmark = prismaMock.student.updateMany.mock.calls
+      .map(c => c[0] as any)
+      .find(a => a.data?.leftAt === null)
+    expect(unmark.where).toMatchObject({ id: { in: ['cs-hp1'] }, leftAt: { not: null } })
+    expect(summary.leavers.returned).toBe(1)
   })
 })
