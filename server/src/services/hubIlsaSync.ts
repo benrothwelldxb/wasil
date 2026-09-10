@@ -80,6 +80,21 @@ export interface IlsaSyncSummary {
   /** How many ILSAs the check above actually examined, so "none unresolvable"
    * cannot be confused with "nobody was checked". */
   verified: number
+  /**
+   * ILSAs who resolve — but to a DIFFERENT pupil from the one Hub linked them
+   * to.
+   *
+   * Worse than a 403 by a wide margin. A refused ILSA is a person who cannot do
+   * their job; a crossed one is a private safeguarding thread about the wrong
+   * family, opened by someone with every reason to believe it is the right one,
+   * and nothing about it looks broken from any single app.
+   *
+   * `resolveIlsa` takes the FIRST active link, so an ILSA holding two active
+   * links — Hub re-linked them and the older row was never deactivated — is
+   * silently pointed at whichever came first. The stale sweep only deactivates
+   * links it did not reaffirm THIS run, so two reaffirmed links both survive.
+   */
+  wrongPupil: Array<{ email: string; hubLinked: string; resolvedTo: string }>
   /** ILSA users created brand-new (role ILSA). */
   created: number
   /** ILSA users matched to an existing account by Hub id or email (role kept). */
@@ -159,7 +174,7 @@ export interface IlsaSyncSummary {
  */
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
-    fetched: 0, fetchedEmails: [], fetchedHubUserIds: [], unresolvable: [], verified: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
+    fetched: 0, fetchedEmails: [], fetchedHubUserIds: [], unresolvable: [], verified: 0, wrongPupil: [], created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
     skippedNoPupilId: 0, withoutHubUserId: 0, withoutHubUserIdEmails: [], roleConflict: 0, roleConflicts: [], idMismatch: [], repairedLegacyId: [],
     linksActive: 0, linksDeactivated: 0,
   }
@@ -182,10 +197,11 @@ export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSumm
   // the sync will actually STORE rather than the one a reader assumes it took.
   // Getting that distinction wrong is what put a record id in this column once
   // already.
-  summary.fetchedHubUserIds = hubIlsas.map(raw => {
-    const n = normaliseIlsa(raw)
-    return { email: n.email ?? '(no email)', hubUserId: n.hubUserId }
-  })
+  const normalisedAll = hubIlsas.map(normaliseIlsa)
+  summary.fetchedHubUserIds = normalisedAll.map(n => ({
+    email: n.email ?? '(no email)',
+    hubUserId: n.hubUserId,
+  }))
 
   // Ids of the IlsaLink rows we (re)affirmed active this run — everything else
   // still-active in this school is stale and gets deactivated at the end.
@@ -258,12 +274,22 @@ export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSumm
   // routes will now answer, using the same rule they use, for every ILSA Hub
   // gave a user id. An ILSA who reaches here unresolvable has passed every
   // counter cleanly and still cannot message anyone.
-  for (const { email, hubUserId } of summary.fetchedHubUserIds) {
+  for (const n of normalisedAll) {
     // No id is already reported by name, and there is nothing to resolve.
-    if (!hubUserId) continue
+    if (!n.hubUserId) continue
+    const email = n.email ?? '(no email)'
     summary.verified++
-    const r = await resolveIlsa(hubUserId)
-    if (!r.ok) summary.unresolvable.push({ email, hubUserId, why: describeIlsaFailure(r) })
+    const r = await resolveIlsa(n.hubUserId)
+    if (!r.ok) {
+      summary.unresolvable.push({ email, hubUserId: n.hubUserId, why: describeIlsaFailure(r) })
+      continue
+    }
+    // Resolving is not the same as resolving to the RIGHT child, and only the
+    // second one keeps a safeguarding thread with the family it belongs to.
+    // Both of the checks that found today's bug asked the first question.
+    if (n.hubPupilId && r.actor.hubPupilId !== n.hubPupilId) {
+      summary.wrongPupil.push({ email, hubLinked: n.hubPupilId, resolvedTo: r.actor.hubPupilId })
+    }
   }
 
   return summary

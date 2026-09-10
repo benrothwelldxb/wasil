@@ -3011,6 +3011,9 @@ export interface HubSyncSummary {
      *  outcome rather than a step. */
     unresolvable?: Array<{ email: string; hubUserId: string; why: string }>
     verified?: number
+    /** Resolving, but to the wrong child — worse than a refusal, and invisible
+     *  to any check that only asks whether resolution succeeds. */
+    wrongPupil?: Array<{ email: string; hubLinked: string; resolvedTo: string }>
     withoutHubUserIdEmails?: string[]
     roleConflict: number
     /** Who those conflicts are and which role each is under — the role is what

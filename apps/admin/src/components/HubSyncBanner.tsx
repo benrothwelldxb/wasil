@@ -98,12 +98,20 @@ function summarizeSync(summary: HubSyncSummary): string {
     // this whole line was added to catch, reintroduced in the catching of it.
     // A check that is silent when it passes cannot be distinguished from a
     // check that never ran.
+    // Above everything, including the refusals: a crossed link is a private
+    // thread about the wrong family, and it looks healthy from every side.
+    if (il.wrongPupil?.length) {
+      detail.unshift(
+        `${il.wrongPupil.length} LINKED TO THE WRONG CHILD: ` +
+          il.wrongPupil.map(w => `${w.email} — Hub says pupil ${w.hubLinked}, Connect resolves ${w.resolvedTo}`).join('; '),
+      )
+    }
     if (typeof il.verified === 'number') {
       detail.unshift(
         il.unresolvable?.length
           ? `${il.unresolvable.length} of ${il.verified} STILL CANNOT MESSAGE: ` +
             il.unresolvable.map(u => `${u.email} — ${u.why}`).join('; ')
-          : `${il.verified} checked, all can message`,
+          : `${il.verified} checked, all can message${il.wrongPupil?.length ? '' : ', all on the right child'}`,
       )
     }
     if (il.fetchedHubUserIds?.length) {
