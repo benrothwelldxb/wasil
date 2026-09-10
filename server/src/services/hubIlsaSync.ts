@@ -34,6 +34,20 @@ export interface IlsaSyncSummary {
    * a school with no ILSAs — both arrive as zero. Reporting it is what lets an
    * admin tell "Hub sent none" from "we dropped them all". */
   fetched: number
+  /**
+   * WHO Hub sent — the number above with names on it.
+   *
+   * Every other counter here now names people, and each of them only counts
+   * ILSAs that reached the loop. If Hub's list simply does not contain someone,
+   * they appear in none of them: not a role conflict, not an id mismatch, not
+   * missing an id. The sync reports a clean success and the person cannot
+   * message, because Connect was never told they exist.
+   *
+   * That is the last place an ILSA can be absent without anything saying so,
+   * and it sits above all the others: `fetched: 8` is only reassuring if the
+   * eight are the eight you expected.
+   */
+  fetchedEmails: string[]
   /** ILSA users created brand-new (role ILSA). */
   created: number
   /** ILSA users matched to an existing account by Hub id or email (role kept). */
@@ -113,7 +127,7 @@ export interface IlsaSyncSummary {
  */
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
-    fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
+    fetched: 0, fetchedEmails: [], created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
     skippedNoPupilId: 0, withoutHubUserId: 0, withoutHubUserIdEmails: [], roleConflict: 0, roleConflicts: [], idMismatch: [], repairedLegacyId: [],
     linksActive: 0, linksDeactivated: 0,
   }
@@ -126,6 +140,12 @@ export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSumm
 
   const hubIlsas = await listIlsas(school.hubSchoolId)
   summary.fetched = hubIlsas.length
+  // Recorded straight off the payload, before any of the loop's own filtering,
+  // so this answers "who did Hub send us" rather than "who did we accept".
+  // An ILSA missing from here is missing from every other counter too.
+  summary.fetchedEmails = hubIlsas
+    .map(i => i.email?.trim().toLowerCase())
+    .filter((e): e is string => !!e)
 
   // Ids of the IlsaLink rows we (re)affirmed active this run — everything else
   // still-active in this school is stale and gets deactivated at the end.

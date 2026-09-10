@@ -3000,6 +3000,9 @@ export interface HubSyncSummary {
     /** Their Connect account exists under another role, which is left alone —
      *  so they cannot act as an ILSA. Reported because counting them as
      *  `linked` would read as success. */
+    /** Who Hub actually sent. An ILSA absent from here appears in no other
+     *  counter, because none of them see anyone who never reached the loop. */
+    fetchedEmails?: string[]
     withoutHubUserIdEmails?: string[]
     roleConflict: number
     /** Who those conflicts are and which role each is under — the role is what

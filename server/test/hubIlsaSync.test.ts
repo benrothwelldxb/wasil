@@ -480,3 +480,54 @@ describe('an ILSA Hub sends no user id for', () => {
     expect(lookups.some((w: any) => 'hubUserId' in w && w.hubUserId === null)).toBe(false)
   })
 })
+
+/**
+ * Who Hub actually sent.
+ *
+ * Every other counter in this summary only ever describes ILSAs that reached
+ * the loop. Someone missing from Hub's list appears in none of them — not a
+ * role conflict, not an id mismatch, not missing an id — and the sync reports a
+ * clean success while they cannot message, because Connect was never told they
+ * exist. `fetched: 8` is only reassuring if the eight are the eight you
+ * expected.
+ */
+describe('the fetched roster', () => {
+  it('names everyone Hub sent', async () => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'r1', hubUserId: 'hu-1', name: 'A', email: 'a@x.ae', pupilIds: ['hp-1'], active: true },
+      { id: 'r2', hubUserId: 'hu-2', name: 'B', email: 'B@X.AE', pupilIds: ['hp-2'], active: true },
+    ])
+    prismaMock.user.findFirst.mockResolvedValue(null)
+    prismaMock.user.create.mockResolvedValue({ id: 'u-1' })
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1' })
+    prismaMock.ilsaLink.upsert.mockResolvedValue({ id: 'link-1' })
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.fetched).toBe(2)
+    // Lowercased, so comparing against a staff list is not a case-sensitivity
+    // puzzle.
+    expect(summary.fetchedEmails).toEqual(['a@x.ae', 'b@x.ae'])
+  })
+
+  // Taken from the payload BEFORE the loop filters anyone, so it answers "who
+  // did Hub send" rather than "who did we accept".
+  it('includes someone the loop then skips', async () => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'r1', hubUserId: 'hu-1', name: 'A', email: 'a@x.ae', pupilIds: [], active: true },
+    ])
+    prismaMock.user.findFirst.mockResolvedValue(null)
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.skippedNoPupilId).toBe(1)
+    expect(summary.fetchedEmails).toEqual(['a@x.ae'])
+  })
+
+  it('is empty, not absent, when Hub sends none', async () => {
+    misMock.listIlsas.mockResolvedValue([])
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.fetched).toBe(0)
+    expect(summary.fetchedEmails).toEqual([])
+  })
+})
