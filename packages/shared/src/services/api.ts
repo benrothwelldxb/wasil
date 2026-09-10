@@ -3003,6 +3003,9 @@ export interface HubSyncSummary {
     /** Who Hub actually sent. An ILSA absent from here appears in no other
      *  counter, because none of them see anyone who never reached the loop. */
     fetchedEmails?: string[]
+    /** The Hub user id recorded for each — the only thing that shows Connect and
+     *  the partner caller disagreeing about who someone is. */
+    fetchedHubUserIds?: Array<{ email: string; hubUserId: string | null }>
     withoutHubUserIdEmails?: string[]
     roleConflict: number
     /** Who those conflicts are and which role each is under — the role is what

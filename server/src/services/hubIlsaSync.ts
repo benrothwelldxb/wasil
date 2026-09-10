@@ -48,6 +48,20 @@ export interface IlsaSyncSummary {
    * eight are the eight you expected.
    */
   fetchedEmails: string[]
+  /**
+   * The Hub user id recorded against each fetched ILSA, truncated.
+   *
+   * The last thing this summary could not answer. An ILSA can be fetched,
+   * matched, linked and reported clean while still being unreachable, if the
+   * id Hub's ILSA LIST carries for them is not the id the partner caller sends
+   * — Connect stores one, Desk asks with the other, and both are internally
+   * consistent. Nothing in a count can show that; only the value can.
+   *
+   * Truncated because the comparison is all anyone needs to make and eight full
+   * ids is a wall of characters. `null` means Hub sent none, which is already
+   * reported by name above.
+   */
+  fetchedHubUserIds: Array<{ email: string; hubUserId: string | null }>
   /** ILSA users created brand-new (role ILSA). */
   created: number
   /** ILSA users matched to an existing account by Hub id or email (role kept). */
@@ -127,7 +141,7 @@ export interface IlsaSyncSummary {
  */
 export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSummary> {
   const summary: IlsaSyncSummary = {
-    fetched: 0, fetchedEmails: [], created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
+    fetched: 0, fetchedEmails: [], fetchedHubUserIds: [], created: 0, linked: 0, skippedNoEmail: 0, skippedNoPupil: 0,
     skippedNoPupilId: 0, withoutHubUserId: 0, withoutHubUserIdEmails: [], roleConflict: 0, roleConflicts: [], idMismatch: [], repairedLegacyId: [],
     linksActive: 0, linksDeactivated: 0,
   }
@@ -146,6 +160,14 @@ export async function syncIlsasForSchool(schoolId: string): Promise<IlsaSyncSumm
   summary.fetchedEmails = hubIlsas
     .map(i => i.email?.trim().toLowerCase())
     .filter((e): e is string => !!e)
+  // Read through normaliseIlsa, not off the raw row, so this reports the value
+  // the sync will actually STORE rather than the one a reader assumes it took.
+  // Getting that distinction wrong is what put a record id in this column once
+  // already.
+  summary.fetchedHubUserIds = hubIlsas.map(raw => {
+    const n = normaliseIlsa(raw)
+    return { email: n.email ?? '(no email)', hubUserId: n.hubUserId }
+  })
 
   // Ids of the IlsaLink rows we (re)affirmed active this run — everything else
   // still-active in this school is stale and gets deactivated at the end.
