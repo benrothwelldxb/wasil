@@ -53,7 +53,13 @@ function summarizeSync(summary: HubSyncSummary): string {
     if (il.skippedNoPupilId) detail.push(`${il.skippedNoPupilId} skipped, no pupil sent`)
     // The reason an ILSA can exist in Connect and still not be able to message:
     // Hub has no user id for them until they have signed in once.
-    if (il.withoutHubUserId) detail.push(`${il.withoutHubUserId} not signed into Hub yet`)
+    // Named. This line has read "1 not signed into Hub yet" for weeks while an
+    // ILSA sat unable to message, and an unnamed one is impossible to check
+    // against a staff list.
+    if (il.withoutHubUserId) {
+      const who = il.withoutHubUserIdEmails?.length ? `: ${il.withoutHubUserIdEmails.join(', ')}` : ''
+      detail.push(`${il.withoutHubUserId} cannot message — Hub sent no user id${who}`)
+    }
     // Reads as success otherwise: the account was found and updated, but under
     // a role that cannot act as an ILSA.
     // Named, not counted. "1 already has another role" leaves an admin with a

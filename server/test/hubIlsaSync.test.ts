@@ -425,3 +425,58 @@ describe('an account holding the wrong Hub id', () => {
     expect(summary.repairedLegacyId).toEqual([])
   })
 })
+
+/**
+ * "1 not signed into Hub yet" was the line that could have named the problem,
+ * and it named nobody.
+ *
+ * It has been non-zero in every banner for weeks. Everyone read past it as
+ * somebody else — and the count is genuinely ambiguous: it means "Hub's ILSA
+ * list sent no hubUserId for this person", which is usually "they have not
+ * signed in" but is indistinguishable from "Hub holds their id and this
+ * payload omits it". Those need completely different people to act.
+ */
+describe('an ILSA Hub sends no user id for', () => {
+  beforeEach(() => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'rec-9', hubUserId: null, name: 'Claudia Mbeng', email: 'claudia@x.ae', pupilIds: ['hp-1'], active: true },
+    ])
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) =>
+      where.email ? { id: 'u-1', email: 'claudia@x.ae', role: 'ILSA', hubUserId: null } : null,
+    )
+    prismaMock.user.update.mockResolvedValue({})
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1' })
+    prismaMock.ilsaLink.upsert.mockResolvedValue({ id: 'link-1' })
+  })
+
+  it('names them rather than only counting them', async () => {
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.withoutHubUserId).toBe(1)
+    expect(summary.withoutHubUserIdEmails).toEqual(['claudia@x.ae'])
+  })
+
+  // Not a role conflict and not an id mismatch — the two things already
+  // reported. Without the name, this state is invisible in every other counter.
+  it('is not reported as either of the faults that ARE named', async () => {
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.roleConflict).toBe(0)
+    expect(summary.idMismatch).toEqual([])
+    expect(summary.repairedLegacyId).toEqual([])
+  })
+
+  // Still provisioned and still linked to their pupil — the account is real and
+  // the moment Hub sends the id, the ordinary email path claims it.
+  it('is still linked, and still counted among the linked', async () => {
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.linked).toBe(1)
+    expect(summary.linksActive).toBe(1)
+  })
+
+  // The null must never reach the query: `where: { hubUserId: null }` matches
+  // the first user in the school who happens to have none.
+  it('never looks a user up by a null id', async () => {
+    await syncIlsasForSchool('sch-1')
+    const lookups = prismaMock.user.findFirst.mock.calls.map((c: any) => c[0].where)
+    expect(lookups.some((w: any) => 'hubUserId' in w && w.hubUserId === null)).toBe(false)
+  })
+})
