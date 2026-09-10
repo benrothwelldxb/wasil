@@ -1,5 +1,6 @@
 import { Request } from 'express'
 import prisma from './prisma.js'
+import { refreshServiceGroup } from './serviceGroups.js'
 import { enqueuePush, enqueueEmail } from './outbox.js'
 
 // Notification types that warrant an email fallback when the parent has been
@@ -155,6 +156,15 @@ export async function resolveAudienceParentIds(target: NotificationTarget): Prom
   let parentUserIds: string[] = []
 
   if (groupId) {
+    // A group derived from a school service is recomputed HERE, at the moment
+    // its audience is resolved, rather than maintained as registrations change
+    // in nine places across three files. This is the send: whoever is in the
+    // service now is who the message reaches, and the group cannot be more
+    // stale than the message that reads it.
+    //
+    // A no-op for an ordinary group.
+    await refreshServiceGroup(groupId)
+
     const members = await prisma.studentGroupLink.findMany({
       where: { groupId },
       select: { student: { select: { parentLinks: { select: { userId: true } } } } },

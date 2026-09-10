@@ -1580,6 +1580,20 @@ export const links = {
 // Groups
 export const groups = {
   list: () => fetchApi<Group[]>('/api/groups'),
+  /**
+   * A messaging group whose members are whoever currently holds a confirmed
+   * place in a school service — optionally narrowed to one year group, because
+   * message targeting takes a single audience so "Foundation Stage aftercare"
+   * has to be its own group.
+   *
+   * Idempotent: asking twice for the same service and slice returns the group
+   * that already exists rather than a second one.
+   */
+  createFromService: (data: { serviceId: string; yearGroupId?: string; name?: string; categoryId?: string }) =>
+    fetchApi<{ id: string; name: string; created: boolean; members: number }>('/api/groups/from-service', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   get: (id: string) => fetchApi<Group>(`/api/groups/${id}`),
   getMembers: (id: string, params?: { page?: number; limit?: number }) => {
     const searchParams = new URLSearchParams()

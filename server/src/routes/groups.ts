@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
+import { refreshServiceGroup, refreshServiceGroupsForSchool } from '../services/serviceGroups.js'
 import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 
@@ -9,6 +10,11 @@ const router = Router()
 router.get('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
+
+    // Service groups are recomputed at the point of use, so the member counts
+    // an admin reads here are who is in the service NOW — not who was in it
+    // when the group was made.
+    await refreshServiceGroupsForSchool(user.schoolId)
 
     const groups = await prisma.group.findMany({
       where: { schoolId: user.schoolId },
@@ -725,6 +731,101 @@ router.put('/categories/reorder', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error reordering categories:', error)
     res.status(500).json({ error: 'Failed to reorder categories' })
+  }
+})
+
+/**
+ * Create a messaging group from a school service.
+ *
+ * "Broadcast to everyone in aftercare" was only possible by maintaining a group
+ * by hand against a list that changes weekly. This makes one that maintains
+ * itself.
+ *
+ * The optional year group is a filter on the GROUP rather than the send,
+ * because message targeting takes a single audience — "Foundation Stage
+ * aftercare" has to be a group in its own right.
+ *
+ *   POST /api/groups/from-service  { serviceId, yearGroupId?, name?, categoryId? }
+ */
+router.post('/from-service', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { serviceId, yearGroupId, name, categoryId } = req.body ?? {}
+
+    const service = await prisma.schoolService.findFirst({
+      where: { id: typeof serviceId === 'string' ? serviceId : '', schoolId: user.schoolId },
+      select: { id: true, name: true },
+    })
+    if (!service) return res.status(404).json({ error: 'Service not found' })
+
+    const yearGroup = typeof yearGroupId === 'string' && yearGroupId.trim()
+      ? await prisma.yearGroup.findFirst({
+          where: { id: yearGroupId.trim(), schoolId: user.schoolId },
+          select: { id: true, name: true },
+        })
+      : null
+    if (typeof yearGroupId === 'string' && yearGroupId.trim() && !yearGroup) {
+      return res.status(400).json({ error: 'Unknown year group for this school' })
+    }
+
+    // Named for what a teacher picking an audience needs to recognise, which is
+    // the service and the slice — not "Group 4".
+    const groupName = typeof name === 'string' && name.trim()
+      ? name.trim()
+      : yearGroup
+        ? `${service.name} — ${yearGroup.name}`
+        : service.name
+
+    const category = typeof categoryId === 'string' && categoryId.trim()
+      ? await prisma.groupCategory.findFirst({
+          where: { id: categoryId.trim(), schoolId: user.schoolId },
+          select: { id: true },
+        })
+      : null
+
+    // One group per (service, year-group) slice. Asking twice is the same
+    // request, not a second group with the same name — and the name unique
+    // would refuse it anyway.
+    const existing = await prisma.group.findFirst({
+      where: {
+        schoolId: user.schoolId,
+        sourceServiceId: service.id,
+        sourceYearGroupId: yearGroup?.id ?? null,
+      },
+      select: { id: true },
+    })
+
+    const group = existing
+      ? await prisma.group.update({
+          where: { id: existing.id },
+          data: { isActive: true, ...(category ? { categoryId: category.id } : {}) },
+          select: { id: true, name: true },
+        })
+      : await prisma.group.create({
+          data: {
+            name: groupName,
+            description: yearGroup
+              ? `Everyone from ${yearGroup.name} with a confirmed place in ${service.name}. Updates itself.`
+              : `Everyone with a confirmed place in ${service.name}. Updates itself.`,
+            schoolId: user.schoolId,
+            sourceServiceId: service.id,
+            sourceYearGroupId: yearGroup?.id ?? null,
+            ...(category ? { categoryId: category.id } : {}),
+          },
+          select: { id: true, name: true },
+        })
+
+    const refresh = await refreshServiceGroup(group.id)
+
+    res.status(existing ? 200 : 201).json({
+      id: group.id,
+      name: group.name,
+      created: !existing,
+      members: refresh?.members ?? 0,
+    })
+  } catch (error) {
+    console.error('Error creating group from service:', error)
+    res.status(500).json({ error: 'Failed to create group from service' })
   }
 })
 
