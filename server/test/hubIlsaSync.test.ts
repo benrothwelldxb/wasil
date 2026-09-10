@@ -653,3 +653,63 @@ describe('verifying its own outcome', () => {
     expect(summary.withoutHubUserId).toBe(1)
   })
 })
+
+/**
+ * Resolving is not the same as resolving to the RIGHT child.
+ *
+ * A refused ILSA is a person who cannot do their job. A crossed one is a
+ * private safeguarding thread about the wrong family, opened by somebody with
+ * every reason to think it is the right one — and it looks healthy from every
+ * single app, because each app's own view is internally consistent.
+ *
+ * `resolveIlsa` takes the FIRST active link, so an ILSA holding two — Hub
+ * re-linked them and the older row was never deactivated — is silently pointed
+ * at whichever came first.
+ */
+describe('the right child, not just a child', () => {
+  beforeEach(() => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'r1', hubUserId: 'hu-1', name: 'C', email: 'claudia@x.ae', pupilIds: ['hp-alisa'], active: true },
+    ])
+    prismaMock.user.findFirst.mockResolvedValue(null)
+    prismaMock.user.create.mockResolvedValue({ id: 'u-1' })
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1' })
+    prismaMock.ilsaLink.upsert.mockResolvedValue({ id: 'link-1' })
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'u-1', role: 'ILSA', schoolId: 'sch-1', name: 'C' })
+  })
+
+  it('says nothing when the resolved pupil is the one Hub linked', async () => {
+    prismaMock.ilsaLink.findFirst.mockResolvedValue({ studentId: 'stu-1', hubPupilId: 'hp-alisa' })
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.wrongPupil).toEqual([])
+    expect(summary.unresolvable).toEqual([])
+  })
+
+  // The case no "does it resolve" check can see: a clean 200 for the wrong
+  // family.
+  it('catches an ILSA who resolves to a different pupil than Hub linked', async () => {
+    prismaMock.ilsaLink.findFirst.mockResolvedValue({ studentId: 'stu-9', hubPupilId: 'hp-someone-else' })
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    // Resolution SUCCEEDS — which is exactly why this needed its own check.
+    expect(summary.unresolvable).toEqual([])
+    expect(summary.wrongPupil).toEqual([
+      { email: 'claudia@x.ae', hubLinked: 'hp-alisa', resolvedTo: 'hp-someone-else' },
+    ])
+  })
+
+  // Hub sending no pupil is already reported by its own counter; comparing
+  // against nothing would invent a mismatch.
+  it('does not report a mismatch when Hub linked no pupil at all', async () => {
+    misMock.listIlsas.mockResolvedValue([
+      { id: 'r1', hubUserId: 'hu-1', name: 'C', email: 'claudia@x.ae', pupilIds: [], active: true },
+    ])
+    prismaMock.ilsaLink.findFirst.mockResolvedValue({ studentId: 'stu-1', hubPupilId: 'hp-anything' })
+
+    const summary = await syncIlsasForSchool('sch-1')
+
+    expect(summary.wrongPupil).toEqual([])
+    expect(summary.skippedNoPupilId).toBe(1)
+  })
+})
