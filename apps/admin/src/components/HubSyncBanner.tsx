@@ -60,7 +60,9 @@ function summarizeSync(summary: HubSyncSummary): string {
     // number and nowhere to look; the person it names is the one getting a 403
     // from Desk however many times this says "linked".
     if (il.roleConflict) {
-      const who = il.roleConflictEmails?.length ? `: ${il.roleConflictEmails.join(', ')}` : ''
+      const who = il.roleConflicts?.length
+        ? `: ${il.roleConflicts.map(c => `${c.email} (${c.role})`).join(', ')}`
+        : ''
       detail.push(`${il.roleConflict} cannot message — already has another role${who}`)
     }
     if (il.linksDeactivated) detail.push(`${il.linksDeactivated} unlinked`)

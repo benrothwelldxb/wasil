@@ -294,11 +294,14 @@ describe('an ILSA whose account already exists under another role', () => {
       expect(second.roleConflict).toBe(1)
     })
 
-    // A count alone leaves an admin with a number and nowhere to look.
-    it('names who cannot message', async () => {
+    // A count alone leaves an admin with a number and nowhere to look — and a
+    // name alone still leaves the decision needing a database query, because
+    // the ROLE is what decides it. A guardian or staff member is a real person
+    // with another job at the school; anything else is an artefact.
+    it('names who cannot message, and which role is in the way', async () => {
       matchedById('STAFF')
       const summary = await syncIlsasForSchool('sch-1')
-      expect(summary.roleConflictEmails).toEqual(['claudia@example.ae'])
+      expect(summary.roleConflicts).toEqual([{ email: 'claudia@example.ae', role: 'STAFF' }])
     })
 
     it('is still counted as linked — the account is real', async () => {
@@ -311,7 +314,7 @@ describe('an ILSA whose account already exists under another role', () => {
       matchedById('ILSA')
       const summary = await syncIlsasForSchool('sch-1')
       expect(summary.roleConflict).toBe(0)
-      expect(summary.roleConflictEmails).toEqual([])
+      expect(summary.roleConflicts).toEqual([])
     })
   })
 })
