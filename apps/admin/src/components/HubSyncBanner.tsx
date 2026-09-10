@@ -91,12 +91,19 @@ function summarizeSync(summary: HubSyncSummary): string {
     // Who Hub sent, listed. `8 ILSAs from Hub` is only reassuring if the eight
     // are the eight you expected, and every other line here can only describe
     // people who were in that list.
-    // The line that matters most, so it goes first: these people were
-    // provisioned by this very sync and still cannot message anyone.
-    if (il.unresolvable?.length) {
+    // Reported either way, and first.
+    //
+    // Shown only when non-empty, its ABSENCE meant two things — "everyone can
+    // message" and "this build cannot tell you" — which is precisely the fault
+    // this whole line was added to catch, reintroduced in the catching of it.
+    // A check that is silent when it passes cannot be distinguished from a
+    // check that never ran.
+    if (typeof il.verified === 'number') {
       detail.unshift(
-        `${il.unresolvable.length} STILL CANNOT MESSAGE: ` +
-          il.unresolvable.map(u => `${u.email} — ${u.why}`).join('; '),
+        il.unresolvable?.length
+          ? `${il.unresolvable.length} of ${il.verified} STILL CANNOT MESSAGE: ` +
+            il.unresolvable.map(u => `${u.email} — ${u.why}`).join('; ')
+          : `${il.verified} checked, all can message`,
       )
     }
     if (il.fetchedHubUserIds?.length) {
