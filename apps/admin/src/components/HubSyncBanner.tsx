@@ -42,112 +42,47 @@ function summarizeSync(summary: HubSyncSummary): string {
     parts.push(`${g.fetched} parent${g.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
   }
 
-  // ILSAs, spelled out the same way and for the same reason. An ILSA with no
-  // IlsaLink resolves to no messaging actor at all, so a shortfall here is the
-  // difference between an assistant who can message their pupil's parent and
-  // one who is told they have nobody to message.
+  // ILSAs: only when something is wrong.
+  //
+  // What used to be here — who Hub sent, their ids, the repairs, the counts of
+  // each skip reason, the line confirming everyone can message — was
+  // scaffolding for a bug that is now fixed, and it had grown into a toast too
+  // long to read. An unread toast is its own kind of silence, which is the
+  // thing all of it was fighting.
+  //
+  // What stays is the alarm, and nothing else: a sync that threw, an ILSA who
+  // cannot message, and a link to the wrong child. Each is silent when healthy,
+  // so a school with working ILSAs now sees no ILSA text at all. The checks
+  // themselves are untouched — the server still runs every one of them; this
+  // only decides what is worth interrupting an admin about.
   const il = summary.ilsas
-  // A crash first, and loudly. Reporting it as "no ILSAs" is how this went
-  // unnoticed: the sync threw on every record and the toast said nothing.
   if (il?.failed) {
     parts.push(`ILSA sync failed — ${il.error ?? 'see server logs'}`)
-  } else if (il?.fetched) {
-    const detail: string[] = []
-    if (il.linksActive) detail.push(`${il.linksActive} linked to a pupil`)
-    if (il.skippedNoEmail) detail.push(`${il.skippedNoEmail} skipped, no email`)
-    if (il.skippedNoPupil) detail.push(`${il.skippedNoPupil} skipped, pupil not synced`)
-    if (il.skippedNoPupilId) detail.push(`${il.skippedNoPupilId} skipped, no pupil sent`)
-    // The reason an ILSA can exist in Connect and still not be able to message:
-    // Hub has no user id for them until they have signed in once.
-    // Named. This line has read "1 not signed into Hub yet" for weeks while an
-    // ILSA sat unable to message, and an unnamed one is impossible to check
-    // against a staff list.
+  } else if (il) {
+    const count = (n: number) => `${n} ILSA${n !== 1 ? 's' : ''}`
+    // Above the rest: a crossed link is a private thread about the wrong
+    // family, and it looks healthy from every other angle.
+    if (il.wrongPupil?.length) {
+      parts.push(
+        `${count(il.wrongPupil.length)} LINKED TO THE WRONG CHILD: ` +
+          il.wrongPupil.map(w => w.email).join(', '),
+      )
+    }
+    // The outcome-level check: provisioned, counted as linked, and still unable
+    // to resolve to a messaging actor. It subsumes the per-step skip counters
+    // that used to be listed one by one.
+    if (il.unresolvable?.length) {
+      parts.push(
+        `${count(il.unresolvable.length)} cannot message: ` +
+          il.unresolvable.map(u => `${u.email} — ${u.why}`).join('; '),
+      )
+    }
+    // Not covered by that check, which can only verify an ILSA Hub gave an id
+    // for. Named, because an unnamed one can't be checked against a staff list.
     if (il.withoutHubUserId) {
       const who = il.withoutHubUserIdEmails?.length ? `: ${il.withoutHubUserIdEmails.join(', ')}` : ''
-      detail.push(`${il.withoutHubUserId} cannot message — Hub sent no user id${who}`)
+      parts.push(`${count(il.withoutHubUserId)} cannot message — not signed into Hub yet${who}`)
     }
-    // Reads as success otherwise: the account was found and updated, but under
-    // a role that cannot act as an ILSA.
-    // Named, not counted. "1 already has another role" leaves an admin with a
-    // number and nowhere to look; the person it names is the one getting a 403
-    // from Desk however many times this says "linked".
-    if (il.roleConflict) {
-      const who = il.roleConflicts?.length
-        ? `: ${il.roleConflicts.map(c => `${c.email} (${c.role})`).join(', ')}`
-        : ''
-      detail.push(`${il.roleConflict} cannot message — already has another role${who}`)
-    }
-    // The refusal is correct; the silence was the bug. Named with both ids,
-    // because "1 id mismatch" is not something anyone can act on.
-    if (il.idMismatch?.length) {
-      detail.push(
-        `${il.idMismatch.length} cannot message — account holds a different Hub id: ` +
-          il.idMismatch.map(m => `${m.email} (has ${m.held}, expected ${m.expected})`).join(', '),
-      )
-    }
-    // Reported even though it succeeded: a sync that quietly rewrites an
-    // identity column should say whose, and to what.
-    if (il.repairedLegacyId?.length) {
-      detail.push(
-        `${il.repairedLegacyId.length} Hub id repaired: ` +
-          il.repairedLegacyId.map(r => `${r.email} (was ${r.was})`).join(', '),
-      )
-    }
-    if (il.linksDeactivated) detail.push(`${il.linksDeactivated} unlinked`)
-    // Who Hub sent, listed. `8 ILSAs from Hub` is only reassuring if the eight
-    // are the eight you expected, and every other line here can only describe
-    // people who were in that list.
-    // Reported either way, and first.
-    //
-    // Shown only when non-empty, its ABSENCE meant two things — "everyone can
-    // message" and "this build cannot tell you" — which is precisely the fault
-    // this whole line was added to catch, reintroduced in the catching of it.
-    // A check that is silent when it passes cannot be distinguished from a
-    // check that never ran.
-    // Above everything, including the refusals: a crossed link is a private
-    // thread about the wrong family, and it looks healthy from every side.
-    if (il.wrongPupil?.length) {
-      detail.unshift(
-        `${il.wrongPupil.length} LINKED TO THE WRONG CHILD: ` +
-          il.wrongPupil.map(w => `${w.email} — Hub says pupil ${w.hubLinked}, Connect resolves ${w.resolvedTo}`).join('; '),
-      )
-    }
-    if (typeof il.verified === 'number') {
-      detail.unshift(
-        il.unresolvable?.length
-          ? `${il.unresolvable.length} of ${il.verified} STILL CANNOT MESSAGE: ` +
-            il.unresolvable.map(u => `${u.email} — ${u.why}`).join('; ')
-          : `${il.verified} checked, all can message${il.wrongPupil?.length ? '' : ', all on the right child'}`,
-      )
-    }
-    if (il.fetchedHubUserIds?.length) {
-      // With the id, because an ILSA can be fetched, linked and reported clean
-      // and still be unreachable when the id Hub's list carries is not the id
-      // the partner caller sends. Only the value shows that; no count can.
-      detail.push(
-        `Hub sent: ${il.fetchedHubUserIds
-          .map(i => `${i.email} [${i.hubUserId ? `${i.hubUserId.slice(0, 8)}…` : 'no id'}]`)
-          .join(', ')}`,
-      )
-    } else if (il.fetchedEmails?.length) {
-      detail.push(`Hub sent: ${il.fetchedEmails.join(', ')}`)
-    }
-    parts.push(`${il.fetched} ILSA${il.fetched !== 1 ? 's' : ''} from Hub${detail.length ? ` (${detail.join(', ')})` : ''}`)
-  } else if (il) {
-    // Reported even at zero, deliberately.
-    //
-    // Saying nothing for an empty roster made silence mean two things at once:
-    // "Hub sent no ILSAs" and "this build predates ILSA reporting". Those need
-    // completely different people to act, and no one could tell them apart from
-    // the toast — which is the whole reason the toast exists.
-    //
-    // `ilsas` is always present now, so any ILSA text at all proves the build,
-    // and its absence means an old one. Mild noise for a school with no ILSAs
-    // buys an unambiguous signal for every school that has them.
-    const removed = il.linksDeactivated
-      ? `, ${il.linksDeactivated} link${il.linksDeactivated !== 1 ? 's' : ''} removed`
-      : ''
-    parts.push(`no ILSAs from Hub${removed}`)
   }
 
   if (parts.length === 0) return 'Synced from Hub — no changes'
