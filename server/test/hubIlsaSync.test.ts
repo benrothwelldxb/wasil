@@ -318,3 +318,110 @@ describe('an ILSA whose account already exists under another role', () => {
     })
   })
 })
+
+/**
+ * The account holds a DIFFERENT Hub id from the one Hub sends.
+ *
+ * The claim is refused, correctly — one person's identity must never be
+ * re-pointed at another. But the refusal was silent: the email match still
+ * succeeded, the pupil link still went active, and the sync still counted them
+ * among the linked, while every partner call for that person 403'd because the
+ * resolver looks up the id Hub sends and the row holds another.
+ *
+ * A legitimate refusal reporting itself as a success is the same fault as the
+ * role conflict that used to hide, in a different place.
+ */
+describe('an account holding the wrong Hub id', () => {
+  const HUB_USER_ID = 'ncWYLfVnnSACfLLVx9twUyn1AlxbqcLk'
+  const RECORD_ID = 'cmtkcv82l48vura0l23g8zt57'
+
+  const hubSends = () =>
+    misMock.listIlsas.mockResolvedValue([
+      { id: RECORD_ID, hubUserId: HUB_USER_ID, name: 'Claudia Mbeng', email: 'claudia@x.ae', pupilIds: ['hp-1'], active: true },
+    ])
+
+  /** No match on the id (the row holds another), then a match on the email. */
+  const rowHolding = (held: string) =>
+    prismaMock.user.findFirst.mockImplementation(async ({ where }: any) => {
+      if (where.hubUserId && !where.NOT) return null
+      if (where.email) return { id: 'u-1', email: 'claudia@x.ae', role: 'ILSA', hubUserId: held }
+      return null
+    })
+
+  beforeEach(() => {
+    hubSends()
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1' })
+    prismaMock.ilsaLink.upsert.mockResolvedValue({ id: 'link-1' })
+    prismaMock.user.update.mockResolvedValue({})
+  })
+
+  describe('when the held value is this ILSA’s own Hub RECORD id', () => {
+    // Provably an artefact of an older version of this code, not a collision:
+    // no SSO subject will ever match a record id, so replacing it re-points
+    // nobody.
+    it('repairs it and says whose, and to what', async () => {
+      rowHolding(RECORD_ID)
+      const summary = await syncIlsasForSchool('sch-1')
+
+      expect(summary.repairedLegacyId).toEqual([{ email: 'claudia@x.ae', was: RECORD_ID }])
+      expect(summary.idMismatch).toEqual([])
+      expect(prismaMock.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ hubUserId: HUB_USER_ID }) }),
+      )
+    })
+
+    // Two accounts disagreeing about who someone is must be reported, never
+    // resolved by a sync picking one.
+    it('refuses to repair when another account already holds the correct id', async () => {
+      prismaMock.user.findFirst.mockImplementation(async ({ where }: any) => {
+        if (where.NOT) return { id: 'someone-else' }      // the target id is taken
+        if (where.hubUserId) return null
+        if (where.email) return { id: 'u-1', email: 'claudia@x.ae', role: 'ILSA', hubUserId: RECORD_ID }
+        return null
+      })
+
+      const summary = await syncIlsasForSchool('sch-1')
+
+      expect(summary.repairedLegacyId).toEqual([])
+      expect(summary.idMismatch).toEqual([
+        { email: 'claudia@x.ae', held: RECORD_ID, expected: HUB_USER_ID },
+      ])
+      expect(prismaMock.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.not.objectContaining({ hubUserId: expect.anything() }) }),
+      )
+    })
+  })
+
+  describe('when the held value is anything else', () => {
+    // Could be another real person's identity. Reported, never touched.
+    it('reports it with both ids and does not repair', async () => {
+      rowHolding('some-other-persons-id')
+      const summary = await syncIlsasForSchool('sch-1')
+
+      expect(summary.idMismatch).toEqual([
+        { email: 'claudia@x.ae', held: 'some-other-persons-id', expected: HUB_USER_ID },
+      ])
+      expect(summary.repairedLegacyId).toEqual([])
+      expect(prismaMock.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.not.objectContaining({ hubUserId: expect.anything() }) }),
+      )
+    })
+
+    // The bug this whole thread was about: reported as success, every run.
+    it('is no longer counted as a clean linked account and nothing else', async () => {
+      rowHolding('some-other-persons-id')
+      const summary = await syncIlsasForSchool('sch-1')
+
+      expect(summary.linked).toBe(1)
+      expect(summary.idMismatch).toHaveLength(1)
+      expect(summary.roleConflict).toBe(0)
+    })
+  })
+
+  it('an account holding exactly the right id is neither reported nor touched', async () => {
+    rowHolding(HUB_USER_ID)
+    const summary = await syncIlsasForSchool('sch-1')
+    expect(summary.idMismatch).toEqual([])
+    expect(summary.repairedLegacyId).toEqual([])
+  })
+})
