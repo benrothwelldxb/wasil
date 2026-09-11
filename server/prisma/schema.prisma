@@ -150,9 +150,6 @@ model School {
   // Cafeteria
   cafeteriaMenus      CafeteriaMenu[]
   cafeteriaCategories CafeteriaCategory[]
-  // Inclusion relations
-  inclusionApiKeys    InclusionApiKey[]
-  studentIeps         StudentIep[]
   // Report card relations
   studentReports      StudentReport[]
   // Attendance relations
@@ -169,7 +166,7 @@ model School {
   // Google Calendar integration
   googleCalendarRefreshToken String?
   googleCalendarEmail        String?
-  transportAssignments TransportAssignment[]
+  transportAssignments       TransportAssignment[]
 }
 
 // Users (Parents, Staff & Admins)
@@ -393,8 +390,6 @@ model Student {
   conversations      Conversation[]
   // ILSA scope links (the ILSA(s) assigned to this pupil for messaging).
   ilsaLinks          IlsaLink[]
-  // Inclusion relations
-  ieps               StudentIep[]
   // Report card relations
   reports            StudentReport[]
   // Attendance relations
@@ -417,12 +412,8 @@ model Student {
   // Hub sends back has it cleared on the next sync.
   leftAt DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([schoolId, externalId])
-  @@index([schoolId, classId])
-  @@index([schoolId, leftAt])
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
   transportAssignments TransportAssignment[]
 
   // Attendance, mirrored from Hub (Hub handoff, 4 Sep 2026). Hub serves the
@@ -435,6 +426,10 @@ model Student {
   // percentage is shown — a bare percentage quietly implies today, and this
   // number can be weeks old because a human has to upload it.
   attendanceAsOf       String?
+
+  @@unique([schoolId, externalId])
+  @@index([schoolId, classId])
+  @@index([schoolId, leftAt])
 }
 
 // Junction table: Parent-Student link
@@ -475,9 +470,9 @@ model YearGroup {
   scheduleItems  ScheduleItem[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+  serviceGroups  Group[]        @relation("ServiceGroupYearGroup")
 
   @@unique([schoolId, name])
-  serviceGroups Group[] @relation("ServiceGroupYearGroup")
 }
 
 // Classes/Year Groups
@@ -545,11 +540,11 @@ model Message {
   /// a message from a school department — the clinic, accounts — which is kept
   /// out of the feed and filed in its own section, because a fee reminder and a
   /// medication note are not news and should not compete with it.
-  channel     MessageChannel @default(FEED)
+  channel    MessageChannel @default(FEED)
   /// Which desk it came from, e.g. "School Clinic". Shown to parents in place
   /// of the sender's name; the sender is still recorded on senderId, so the
   /// audit trail knows the person while the parent sees the department.
-  department  String?
+  department String?
 
   // Message flags
   isPinned               Boolean @default(false)
@@ -1216,12 +1211,12 @@ model Group {
   // partner API when Accounts confirm or take payment in Desk, and a group that
   // is quietly stale is worse than no group at all — you would broadcast to
   // last month's list believing it was current.
-  sourceServiceId String?
-  sourceService   SchoolService? @relation(fields: [sourceServiceId], references: [id], onDelete: SetNull)
+  sourceServiceId   String?
+  sourceService     SchoolService? @relation(fields: [sourceServiceId], references: [id], onDelete: SetNull)
   /// Optional narrowing, because message targeting takes ONE audience: a group
   /// for "Foundation Stage aftercare" has to be the filter, not the send.
   sourceYearGroupId String?
-  sourceYearGroup   YearGroup? @relation("ServiceGroupYearGroup", fields: [sourceYearGroupId], references: [id], onDelete: SetNull)
+  sourceYearGroup   YearGroup?     @relation("ServiceGroupYearGroup", fields: [sourceYearGroupId], references: [id], onDelete: SetNull)
 
   studentMembers StudentGroupLink[]
   staffManagers  StaffGroupAssignment[]
@@ -1232,6 +1227,14 @@ model Group {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The publishing system's own id for this group, e.g. an Active club roster.
+  /// Unique per school so a re-publish upserts instead of colliding with
+  /// @@unique([schoolId, name]) — which is what forced callers to mangle names
+  /// like "Football (Autumn Term)" just to stay unique. Null for a group made
+  /// by hand in Connect, which is most of them.
+  externalRef String?
+
+  @@unique([schoolId, externalRef])
   // NOTE: (schoolId, name) is still unique, but only for groups a school made
   // by hand — enforced by a PARTIAL index (`WHERE "externalRef" IS NULL`) that
   // Prisma cannot express, so it lives in the migration and NOT here.
@@ -1246,15 +1249,6 @@ model Group {
   // Term)" — purely to get past the constraint, which put a workaround in front
   // of parents. Published groups are identified by externalRef instead.
   @@index([schoolId, isActive])
-
-  /// The publishing system's own id for this group, e.g. an Active club roster.
-  /// Unique per school so a re-publish upserts instead of colliding with
-  /// @@unique([schoolId, name]) — which is what forced callers to mangle names
-  /// like "Football (Autumn Term)" just to stay unique. Null for a group made
-  /// by hand in Connect, which is most of them.
-  externalRef String?
-
-  @@unique([schoolId, externalRef])
 }
 
 // Student membership in groups
@@ -1446,8 +1440,8 @@ model EcaActivity {
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 
-  @@index([ecaTermId, dayOfWeek, timeSlot])
   @@unique([schoolId, externalRef])
+  @@index([ecaTermId, dayOfWeek, timeSlot])
   @@index([schoolId, isActive])
   @@index([providerId])
   @@index([operatorId])
@@ -1670,26 +1664,26 @@ enum EcaSuggestionStatus {
 // ============================================
 
 model ConsultationEvent {
-  id            String                @id @default(cuid())
-  schoolId      String
-  school        School                @relation(fields: [schoolId], references: [id])
-  title         String // e.g., "Spring Term Parents' Evening"
-  description   String?
-  date          String // YYYY-MM-DD
-  endDate       String? // For multi-day events
-  status        ConsultationStatus    @default(DRAFT)
-  slotDuration  Int                   @default(10) // minutes per slot
-  breakDuration Int                   @default(0) // minutes break between slots
+  id               String                @id @default(cuid())
+  schoolId         String
+  school           School                @relation(fields: [schoolId], references: [id])
+  title            String // e.g., "Spring Term Parents' Evening"
+  description      String?
+  date             String // YYYY-MM-DD
+  endDate          String? // For multi-day events
+  status           ConsultationStatus    @default(DRAFT)
+  slotDuration     Int                   @default(10) // minutes per slot
+  breakDuration    Int                   @default(0) // minutes break between slots
   // When the evening runs. Set once on the event, then every teacher added
   // inherits it — the times are a property of the evening, not of each
   // teacher, and typing them thirty times was the actual friction. A teacher
   // who differs still gets their own windows; this is only the starting point.
   defaultStartTime String? // "15:30"
   defaultEndTime   String? // "18:30"
-  targetClass   String? // null = whole school, or specific class name
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
-  teachers      ConsultationTeacher[]
+  targetClass      String? // null = whole school, or specific class name
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  teachers         ConsultationTeacher[]
 }
 
 model ConsultationTeacher {
@@ -2247,48 +2241,6 @@ model CafeteriaCafeItem {
   @@index([categoryId])
 }
 
-// ============================================
-// Wasil Inclusion Integration
-// ============================================
-
-// API key for Wasil Inclusion to push IEP data
-model InclusionApiKey {
-  id         String    @id @default(cuid())
-  schoolId   String
-  school     School    @relation(fields: [schoolId], references: [id])
-  key        String    @unique
-  label      String
-  isActive   Boolean   @default(true)
-  lastUsedAt DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@index([schoolId])
-}
-
-// IEP data pushed from Wasil Inclusion
-model StudentIep {
-  id            String   @id @default(cuid())
-  studentId     String
-  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  schoolId      String
-  school        School   @relation(fields: [schoolId], references: [id])
-  title         String // "Spring Term IEP 2025/26"
-  status        String   @default("ACTIVE") // ACTIVE, COMPLETED, ARCHIVED
-  targets       Json // [{area, target, strategies, progress, status}]
-  reviewDate    String?
-  keyWorker     String?
-  notes         String?
-  // Unpublished until someone says otherwise. A row that reaches this table
-  // without an explicit decision is not yet the family's to read.
-  parentVisible Boolean  @default(false)
-  syncedAt      DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([studentId])
-  @@index([schoolId])
-}
-
 // Student Report Cards (uploaded PDFs matched by UPN)
 model StudentReport {
   id           String   @id @default(cuid())
@@ -2472,12 +2424,12 @@ model Provider {
 /// the child's own guardians and to nobody else — there is no staff-facing
 /// transport surface in Connect at all.
 model TransportAssignment {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id])
+  school    School       @relation(fields: [schoolId], references: [id])
   studentId String
   // Cascade, not SetNull: a child who leaves takes their address with them.
-  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   leg       TransportLeg
 
   routeName String

@@ -51,7 +51,6 @@ import inboxRoutes from './routes/inbox.js'
 import partnerRoutes from './routes/partner.js'
 import partnerCommunicationRoutes from './routes/partnerCommunication.js'
 import searchRoutes from './routes/search.js'
-import inclusionRoutes from './routes/inclusion.js'
 import cafeteriaRoutes from './routes/cafeteria.js'
 import attendanceRoutes from './routes/attendance.js'
 import schoolSettingsRoutes from './routes/schoolSettings.js'
@@ -195,7 +194,6 @@ app.use('/api/school-services', schoolServicesRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/inbox', inboxRoutes)
 app.use('/api/search', searchRoutes)
-app.use('/api/inclusion', inclusionRoutes)
 app.use('/api/cafeteria', cafeteriaRoutes)
 app.use('/api/attendance', attendanceRoutes)
 app.use('/api/school-settings', schoolSettingsRoutes)

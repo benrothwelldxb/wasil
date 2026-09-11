@@ -2427,23 +2427,6 @@ export const cafeteria = {
     fetchApi<{ success: boolean }>(`/api/cafeteria/cafe/items/${id}`, { method: 'DELETE' }),
 }
 
-// Inclusion
-export const inclusion = {
-  myChildrenIeps: () =>
-    fetchApi<import('../types').StudentIep[]>('/api/inclusion/my-children'),
-  apiKeys: () =>
-    fetchApi<Array<{ id: string; label: string; isActive: boolean; lastUsedAt: string | null; createdAt: string }>>('/api/inclusion/api-keys'),
-  createApiKey: (label: string) =>
-    fetchApi<{ id: string; label: string; key: string; createdAt: string }>('/api/inclusion/api-keys', {
-      method: 'POST',
-      body: JSON.stringify({ label }),
-    }),
-  revokeApiKey: (id: string) =>
-    fetchApi<{ success: boolean }>(`/api/inclusion/api-keys/${id}`, {
-      method: 'DELETE',
-    }),
-}
-
 // Attendance
 import type {
   AttendanceOverview,
@@ -3119,7 +3102,6 @@ export default {
   inbox,
   search,
   cafeteria,
-  inclusion,
   attendance,
   schoolSettings,
 }

@@ -709,30 +709,6 @@ export interface Student {
   fromHub?: boolean
 }
 
-// Inclusion/IEP types
-export interface StudentIep {
-  id: string
-  studentId: string
-  studentName: string
-  className: string
-  title: string
-  status: string
-  targets: IepTarget[]
-  reviewDate?: string | null
-  keyWorker?: string | null
-  notes?: string | null
-  syncedAt: string
-  updatedAt: string
-}
-
-export interface IepTarget {
-  area: string      // e.g. "Communication", "Social Skills"
-  target: string    // The target description
-  strategies: string // How to achieve it
-  progress?: string  // Current progress notes
-  status?: string    // "Not Started", "In Progress", "Achieved"
-}
-
 export interface StudentReport {
   id: string
   studentId: string

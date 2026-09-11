@@ -1,0 +1,27 @@
+-- Decommission the Wasil Inclusion push lane.
+--
+-- Connect accepted IEP data pushed from Wasil Inclusion over a school-scoped
+-- X-API-Key, and served it to linked parents. Wasil Inclusion is becoming the
+-- source of truth for IEP content, with Connect READING it over the guardian
+-- API instead — so a push lane would make Connect a second source of truth for
+-- facts it does not own, which is the thing the direct-integration decision
+-- was taken to avoid.
+--
+-- Both tables are empty. Wasil Inclusion has never called these routes
+-- (verified in its codebase: no reference to X-API-Key, InclusionApiKey or
+-- StudentIep), nothing in Connect wrote to them, and the product has not
+-- launched. This drops an unused lane rather than deleting anything a family
+-- can see.
+--
+-- The lane is removed rather than repointed because three separate faults all
+-- lived in its defaults, and each would have had to be fixed to keep it:
+--   * publication happened by OMISSION — `parentVisible !== false` at both
+--     push sites over a column that defaulted true, so a caller who never
+--     heard of the flag published a child's IEP to their family;
+--   * the parent serialiser passed the whole `targets` JSON through with no
+--     field projection;
+--   * SEND's stored progress vocabulary (no_progress, regression) is clinical
+--     language that Connect's page would have rendered raw, as a chip.
+-- See docs/adr/0002-iep-strategies-are-shown-to-families.md.
+DROP TABLE IF EXISTS "StudentIep";
+DROP TABLE IF EXISTS "InclusionApiKey";
