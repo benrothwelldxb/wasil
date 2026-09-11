@@ -36,6 +36,7 @@ import {
   listPupils,
   listStaff,
   listGuardians,
+  HubRosterIncompleteError,
   type HubStaff,
   type HubGuardian,
   type HubClassTeacher,
@@ -73,12 +74,27 @@ export interface SyncSummary {
    * different problem from nobody having uploaded an export. Coverage is
    * partial by nature even when it is granted. */
   attendance: { withFigure: number; noFigure: number; scopeGranted: boolean }
-  /** Pupils who have left. `marked` = on-roll Students that Hub no longer
-   * returns for a class it DID send us pupils for, now stamped `leftAt`;
-   * `returned` = pupils Hub sent back, un-marked. `classesTrusted` /
-   * `classesTotal` says how much of the roster the sweep could actually judge —
-   * a class Hub returned nothing for is never used to conclude anyone left. */
-  leavers: { marked: number; returned: number; classesTrusted: number; classesTotal: number }
+  /** Pupils who have left, by how we found out — the distinction matters,
+   * because one is Hub's word and the other is ours.
+   *   `stated`   Hub returned them with enrolmentStatus LEFT/ARCHIVED. A fact.
+   *   `vanished` Hub's full roster no longer mentions them at all. An
+   *              inference, and the only one left; it carries a floor.
+   *   `marked`   = stated + vanished, newly stamped this run (a pupil already
+   *              marked is never re-stamped — a walking exit date looks
+   *              authoritative and isn't).
+   *   `returned` Hub has them on roll again; the mark is cleared.
+   *   `sweepRefused` names why the vanished sweep declined to run, when it did.
+   *   `unplaced` pupils on roll whose Hub class Connect can't resolve — they
+   *              are in Hub's roster and NOT in Connect's, which nothing else
+   *              would say out loud. */
+  leavers: {
+    marked: number
+    returned: number
+    stated: number
+    vanished: number
+    sweepRefused?: string
+    unplaced: number
+  }
   /** Staff, split by whether the Connect user was created or updated/linked. */
   staff: { created: number; updated: number }
   /** Guardians provisioned as Connect PARENT users. `fetched` = how many Hub
@@ -185,10 +201,20 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   }
 
   // --- 3. Pupils -----------------------------------------------------------
-  // Fetched per Hub class so each pupil ties to a known Hub class id (the
-  // PupilDTO carries only the class *name*). Connect's Student.classId is
-  // required, so pupils with no class assignment can't be mirrored and are
-  // simply not returned by the per-class fetch.
+  // ONE school-wide fetch, not one per class.
+  //
+  // This used to fan out over classes because "the PupilDTO carries only the
+  // class name, not its id". Hub serves `classId` now — it was added precisely
+  // so consumers stop matching on names — and the fan-out outlived the reason
+  // for it by months, because the comment saying otherwise still read as
+  // current. That cost ~24 requests a sync, but the real price was the leaver
+  // signal: Hub applies its current-enrolment filter ONLY when classId or
+  // yearGroupId is passed, so the per-class shape could never see a leaver and
+  // left absence as the only thing to reason from.
+  //
+  // Fetched school-wide, Hub STATES it: `onRoll` and `enrolmentStatus` come
+  // back for pupils who have gone. See 3b.
+  //
   // Map: firstName → firstName, lastName → lastName, class → resolved Connect
   // class. Unmapped Hub fields: preferredName, senStatus, dateOfBirth, gender,
   // religion, houseName, arabicLanguage, termOfBirth, guardians (no Connect
@@ -208,101 +234,166 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   // hubPupilId → Connect Student id, so the guardian pass can resolve each
   // guardian→pupil edge to a real Student without re-querying.
   const studentIdByHubPupil = new Map<string, string>()
-  // Connect class ids Hub actually sent pupils for. Only these are trusted by
-  // the leaver sweep below — see the reasoning there.
-  const classesWithPupils: string[] = []
-  for (const cls of hubClasses) {
-    const classId = classIdByHub.get(cls.id)
-    if (!classId) continue
-    const hubPupils = await listPupils(hubSchoolId, { classId: cls.id })
-    if (hubPupils.length > 0) classesWithPupils.push(classId)
-    for (const p of hubPupils) {
-      const misId = p.misId?.trim() || null
-      if (misId) misIds.withMisId++
-      else misIds.missing++
+  // Pupils Hub says have gone — stamped in one statement after the loop.
+  const statedLeftHubIds: string[] = []
+  // On roll, but in a class Connect can't resolve. Impossible under the old
+  // per-class fetch (an unknown class was simply never asked about), so it
+  // needs saying out loud now: a pupil here is in Hub's roster and NOT in
+  // Connect's, silently, and Student.classId is required so there is nowhere to
+  // put them.
+  let unplaced = 0
 
-      // Three states, not two. The field being ABSENT means our token lacks the
-      // scope — Hub didn't tell us. `null` means Hub has no figure for this
-      // pupil. Only a present object is a figure, and neither of the other two
-      // is 0%.
-      const hasScope = p.attendance !== undefined
-      if (hasScope) attendance.scopeGranted = true
-      const figure = p.attendance ?? null
-      if (hasScope) {
-        if (figure) attendance.withFigure++
-        else attendance.noFigure++
-      }
-      // Written only when Hub actually told us something. Without the scope the
-      // columns are left exactly as they were, so losing the scope does not
-      // silently blank every pupil's attendance.
-      const attendanceWrite = hasScope
-        ? { attendancePercentage: figure?.percentage ?? null, attendanceAsOf: figure?.asOf ?? null }
-        : {}
-      const row = await prisma.student.upsert({
-        where: { hubPupilId: p.id },
-        create: {
-          hubPupilId: p.id,
-          firstName: p.firstName,
-          lastName: p.lastName,
-          externalId: misId,
-          schoolId,
-          classId,
-          ...attendanceWrite,
-        },
-        update: {
-          firstName: p.firstName,
-          lastName: p.lastName,
-          // Only WRITE a UPN, never erase one. Hub sending no misId means Hub
-          // doesn't know it — not that Connect's is wrong. The previous
-          // `misId ?? null` wiped a hand-entered UPN on every sync, which is
-          // also how a working report-card match could stop working overnight.
-          ...(misId ? { externalId: misId } : {}),
-          classId,
-          ...attendanceWrite,
-        },
-      })
-      studentIdByHubPupil.set(p.id, row.id)
-      pupils++
+  const hubPupils = await listPupils(hubSchoolId)
+
+  // The wire has to carry the fields this now depends on. An older Hub would
+  // return pupils with neither, and every one of them would read as "on roll,
+  // no class" — a whole school quietly unplaced. Fail loudly instead of
+  // half-working: one path, and it says exactly what is missing.
+  if (hubPupils.length > 0) {
+    const carriesClassId = hubPupils.some(p => 'classId' in p)
+    const carriesRollState = hubPupils.some(p => 'onRoll' in p || 'enrolmentStatus' in p)
+    if (!carriesClassId || !carriesRollState) {
+      throw new HubRosterIncompleteError(
+        'Hub pupils carry no classId/onRoll — this Hub predates the fields the roster sync needs',
+      )
     }
   }
 
+  for (const p of hubPupils) {
+    // Hub states roster membership; absence is no longer the signal.
+    // PRE_ENROLLED is "hasn't started", not "has left", and a null status is
+    // "no enrolment this year at all" — neither is a departure, and neither
+    // belongs on Connect's roster either. Only ACTIVE is mirrored.
+    if (p.onRoll === false) {
+      if (p.enrolmentStatus === 'LEFT' || p.enrolmentStatus === 'ARCHIVED') {
+        statedLeftHubIds.push(p.id)
+      }
+      // Deliberately no upsert: a pupil who has left and was never in Connect
+      // must not be CREATED here just because Hub still lists them.
+      continue
+    }
+
+    const classId = p.classId ? classIdByHub.get(p.classId) : undefined
+    if (!classId) {
+      unplaced++
+      continue
+    }
+
+    const misId = p.misId?.trim() || null
+    if (misId) misIds.withMisId++
+    else misIds.missing++
+
+    // Three states, not two. The field being ABSENT means our token lacks the
+    // scope — Hub didn't tell us. `null` means Hub has no figure for this
+    // pupil. Only a present object is a figure, and neither of the other two
+    // is 0%.
+    const hasScope = p.attendance !== undefined
+    if (hasScope) attendance.scopeGranted = true
+    const figure = p.attendance ?? null
+    if (hasScope) {
+      if (figure) attendance.withFigure++
+      else attendance.noFigure++
+    }
+    // Written only when Hub actually told us something. Without the scope the
+    // columns are left exactly as they were, so losing the scope does not
+    // silently blank every pupil's attendance.
+    const attendanceWrite = hasScope
+      ? { attendancePercentage: figure?.percentage ?? null, attendanceAsOf: figure?.asOf ?? null }
+      : {}
+    const row = await prisma.student.upsert({
+      where: { hubPupilId: p.id },
+      create: {
+        hubPupilId: p.id,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        externalId: misId,
+        schoolId,
+        classId,
+        ...attendanceWrite,
+      },
+      update: {
+        firstName: p.firstName,
+        lastName: p.lastName,
+        // Only WRITE a UPN, never erase one. Hub sending no misId means Hub
+        // doesn't know it — not that Connect's is wrong. The previous
+        // `misId ?? null` wiped a hand-entered UPN on every sync, which is
+        // also how a working report-card match could stop working overnight.
+        ...(misId ? { externalId: misId } : {}),
+        classId,
+        ...attendanceWrite,
+      },
+    })
+    studentIdByHubPupil.set(p.id, row.id)
+    pupils++
+  }
+
   // --- 3b. Leavers ---------------------------------------------------------
-  // Hub models leaving as an enrolment status, but its per-class pupil list is
-  // scoped to an ACTIVE enrolment in the CURRENT academic year — so a pupil
-  // marked as left in Hub does not come back flagged, they simply stop being
-  // returned. Upserting alone could never notice that: the Student row, its
-  // guardian links and therefore the whole family stayed on the roster forever,
-  // which is how children who had left were still being counted in analytics.
+  // Two signals now, and the strong one is Hub's own words.
   //
-  // Absence is the signal, so it is only trusted where we have fresh data to
-  // read it from: a class Hub returned at least one pupil for. A class that
-  // came back EMPTY is not evidence that everyone in it left — it is equally a
-  // Hub blip, a lost subscription, or the gap at rollover before this year's
-  // enrolments exist, when every class returns nothing and this sweep would
-  // otherwise empty the school in one run. The safe failure is a leaver we
-  // haven't spotted yet, never a class marked gone; `classesTrusted` vs
-  // `classesTotal` reports how much of the roster was actually judged.
+  // STATED: fetched school-wide, Hub returns a pupil who has gone with
+  // `enrolmentStatus: 'LEFT'`. That is a fact, not an inference, and it needs no
+  // guard — a Hub blip cannot fabricate it, and the rollover gap that used to
+  // threaten a mass sweep now reads as PRE_ENROLLED or a null status, neither of
+  // which marks anybody.
+  //
+  // VANISHED: a Connect pupil carrying a hubPupilId that this full roster did
+  // not mention AT ALL. Since the fetch is school-wide and drained to the end,
+  // that means Hub no longer holds them — deleted, or moved out of the MIS. It
+  // is still an inference, so it keeps a floor: if it would mark more than half
+  // the Hub-linked roster, it refuses and says so. A register that lost half its
+  // pupils between two syncs is a data fault, and "everyone left" is never the
+  // likelier reading. (`listPupils` throws rather than returning a short list,
+  // so a truncated page cannot reach this at all — the floor is the second
+  // line, not the first.)
   //
   // Hand-created Students (no hubPupilId) are Connect's own and never swept.
   const seenStudentIds = [...studentIdByHubPupil.values()]
-  const marked = classesWithPupils.length > 0
+  const now = new Date()
+
+  const statedMarked = statedLeftHubIds.length > 0
+    ? await prisma.student.updateMany({
+        // `leftAt: null` is what stops a re-stamp. A leaver whose exit date
+        // walks forward on every sync is worse than no date at all, because it
+        // looks authoritative.
+        where: { schoolId, hubPupilId: { in: statedLeftHubIds }, leftAt: null },
+        data: { leftAt: now },
+      })
+    : { count: 0 }
+
+  const returnedHubIds = hubPupils.filter(p => p.onRoll !== false).map(p => p.id)
+  const onRoll = await prisma.student.count({
+    where: { schoolId, hubPupilId: { not: null }, leftAt: null },
+  })
+  const vanishedCandidates = await prisma.student.count({
+    where: {
+      schoolId,
+      hubPupilId: { not: null, notIn: hubPupils.map(p => p.id) },
+      leftAt: null,
+    },
+  })
+  // Over half the Hub-linked roster missing is a fault, not an exodus.
+  const sweepRefused = vanishedCandidates > 0 && vanishedCandidates * 2 > onRoll
+    ? `${vanishedCandidates} of ${onRoll} Hub-linked pupils missing from Hub's roster — refusing to mark them left`
+    : null
+  if (sweepRefused) console.error(`[hubSync] ${sweepRefused}`)
+
+  const vanishedMarked = vanishedCandidates > 0 && !sweepRefused
     ? await prisma.student.updateMany({
         where: {
           schoolId,
-          hubPupilId: { not: null },
+          hubPupilId: { not: null, notIn: hubPupils.map(p => p.id) },
           leftAt: null,
-          classId: { in: classesWithPupils },
-          id: { notIn: seenStudentIds },
         },
-        data: { leftAt: new Date() },
+        data: { leftAt: now },
       })
     : { count: 0 }
+
   // A pupil Hub sends back is on roll again — a re-admission, or a leaver
   // marked in error and corrected in Hub. Clearing it here is what makes the
   // mark self-healing rather than a one-way door needing a hand-written UPDATE.
-  const returned = seenStudentIds.length > 0
+  const returned = returnedHubIds.length > 0
     ? await prisma.student.updateMany({
-        where: { schoolId, id: { in: seenStudentIds }, leftAt: { not: null } },
+        where: { schoolId, hubPupilId: { in: returnedHubIds }, leftAt: { not: null } },
         data: { leftAt: null },
       })
     : { count: 0 }
@@ -473,10 +564,12 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     pupilMisIds: misIds,
     attendance,
     leavers: {
-      marked: marked.count,
+      marked: statedMarked.count + vanishedMarked.count,
       returned: returned.count,
-      classesTrusted: classesWithPupils.length,
-      classesTotal: hubClasses.length,
+      stated: statedMarked.count,
+      vanished: vanishedMarked.count,
+      ...(sweepRefused ? { sweepRefused } : {}),
+      unplaced,
     },
     staff: { created, updated },
     guardians: guardianSummary,

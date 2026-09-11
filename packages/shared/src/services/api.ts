@@ -2984,11 +2984,20 @@ export interface HubSyncSummary {
   yearGroups: number
   classes: number
   pupils: number
-  /** Pupils who have left. Hub's pupil list only carries pupils on roll this
-   *  year, so a leaver is detected by absence — and only in classes Hub did
-   *  send pupils for (`classesTrusted` of `classesTotal`), never from an empty
-   *  class, which is as likely to be a Hub blip as a departure. */
-  leavers?: { marked: number; returned: number; classesTrusted: number; classesTotal: number }
+  /** Pupils who have left, and how we found out. `stated` is Hub's own word
+   *  (enrolmentStatus LEFT/ARCHIVED, visible only on a school-wide fetch);
+   *  `vanished` is the remaining inference — gone from Hub's roster entirely —
+   *  which refuses to run rather than take more than half the register, naming
+   *  why in `sweepRefused`. `unplaced` counts pupils on roll whose Hub class
+   *  Connect cannot resolve: in Hub's roster, not in Connect's. */
+  leavers?: {
+    marked: number
+    returned: number
+    stated?: number
+    vanished?: number
+    sweepRefused?: string
+    unplaced?: number
+  }
   staff: { created: number; updated: number }
   guardians: { fetched: number; created: number; linked: number; skippedNoEmail: number }
   parentLinks: { created: number; skippedNoPupil: number }
