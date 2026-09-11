@@ -2278,7 +2278,9 @@ model StudentIep {
   reviewDate    String?
   keyWorker     String?
   notes         String?
-  parentVisible Boolean  @default(true)
+  // Unpublished until someone says otherwise. A row that reaches this table
+  // without an explicit decision is not yet the family's to read.
+  parentVisible Boolean  @default(false)
   syncedAt      DateTime @default(now())
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
