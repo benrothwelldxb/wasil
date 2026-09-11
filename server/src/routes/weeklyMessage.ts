@@ -6,6 +6,7 @@ import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
+import { parseWallClockForSchool } from '../services/dateTime.js'
 
 const router = Router()
 
@@ -146,6 +147,10 @@ router.post('/', isAdmin, validate(createWeeklyMessageSchema), async (req, res) 
       })
     }
 
+    // The typed time is the school's wall clock, not the server's — see
+    // parseSchoolWallClock. Reading it as UTC scheduled a Dubai 11:30 for 15:30.
+    const scheduledDate = scheduledAt ? await parseWallClockForSchool(scheduledAt, user.schoolId) : null
+
     const message = await prisma.weeklyMessage.create({
       data: {
         title,
@@ -153,7 +158,7 @@ router.post('/', isAdmin, validate(createWeeklyMessageSchema), async (req, res) 
         weekOf: new Date(weekOf),
         isCurrent: isCurrent || false,
         imageUrl: imageUrl || null,
-        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+        scheduledAt: scheduledDate,
         schoolId: user.schoolId,
       },
     })
@@ -207,6 +212,9 @@ router.put('/:id', isAdmin, validate(updateWeeklyMessageSchema), async (req, res
       })
     }
 
+    // Same wall-clock reading as create: the school's zone, not the server's.
+    const scheduledDate = scheduledAt ? await parseWallClockForSchool(scheduledAt, user.schoolId) : null
+
     const message = await prisma.weeklyMessage.update({
       where: { id },
       data: {
@@ -215,7 +223,7 @@ router.put('/:id', isAdmin, validate(updateWeeklyMessageSchema), async (req, res
         weekOf: new Date(weekOf),
         isCurrent,
         ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
-        ...(scheduledAt !== undefined && { scheduledAt: scheduledAt ? new Date(scheduledAt) : null }),
+        ...(scheduledAt !== undefined && { scheduledAt: scheduledDate }),
       },
       include: {
         _count: { select: { hearts: true } },

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 import { Plus, X, Pencil, Trash2, CheckCircle, MessageSquare, Upload, Image, Clock } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant } from '@wasil/shared'
 import type { WeeklyMessage } from '@wasil/shared'
 
 interface WeeklyForm {
@@ -69,7 +69,9 @@ export function WeeklyMessagesPage() {
         weekOf: form.weekOf,
         isCurrent: form.isCurrent,
         imageUrl: form.imageUrl || undefined,
-        scheduledAt: form.scheduledAt || undefined,
+        // Wall clock → instant: "11:30" means 11:30 where the composer is
+        // sitting, not 11:30 UTC (which published four hours late in Dubai).
+        scheduledAt: toIsoInstant(form.scheduledAt),
       }
       if (editingMessage) {
         await api.weeklyMessage.update(editingMessage.id, data)
@@ -95,7 +97,8 @@ export function WeeklyMessagesPage() {
       weekOf: msg.weekOf.split('T')[0],
       isCurrent: msg.isCurrent,
       imageUrl: msg.imageUrl || '',
-      scheduledAt: msg.scheduledAt ? msg.scheduledAt.slice(0, 16) : '',
+      // Back through the viewer's zone — slicing the ISO showed UTC.
+      scheduledAt: toLocalInputValue(msg.scheduledAt),
     })
     setShowForm(true)
   }

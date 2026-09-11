@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Plus, X, Pencil, Trash2, Paperclip } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant } from '@wasil/shared'
 import type { Message, Class, YearGroup, Group } from '@wasil/shared'
 import { MessageForm } from '../components/forms'
 import type { MessageFormData, AudienceOption, AttachmentData } from '../components/forms'
@@ -59,7 +59,9 @@ export function MessagesPage() {
         classId: formData.classId || undefined, yearGroupId: formData.yearGroupId || undefined,
         groupId: formData.groupId || undefined,
         isPinned: formData.isPinned, isUrgent: formData.isUrgent, requiresAcknowledgment: formData.requiresAcknowledgment,
-        scheduledAt: formData.scheduledAt || undefined, expiresAt: formData.expiresAt || undefined,
+        // The composer's wall clock → a real instant, so "11:30" is 11:30 here
+        // and not 11:30 UTC. (expiresAt is a plain date and stays as typed.)
+        scheduledAt: toIsoInstant(formData.scheduledAt), expiresAt: formData.expiresAt || undefined,
         formId: formData.formId || undefined,
         channel: formData.channel === 'ADMIN_NOTICE' ? 'ADMIN_NOTICE' : undefined,
         department: formData.channel === 'ADMIN_NOTICE' ? (formData.department || undefined) : undefined,
@@ -85,7 +87,9 @@ export function MessagesPage() {
     setFormData({
       title: message.title, content: message.content, targetClass: message.targetClass,
       isPinned: message.isPinned || false, isUrgent: message.isUrgent || false, requiresAcknowledgment: message.requiresAcknowledgment || false,
-      scheduledAt: message.scheduledAt ? message.scheduledAt.slice(0, 16) : '',
+      // Slicing the ISO showed the UTC time, so reopening an 11:30 post read
+      // 07:30 back — and saving it again moved the post.
+      scheduledAt: toLocalInputValue(message.scheduledAt),
       expiresAt: message.expiresAt ? message.expiresAt.split('T')[0] : '',
       hasAction: !!message.actionType, actionType: message.actionType || 'consent',
       actionLabel: message.actionLabel || '', actionDueDate: message.actionDueDate || '', actionAmount: message.actionAmount || '',

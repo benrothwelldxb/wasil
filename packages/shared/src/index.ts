@@ -18,6 +18,9 @@ export { ThemeProvider, useTheme } from './contexts/ThemeContext'
 export { TenantProvider, useTenant } from './contexts/TenantContext'
 export { resolveTenantSlug } from './services/tenant'
 
+// Utils
+export { toLocalInputValue, toIsoInstant } from './utils/datetime'
+
 // Hooks
 export { useApi, useMutation } from './hooks/useApi'
 

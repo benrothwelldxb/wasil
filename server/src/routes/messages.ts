@@ -11,6 +11,7 @@ import { translateTexts } from '../services/translation.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
+import { parseWallClockForSchool } from '../services/dateTime.js'
 
 const router = Router()
 
@@ -524,7 +525,11 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
     // A future-dated post is hidden from parents until its time (the list route
     // filters on scheduledAt), so announcing it at creation pushed an alert
     // about something they could not then find.
-    const scheduledDate = scheduledAt ? new Date(scheduledAt) : null
+    //
+    // "11:30" means 11:30 at the SCHOOL. A datetime-local input sends bare
+    // wall-clock text, and reading it against the server's zone (UTC in
+    // production) sent a Dubai school's 11:30 post at 15:30 local.
+    const scheduledDate = scheduledAt ? await parseWallClockForSchool(scheduledAt, user.schoolId) : null
     const liveNow = !scheduledDate || scheduledDate <= new Date()
 
     const message = await prisma.message.create({
@@ -545,7 +550,7 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
         isPinned: canPin ? (isPinned || false) : false,
         isUrgent: isUrgent || false,
         requiresAcknowledgment: requiresAcknowledgment || false,
-        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+        scheduledAt: scheduledDate,
         // Stamped now for a live post; left null for a future-dated one so the
         // publishScheduledMessages sweep knows it still owes an announcement.
         notifiedAt: liveNow ? new Date() : null,
@@ -657,6 +662,9 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
       return res.status(404).json({ error: 'Message not found' })
     }
 
+    // Same wall-clock reading as create: the school's zone, not the server's.
+    const scheduledDate = scheduledAt ? await parseWallClockForSchool(scheduledAt, user.schoolId) : null
+
     const message = await prisma.message.update({
       where: { id },
       data: {
@@ -673,7 +681,7 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
         isPinned: isPinned ?? existing.isPinned,
         isUrgent: isUrgent ?? existing.isUrgent,
         requiresAcknowledgment: requiresAcknowledgment ?? existing.requiresAcknowledgment,
-        scheduledAt: scheduledAt !== undefined ? (scheduledAt ? new Date(scheduledAt) : null) : existing.scheduledAt,
+        scheduledAt: scheduledAt !== undefined ? scheduledDate : existing.scheduledAt,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         formId: formId !== undefined ? (formId || null) : existing.formId,
       },
