@@ -761,7 +761,7 @@ describe('GET /api/partner/inbox/recipients', () => {
   it('scope=own: resolves the actor\'s assigned classes and lists only those pupils', async () => {
     prismaMock.staffClassAssignment.findMany.mockResolvedValue([{ classId: 'cls-A' }, { classId: 'cls-B' }])
     prismaMock.student.findMany.mockResolvedValue([
-      { id: 'st-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' }, parentLinks: [{ user: { name: 'Sara Khan' } }] },
+      { id: 'st-1', hubPupilId: 'hp-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' }, parentLinks: [{ user: { name: 'Sara Khan' } }] },
     ])
     const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hub-1'))
     expect(res.status).toBe(200)
@@ -773,10 +773,15 @@ describe('GET /api/partner/inbox/recipients', () => {
     // isTest:false hides Test Students from the Desk recipient picker.
     expect(where).toEqual({ schoolId: 'sch-1', isTest: false, classId: { in: ['cls-A', 'cls-B'] } })
     expect(res.body.recipients[0]).toEqual({
-      studentId: 'st-1', studentName: 'Amina Khan', className: '1A', parentName: 'Sara Khan',
+      studentId: 'st-1', hubPupilId: 'hp-1', studentName: 'Amina Khan', className: '1A', parentName: 'Sara Khan',
     })
-    // Key-set lock — exactly these four fields, no pupil PII.
-    expect(Object.keys(res.body.recipients[0]).sort()).toEqual(['className', 'parentName', 'studentId', 'studentName'])
+    // Key-set lock — exactly these five fields, no pupil PII. hubPupilId is the
+    // deliberate fifth: it is an IDENTIFIER the caller already holds (a deep
+    // link carries it, which is the whole reason it's here), not a new fact
+    // about the child. Anything that isn't one of these needs its own argument.
+    expect(Object.keys(res.body.recipients[0]).sort()).toEqual(
+      ['className', 'hubPupilId', 'parentName', 'studentId', 'studentName'],
+    )
   })
 
   it('scope=own with no assigned classes → 200 { recipients: [] } (never an error, no student query)', async () => {
@@ -800,10 +805,15 @@ describe('GET /api/partner/inbox/recipients', () => {
 
   it('null class / no parent link degrade to null, not crash', async () => {
     prismaMock.student.findMany.mockResolvedValue([
-      { id: 'st-9', firstName: 'No', lastName: 'Parent', class: null, parentLinks: [] },
+      { id: 'st-9', hubPupilId: null, firstName: 'No', lastName: 'Parent', class: null, parentLinks: [] },
     ])
     const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hub-1'))
-    expect(res.body.recipients[0]).toEqual({ studentId: 'st-9', studentName: 'No Parent', className: null, parentName: null })
+    // hubPupilId null = a pupil Connect created itself, with no Hub id. Present
+    // and null, never absent: a caller must be able to tell "this child has no
+    // Hub id" from "this build doesn't send one".
+    expect(res.body.recipients[0]).toEqual({
+      studentId: 'st-9', hubPupilId: null, studentName: 'No Parent', className: null, parentName: null,
+    })
   })
 })
 

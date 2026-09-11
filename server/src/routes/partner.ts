@@ -1336,9 +1336,21 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
 // recipients has no resource lookup (it's a list scoped to the actor), so its
 // only failure axis is the identity. Empty is valid → 200 { recipients: [] }
 // (e.g. a teacher with no class assigned yet), so the composer can say "no pupils
-// yet" rather than "unavailable". Each row is four display fields only —
-// `parentName` is the first ParentStudentLink, exactly as the start-thread route
-// resolves it, so every returned studentId round-trips.
+// yet" rather than "unavailable". `parentName` is the first ParentStudentLink,
+// exactly as the start-thread route resolves it, so every returned studentId
+// round-trips.
+//
+// Each row carries BOTH ids, because they answer different questions and a
+// caller needs both at once: `studentId` is Connect's own, and is what
+// POST /inbox/threads wants back; `hubPupilId` is the same child on the Hub
+// wire, and is what an inbound deep link carries (see the pupil filter on
+// /inbox/threads). Without the second, a caller holding a Hub id has no way to
+// bridge it to a row here — so a "message this family" jump from another app
+// lands on a composer that cannot name the child it was opened for, and the
+// staff member re-finds them in a type-ahead, which is the step the jump
+// existed to remove. Null for a pupil Connect created itself; explicitly null,
+// never absent, so "this child has no Hub id" and "this build doesn't send one"
+// don't read the same.
 router.get('/inbox/recipients', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
@@ -1351,6 +1363,7 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
         where: { id: actor.ilsa.studentId, schoolId: actor.ilsa.schoolId },
         select: {
           id: true,
+          hubPupilId: true,
           firstName: true,
           lastName: true,
           class: { select: { name: true } },
@@ -1365,6 +1378,7 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
       const recipients = student
         ? [{
             studentId: student.id,
+            hubPupilId: student.hubPupilId,
             studentName: `${student.firstName} ${student.lastName}`.trim(),
             className: student.class?.name ?? null,
             parentName: student.parentLinks[0]?.user?.name ?? null,
@@ -1397,6 +1411,7 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
       where: { schoolId: staff.schoolId, isTest: false, ...(classFilter ?? {}) },
       select: {
         id: true,
+        hubPupilId: true,
         firstName: true,
         lastName: true,
         class: { select: { name: true } },
@@ -1411,6 +1426,7 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
 
     const recipients = students.map((s) => ({
       studentId: s.id,
+      hubPupilId: s.hubPupilId,
       studentName: `${s.firstName} ${s.lastName}`.trim(),
       className: s.class?.name ?? null,
       parentName: s.parentLinks[0]?.user?.name ?? null,
