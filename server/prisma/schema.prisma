@@ -2595,12 +2595,31 @@ model JobRun {
 // store only the SHA-256 hash of the plaintext; the plaintext is shown once at
 // mint time (scripts/mint-partner-token.ts) and lives only in the partner's env.
 model PartnerToken {
-  id         String    @id @default(cuid())
-  name       String // e.g. "desk"
-  tokenHash  String    @unique // sha256(plaintext), hex
-  createdAt  DateTime  @default(now())
-  lastUsedAt DateTime?
-  revokedAt  DateTime?
+  id              String    @id @default(cuid())
+  name            String // e.g. "desk"
+  tokenHash       String    @unique // sha256(plaintext), hex
+  // What this token may call. The partner surface is ONE key per partner and
+  // every route used to accept every key — `req.partner` was resolved and then
+  // never read by any of the 34 handlers — so a token minted for an activities
+  // app could read a family's correspondence, the ILSA safeguarding threads and
+  // the evidence route, and broadcast to the whole school as any staff member.
+  //
+  // Both are allowlists, and EMPTY means unrestricted. That default exists so
+  // the tokens minted before this shipped keep working exactly as they did;
+  // it is deliberately the only way to get an unrestricted token, and a new one
+  // should always be minted with both set.
+  //
+  // Prefixes are matched as the CALLER sees them ("/api/partner/groups"), on
+  // whole path segments — "/api/partner/groupsomething" does not match
+  // "/api/partner/groups".
+  allowedPrefixes String[]  @default([])
+  // Methods are the sharper of the two. Every route worth worrying about on
+  // this surface is a GET; a write-only token cannot reach one even if a prefix
+  // is mis-specified later, which a prefix list alone cannot promise.
+  allowedMethods  String[]  @default([])
+  createdAt       DateTime  @default(now())
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
 }
 
 // One communication intent received from Wasil Active — the system of record for
