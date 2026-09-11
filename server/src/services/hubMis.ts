@@ -102,6 +102,28 @@ export interface HubPupil {
   lastName: string
   className: string | null
   yearGroupName: string | null
+  /** The id behind `className`. Hub added this so consumers stop joining on
+   *  names; Connect went on fetching pupils one class at a time for months
+   *  afterwards, because the comment saying "the DTO carries only the class
+   *  name" was true when it was written and nobody re-read the wire.
+   *
+   *  Explicitly null — never absent — for a pupil who is not on roll: a leaver
+   *  has no current class, which is a different fact from Hub not telling us. */
+  classId?: string | null
+  /** Roster state, stated rather than inferred. `onRoll` is true only for an
+   *  ACTIVE enrolment in the CURRENT academic year.
+   *
+   *  These matter more than they look. Hub applies its current-enrolment filter
+   *  ONLY when `classId` or `yearGroupId` is passed, so a school-wide fetch
+   *  returns leavers with `onRoll: false` and a per-class fetch never returns
+   *  them at all. Asking the wrong way makes a fact Hub is willing to state
+   *  invisible, and leaves absence as the only available signal. */
+  onRoll?: boolean
+  /** ACTIVE | LEFT | ARCHIVED | PRE_ENROLLED, or null when there is no
+   *  enrolment for this year at all. "Was here and has gone", "hasn't started"
+   *  and "never enrolled" are three different pastoral facts and only this
+   *  tells them apart. */
+  enrolmentStatus?: 'ACTIVE' | 'LEFT' | 'ARCHIVED' | 'PRE_ENROLLED' | null
   /** Present only once `pupils:attendance` is granted; null when Hub holds no
    *  figure for this pupil. Optional here so Connect works either way rather
    *  than depending on a deployment order. */
@@ -400,17 +422,87 @@ export async function listClasses(hubSchoolId: string): Promise<HubClass[]> {
   return classes
 }
 
-/** Pupils for a Hub school, optionally scoped to one Hub class id. Sync fetches
- * per class so every returned pupil ties to a known Hub class (the PupilDTO
- * itself carries only the class *name*, not its id). */
+/** Hub's roster could not be read in full, so no conclusion may be drawn from
+ * what did arrive. Thrown rather than returning a short list, because a
+ * truncated roster and a school where everyone left look identical from here,
+ * and the second one is actionable. */
+export class HubRosterIncompleteError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'HubRosterIncompleteError'
+  }
+}
+
+/** Hub's page size. Its own default is 500 and its maximum 1000; asking
+ *  explicitly means a change to Hub's default can't silently resize our pages. */
+const PUPIL_PAGE_SIZE = 500
+/** 20 pages — 10,000 pupils — is far beyond any school Connect serves, so
+ *  reaching it means the cursor isn't advancing rather than that the school is
+ *  enormous. */
+const MAX_PUPIL_PAGES = 20
+
+/**
+ * Every pupil Hub holds for a school, following the cursor to the end.
+ *
+ * Called WITHOUT a classId on purpose. Hub applies its current-enrolment filter
+ * only when `classId` or `yearGroupId` is passed, so this is the one shape that
+ * returns leavers — with `onRoll: false` and `enrolmentStatus: 'LEFT'` — rather
+ * than silently omitting them. `classId` on each pupil is what makes the
+ * per-class fan-out unnecessary: one request instead of one per class.
+ *
+ * Draining the cursor is a PRECONDITION of fetching school-wide, not a tidy-up
+ * after it. A single page held ~412 pupils at VH against a limit of 500, which
+ * fits by luck of proportion; a larger school would have truncated silently,
+ * and a truncated roster is indistinguishable from a mass departure to anything
+ * downstream. So a roster that cannot be read to the end THROWS.
+ */
 export async function listPupils(
   hubSchoolId: string,
   opts: { classId?: string } = {},
 ): Promise<HubPupil[]> {
-  const params = new URLSearchParams({ schoolId: hubSchoolId })
-  if (opts.classId) params.set('classId', opts.classId)
-  const { pupils } = await call<{ pupils: HubPupil[] }>(`/pupils?${params.toString()}`)
-  return pupils
+  const pupils: HubPupil[] = []
+  const seen = new Set<string>()
+  let cursor: string | null = null
+
+  for (let page = 0; page < MAX_PUPIL_PAGES; page++) {
+    const params = new URLSearchParams({
+      schoolId: hubSchoolId,
+      limit: String(PUPIL_PAGE_SIZE),
+    })
+    if (opts.classId) params.set('classId', opts.classId)
+    if (cursor) params.set('cursor', cursor)
+
+    const res = await call<{
+      pupils: HubPupil[]
+      nextCursor?: string | null
+      hasMore?: boolean
+    }>(`/pupils?${params.toString()}`)
+
+    let fresh = 0
+    for (const p of res.pupils ?? []) {
+      if (seen.has(p.id)) continue
+      seen.add(p.id)
+      pupils.push(p)
+      fresh++
+    }
+
+    // Done: Hub says there is no more, or gave us no cursor to follow.
+    if (!res.hasMore || !res.nextCursor) return pupils
+
+    // Hub claims more but this page added nobody — the cursor is not advancing
+    // (ignored param, or a pager returning the same page). Failing here rather
+    // than spinning to MAX_PUPIL_PAGES says what is actually wrong.
+    if (fresh === 0) {
+      throw new HubRosterIncompleteError(
+        `Hub reported more pupils after ${pupils.length} but the cursor returned no new rows`,
+      )
+    }
+    cursor = res.nextCursor
+  }
+
+  throw new HubRosterIncompleteError(
+    `Hub roster did not end after ${MAX_PUPIL_PAGES} pages (${pupils.length} pupils)`,
+  )
 }
 
 /** Academic terms for a Hub school (its term calendar). Connect mirrors each

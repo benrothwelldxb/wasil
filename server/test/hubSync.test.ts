@@ -9,7 +9,7 @@ const prismaMock = {
   school: { findUnique: vi.fn(), update: vi.fn() },
   yearGroup: { upsert: vi.fn(), create: vi.fn() },
   class: { upsert: vi.fn(), create: vi.fn() },
-  student: { upsert: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+  student: { upsert: vi.fn(), create: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
   user: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
   refreshToken: { findFirst: vi.fn() },
   parentStudentLink: { upsert: vi.fn(), create: vi.fn() },
@@ -24,6 +24,9 @@ vi.mock('../src/services/hubMis', () => ({
   listPupils: vi.fn(),
   listStaff: vi.fn(),
   listGuardians: vi.fn(),
+  // The real module's error type — the sync throws it when Hub's wire is too
+  // old to place pupils, so the mock has to provide it or that path can't run.
+  HubRosterIncompleteError: class HubRosterIncompleteError extends Error {},
 }))
 
 // The calendar resync is exercised in its own suite; here we mock it to assert
@@ -135,6 +138,8 @@ beforeEach(() => {
     id: 'cs-' + where.hubPupilId,
   }))
   prismaMock.student.updateMany.mockResolvedValue({ count: 0 })
+  // No Hub-linked pupil is missing from Hub's roster unless a test says so.
+  prismaMock.student.count.mockResolvedValue(0)
 
   // Default roster: one year group, one class in it, one pupil in that class,
   // no staff. Individual tests override.
@@ -142,11 +147,15 @@ beforeEach(() => {
   mClasses.mockResolvedValue([
     { id: 'hc1', name: '1A', yearGroupId: 'hyg1', yearGroupName: 'Year 1', teachers: [] },
   ])
-  mPupils.mockImplementation(async (_schoolId: string, opts: any = {}) =>
-    opts.classId === 'hc1'
-      ? [{ id: 'hp1', misId: '100123', firstName: 'Amina', lastName: 'Khan', className: '1A', yearGroupName: 'Year 1' }]
-      : [],
-  )
+  // One school-wide fetch — no classId param — carrying `classId` and `onRoll`
+  // per pupil, which is what lets the sync place them and see leavers.
+  mPupils.mockResolvedValue([
+    {
+      id: 'hp1', misId: '100123', firstName: 'Amina', lastName: 'Khan',
+      className: '1A', yearGroupName: 'Year 1',
+      classId: 'hc1', onRoll: true, enrolmentStatus: 'ACTIVE',
+    },
+  ])
   mStaff.mockResolvedValue([])
   // Dormant by default: Hub holds 0 guardians (the current live state).
   mGuardians.mockResolvedValue([])
@@ -176,9 +185,11 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       update: { name: '1A', yearGroupId: 'cyg-hyg1' },
     })
 
-    // Pupils are fetched per Hub class, and the pupil's classId resolves to the
-    // Connect class id produced by the class upsert.
-    expect(mPupils).toHaveBeenCalledWith('hub-school-1', { classId: 'hc1' })
+    // ONE school-wide fetch, with no classId param — that shape is what makes
+    // Hub return leavers at all, and the pupil's own `classId` is what places
+    // them. Asking per class would be ~24 requests AND blind to departures.
+    expect(mPupils).toHaveBeenCalledTimes(1)
+    expect(mPupils).toHaveBeenCalledWith('hub-school-1')
     expect(prismaMock.student.upsert).toHaveBeenCalledWith({
       where: { hubPupilId: 'hp1' },
       create: {
@@ -201,7 +212,9 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       attendance: { withFigure: 0, noFigure: 0, scopeGranted: false },
       // The one pupil Hub returned is on roll, and its class counted as
       // trusted — so the sweep ran and found nobody to mark.
-      leavers: { marked: 0, returned: 0, classesTrusted: 1, classesTotal: 1 },
+      // The one pupil is on roll, nobody is stated LEFT, and nobody has
+      // vanished — so nothing is marked.
+      leavers: { marked: 0, returned: 0, stated: 0, vanished: 0, unplaced: 0 },
       guardians: { fetched: 0, created: 0, linked: 0, skippedNoEmail: 0, emailUpdated: 0, emailConflicts: [] },
       parentLinks: { created: 0, skippedNoPupil: 0 },
       teacherAssignments: { created: 0, removed: 0, unresolved: 0 },
@@ -643,13 +656,12 @@ describe('syncSchoolFromHub — term-dates refresh', () => {
 // silently breaks a working feature.
 describe('syncSchoolFromHub — UPN (misId) handling', () => {
   const withPupils = (pupils: Array<{ id: string; misId: string | null }>) =>
-    mPupils.mockImplementation(async (_schoolId: string, opts: any = {}) =>
-      opts.classId === 'hc1'
-        ? pupils.map(p => ({
-            id: p.id, misId: p.misId, firstName: 'Ada', lastName: 'Koy',
-            className: '1A', yearGroupName: 'Year 1',
-          }))
-        : [],
+    mPupils.mockResolvedValue(
+      pupils.map(p => ({
+        id: p.id, misId: p.misId, firstName: 'Ada', lastName: 'Koy',
+        className: '1A', yearGroupName: 'Year 1',
+        classId: 'hc1', onRoll: true, enrolmentStatus: 'ACTIVE',
+      })),
     )
 
   it('never erases a UPN Connect holds when Hub sends none', async () => {
@@ -869,6 +881,7 @@ describe('syncSchoolFromHub — attendance figures', () => {
   const pupilWith = (attendance: unknown) => {
     mPupils.mockResolvedValue([
       { id: 'hp1', misId: '100123', firstName: 'Amina', lastName: 'Khan', className: '1A', yearGroupName: 'Year 1',
+        classId: 'hc1', onRoll: true, enrolmentStatus: 'ACTIVE',
         ...(attendance === 'absent' ? {} : { attendance }) },
     ])
   }
@@ -924,53 +937,126 @@ describe('syncSchoolFromHub — attendance figures', () => {
 // is scoped to an ACTIVE enrolment in the current year, so they simply stop
 // appearing. Absence is therefore the only signal there is, and the whole risk
 // of the sweep is telling "gone" apart from "Hub told us nothing".
+// Hub STATES that a pupil has left. It only says so when asked school-wide —
+// its current-enrolment filter applies only to a classId/yearGroupId query — so
+// the shape of the request decides whether a fact is visible at all.
 describe('syncSchoolFromHub — leavers', () => {
-  /** The sweep call (the one that STAMPS leftAt), or undefined if it never ran. */
-  const sweepCall = () =>
+  const onRoll = (id: string) => ({
+    id, misId: null, firstName: 'A', lastName: 'B', className: '1A',
+    yearGroupName: 'Year 1', classId: 'hc1', onRoll: true, enrolmentStatus: 'ACTIVE',
+  })
+  const offRoll = (id: string, enrolmentStatus: string | null) => ({
+    id, misId: null, firstName: 'A', lastName: 'B', className: null,
+    yearGroupName: null, classId: null, onRoll: false, enrolmentStatus,
+  })
+  /** The updateMany that STAMPS leftAt (vs the one that clears it). */
+  const stampCall = () =>
     prismaMock.student.updateMany.mock.calls
       .map(c => c[0] as any)
-      .find(a => a.data?.leftAt instanceof Date)
+      .filter(a => a.data?.leftAt instanceof Date)
 
-  it('marks pupils Hub no longer returns for a class it did send pupils for', async () => {
-    prismaMock.student.updateMany.mockResolvedValue({ count: 3 })
-
-    const summary = await syncSchoolFromHub('connect-school-1')
-
-    const sweep = sweepCall()
-    expect(sweep.where).toMatchObject({
-      schoolId: 'connect-school-1',
-      hubPupilId: { not: null },
-      leftAt: null,
-      classId: { in: ['cc-hc1'] },
-      // Everyone Hub DID return this run is spared.
-      id: { notIn: ['cs-hp1'] },
-    })
-    expect(summary.leavers).toMatchObject({ marked: 3, classesTrusted: 1, classesTotal: 1 })
-  })
-
-  // The dangerous case. At rollover — and on any Hub hiccup — every class comes
-  // back empty; concluding from that would mark the entire school as left in a
-  // single run.
-  it('never concludes anyone left from a class that returned no pupils', async () => {
-    mPupils.mockResolvedValue([])
-
-    const summary = await syncSchoolFromHub('connect-school-1')
-
-    expect(sweepCall()).toBeUndefined()
-    expect(summary.leavers).toMatchObject({ marked: 0, classesTrusted: 0, classesTotal: 1 })
-  })
-
-  // A pupil Hub sends back is on roll again, without anyone editing the row by
-  // hand — otherwise a leaver marked in error in Hub is stuck in Connect.
-  it('clears the mark for a pupil Hub returns again', async () => {
+  it('marks a pupil Hub says has LEFT, on Hub’s word rather than by inference', async () => {
+    mPupils.mockResolvedValue([onRoll('hp1'), offRoll('hp-gone', 'LEFT')])
     prismaMock.student.updateMany.mockResolvedValue({ count: 1 })
 
     const summary = await syncSchoolFromHub('connect-school-1')
 
-    const unmark = prismaMock.student.updateMany.mock.calls
+    const stamp = stampCall()[0]
+    expect(stamp.where).toMatchObject({
+      schoolId: 'connect-school-1',
+      hubPupilId: { in: ['hp-gone'] },
+      // Never re-stamped: an exit date that walks forward on every sync looks
+      // authoritative and isn't.
+      leftAt: null,
+    })
+    expect(summary.leavers).toMatchObject({ stated: 1 })
+  })
+
+  // A leaver Connect never held must not be created just because Hub still
+  // lists them — the school-wide fetch returns them, the per-class one didn't.
+  it('never creates a Student for a pupil who has already left', async () => {
+    mPupils.mockResolvedValue([offRoll('hp-gone', 'LEFT')])
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.student.upsert).not.toHaveBeenCalled()
+  })
+
+  // The states that are NOT departures. PRE_ENROLLED is "hasn't started" and a
+  // null status is "no enrolment this year at all"; treating either as a leaver
+  // would mark a child who has done nothing but exist in next year's intake.
+  it('treats PRE_ENROLLED and a null status as not-a-leaver', async () => {
+    mPupils.mockResolvedValue([
+      onRoll('hp1'), offRoll('hp-new', 'PRE_ENROLLED'), offRoll('hp-none', null),
+    ])
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(stampCall()).toHaveLength(0)
+    expect(summary.leavers).toMatchObject({ stated: 0, marked: 0 })
+  })
+
+  it('clears the mark for a pupil Hub has on roll again', async () => {
+    mPupils.mockResolvedValue([onRoll('hp1')])
+    prismaMock.student.updateMany.mockResolvedValue({ count: 1 })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    const clear = prismaMock.student.updateMany.mock.calls
       .map(c => c[0] as any)
       .find(a => a.data?.leftAt === null)
-    expect(unmark.where).toMatchObject({ id: { in: ['cs-hp1'] }, leftAt: { not: null } })
+    expect(clear.where).toMatchObject({ hubPupilId: { in: ['hp1'] }, leftAt: { not: null } })
     expect(summary.leavers.returned).toBe(1)
+  })
+
+  // The remaining inference, and the only one left: Hub's FULL roster doesn't
+  // mention them at all, so Hub no longer holds them.
+  it('marks a pupil who has vanished from Hub’s roster entirely', async () => {
+    mPupils.mockResolvedValue([onRoll('hp1')])
+    // 10 Hub-linked pupils on roll, 1 of them missing from Hub — well under the floor.
+    prismaMock.student.count.mockResolvedValueOnce(10).mockResolvedValueOnce(1)
+    prismaMock.student.updateMany.mockResolvedValue({ count: 1 })
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    const stamp = stampCall().find(a => a.where.hubPupilId?.notIn)
+    expect(stamp.where.hubPupilId.notIn).toEqual(['hp1'])
+    expect(summary.leavers).toMatchObject({ vanished: 1 })
+  })
+
+  // The floor. A register that lost half its pupils between two syncs is a data
+  // fault; "everyone left" is never the likelier reading.
+  it('refuses the vanished sweep when it would take more than half the roster', async () => {
+    mPupils.mockResolvedValue([onRoll('hp1')])
+    prismaMock.student.count.mockResolvedValueOnce(10).mockResolvedValueOnce(6)
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(stampCall().find(a => a.where.hubPupilId?.notIn)).toBeUndefined()
+    expect(summary.leavers.vanished).toBe(0)
+    expect(summary.leavers.sweepRefused).toMatch(/6 of 10/)
+  })
+
+  // An on-roll pupil in a class Connect can't resolve is in Hub's roster and
+  // not in Connect's. The per-class fetch made this impossible; now it has to
+  // be said out loud rather than silently skipped.
+  it('counts an on-roll pupil whose class does not resolve, rather than dropping it', async () => {
+    mPupils.mockResolvedValue([{ ...onRoll('hp-x'), classId: 'hc-unknown' }])
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.student.upsert).not.toHaveBeenCalled()
+    expect(summary.leavers.unplaced).toBe(1)
+  })
+
+  // An older Hub sends neither field, and every pupil would read as "on roll,
+  // no class" — a whole school quietly unplaced. Fail loudly instead.
+  it('refuses a Hub that carries neither classId nor roll state', async () => {
+    mPupils.mockResolvedValue([
+      { id: 'hp1', misId: null, firstName: 'A', lastName: 'B', className: '1A', yearGroupName: 'Year 1' },
+    ])
+
+    await expect(syncSchoolFromHub('connect-school-1')).rejects.toThrow(/predates the fields/)
+    expect(prismaMock.student.upsert).not.toHaveBeenCalled()
   })
 })
