@@ -1602,7 +1602,10 @@ router.get('/oversight/parent-threads', requirePartner, async (req, res) => {
 
     const pupil = await prisma.student.findFirst({
       where: { hubPupilId: pupilHubId, schoolId: actor.schoolId },
-      select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } },
+      select: {
+        id: true, firstName: true, lastName: true, externalId: true,
+        class: { select: { name: true } },
+      },
     })
     if (!pupil) return res.status(404).json({ error: 'not_found' })
 
@@ -1645,8 +1648,33 @@ router.get('/oversight/parent-threads', requirePartner, async (req, res) => {
       },
     })
 
+    // Identify the pupil, for a consumer that cross-checks before printing this
+    // into a document with a child's name on the cover. The three signals are
+    // NOT equally strong and a caller should not treat them as if they were:
+    //
+    //   misId (the school MIS Student ID / UPN, from Hub) is the one worth
+    //     alarming on. It is a DIFFERENT field from the one this was looked up
+    //     by, and a consumer mirroring Hub holds it independently — so a
+    //     mismatch means the two mirrors disagree about who this pupil is.
+    //     Null when Hub has never sent us one, which is "cannot cross-check",
+    //     not "mismatch".
+    //
+    //   hubPupilId is an echo of what was asked for, and cannot be anything
+    //     else: the lookup matched on it. It catches a request paired with the
+    //     wrong response — a cache, a proxy, a client bug — and nothing about
+    //     scoping. Cheap, and worth exactly that much.
+    //
+    //   studentName and className are for a human reading the output. They
+    //     drift benignly between two mirrors: Hub carries a preferredName that
+    //     Connect does not store, so a child enrolled as Alexander who goes by
+    //     Alex differs here for good reasons on both sides, forever. A class
+    //     changes mid-year, legitimately. Blocking on these is defensible;
+    //     raising a safeguarding alarm on them is not, and a check that cries
+    //     wolf is switched off before the case it exists for arrives.
     res.json({
       pupil: {
+        hubPupilId: pupilHubId,
+        misId: pupil.externalId,
         studentName: `${pupil.firstName} ${pupil.lastName}`.trim(),
         className: pupil.class?.name ?? null,
       },

@@ -351,7 +351,7 @@ describe('GET /api/partner/oversight/ilsa-threads', () => {
 // an ILSA thread is private to the family and their own paid assistant, and has
 // no business in a school's inspection evidence.
 describe('GET /api/partner/oversight/parent-threads', () => {
-  const PUPIL = { id: 'stu-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' } }
+  const PUPIL = { id: 'stu-1', firstName: 'Amina', lastName: 'Khan', externalId: 'UPN-100123', class: { name: '1A' } }
 
   it('403 for a staff actor — evidence access is admin-only', async () => {
     prismaMock.user.findUnique.mockResolvedValue(STAFF)
@@ -402,6 +402,20 @@ describe('GET /api/partner/oversight/parent-threads', () => {
     })
   })
 
+  it('reports misId as null when Hub has never sent one, rather than omitting it', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(ADMIN)
+    prismaMock.student.findFirst.mockResolvedValue({ ...PUPIL, externalId: null })
+    prismaMock.conversation.findMany.mockResolvedValue([])
+    prismaMock.auditLog.create.mockResolvedValue({})
+
+    const res = await auth(request(makeApp()).get('/api/partner/oversight/parent-threads?hub_user_id=hu-admin&pupil_id=hp-1'))
+    // Explicitly null, never absent: "we hold no UPN for this pupil" and "this
+    // build doesn't send one" must not read the same to a consumer deciding
+    // whether it can cross-check at all.
+    expect(res.body.pupil.misId).toBeNull()
+    expect(res.body.pupil.hubPupilId).toBe('hp-1')
+  })
+
   it('returns the correspondence and AUDITS the read with a named actor', async () => {
     prismaMock.user.findUnique.mockResolvedValue(ADMIN)
     prismaMock.student.findFirst.mockResolvedValue(PUPIL)
@@ -427,7 +441,13 @@ describe('GET /api/partner/oversight/parent-threads', () => {
 
     const res = await auth(request(makeApp()).get('/api/partner/oversight/parent-threads?hub_user_id=hu-admin&pupil_id=hp-1'))
     expect(res.status).toBe(200)
-    expect(res.body.pupil).toEqual({ studentName: 'Amina Khan', className: '1A' })
+    // Identifiers a consumer can cross-check before printing this into a
+    // document with a child's name on the cover. misId is the one worth
+    // alarming on — a different field from the lookup key, held independently
+    // by anyone else mirroring Hub.
+    expect(res.body.pupil).toEqual({
+      hubPupilId: 'hp-1', misId: 'UPN-100123', studentName: 'Amina Khan', className: '1A',
+    })
     expect(res.body.threads[0]).toMatchObject({
       id: 'c-1', staffName: 'Ms Noor', guardianName: 'Sara Khan',
       // Co-guardians and CC'd staff stay apart — different facts.
