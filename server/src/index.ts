@@ -50,6 +50,7 @@ import dashboardRoutes from './routes/dashboard.js'
 import inboxRoutes from './routes/inbox.js'
 import partnerRoutes from './routes/partner.js'
 import partnerCommunicationRoutes from './routes/partnerCommunication.js'
+import thisWeekRoutes from './routes/thisWeek.js'
 import searchRoutes from './routes/search.js'
 import cafeteriaRoutes from './routes/cafeteria.js'
 import attendanceRoutes from './routes/attendance.js'
@@ -207,6 +208,7 @@ app.use('/api/transport', transportRoutes)
 // authenticated by a Bearer partner token (not a Connect session / Hub JWT).
 // Mounted ahead of the general partner router so the communication surface is
 // findable on its own; both authenticate with the same requirePartner token.
+app.use('/api/this-week', thisWeekRoutes)
 app.use('/api/partner/communication', partnerCommunicationRoutes)
 app.use('/api/partner', partnerRoutes)
 // "Today your child has …" timetable helper, sourced from Wasil Hub.
