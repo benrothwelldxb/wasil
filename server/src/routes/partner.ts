@@ -1241,6 +1241,13 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
       }
       const guardianId = await resolvePrimaryGuardianId(ilsa.studentId, ilsa.schoolId)
       if (!guardianId) return res.status(400).json({ error: 'could not resolve parent' })
+      // An ILSA's thread is pinned to the primary guardian. A caller naming a
+      // DIFFERENT guardian is refused rather than quietly given guardian A —
+      // silently substituting the recipient of a message about a child is the
+      // worst available outcome, and matches the studentId mismatch above.
+      if (parentId && parentId !== guardianId) {
+        return res.status(400).json({ error: 'could not resolve parent' })
+      }
 
       const existing = await prisma.conversation.findFirst({
         where: {
@@ -1277,7 +1284,19 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
     let resolvedParentId: string | null = null
     if (parentId) {
       const parentUser = await prisma.user.findFirst({
-        where: { id: parentId, schoolId: staff.schoolId, role: 'PARENT' },
+        where: {
+          id: parentId,
+          schoolId: staff.schoolId,
+          role: 'PARENT',
+          // A parent of THIS child, not merely a parent at this school. Without
+          // the link check, any school parent could be paired with any school
+          // pupil, and the thread is created carrying both — so a caller bug
+          // puts one family's child in front of another family. Nothing
+          // exploited it while no caller sent parentId; returning every
+          // guardian on the recipients route makes it a live path, so it
+          // closes in the same change.
+          ...(studentId ? { studentLinks: { some: { studentId } } } : {}),
+        },
         select: { id: true },
       })
       if (parentUser) resolvedParentId = parentUser.id
@@ -1368,8 +1387,13 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
           lastName: true,
           class: { select: { name: true } },
           parentLinks: {
-            select: { user: { select: { name: true } } },
+            select: { user: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'asc' },
+            // Still ONE, unlike the staff branch below. An ILSA reaches the
+            // primary guardian and nobody else (ADR 0006) — a second guardian
+            // comes to them via the parent's own opt-in sharing, or by starting
+            // their own thread. Listing guardians an ILSA cannot write to would
+            // advertise a recipient the start-thread route then refuses.
             take: 1,
           },
         },
@@ -1382,6 +1406,8 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
             studentName: `${student.firstName} ${student.lastName}`.trim(),
             className: student.class?.name ?? null,
             parentName: student.parentLinks[0]?.user?.name ?? null,
+            // One entry, or none — see the `take: 1` above.
+            guardians: student.parentLinks.map((l) => ({ userId: l.user.id, name: l.user.name })),
           }]
         : []
       res.set('Cache-Control', 'private, max-age=30')
@@ -1416,9 +1442,12 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
         lastName: true,
         class: { select: { name: true } },
         parentLinks: {
-          select: { user: { select: { name: true } } },
+          // EVERY guardian, not just the first. A teacher who needs to tell the
+          // second guardian something had no route to it except asking the
+          // first to pass it on — the row carried one unnamed-in-id name, so a
+          // composer could not offer anyone else.
+          select: { user: { select: { id: true, name: true } } },
           orderBy: { createdAt: 'asc' },
-          take: 1,
         },
       },
       orderBy: [{ class: { name: 'asc' } }, { lastName: 'asc' }, { firstName: 'asc' }],
@@ -1429,7 +1458,13 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
       hubPupilId: s.hubPupilId,
       studentName: `${s.firstName} ${s.lastName}`.trim(),
       className: s.class?.name ?? null,
+      // Unchanged, and deliberately: the first link by createdAt, exactly as
+      // before, so a caller that hasn't adopted `guardians` yet is unaffected.
       parentName: s.parentLinks[0]?.user?.name ?? null,
+      // `guardians[0]` IS that same first-linked guardian, in the same order —
+      // a caller relies on the first entry meaning "who you'd have got before".
+      // A pupil with no links gets [], matching parentName: null.
+      guardians: s.parentLinks.map((l) => ({ userId: l.user.id, name: l.user.name })),
     }))
 
     res.set('Cache-Control', 'private, max-age=30')

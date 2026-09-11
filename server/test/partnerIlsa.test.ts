@@ -75,8 +75,11 @@ describe('ILSA actor resolution + least privilege', () => {
   it('an ILSA with an active link resolves for the inbox recipients route', async () => {
     asIlsa()
     prismaMock.student.findFirst.mockResolvedValue({
-      id: 'stu-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' },
-      parentLinks: [{ user: { name: 'Sara Khan' } }],
+      // hubPupilId included because Prisma returns null for a nullable column,
+      // never undefined — a mock that omits it drops the field from the JSON
+      // and lets a key-set lock pass without ever seeing it.
+      id: 'stu-1', hubPupilId: 'hp-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' },
+      parentLinks: [{ user: { id: 'u-10', name: 'Sara Khan' } }],
     })
     const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hu-ilsa'))
     expect(res.status).toBe(200)
@@ -115,8 +118,11 @@ describe('GET /api/partner/inbox/recipients (ILSA)', () => {
   it('returns EXACTLY the one linked pupil, ignoring scope, key-set locked', async () => {
     asIlsa()
     prismaMock.student.findFirst.mockResolvedValue({
-      id: 'stu-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' },
-      parentLinks: [{ user: { name: 'Sara Khan' } }],
+      // hubPupilId included because Prisma returns null for a nullable column,
+      // never undefined — a mock that omits it drops the field from the JSON
+      // and lets a key-set lock pass without ever seeing it.
+      id: 'stu-1', hubPupilId: 'hp-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' },
+      parentLinks: [{ user: { id: 'u-10', name: 'Sara Khan' } }],
     })
     const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hu-ilsa&scope=school'))
     expect(res.status).toBe(200)
@@ -124,9 +130,19 @@ describe('GET /api/partner/inbox/recipients (ILSA)', () => {
     expect(prismaMock.student.findFirst.mock.calls[0][0].where).toEqual({ id: 'stu-1', schoolId: 'sch-1' })
     expect(prismaMock.staffClassAssignment.findMany).not.toHaveBeenCalled()
     expect(res.body.recipients).toEqual([
-      { studentId: 'stu-1', studentName: 'Amina Khan', className: '1A', parentName: 'Sara Khan' },
+      {
+        studentId: 'stu-1', hubPupilId: 'hp-1', studentName: 'Amina Khan', className: '1A',
+        parentName: 'Sara Khan',
+        // ONE entry, even for a pupil with more guardians: an ILSA reaches the
+        // primary and nobody else, and the start-thread route refuses any
+        // other. Offering a recipient it would then refuse is worse than
+        // offering none.
+        guardians: [{ userId: 'u-10', name: 'Sara Khan' }],
+      },
     ])
-    expect(Object.keys(res.body.recipients[0]).sort()).toEqual(['className', 'parentName', 'studentId', 'studentName'])
+    expect(Object.keys(res.body.recipients[0]).sort()).toEqual(
+      ['className', 'guardians', 'hubPupilId', 'parentName', 'studentId', 'studentName'],
+    )
   })
 })
 
@@ -234,6 +250,40 @@ describe('POST /api/partner/inbox/threads/:id/messages (ILSA send)', () => {
     const notifiedUserIds = prismaMock.notification.create.mock.calls.map(c => c[0].data.userId)
     expect(notifiedUserIds).toEqual(['p-1'])
     expect(prismaMock.notification.create.mock.calls[0][0].data.title).toBe('Message from Ms Support')
+  })
+})
+
+// An ILSA's thread is pinned to the pupil's PRIMARY guardian (ADR 0006). A
+// caller naming a different guardian must be refused, not quietly handed
+// guardian A — silently substituting who a message about a child is addressed
+// to is the worst available outcome, and invisible from the caller's side.
+describe('POST /api/partner/inbox/threads — ILSA, parentId', () => {
+  beforeEach(() => {
+    asIlsa()
+    // resolvePrimaryGuardianId reads the link, THEN verifies the user is a
+    // same-school PARENT — both have to be mocked or it resolves to null.
+    prismaMock.parentStudentLink.findFirst.mockResolvedValue({ userId: 'guardian-primary' })
+    prismaMock.user.findFirst.mockResolvedValue({ id: 'guardian-primary' })
+  })
+
+  it('400s a parentId that is not the pupil’s primary guardian', async () => {
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/threads'))
+      .send({ hub_user_id: 'hu-ilsa', parentId: 'guardian-second' })
+
+    expect(res.status).toBe(400)
+    expect(prismaMock.conversation.create).not.toHaveBeenCalled()
+  })
+
+  it('allows the primary guardian named explicitly', async () => {
+    prismaMock.conversation.findFirst.mockResolvedValue(null)
+    prismaMock.conversation.create.mockResolvedValue({ id: 'c-ilsa' })
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/threads'))
+      .send({ hub_user_id: 'hu-ilsa', parentId: 'guardian-primary' })
+
+    expect(res.status).toBe(200)
+    expect(prismaMock.conversation.create.mock.calls[0][0].data).toMatchObject({
+      parentId: 'guardian-primary', kind: 'ILSA',
+    })
   })
 })
 

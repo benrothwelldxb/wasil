@@ -705,6 +705,8 @@ describe('POST /api/partner/inbox/threads', () => {
     const res = await auth(request(makeApp()).post('/api/partner/inbox/threads')).send({ hub_user_id: 'hu-staff', parentId: 'p-1' })
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ id: 'c-new' })
+    // parentId WITHOUT studentId — a school-wide parent thread with no pupil
+    // attached, so there is no link to check and the where-clause is unchanged.
     expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
       where: { id: 'p-1', schoolId: 'sch-1', role: 'PARENT' },
       select: { id: true },
@@ -724,6 +726,47 @@ describe('POST /api/partner/inbox/threads', () => {
     expect(res.status).toBe(200)
     expect(prismaMock.parentStudentLink.findFirst).toHaveBeenCalledWith({ where: { studentId: 'stu-1' }, select: { userId: true }, orderBy: { createdAt: 'asc' } })
     expect(prismaMock.conversation.create.mock.calls[0][0].data.studentId).toBe('stu-1')
+  })
+
+  // The gate that matters more than the feature. parentId was verified only as
+  // "a PARENT in this school" — not a parent OF THIS CHILD — and the thread is
+  // created carrying both, so any school parent could be paired with any school
+  // pupil. Nothing exploited it while no caller sent parentId; returning every
+  // guardian on the recipients route makes it a live path.
+  it('requires parentId to be linked to studentId when both are given', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    // No link between them → the parent lookup finds nobody.
+    prismaMock.user.findFirst.mockResolvedValue(null)
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/threads'))
+      .send({ hub_user_id: 'hu-staff', parentId: 'p-other', studentId: 'stu-1' })
+
+    expect(res.status).toBe(400)
+    expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'p-other', schoolId: 'sch-1', role: 'PARENT',
+        studentLinks: { some: { studentId: 'stu-1' } },
+      },
+      select: { id: true },
+    })
+    // Nothing is created for an unrelated pairing.
+    expect(prismaMock.conversation.create).not.toHaveBeenCalled()
+  })
+
+  it('accepts a second guardian who IS linked to the child', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    prismaMock.user.findFirst.mockResolvedValue({ id: 'p-2' })
+    prismaMock.conversation.findFirst.mockResolvedValue(null)
+    prismaMock.conversation.create.mockResolvedValue({ id: 'c-second' })
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/threads'))
+      .send({ hub_user_id: 'hu-staff', parentId: 'p-2', studentId: 'stu-1' })
+
+    expect(res.status).toBe(200)
+    // A separate 1-to-1 thread about the same child — legal under the
+    // [parentId, staffId, studentId, schoolContactId] uniqueness key. Nobody is
+    // placed in a thread with anybody.
+    expect(prismaMock.conversation.create.mock.calls[0][0].data).toMatchObject({
+      parentId: 'p-2', studentId: 'stu-1', kind: 'STAFF',
+    })
   })
 
   it('returns the existing thread and un-archives the staff side on re-open', async () => {
@@ -761,7 +804,13 @@ describe('GET /api/partner/inbox/recipients', () => {
   it('scope=own: resolves the actor\'s assigned classes and lists only those pupils', async () => {
     prismaMock.staffClassAssignment.findMany.mockResolvedValue([{ classId: 'cls-A' }, { classId: 'cls-B' }])
     prismaMock.student.findMany.mockResolvedValue([
-      { id: 'st-1', hubPupilId: 'hp-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' }, parentLinks: [{ user: { name: 'Sara Khan' } }] },
+      {
+        id: 'st-1', hubPupilId: 'hp-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' },
+        parentLinks: [
+          { user: { id: 'u-10', name: 'Sara Khan' } },
+          { user: { id: 'u-11', name: 'Omar Khan' } },
+        ],
+      },
     ])
     const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hub-1'))
     expect(res.status).toBe(200)
@@ -773,14 +822,20 @@ describe('GET /api/partner/inbox/recipients', () => {
     // isTest:false hides Test Students from the Desk recipient picker.
     expect(where).toEqual({ schoolId: 'sch-1', isTest: false, classId: { in: ['cls-A', 'cls-B'] } })
     expect(res.body.recipients[0]).toEqual({
-      studentId: 'st-1', hubPupilId: 'hp-1', studentName: 'Amina Khan', className: '1A', parentName: 'Sara Khan',
+      studentId: 'st-1', hubPupilId: 'hp-1', studentName: 'Amina Khan', className: '1A',
+      // Unchanged: still the first link by createdAt, so a caller that hasn't
+      // adopted `guardians` is unaffected.
+      parentName: 'Sara Khan',
+      // guardians[0] IS that same first guardian, in the same order.
+      guardians: [{ userId: 'u-10', name: 'Sara Khan' }, { userId: 'u-11', name: 'Omar Khan' }],
     })
-    // Key-set lock — exactly these five fields, no pupil PII. hubPupilId is the
-    // deliberate fifth: it is an IDENTIFIER the caller already holds (a deep
-    // link carries it, which is the whole reason it's here), not a new fact
-    // about the child. Anything that isn't one of these needs its own argument.
+    // Key-set lock — exactly these six fields, no pupil PII. Two deliberate
+    // additions, each with its own argument: hubPupilId is an IDENTIFIER the
+    // caller already holds (its own deep link carried it), and `guardians`
+    // names people the caller may already write to — it exposes no new fact
+    // about the CHILD. Anything else still has to argue its case.
     expect(Object.keys(res.body.recipients[0]).sort()).toEqual(
-      ['className', 'hubPupilId', 'parentName', 'studentId', 'studentName'],
+      ['className', 'guardians', 'hubPupilId', 'parentName', 'studentId', 'studentName'],
     )
   })
 
@@ -805,14 +860,17 @@ describe('GET /api/partner/inbox/recipients', () => {
 
   it('null class / no parent link degrade to null, not crash', async () => {
     prismaMock.student.findMany.mockResolvedValue([
-      { id: 'st-9', hubPupilId: null, firstName: 'No', lastName: 'Parent', class: null, parentLinks: [] },
+      { id: 'st-9', hubPupilId: null, firstName: 'No', lastName: 'Parent', class: null, parentLinks: [] },  // no links at all
     ])
     const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hub-1'))
     // hubPupilId null = a pupil Connect created itself, with no Hub id. Present
     // and null, never absent: a caller must be able to tell "this child has no
     // Hub id" from "this build doesn't send one".
     expect(res.body.recipients[0]).toEqual({
-      studentId: 'st-9', hubPupilId: null, studentName: 'No Parent', className: null, parentName: null,
+      studentId: 'st-9', hubPupilId: null, studentName: 'No Parent', className: null,
+      // A pupil with no links: parentName null, guardians empty — the only
+      // empty-array case there is.
+      parentName: null, guardians: [],
     })
   })
 })
