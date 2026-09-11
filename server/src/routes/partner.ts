@@ -752,6 +752,26 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
       where.student = { classId: cls.id }
     }
 
+    // Narrow to one child, for a "message this family" jump from another app
+    // (SEND's Inclusion record) into this staff member's threads about that
+    // pupil. A Hub pupil id, symmetrical with `class_id` above — no Connect
+    // thread id needs to leave Connect, and a child normally has SEVERAL
+    // threads (one per staff member or office contact), so this is a filter
+    // rather than a lookup of "the" thread, which does not exist.
+    //
+    // Same fail-closed rule as class: an unknown pupil returns nothing, never
+    // an unfiltered inbox. Staff-branch only — an ILSA already has exactly one
+    // pupil, so there is nothing for it to narrow.
+    const pupilIdParam = typeof req.query.pupil_id === 'string' ? req.query.pupil_id.trim() : ''
+    if (pupilIdParam) {
+      const pupil = await prisma.student.findFirst({
+        where: { hubPupilId: pupilIdParam, schoolId: staff.schoolId },
+        select: { id: true },
+      })
+      if (!pupil) return res.json({ threads: [] })
+      where.studentId = pupil.id
+    }
+
     const conversations = await prisma.conversation.findMany({
       where,
       include: {
@@ -1534,6 +1554,136 @@ router.get('/oversight/ilsa-threads', requirePartner, async (req, res) => {
     })
   } catch (error) {
     console.error('Error building partner ILSA oversight:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// A pupil's school↔parent correspondence, for an inspection evidence pack.
+//
+//   GET /api/partner/oversight/parent-threads?hub_user_id=<admin>&pupil_id=<hubPupilId>
+//     [&school_id=<Hub school id | Connect id>]
+//
+// The same gate as /oversight/ilsa-threads above, for the same reason: this is a
+// bulk read of a family's private correspondence, so it is admin-only, scoped to
+// one pupil in the admin's own school, and audited with a named actor every
+// time. `hub_user_id` MUST resolve to an ADMIN/SUPER_ADMIN (any other actor →
+// 403); an unknown pupil → 404; a `school_id` resolving elsewhere → 403.
+//
+// Deliberately NOT the working inbox. GET /inbox/threads gives a staff member
+// their OWN threads and gives admins school-wide only as an explicit, logged
+// sweep — a principal does not get everyone's conversations just by opening
+// Desk. An evidence pack IS that sweep, narrowed to one child, so it inherits
+// that gate rather than reusing the inbox.
+//
+// `kind: 'STAFF'` — ILSA threads are excluded and must stay excluded. A parent↔
+// ILSA thread is private by design (ADR 0006), and an ILSA is engaged and paid
+// by the pupil's parent rather than employed by the school: their conversation
+// is not the school's correspondence and has no business in a school's
+// inspection evidence. The ILSA oversight route above exists for the one case
+// that IS the school's business — safeguarding — and audits itself separately.
+router.get('/oversight/parent-threads', requirePartner, async (req, res) => {
+  try {
+    const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
+    const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
+    if (!actor || !isAdminActor(actor)) return res.status(403).json({ error: 'forbidden' })
+
+    const pupilHubId = typeof req.query.pupil_id === 'string' ? req.query.pupil_id.trim() : ''
+    if (!pupilHubId) return res.status(400).json({ error: 'pupil_id required' })
+
+    // Optional school_id cross-check — never serve outside the admin's own school.
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (schoolIdParam) {
+      const school = await prisma.school.findFirst({
+        where: { OR: [{ hubSchoolId: schoolIdParam }, { id: schoolIdParam }] },
+        select: { id: true },
+      })
+      if (!school || school.id !== actor.schoolId) return res.status(403).json({ error: 'forbidden' })
+    }
+
+    const pupil = await prisma.student.findFirst({
+      where: { hubPupilId: pupilHubId, schoolId: actor.schoolId },
+      select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } },
+    })
+    if (!pupil) return res.status(404).json({ error: 'not_found' })
+
+    const threads = await prisma.conversation.findMany({
+      where: { schoolId: actor.schoolId, kind: 'STAFF', studentId: pupil.id },
+      include: {
+        parent: { select: { id: true, name: true } },
+        staff: { select: { id: true, name: true } },
+        participants: { select: { role: true, user: { select: { name: true } } } },
+        messages: {
+          include: { sender: { select: { name: true } }, attachments: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: { lastMessageAt: 'desc' },
+    })
+
+    // AUDIT first-class, not a side note: this is the record that a named person
+    // pulled a family's correspondence on a given day, which is what makes the
+    // pack evidence rather than an export.
+    await prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        userName: actor.name,
+        action: 'CREATE',
+        // The existing type for "an admin read staff↔parent threads beyond
+        // their own". This IS that act, narrowed to one pupil, so it belongs in
+        // the same bucket rather than inventing a type (and a migration) to say
+        // the same thing. `event` is what tells the two apart in the log.
+        resourceType: 'CONVERSATION',
+        resourceId: pupil.id,
+        metadata: {
+          event: 'EVIDENCE_ACCESS',
+          pupilHubId,
+          threadCount: threads.length,
+          messageCount: threads.reduce((n, c) => n + c.messages.length, 0),
+        },
+        schoolId: actor.schoolId,
+        ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+      },
+    })
+
+    res.json({
+      pupil: {
+        studentName: `${pupil.firstName} ${pupil.lastName}`.trim(),
+        className: pupil.class?.name ?? null,
+      },
+      threads: threads.map((c) => ({
+        id: c.id,
+        staffName: c.staff.name,
+        guardianName: c.parent.name,
+        // Co-guardians the thread was shared with, and CC'd staff, kept apart:
+        // "who else could see this" is a different fact from "who else at the
+        // school was on it", and a pack that merges them misreports both.
+        sharedWith: c.participants.filter((p) => p.role !== 'STAFF').map((p) => p.user.name),
+        ccStaff: c.participants.filter((p) => p.role === 'STAFF').map((p) => p.user.name),
+        createdAt: c.createdAt.toISOString(),
+        lastMessageAt: c.lastMessageAt.toISOString(),
+        messages: c.messages.map((m) => {
+          // Withdrawn messages stay as tombstones — blank content, the sender
+          // kept. A pack may well choose not to print them, but a message that
+          // was sent and withdrawn happened, and silently dropping the row
+          // would make the record of the correspondence untrue.
+          const isDeleted = !!m.deletedAt
+          return {
+            id: m.id,
+            senderName: m.sender.name,
+            senderRole: m.senderId === c.staffId ? 'STAFF' : 'GUARDIAN',
+            content: isDeleted ? '' : m.content,
+            deleted: isDeleted || undefined,
+            deletedAt: m.deletedAt?.toISOString() || null,
+            sentAt: m.createdAt.toISOString(),
+            // Names only. A pack needs to say a file was sent, not to keep a
+            // withdrawn or private attachment fetchable from an evidence PDF.
+            attachments: isDeleted ? [] : m.attachments.map((a) => ({ name: a.fileName, type: a.fileType, size: a.fileSize })),
+          }
+        }),
+      })),
+    })
+  } catch (error) {
+    console.error('Error building partner parent-thread evidence:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })
