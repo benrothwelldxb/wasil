@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest'
 // `timezoneForSchool`. Stubbed so this suite needs no database.
 vi.mock('../src/services/prisma', () => ({ default: {} }))
 
-const { parseSchoolWallClock } = await import('../src/services/dateTime')
+const { parseSchoolWallClock, parseSchoolExpiry } = await import('../src/services/dateTime')
 
 /**
  * The bug: an `<input type="datetime-local">` sends bare wall-clock text, and
@@ -51,5 +51,40 @@ describe('parseSchoolWallClock', () => {
 
   it('hands back an Invalid Date for text it cannot parse', () => {
     expect(Number.isNaN(parseSchoolWallClock('not a date', 'Asia/Dubai').getTime())).toBe(true)
+  })
+})
+
+/**
+ * "Show until" is a DATE: it names the last day a post is shown, not the second
+ * it disappears. Read as plain UTC midnight it meant the START of that day, so
+ * in a UTC+4 school a post set to show until the 11th vanished at 4am ON the
+ * 11th — a day early.
+ */
+describe('parseSchoolExpiry', () => {
+  it('runs a bare date to the END of that day in the school’s zone', () => {
+    // expiresAt is an exclusive bound (`expiresAt > now` keeps it visible), so
+    // the end of the 11th IS the moment the 12th begins: 2026-09-11T20:00Z.
+    expect(parseSchoolExpiry('2026-09-11', 'Asia/Dubai').toISOString())
+      .toBe('2026-09-11T20:00:00.000Z')
+  })
+
+  it('rolls over a month end correctly', () => {
+    expect(parseSchoolExpiry('2026-09-30', 'Asia/Dubai').toISOString())
+      .toBe('2026-09-30T20:00:00.000Z')
+    expect(parseSchoolExpiry('2026-12-31', 'Asia/Dubai').toISOString())
+      .toBe('2026-12-31T20:00:00.000Z')
+  })
+
+  it('takes a specific time at face value', () => {
+    // Someone who typed a time meant that time — only a bare date is stretched.
+    expect(parseSchoolExpiry('2026-09-11T09:00', 'Asia/Dubai').toISOString())
+      .toBe('2026-09-11T05:00:00.000Z')
+    expect(parseSchoolExpiry('2026-09-11T09:00:00.000Z', 'Asia/Dubai').toISOString())
+      .toBe('2026-09-11T09:00:00.000Z')
+  })
+
+  it('ends the day at UTC midnight for a school with no timezone', () => {
+    expect(parseSchoolExpiry('2026-09-11', 'UTC').toISOString())
+      .toBe('2026-09-12T00:00:00.000Z')
   })
 })

@@ -138,6 +138,45 @@ export function parseSchoolWallClock(value: string, timezone: string): Date {
 }
 
 /**
+ * The instant a "show until <date>" expiry falls due: the END of that day in the
+ * school's timezone.
+ *
+ * `expiresAt` is an exclusive bound everywhere it is read (`expiresAt > now`
+ * keeps a post visible), so the end of the 11th is precisely the moment the
+ * 12th begins locally — no 23:59:59.999 fencepost, and no gap.
+ *
+ * "Show until" is a DATE input: it says which day is the last one, not which
+ * second. Read as plain UTC midnight it meant the START of that day, and in a
+ * UTC+4 school a post set to show until the 11th vanished at 4am ON the 11th —
+ * a day early, from the school's point of view.
+ *
+ * A value that carries a TIME (or an offset) is somebody being specific, and is
+ * taken at face value: only a bare date is stretched to the day's end.
+ */
+export function parseSchoolExpiry(value: string, timezone: string): Date {
+  const trimmed = value.trim()
+  if (carriesOffset(trimmed)) return new Date(trimmed)
+  const m = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?/.exec(trimmed)
+  if (!m) return new Date(trimmed)
+  if (m[2]) return zonedTimeToUtc(m[1], m[2], timezone)
+  const [y, mo, d] = m[1].split('-').map(Number)
+  const next = new Date(Date.UTC(y, mo - 1, d + 1))
+  return zonedTimeToUtc(next.toISOString().slice(0, 10), '00:00', timezone)
+}
+
+/** `parseSchoolExpiry`, looking the timezone up from the School row. Shares the
+ *  offset short-circuit with `parseWallClockForSchool`: an instant costs no
+ *  query, because it needs no zone. */
+export async function parseExpiryForSchool(value: string, schoolId: string): Promise<Date> {
+  if (carriesOffset(value)) return new Date(value.trim())
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { timezone: true },
+  })
+  return parseSchoolExpiry(value, school?.timezone || 'UTC')
+}
+
+/**
  * `parseSchoolWallClock`, looking the timezone up from the School row.
  *
  * A value that already carries an offset needs no zone at all, so it never
