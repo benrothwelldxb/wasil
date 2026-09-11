@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-09-11
 - **Deciders:** Ben Rothwell
-- **Related:** Wasil Inclusion (SEND) `docs/CONNECT-INTEGRATION.md` §4.2 (the staff-only exclusion list this overrules) and §D.3.5 (the same question recorded from SEND's side); [ADR 0006](https://github.com/benrothwelldxb/wasil) ILSA messaging, for the pattern of recording a cross-app disagreement rather than letting one side's default stand.
+- **Related:** Wasil Inclusion (SEND) `docs/CONNECT-INTEGRATION.md` §4.2 (the staff-only exclusion list this overrules) and §D.3.5 (the same question recorded from SEND's side); Desk [ADR 0006](../../../wasildesk/docs/adr/0006-ilsa-limited-entity-messaging.md) (ILSA as a limited entity), for the pattern of recording a cross-app position rather than letting one side's default stand.
 
 ## Context
 
