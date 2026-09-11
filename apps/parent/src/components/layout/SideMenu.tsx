@@ -63,7 +63,6 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   const [parentGroups, setParentGroups] = useState<ParentGroupInfo[]>([])
   const [hasActiveEca, setHasActiveEca] = useState(false)
   const [hasActiveConsultations, setHasActiveConsultations] = useState(false)
-  const [hasIeps, setHasIeps] = useState(false)
   const [hasReports, setHasReports] = useState(false)
   const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null)
   const { isInstallable, canPrompt, promptInstall } = useInstallState()
@@ -95,10 +94,6 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
           setHasActiveConsultations(!!active)
         })
         .catch(() => setHasActiveConsultations(false))
-
-      api.inclusion.myChildrenIeps()
-        .then(ieps => setHasIeps(ieps && ieps.length > 0))
-        .catch(() => setHasIeps(false))
 
       api.students.myChildrenReports()
         .then(reports => setHasReports(reports && reports.length > 0))
@@ -213,9 +208,6 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   const myChild: MenuItem[] = []
   if (hasReports) {
     myChild.push({ icon: FileText, labelKey: 'nav.reportCards', path: '/report-cards' })
-  }
-  if (hasIeps) {
-    myChild.push({ icon: Target, labelKey: 'nav.inclusion', path: '/inclusion' })
   }
   if (myChild.length > 0) {
     sections.push({ label: 'My Child', items: myChild })

@@ -29,7 +29,6 @@ import { ConsultationsPage } from './pages/ConsultationsPage'
 import { SchoolServicesPage } from './pages/SchoolServicesPage'
 import { NotificationSettingsPage } from './pages/NotificationSettingsPage'
 import { SearchPage } from './pages/SearchPage'
-import { InclusionPage } from './pages/InclusionPage'
 import { CafeteriaPage } from './pages/CafeteriaPage'
 import { InboxPage } from './pages/InboxPage'
 import { NewConversationPage } from './pages/NewConversationPage'
@@ -328,10 +327,6 @@ export default function App() {
       <Route
         path="/lunch-menu"
         element={<ProtectedRoute><AppLayout><CafeteriaPage /></AppLayout></ProtectedRoute>}
-      />
-      <Route
-        path="/inclusion"
-        element={<ProtectedRoute><AppLayout><InclusionPage /></AppLayout></ProtectedRoute>}
       />
       <Route
         path="/report-cards"
