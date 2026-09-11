@@ -24,7 +24,7 @@ import {
   normaliseMeetings, timeSlotFor, genderFor, activityTypeFor, capacityFor,
   statusFor, parseVersion, isNewer, hubYearGroupIdsOf,
 } from '../services/activityPush.js'
-import { sendNotification } from '../services/notify.js'
+import { sendNotification, resolveAudienceParentIds } from '../services/notify.js'
 import { signalAdminNotice } from '../services/adminNotices.js'
 import logger from '../services/logger.js'
 import { enqueuePush } from '../services/outbox.js'
@@ -1762,12 +1762,11 @@ function toIdArray(v: unknown): string[] {
 // the native create (sanitized content, its own attachments, a `sendNotification`
 // with that row's target). Partner broadcasts are never pinned.
 //
-// NOTE (Connect-side follow-on, ADR 0004 — flagged, NOT fixed here): the
-// class/year-group fan-out inside `notify.ts` reads the legacy `Child` table, so
-// Desk/Hub-provisioned pupils (who live only in `Student`/`ParentStudentLink`)
-// are NOT reached via the class/year path until that service is modernised. The
-// `groupId` path already uses the modern tables, so group broadcasts fan out
-// fully. We mirror native behaviour exactly and leave the caveat as-is.
+// The response reports BOTH numbers, because they are different facts and one
+// of them has already been mistaken for the other: `created` counts fan-out
+// ROWS (five classes = 5, the whole school = 1), `parents` counts distinct
+// PEOPLE. A caller that renders `created` as a headcount tells a teacher who
+// messaged five classes that 5 parents have it.
 router.post('/messages', requirePartner, async (req, res) => {
   try {
     const { hub_user_id, title, content, audience, isUrgent, scheduledAt, expiresAt, attachments, channel, department } = req.body ?? {}
@@ -1830,6 +1829,8 @@ router.post('/messages', requirePartner, async (req, res) => {
 
     // Build one fan-out target per resolved audience (class → group → year → school).
     const targets: { targetClass: string; classId?: string; yearGroupId?: string; groupId?: string }[] = []
+    // Distinct parent users across the whole send — see the resolve below.
+    const audienceParentIds = new Set<string>()
     for (const c of resolvedClasses) targets.push({ targetClass: c.name, classId: c.id })
     for (const g of resolvedGroups) targets.push({ targetClass: g.name, groupId: g.id })
     if (resolvedYearGroup) targets.push({ targetClass: resolvedYearGroup.name, yearGroupId: resolvedYearGroup.id })
@@ -1895,17 +1896,37 @@ router.post('/messages', requirePartner, async (req, res) => {
         })
       }
 
+      const target = {
+        targetClass: t.targetClass,
+        classId: t.classId,
+        yearGroupId: t.yearGroupId,
+        groupId: t.groupId,
+        schoolId: actor.schoolId,
+      }
+
+      // The real headcount, which this route computed and threw away. Resolved
+      // for EVERY target, including a scheduled one — the audience as it stands
+      // at queue time is the honest answer to "who is this going to", and a
+      // caller can label it as expected rather than delivered.
+      //
+      // A UNION across the whole send, never a per-target sum: a parent with a
+      // child in two of the targeted classes is one person who was told once,
+      // and summing per-target totals is the same error one layer down.
+      //
+      // Counted BEFORE the notification-preference filter, deliberately. A
+      // parent who muted push still has the message in front of them in the
+      // app; "we didn't buzz their phone" is a different fact from "they
+      // weren't told", and this number answers the second.
+      //
+      // Resolved here as well as inside sendNotification rather than threading
+      // a count back out of it: that function is called from a dozen places and
+      // its contract is worth more than the duplicate query.
+      for (const id of await resolveAudienceParentIds(target)) audienceParentIds.add(id)
+
       // Same rule as the native create: announce only what is live now. A
       // future-dated broadcast is picked up by the publishScheduledMessages
       // sweep when its time arrives, and `notifiedAt` staying null is the marker.
       if (broadcastLiveNow) {
-        const target = {
-          targetClass: t.targetClass,
-          classId: t.classId,
-          yearGroupId: t.yearGroupId,
-          groupId: t.groupId,
-          schoolId: actor.schoolId,
-        }
         if (isNotice) {
           // Quiet in the app, but always signalled by email — that is what
           // makes a section outside the feed discoverable. The email carries
@@ -1932,7 +1953,9 @@ router.post('/messages', requirePartner, async (req, res) => {
       }
     }
 
-    res.status(201).json({ created: targets.length })
+    // `created` = fan-out rows, unchanged. `parents` = distinct people. Zero is
+    // a real answer and says so: an empty class is a thing a sender needs told.
+    res.status(201).json({ created: targets.length, parents: audienceParentIds.size })
   } catch (error) {
     console.error('Error creating partner broadcast:', error)
     res.status(500).json({ error: 'internal_error' })

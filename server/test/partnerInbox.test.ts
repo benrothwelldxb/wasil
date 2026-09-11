@@ -40,7 +40,14 @@ vi.mock('../src/services/firebase', () => firebaseMock)
 
 // notify.ts is exercised natively elsewhere; here we assert the partner
 // broadcast fan-out calls it once per resolved target with the right target.
-const notifyMock = { sendNotification: vi.fn() }
+// `resolveAudienceParentIds` is the same module's audience resolver, which the
+// broadcast route also calls directly to count distinct parents — returning
+// overlapping ids on purpose, so the reported number has to be a UNION rather
+// than a per-target sum for the assertion below to hold.
+const notifyMock = {
+  sendNotification: vi.fn(),
+  resolveAudienceParentIds: vi.fn(async () => ['par-1', 'par-2']),
+}
 vi.mock('../src/services/notify', () => notifyMock)
 
 // sanitizeRichText is the real XSS-defense; stub it to an identity passthrough
@@ -870,7 +877,7 @@ describe('POST /api/partner/messages', () => {
     })
 
     expect(res.status).toBe(201)
-    expect(res.body).toEqual({ created: 4 })
+    expect(res.body).toEqual({ created: 4, parents: 2 })
 
     // Validation was school-scoped and up front.
     expect(prismaMock.class.findMany).toHaveBeenCalledWith({
@@ -921,7 +928,7 @@ describe('POST /api/partner/messages', () => {
     const res = await auth(request(makeApp()).post('/api/partner/messages'))
       .send({ hub_user_id: 'hu-staff', title: 'T', content: 'C', audience: { yearGroupId: 'yg-1' } })
     expect(res.status).toBe(201)
-    expect(res.body).toEqual({ created: 1 })
+    expect(res.body).toEqual({ created: 1, parents: 2 })
     expect(prismaMock.message.create.mock.calls[0][0].data).toMatchObject({ targetClass: 'Year 1', yearGroupId: 'yg-1' })
   })
 
@@ -1315,6 +1322,60 @@ describe('DELETE /api/partner/groups/:id', () => {
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ ok: true })
     expect(prismaMock.group.update).toHaveBeenCalledWith({ where: { id: 'g-1' }, data: { isActive: false } })
+  })
+})
+
+describe('POST /api/partner/messages — the reach count', () => {
+  const auth = (r: request.Test) => r.set('Authorization', `Bearer ${TOKEN}`)
+
+  beforeEach(() => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    let n = 0
+    prismaMock.message.create.mockImplementation(async () => ({ id: `msg-${++n}` }))
+    prismaMock.messageAttachment.createMany.mockResolvedValue({ count: 0 })
+    prismaMock.class.findMany.mockResolvedValue([
+      { id: 'c-1', name: 'FS1 Blue' }, { id: 'c-2', name: 'FS2 Red' },
+    ])
+    prismaMock.group.findMany.mockResolvedValue([])
+    prismaMock.yearGroup.findFirst.mockResolvedValue(null)
+    notifyMock.resolveAudienceParentIds.mockResolvedValue(['par-1', 'par-2'])
+  })
+
+  // The bug this exists to prevent, one layer up: `created` counts fan-out
+  // ROWS, and a caller rendered it as people — "5 parents have it" for a
+  // broadcast to five classes.
+  it('counts distinct PARENTS as a union, not one per target', async () => {
+    // Both classes resolve to the SAME two parents (siblings, or two guardians
+    // of one child in each): four resolutions, two people.
+    const res = await auth(request(makeApp()).post('/api/partner/messages'))
+      .send({ hub_user_id: 'hu-staff', title: 'T', content: 'C', audience: { classHubIds: ['hc-1', 'hc-2'] } })
+
+    expect(res.status).toBe(201)
+    expect(res.body.created).toBe(2)   // rows, unchanged
+    expect(res.body.parents).toBe(2)   // people, not 4
+  })
+
+  it('answers for a scheduled broadcast too, with the audience at queue time', async () => {
+    const res = await auth(request(makeApp()).post('/api/partner/messages'))
+      .send({
+        hub_user_id: 'hu-staff', title: 'T', content: 'C',
+        audience: { classHubIds: ['hc-1', 'hc-2'] },
+        scheduledAt: '2030-01-01T09:00:00.000Z',
+      })
+
+    expect(res.status).toBe(201)
+    // Nothing was announced — but the sender is still owed a number.
+    expect(notifyMock.sendNotification).not.toHaveBeenCalled()
+    expect(res.body.parents).toBe(2)
+  })
+
+  it('reports zero as zero — an empty class is a thing a sender needs told', async () => {
+    notifyMock.resolveAudienceParentIds.mockResolvedValue([])
+    const res = await auth(request(makeApp()).post('/api/partner/messages'))
+      .send({ hub_user_id: 'hu-staff', title: 'T', content: 'C', audience: { classHubIds: ['hc-1', 'hc-2'] } })
+
+    expect(res.status).toBe(201)
+    expect(res.body.parents).toBe(0)
   })
 })
 
