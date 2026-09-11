@@ -176,7 +176,12 @@ router.post('/sync/iep', authenticateApiKey, async (req: Request, res: Response)
         reviewDate: reviewDate || null,
         keyWorker: keyWorker || null,
         notes: notes || null,
-        parentVisible: parentVisible !== false,
+        // Publication is an ACT, so it must be asked for. `!== false` meant a
+        // caller who never heard of this flag published a child's IEP to their
+        // family by saying nothing — the one failure nothing at the calling end
+        // can prevent, because there is nothing to get wrong. An explicit true
+        // is now the only thing that publishes.
+        parentVisible: parentVisible === true,
         syncedAt: new Date(),
       },
       update: {
@@ -274,7 +279,8 @@ router.post('/sync/ieps', authenticateApiKey, async (req: Request, res: Response
               reviewDate: iep.reviewDate || null,
               keyWorker: iep.keyWorker || null,
               notes: iep.notes || null,
-              parentVisible: iep.parentVisible !== false,
+              // Same rule as the single-push route: explicit true, or unpublished.
+              parentVisible: iep.parentVisible === true,
               syncedAt: new Date(),
             },
           })

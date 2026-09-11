@@ -1,0 +1,11 @@
+-- An IEP is unpublished until someone publishes it.
+--
+-- StudentIep.parentVisible defaulted to true, and both push routes wrote
+-- `parentVisible !== false` over that default — so a caller who never heard of
+-- the flag published a child's IEP to their family by OMISSION. There was no
+-- publication act anywhere in the system: no decision, no actor, no record.
+--
+-- Existing rows are deliberately left alone. This changes what happens to the
+-- NEXT row written, not what any family can see today; re-hiding a plan a
+-- family has already been shown is a different decision, and not this one's.
+ALTER TABLE "StudentIep" ALTER COLUMN "parentVisible" SET DEFAULT false;
