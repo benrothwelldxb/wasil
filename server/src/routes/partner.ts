@@ -15,7 +15,7 @@ import { marked } from 'marked'
 import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
-import { todayInTimezone, parseWallClockForSchool } from '../services/dateTime.js'
+import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { resolveIlsa } from '../services/ilsaResolution.js'
@@ -1653,7 +1653,11 @@ router.post('/messages', requirePartner, async (req, res) => {
       ? await parseWallClockForSchool(scheduledAt, actor.schoolId)
       : null
     const broadcastLiveNow = !scheduledDate || scheduledDate <= new Date()
-    const expiresDate = typeof expiresAt === 'string' && expiresAt ? new Date(expiresAt) : null
+    // Same rule as the admin composer: a bare date runs to the end of that day
+    // in the school's zone; anything more specific is taken as sent.
+    const expiresDate = typeof expiresAt === 'string' && expiresAt
+      ? await parseExpiryForSchool(expiresAt, actor.schoolId)
+      : null
     const attachmentRows = Array.isArray(attachments) ? attachments : []
 
     // `sendNotification` currently ignores `req`, but the native route passes it

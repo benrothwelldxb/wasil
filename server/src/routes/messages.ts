@@ -11,7 +11,7 @@ import { translateTexts } from '../services/translation.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
-import { parseWallClockForSchool } from '../services/dateTime.js'
+import { parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
 
 const router = Router()
 
@@ -530,6 +530,9 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
     // wall-clock text, and reading it against the server's zone (UTC in
     // production) sent a Dubai school's 11:30 post at 15:30 local.
     const scheduledDate = scheduledAt ? await parseWallClockForSchool(scheduledAt, user.schoolId) : null
+    // "Show until" names the last day the post is shown, so it runs to the END
+    // of that day locally — read as UTC midnight it hid the post a day early.
+    const expiresDate = expiresAt ? await parseExpiryForSchool(expiresAt, user.schoolId) : null
     const liveNow = !scheduledDate || scheduledDate <= new Date()
 
     const message = await prisma.message.create({
@@ -556,7 +559,7 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
         notifiedAt: liveNow ? new Date() : null,
         channel: isNotice ? 'ADMIN_NOTICE' : 'FEED',
         department: isNotice && typeof department === 'string' && department.trim() ? department.trim() : null,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        expiresAt: expiresDate,
         formId: formId || null,
       },
     })
@@ -662,8 +665,9 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
       return res.status(404).json({ error: 'Message not found' })
     }
 
-    // Same wall-clock reading as create: the school's zone, not the server's.
+    // Same readings as create: the school's zone, not the server's.
     const scheduledDate = scheduledAt ? await parseWallClockForSchool(scheduledAt, user.schoolId) : null
+    const expiresDate = expiresAt ? await parseExpiryForSchool(expiresAt, user.schoolId) : null
 
     const message = await prisma.message.update({
       where: { id },
@@ -682,7 +686,7 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
         isUrgent: isUrgent ?? existing.isUrgent,
         requiresAcknowledgment: requiresAcknowledgment ?? existing.requiresAcknowledgment,
         scheduledAt: scheduledAt !== undefined ? scheduledDate : existing.scheduledAt,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        expiresAt: expiresDate,
         formId: formId !== undefined ? (formId || null) : existing.formId,
       },
     })
