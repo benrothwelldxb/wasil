@@ -1095,10 +1095,20 @@ export const files = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  createFile: (data: { name: string; fileName: string; fileUrl: string; fileType: string; fileSize: number; folderId?: string }) =>
+  /** Upload a file. Multipart — fetchApi drops the JSON content-type when the
+   *  body is FormData and lets the browser set the boundary. Fields: `file`
+   *  (required), plus optional `name` (display name, defaults to the original
+   *  filename) and `folderId`. The route enforces a 25MB cap and a MIME
+   *  allowlist checked against the extension AND the magic bytes.
+   *
+   *  (This replaces a JSON `createFile` that posted a `fileUrl` the caller was
+   *  expected to have uploaded elsewhere. The route has taken multipart for as
+   *  long as it has existed, so that method could never have worked; nothing
+   *  called it.) */
+  upload: (data: FormData) =>
     fetchApi<any>('/api/files/file', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: data,
     }),
   deleteFile: (id: string) =>
     fetchApi<{ message: string }>(`/api/files/file/${id}`, {
