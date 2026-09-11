@@ -1,6 +1,6 @@
 import React from 'react'
 import { Plus, Trash2, ChevronDown, SeparatorHorizontal, PenTool } from 'lucide-react'
-import { useTheme } from '@wasil/shared'
+import { useTheme, toLocalInputValue, toIsoInstant } from '@wasil/shared'
 import type { FormField, FormFieldType, FormFieldCondition, FormStatus } from '@wasil/shared'
 import type { AudienceOption } from './MessageForm'
 
@@ -227,8 +227,8 @@ export function FormForm({
           <label className="block text-sm font-medium text-gray-700 mb-1">Expires at (optional)</label>
           <input
             type="datetime-local"
-            value={formData.expiresAt ? formData.expiresAt.slice(0, 16) : ''}
-            onChange={e => onChange({ ...formData, expiresAt: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+            value={toLocalInputValue(formData.expiresAt)}
+            onChange={e => onChange({ ...formData, expiresAt: toIsoInstant(e.target.value) })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           />
         </div>

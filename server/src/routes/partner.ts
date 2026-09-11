@@ -15,7 +15,7 @@ import { marked } from 'marked'
 import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
-import { todayInTimezone } from '../services/dateTime.js'
+import { todayInTimezone, parseWallClockForSchool } from '../services/dateTime.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { resolveIlsa } from '../services/ilsaResolution.js'
@@ -1645,7 +1645,13 @@ router.post('/messages', requirePartner, async (req, res) => {
     // (the broadcast render path is HTML, shared with the admin composer).
     const safeContent = markdownToSafeHtml(content)
     const cleanTitle = title.trim()
-    const scheduledDate = typeof scheduledAt === 'string' && scheduledAt ? new Date(scheduledAt) : null
+    // Desk sends proper ISO, which carries its own offset and is honoured as
+    // sent. A bare wall clock ("2026-09-11T11:30") is read as the school's local
+    // time rather than the server's — the same rule the admin composer uses, so
+    // the two cannot disagree about what 11:30 means.
+    const scheduledDate = typeof scheduledAt === 'string' && scheduledAt
+      ? await parseWallClockForSchool(scheduledAt, actor.schoolId)
+      : null
     const broadcastLiveNow = !scheduledDate || scheduledDate <= new Date()
     const expiresDate = typeof expiresAt === 'string' && expiresAt ? new Date(expiresAt) : null
     const attachmentRows = Array.isArray(attachments) ? attachments : []

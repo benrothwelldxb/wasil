@@ -14,6 +14,9 @@ const prismaMock = {
   message: { findMany: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
   messageAttachment: { createMany: vi.fn(), findMany: vi.fn() },
   form: { updateMany: vi.fn() },
+  // Only read when a scheduledAt arrives without a zone — see the wall-clock
+  // cases below.
+  school: { findUnique: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -65,6 +68,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-09-01T09:15:00.000Z'))
   prismaMock.message.updateMany.mockResolvedValue({ count: 1 })
+  prismaMock.school.findUnique.mockResolvedValue({ timezone: 'Asia/Dubai' })
   notifyMock.sendNotification.mockResolvedValue(undefined)
 })
 
@@ -169,5 +173,26 @@ describe('POST /api/messages — holding the announcement back', () => {
     await post({ scheduledAt: '2026-08-01T08:00:00.000Z' })
     expect(notifyMock.sendNotification).toHaveBeenCalledTimes(1)
     expect(prismaMock.message.create.mock.calls[0][0].data.notifiedAt).toBeInstanceOf(Date)
+  })
+
+  // A datetime-local input sends no zone at all. Read against the server's own
+  // clock — UTC in production — a Dubai admin's 11:30 post became 11:30Z and
+  // went out at 15:30 their time.
+  it('stores a bare wall clock as the school’s local time', async () => {
+    await post({ scheduledAt: '2026-09-11T11:30' })
+
+    expect(prismaMock.school.findUnique).toHaveBeenCalled()
+    const stored = prismaMock.message.create.mock.calls[0][0].data.scheduledAt as Date
+    expect(stored.toISOString()).toBe('2026-09-11T07:30:00.000Z')
+  })
+
+  // The other half: a client that sends a real instant is never second-guessed,
+  // and costs no lookup at all.
+  it('honours an instant as sent, without asking for the school’s zone', async () => {
+    await post({ scheduledAt: '2026-09-11T07:30:00.000Z' })
+
+    expect(prismaMock.school.findUnique).not.toHaveBeenCalled()
+    const stored = prismaMock.message.create.mock.calls[0][0].data.scheduledAt as Date
+    expect(stored.toISOString()).toBe('2026-09-11T07:30:00.000Z')
   })
 })
