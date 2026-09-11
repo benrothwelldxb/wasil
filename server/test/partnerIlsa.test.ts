@@ -344,3 +344,134 @@ describe('GET /api/partner/oversight/ilsa-threads', () => {
     })
   })
 })
+
+// The KHDA evidence read: a pupil's school↔parent correspondence, for an
+// inspection pack. Same gate as the ILSA oversight route above and tested
+// alongside it, because the thing that must never happen is the two crossing:
+// an ILSA thread is private to the family and their own paid assistant, and has
+// no business in a school's inspection evidence.
+describe('GET /api/partner/oversight/parent-threads', () => {
+  const PUPIL = { id: 'stu-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' } }
+
+  it('403 for a staff actor — evidence access is admin-only', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    const res = await auth(request(makeApp()).get('/api/partner/oversight/parent-threads?hub_user_id=hu-staff&pupil_id=hp-1'))
+    expect(res.status).toBe(403)
+    expect(prismaMock.conversation.findMany).not.toHaveBeenCalled()
+  })
+
+  it('403 when an ILSA asks for it', async () => {
+    asIlsa()
+    const res = await auth(request(makeApp()).get('/api/partner/oversight/parent-threads?hub_user_id=hu-ilsa&pupil_id=hp-1'))
+    expect(res.status).toBe(403)
+  })
+
+  it('400 without a pupil_id — never a whole-school dump', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(ADMIN)
+    const res = await auth(request(makeApp()).get('/api/partner/oversight/parent-threads?hub_user_id=hu-admin'))
+    expect(res.status).toBe(400)
+  })
+
+  it('404 when the pupil is unknown in the admin’s school', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(ADMIN)
+    prismaMock.student.findFirst.mockResolvedValue(null)
+    const res = await auth(request(makeApp()).get('/api/partner/oversight/parent-threads?hub_user_id=hu-admin&pupil_id=hp-x'))
+    expect(res.status).toBe(404)
+  })
+
+  it('403 when school_id cross-checks to a different school', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(ADMIN)
+    prismaMock.school.findFirst.mockResolvedValue({ id: 'sch-OTHER' })
+    const res = await auth(request(makeApp()).get('/api/partner/oversight/parent-threads?hub_user_id=hu-admin&pupil_id=hp-1&school_id=other'))
+    expect(res.status).toBe(403)
+    expect(prismaMock.student.findFirst).not.toHaveBeenCalled()
+  })
+
+  // The one that matters most: the query itself must exclude ILSA threads, so
+  // no amount of filtering downstream can put one in a pack.
+  it('asks only for STAFF-typed threads, never the pupil’s private ILSA ones', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(ADMIN)
+    prismaMock.student.findFirst.mockResolvedValue(PUPIL)
+    prismaMock.conversation.findMany.mockResolvedValue([])
+    prismaMock.auditLog.create.mockResolvedValue({})
+
+    const res = await auth(request(makeApp()).get('/api/partner/oversight/parent-threads?hub_user_id=hu-admin&pupil_id=hp-1'))
+    expect(res.status).toBe(200)
+    expect(prismaMock.conversation.findMany.mock.calls[0][0].where).toEqual({
+      schoolId: 'sch-1', kind: 'STAFF', studentId: 'stu-1',
+    })
+  })
+
+  it('returns the correspondence and AUDITS the read with a named actor', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(ADMIN)
+    prismaMock.student.findFirst.mockResolvedValue(PUPIL)
+    prismaMock.conversation.findMany.mockResolvedValue([
+      {
+        id: 'c-1', staffId: 'staff-1',
+        createdAt: new Date('2026-08-01T09:00:00.000Z'),
+        lastMessageAt: new Date('2026-08-14T10:00:00.000Z'),
+        parent: { id: 'p-1', name: 'Sara Khan' },
+        staff: { id: 'staff-1', name: 'Ms Noor' },
+        participants: [
+          { role: 'PARENT', user: { name: 'Omar Khan' } },
+          { role: 'STAFF', user: { name: 'Head of Year' } },
+        ],
+        messages: [
+          { id: 'm-1', senderId: 'staff-1', content: 'Reading update', createdAt: new Date('2026-08-14T09:00:00.000Z'), deletedAt: null, sender: { name: 'Ms Noor' }, attachments: [{ fileName: 'report.pdf', fileUrl: 'https://r2/x', fileType: 'application/pdf', fileSize: 12 }] },
+          { id: 'm-2', senderId: 'p-1', content: 'Thank you', createdAt: new Date('2026-08-14T10:00:00.000Z'), deletedAt: null, sender: { name: 'Sara Khan' }, attachments: [] },
+          { id: 'm-3', senderId: 'staff-1', content: 'sent in error', createdAt: new Date('2026-08-14T11:00:00.000Z'), deletedAt: new Date('2026-08-14T11:05:00.000Z'), sender: { name: 'Ms Noor' }, attachments: [] },
+        ],
+      },
+    ])
+    prismaMock.auditLog.create.mockResolvedValue({})
+
+    const res = await auth(request(makeApp()).get('/api/partner/oversight/parent-threads?hub_user_id=hu-admin&pupil_id=hp-1'))
+    expect(res.status).toBe(200)
+    expect(res.body.pupil).toEqual({ studentName: 'Amina Khan', className: '1A' })
+    expect(res.body.threads[0]).toMatchObject({
+      id: 'c-1', staffName: 'Ms Noor', guardianName: 'Sara Khan',
+      // Co-guardians and CC'd staff stay apart — different facts.
+      sharedWith: ['Omar Khan'], ccStaff: ['Head of Year'],
+    })
+    expect(res.body.threads[0].messages.map((m: { senderRole: string }) => m.senderRole)).toEqual(['STAFF', 'GUARDIAN', 'STAFF'])
+    // A withdrawn message survives as a tombstone: it happened, and a record of
+    // the correspondence that silently omits it is not true.
+    expect(res.body.threads[0].messages[2]).toMatchObject({ content: '', deleted: true, attachments: [] })
+    // Attachments are named, never linked — a pack must not keep a private file
+    // fetchable from a PDF.
+    expect(res.body.threads[0].messages[0].attachments).toEqual([{ name: 'report.pdf', type: 'application/pdf', size: 12 }])
+
+    expect(prismaMock.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        userId: 'admin-1', userName: 'Head', action: 'CREATE',
+        resourceType: 'CONVERSATION', resourceId: 'stu-1', schoolId: 'sch-1',
+        metadata: expect.objectContaining({ event: 'EVIDENCE_ACCESS', pupilHubId: 'hp-1', threadCount: 1, messageCount: 3 }),
+      }),
+    }))
+  })
+})
+
+// The deep-link filter SEND's "message this family" action needs.
+describe('GET /api/partner/inbox/threads?pupil_id=', () => {
+  it('narrows a staff member’s own threads to one pupil, by Hub pupil id', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    prismaMock.student.findFirst.mockResolvedValue({ id: 'stu-1' })
+    prismaMock.conversation.findMany.mockResolvedValue([])
+
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff&pupil_id=hp-1'))
+    expect(res.status).toBe(200)
+    expect(prismaMock.student.findFirst.mock.calls[0][0].where).toEqual({ hubPupilId: 'hp-1', schoolId: 'sch-1' })
+    expect(prismaMock.conversation.findMany.mock.calls[0][0].where).toMatchObject({ kind: 'STAFF', studentId: 'stu-1' })
+  })
+
+  // Fail closed: an unknown pupil must not quietly widen to the whole inbox.
+  it('returns nothing for an unknown pupil rather than an unfiltered inbox', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    prismaMock.student.findFirst.mockResolvedValue(null)
+
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff&pupil_id=hp-x'))
+    expect(res.status).toBe(200)
+    expect(res.body.threads).toEqual([])
+    expect(prismaMock.conversation.findMany).not.toHaveBeenCalled()
+  })
+})
