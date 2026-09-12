@@ -14,6 +14,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
+import { requireModule } from '../middleware/moduleFlag.js'
 import {
   fetchChildWeek,
   schoolWeekBounds,
@@ -38,7 +39,10 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 //
 // An empty `days[]` inside `ok` means a genuinely quiet week and is the ONLY
 // one of the four that may be shown as nothing on.
-router.get('/child/:studentId', isAuthenticated, async (req, res) => {
+// `requireModule` runs before anything reads Active. A school without the
+// module 404s here, so a parent with a stale link gets nothing rather than a
+// page, and no request leaves Connect on their behalf.
+router.get('/child/:studentId', isAuthenticated, requireModule('activeScheduleEnabled'), async (req, res) => {
   try {
     const { studentId } = req.params
     const user = (await loadUserWithRelations(req.user!.id))!

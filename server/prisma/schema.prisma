@@ -83,6 +83,23 @@ model School {
   linksEnabled           Boolean @default(true)
   knowledgeBaseEnabled   Boolean @default(true)
 
+  // Integrations with a SEPARATE Wasil app, and the only two flags here that
+  // default to FALSE.
+  //
+  // Every flag above defaults true because the module is Connect's own and
+  // ships working. These two reach across an app boundary to a system with its
+  // own release cycle, so "built" and "ready for families" are different dates
+  // — and the gap between them is the whole reason this exists. A school gets
+  // them when someone decides they do, not when the code merges.
+  //
+  // Unlike the flags above, these are enforced SERVER-SIDE as well as hidden
+  // from the menu (see middleware/moduleFlag.ts): off means the route 404s, not
+  // merely that the link is missing.
+  /// "This Week" — clubs and fixtures read from Wasil Active.
+  activeScheduleEnabled  Boolean @default(false)
+  /// The Inclusion page — a child's published plan, read from Wasil Inclusion.
+  sendInclusionEnabled   Boolean @default(false)
+
   // Attendance digest
   attendanceDigestEnabled      Boolean @default(false)
   attendanceDigestTime         String? // HH:MM in school timezone, e.g. "09:00"

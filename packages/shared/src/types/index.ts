@@ -1716,6 +1716,10 @@ export type SchoolModuleFlag =
   | 'filesEnabled'
   | 'linksEnabled'
   | 'knowledgeBaseEnabled'
+  // Cross-app integrations — default OFF, and enforced on the route rather
+  // than only in the navigation.
+  | 'activeScheduleEnabled'
+  | 'sendInclusionEnabled'
 
 export type SchoolModuleFlags = Record<SchoolModuleFlag, boolean>
 
