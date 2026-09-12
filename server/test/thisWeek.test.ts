@@ -128,6 +128,43 @@ describe('GET /api/this-week/child/:studentId — the four states', () => {
 // Active builds `pupils[]` from the pupils it RECOGNISED, so a consumer that
 // reads by position gets the wrong child's week the moment anyone in the batch
 // is unknown — the exact case unknown_pupils exists to flag.
+// A parent sees the same thing for every refusal — there is nothing a family
+// can do about any of them — but the reason says which layer is broken, and
+// they are three different jobs for three different people.
+describe('GET /api/this-week/child/:studentId — why Active refused', () => {
+  const refuse = async (status: number, body: string) => {
+    const { ActiveScheduleError } = await import('../src/services/activeSchedule')
+    fetchChildWeek.mockRejectedValue(new ActiveScheduleError(status, body))
+    return request(makeApp()).get('/api/this-week/child/stu-1')
+  }
+
+  // Ours to fix, and permanent until we do — a retry will never help.
+  it('404 reads as an unknown school, not as a transient outage', async () => {
+    const res = await refuse(404, '{"error":"unknown school"}')
+    expect(res.status).toBe(503)
+    expect(res.body).toEqual({ state: 'unavailable', reason: 'unknown_school' })
+  })
+
+  it('403 reads as the missing scope', async () => {
+    const res = await refuse(403, 'this token does not hold the "schedule:read" scope')
+    expect(res.body.reason).toBe('scope')
+  })
+
+  it('anything else reads as upstream — the only one a retry helps', async () => {
+    const res = await refuse(502, 'bad gateway')
+    expect(res.body.reason).toBe('upstream')
+  })
+
+  // Whatever the reason, it is never a week.
+  it('never renders a refusal as a quiet week', async () => {
+    for (const status of [403, 404, 500]) {
+      const res = await refuse(status, 'x')
+      expect(res.body.state).toBe('unavailable')
+      expect(res.body.days).toBeUndefined()
+    }
+  })
+})
+
 describe('fetchChildWeek — reads by id, never by position', () => {
   const fetchMock = vi.fn()
   beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
