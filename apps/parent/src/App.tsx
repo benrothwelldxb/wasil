@@ -36,6 +36,7 @@ import { ConversationPage } from './pages/ConversationPage'
 import { ReportCardsPage } from './pages/ReportCardsPage'
 import { AttendancePage } from './pages/AttendancePage'
 import { TimetablePage } from './pages/TimetablePage'
+import { ThisWeekPage } from './pages/ThisWeekPage'
 
 const ADMIN_APP_URL = import.meta.env.VITE_ADMIN_URL || 'http://localhost:3001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
@@ -327,6 +328,10 @@ export default function App() {
       <Route
         path="/lunch-menu"
         element={<ProtectedRoute><AppLayout><CafeteriaPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/this-week"
+        element={<ProtectedRoute><AppLayout><ThisWeekPage /></AppLayout></ProtectedRoute>}
       />
       <Route
         path="/report-cards"

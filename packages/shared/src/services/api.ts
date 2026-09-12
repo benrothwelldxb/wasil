@@ -2427,6 +2427,52 @@ export const cafeteria = {
     fetchApi<{ success: boolean }>(`/api/cafeteria/cafe/items/${id}`, { method: 'DELETE' }),
 }
 
+// This Week — a child's clubs and fixtures, read from Wasil Active.
+//
+// `state` is the whole contract: three of the four outcomes would otherwise
+// render as a quiet week, and telling a family in writing that their child has
+// no clubs — on the morning after one was allocated — is worse than telling
+// them nothing. Only `ok` with empty days means "nothing on".
+export interface ThisWeekItem {
+  id?: string
+  kind: 'club' | 'fixture'
+  /** Already composed by Active — never assembled here. */
+  name: string
+  /** Wall clock in the school's own zone, e.g. "15:15". NEVER converted: there
+   *  is no offset to apply, and passing it through the device's zone would
+   *  shift the whole week while looking entirely plausible. */
+  starts_at: string
+  ends_at?: string | null
+  venue?: string | null
+  status: string
+  /** The school's own words. Shown verbatim. */
+  cancellation_reason?: string | null
+  departs_at?: string | null
+  returns_at?: string | null
+  /** This child is missing that club because of their own fixture. Per child,
+   *  not per club — the rest of the squad still trains. */
+  displaced_by_fixture_id?: string | null
+}
+export interface ThisWeekDay {
+  date: string
+  items: ThisWeekItem[]
+}
+export interface ThisWeekResponse {
+  state: 'ok' | 'not_synced' | 'no_hub_link' | 'unavailable'
+  childName?: string
+  timezone?: string | null
+  from?: string
+  to?: string
+  days?: ThisWeekDay[]
+}
+
+export const thisWeek = {
+  child: (studentId: string, weekOf?: string) =>
+    fetchApi<ThisWeekResponse>(
+      `/api/this-week/child/${studentId}${weekOf ? `?weekOf=${weekOf}` : ''}`,
+    ),
+}
+
 // Attendance
 import type {
   AttendanceOverview,
@@ -3113,4 +3159,5 @@ export default {
   cafeteria,
   attendance,
   schoolSettings,
+  thisWeek,
 }

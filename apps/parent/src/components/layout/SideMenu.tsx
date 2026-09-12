@@ -206,6 +206,11 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
 
   // My Child
   const myChild: MenuItem[] = []
+  // Always offered, unlike Report Cards: the page answers "what has my child got
+  // on" for itself, including when the answer is nothing and when Active can't
+  // be reached. Gating it on a probe call would mean a parent whose week is
+  // quiet has no way in to see that it is.
+  myChild.push({ icon: CalendarDays, labelKey: 'nav.thisWeek', path: '/this-week' })
   if (hasReports) {
     myChild.push({ icon: FileText, labelKey: 'nav.reportCards', path: '/report-cards' })
   }
