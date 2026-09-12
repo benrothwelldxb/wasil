@@ -101,10 +101,29 @@ router.get('/child/:studentId', isAuthenticated, async (req, res) => {
     })
   } catch (error) {
     if (error instanceof ActiveScheduleError) {
-      // Active's own refusal, including a missing scope. Logged with its status
-      // so a 403 is traceable to the grant rather than to the request.
-      console.error('[thisWeek] Wasil Active refused:', error.message)
-      return res.status(503).json({ state: 'unavailable' })
+      // Active's own refusal. The parent sees the same thing either way — there
+      // is nothing a family can do about any of these — but the STATUS says
+      // which layer is broken, and logging them identically would send someone
+      // to the wrong one:
+      //   404  the school_id WE send is wrong. Ours to fix, and permanent until
+      //        we do; it will not come back on a retry.
+      //   403  the token lacks `schedule:read`. Ben's grant, not the request.
+      //   else Active is down or erroring — the only one a retry helps.
+      //
+      // Worth the distinction because of how this presented before Active
+      // started 404ing an unknown school: a wrong school_id came back 200 with
+      // every pupil in `unknown_pupils`, so it read as "all your children are
+      // unsynced" and would have sent us debugging the Hub roster sync for what
+      // was a typo in a tenant id.
+      const reason = error.status === 404
+        ? 'unknown_school'
+        : error.status === 403 ? 'scope' : 'upstream'
+      console.error(
+        `[thisWeek] Wasil Active refused (${reason}, status ${error.status})`,
+        reason === 'unknown_school' ? `school_id sent: ${req.user!.schoolId}` : '',
+        error.message,
+      )
+      return res.status(503).json({ state: 'unavailable', reason })
     }
     console.error('Error building this-week schedule:', error)
     res.status(500).json({ error: 'Failed to load the week' })
