@@ -169,6 +169,9 @@ export function ThisWeekPage() {
 
   const childName = data?.childName ?? children.find(c => c.id === activeChildId)?.name ?? 'your child'
   const firstName = childName.split(' ')[0]
+  // Does the week hold anything at all? Every day comes back, including empty
+  // ones, so "some days" is always true and tells you nothing.
+  const hasAnything = (data?.days ?? []).some((d) => d.items.length > 0)
 
   return (
     <div className="space-y-4">
@@ -211,11 +214,32 @@ export function ThisWeekPage() {
       )}
 
       {!isLoading && data?.state === 'ok' && (
-        <div className="space-y-4">
-          {(data.days ?? []).map((day) => (
-            <DayBlock key={day.date} day={day} childName={childName} />
-          ))}
-        </div>
+        hasAnything ? (
+          <div className="space-y-4">
+            {(data.days ?? []).map((day) => (
+              <DayBlock key={day.date} day={day} childName={childName} />
+            ))}
+          </div>
+        ) : (
+          // A week with nothing in it at all is ONE message, not seven identical
+          // ones. It is also the first thing every family will see, because a
+          // school's programme is published after the term starts — so a column
+          // of "Nothing on" repeated down the page would read as a broken screen
+          // rather than an empty week, on the very first impression.
+          //
+          // The second line is deliberately not "the school hasn't published
+          // yet": Connect cannot tell an unpublished programme from a genuinely
+          // quiet week, and stating the reason would be a guess presented to a
+          // parent as fact.
+          <div className="rounded-xl p-4" style={{ backgroundColor: '#FBF7F7' }}>
+            <p className="text-sm font-bold" style={{ color: '#4A3B3F' }}>
+              Nothing on for {firstName} this week.
+            </p>
+            <p className="text-xs mt-1" style={{ color: '#7A6469' }}>
+              Clubs and fixtures appear here as the school adds them.
+            </p>
+          </div>
+        )
       )}
     </div>
   )
