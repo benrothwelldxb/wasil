@@ -53,6 +53,11 @@ const MODULE_GROUPS: ModuleGroup[] = [
       { key: 'filesEnabled', label: 'Files', description: 'Shared files and folders' },
       { key: 'linksEnabled', label: 'External Links', description: 'Useful external links' },
       { key: 'knowledgeBaseEnabled', label: 'Knowledge Base', description: 'FAQ and reference articles' },
+      // Off until someone switches them on: these read another Wasil app's data
+      // across an app boundary, so "built" and "ready for families" are
+      // different dates. Turning one off closes the route, not just the menu.
+      { key: 'activeScheduleEnabled', label: 'This Week (Wasil Active)', description: "Clubs and fixtures for each child, read from Wasil Active" },
+      { key: 'sendInclusionEnabled', label: 'Inclusion (Wasil Inclusion)', description: "A child's published plan, read from Wasil Inclusion" },
     ],
   },
 ]

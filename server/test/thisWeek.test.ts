@@ -45,7 +45,11 @@ beforeEach(() => {
   vi.stubEnv('ACTIVE_API_URL', 'https://active.example')
   vi.stubEnv('ACTIVE_PARTNER_TOKEN', 'cpk_active')
   asParentOf(CHILD)
-  prismaMock.school.findUnique.mockResolvedValue({ hubSchoolId: 'hub-sch-1', timezone: 'Asia/Dubai' })
+  // Both reads the route makes: the module gate, then the school's Hub id and
+  // zone. The gate runs first and 404s without the flag.
+  prismaMock.school.findUnique.mockResolvedValue({
+    activeScheduleEnabled: true, hubSchoolId: 'hub-sch-1', timezone: 'Asia/Dubai',
+  })
   fetchChildWeek.mockResolvedValue({ timezone: 'Asia/Dubai', days: [], unknown: false })
 })
 afterEach(() => vi.unstubAllEnvs())
@@ -68,6 +72,23 @@ describe('GET /api/this-week/child/:studentId — the guardian check', () => {
     expect(fetchChildWeek).toHaveBeenCalledWith(
       expect.objectContaining({ hubSchoolId: 'hub-sch-1', hubPupilId: 'hp-1' }),
     )
+  })
+})
+
+// The switch has to close the ROUTE, not just hide the menu item — otherwise
+// "off" means a link is missing while the data still flows to anyone with the
+// URL, which is not an off switch.
+describe('GET /api/this-week/child/:studentId — the module switch', () => {
+  it('404s when the school does not have the module, and asks Active nothing', async () => {
+    prismaMock.school.findUnique.mockResolvedValue({
+      activeScheduleEnabled: false, hubSchoolId: 'hub-sch-1', timezone: 'Asia/Dubai',
+    })
+
+    const res = await request(makeApp()).get('/api/this-week/child/stu-1')
+
+    expect(res.status).toBe(404)
+    // Nothing left Connect on this parent's behalf.
+    expect(fetchChildWeek).not.toHaveBeenCalled()
   })
 })
 
