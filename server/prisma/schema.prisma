@@ -95,9 +95,9 @@ model School {
   // Unlike the flags above, these are enforced SERVER-SIDE as well as hidden
   // from the menu (see middleware/moduleFlag.ts): off means the route 404s, not
   // merely that the link is missing.
-  /** "This Week" — clubs and fixtures read from Wasil Active. */
+  /// "This Week" — clubs and fixtures read from Wasil Active.
   activeScheduleEnabled  Boolean @default(false)
-  /** The Inclusion page — a child's published plan, read from Wasil Inclusion. */
+  /// The Inclusion page — a child's published plan, read from Wasil Inclusion.
   sendInclusionEnabled   Boolean @default(false)
 
   // Attendance digest
