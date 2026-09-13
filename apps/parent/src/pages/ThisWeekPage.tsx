@@ -227,19 +227,27 @@ export function ThisWeekPage() {
           // of "Nothing on" repeated down the page would read as a broken screen
           // rather than an empty week, on the very first impression.
           //
-          // NAMING THE REASON is a deliberate call, and it is currently ahead of
-          // what Connect can actually prove. Active returns an identical empty
-          // week for "the programme is not published" and "this child has
-          // nothing on", so this sentence is true for every family today —
-          // nothing is published yet — and would become misleading the moment a
-          // programme goes live and one child simply has no clubs.
+          // NAMING THE REASON is a deliberate call, and it is currently ahead
+          // of what Connect can prove. Active returns an identical empty week
+          // for "no clubs are published" and "this child is in none of them",
+          // so this is true for every family today — nothing is published
+          // anywhere — and stops being true the moment a programme goes live
+          // and one child simply has no clubs.
           //
-          // A `programme_published` signal has been asked of Active. When it
-          // lands, this splits in two: this copy for unpublished, and a plain
-          // "nothing on this week" for a published-but-quiet week.
+          // CLUBS ONLY, deliberately. Fixtures have no publication step to be
+          // waiting on: a school owns a fixture and the squad is whoever is
+          // picked, with no programme behind it — deliberately, because a
+          // season crossing two terms would cross two programmes. So "fixtures
+          // haven't been published" is not merely unproven, it is never a
+          // thing that could be true, and a family whose child is on a coach
+          // to a netball match on Wednesday would be reading it.
+          //
+          // A `clubs_published` flag has been asked of Active, scoped to clubs
+          // for exactly this reason. When it lands this splits in two: this
+          // copy when false, and a plain "nothing on this week" when true.
           <div className="rounded-xl p-4" style={{ backgroundColor: '#FBF7F7' }}>
             <p className="text-sm font-bold" style={{ color: '#4A3B3F' }}>
-              Clubs and fixtures haven't been published yet.
+              Clubs haven't been published yet.
             </p>
             <p className="text-xs mt-1" style={{ color: '#7A6469' }}>
               {firstName}'s week will appear here as soon as the school publishes them.
