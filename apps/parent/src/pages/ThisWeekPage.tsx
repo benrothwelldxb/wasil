@@ -227,16 +227,22 @@ export function ThisWeekPage() {
           // of "Nothing on" repeated down the page would read as a broken screen
           // rather than an empty week, on the very first impression.
           //
-          // The second line is deliberately not "the school hasn't published
-          // yet": Connect cannot tell an unpublished programme from a genuinely
-          // quiet week, and stating the reason would be a guess presented to a
-          // parent as fact.
+          // NAMING THE REASON is a deliberate call, and it is currently ahead of
+          // what Connect can actually prove. Active returns an identical empty
+          // week for "the programme is not published" and "this child has
+          // nothing on", so this sentence is true for every family today —
+          // nothing is published yet — and would become misleading the moment a
+          // programme goes live and one child simply has no clubs.
+          //
+          // A `programme_published` signal has been asked of Active. When it
+          // lands, this splits in two: this copy for unpublished, and a plain
+          // "nothing on this week" for a published-but-quiet week.
           <div className="rounded-xl p-4" style={{ backgroundColor: '#FBF7F7' }}>
             <p className="text-sm font-bold" style={{ color: '#4A3B3F' }}>
-              Nothing on for {firstName} this week.
+              Clubs and fixtures haven't been published yet.
             </p>
             <p className="text-xs mt-1" style={{ color: '#7A6469' }}>
-              Clubs and fixtures appear here as the school adds them.
+              {firstName}'s week will appear here as soon as the school publishes them.
             </p>
           </div>
         )
