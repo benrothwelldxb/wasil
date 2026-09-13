@@ -93,6 +93,21 @@ describe('GET /api/this-week/child/:studentId — the module switch', () => {
 })
 
 describe('GET /api/this-week/child/:studentId — the four states', () => {
+  // Passed through as Active sent it, including absent. The page needs all
+  // three values — false, true, and "this Active doesn't say" — because the
+  // sentence differs for each.
+  it('passes clubsPublished through untouched, including undefined', async () => {
+    fetchChildWeek.mockResolvedValue({ timezone: 'Asia/Dubai', unknown: false, days: [], clubsPublished: true })
+    expect((await request(makeApp()).get('/api/this-week/child/stu-1')).body.clubsPublished).toBe(true)
+
+    fetchChildWeek.mockResolvedValue({ timezone: 'Asia/Dubai', unknown: false, days: [], clubsPublished: false })
+    expect((await request(makeApp()).get('/api/this-week/child/stu-1')).body.clubsPublished).toBe(false)
+
+    // An older Active says nothing; the route must not invent a false.
+    fetchChildWeek.mockResolvedValue({ timezone: 'Asia/Dubai', unknown: false, days: [] })
+    expect((await request(makeApp()).get('/api/this-week/child/stu-1')).body).not.toHaveProperty('clubsPublished')
+  })
+
   it('ok: a week, which may legitimately be quiet', async () => {
     fetchChildWeek.mockResolvedValue({
       timezone: 'Asia/Dubai',

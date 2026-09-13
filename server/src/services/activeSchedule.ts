@@ -77,6 +77,19 @@ export interface ActiveChildWeek {
   /** The zone every time above is already expressed in. Display only. */
   timezone: string
   days: ActiveScheduleDay[]
+  /** Could this child have had a club in this range at all — is there a
+   *  published activity, in a published or CLOSED programme, overlapping it?
+   *
+   *  `closed` counts deliberately: a programme whose sign-up has shut is still
+   *  running, and keying on published alone would report clubs as unpublished
+   *  at exactly the moment the week becomes worth looking at.
+   *
+   *  Clubs ONLY. A fixture has no publication step — a school owns it and the
+   *  squad is whoever is picked — so no flag here can speak for the week.
+   *
+   *  Absent from an older Active. Undefined is NOT false: "no clubs are
+   *  published" and "this build doesn't say" want different sentences. */
+  clubsPublished?: boolean
   /** Active has never heard of this pupil — almost always a pupil that hasn't
    *  synced from Hub yet. NOT the same as a child with nothing on, and the
    *  caller must not render it as an empty week: a family mid-sync would be
@@ -151,6 +164,7 @@ export async function fetchChildWeek(opts: {
 
   const data = (await res.json()) as {
     timezone?: string
+    clubs_published?: boolean
     pupils?: Array<{ hub_pupil_id?: string; days?: ActiveScheduleDay[] }>
     unknown_pupils?: string[]
   }
@@ -161,5 +175,6 @@ export async function fetchChildWeek(opts: {
     timezone: data.timezone ?? 'UTC',
     days: entry?.days ?? [],
     unknown,
+    clubsPublished: data.clubs_published,
   }
 }

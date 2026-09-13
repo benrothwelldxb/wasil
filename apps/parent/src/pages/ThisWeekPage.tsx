@@ -221,37 +221,49 @@ export function ThisWeekPage() {
             ))}
           </div>
         ) : (
-          // A week with nothing in it at all is ONE message, not seven identical
-          // ones. It is also the first thing every family will see, because a
-          // school's programme is published after the term starts — so a column
-          // of "Nothing on" repeated down the page would read as a broken screen
-          // rather than an empty week, on the very first impression.
+          // A week with nothing in it at all is ONE message, not seven
+          // identical ones — a column of "Nothing on" down the page reads as a
+          // broken screen rather than an empty week.
           //
-          // NAMING THE REASON is a deliberate call, and it is currently ahead
-          // of what Connect can prove. Active returns an identical empty week
-          // for "no clubs are published" and "this child is in none of them",
-          // so this is true for every family today — nothing is published
-          // anywhere — and stops being true the moment a programme goes live
-          // and one child simply has no clubs.
+          // WHICH message depends on whether clubs exist to be in, and there
+          // are THREE cases, not two. Active found the third in production:
+          // clubs published, 130 children confirmed in them, and every week
+          // empty because the dated sessions had not been generated yet.
           //
-          // CLUBS ONLY, deliberately. Fixtures have no publication step to be
-          // waiting on: a school owns a fixture and the squad is whoever is
-          // picked, with no programme behind it — deliberately, because a
-          // season crossing two terms would cross two programmes. So "fixtures
-          // haven't been published" is not merely unproven, it is never a
-          // thing that could be true, and a family whose child is on a coach
-          // to a netball match on Wednesday would be reading it.
+          //   clubsPublished false      nothing to be in      -> say so
+          //   clubsPublished true       clubs exist, week bare -> see below
+          //   clubsPublished undefined  an older Active       -> as above
           //
-          // A `clubs_published` flag has been asked of Active, scoped to clubs
-          // for exactly this reason. When it lands this splits in two: this
-          // copy when false, and a plain "nothing on this week" when true.
+          // The second case is ambiguous and cannot be resolved from here: an
+          // empty week means either "this child is in none of them" or "the
+          // sessions have not been generated". So the copy says neither. It
+          // says NOTHING IS SCHEDULED, which is literally true in both — no
+          // dated session exists either way — and it does not tell a parent
+          // whose child is in three clubs that they are in none.
+          //
+          // The second line gives that parent somewhere to go, which is the
+          // difference between a screen that is wrong and one that is
+          // recoverable.
           <div className="rounded-xl p-4" style={{ backgroundColor: '#FBF7F7' }}>
-            <p className="text-sm font-bold" style={{ color: '#4A3B3F' }}>
-              Clubs haven't been published yet.
-            </p>
-            <p className="text-xs mt-1" style={{ color: '#7A6469' }}>
-              {firstName}'s week will appear here as soon as the school publishes them.
-            </p>
+            {data.clubsPublished === false ? (
+              <>
+                <p className="text-sm font-bold" style={{ color: '#4A3B3F' }}>
+                  Clubs haven't been published yet.
+                </p>
+                <p className="text-xs mt-1" style={{ color: '#7A6469' }}>
+                  {firstName}'s week will appear here as soon as the school publishes them.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-bold" style={{ color: '#4A3B3F' }}>
+                  Nothing scheduled for {firstName} this week.
+                </p>
+                <p className="text-xs mt-1" style={{ color: '#7A6469' }}>
+                  If you were expecting a club or a fixture, the school office can help.
+                </p>
+              </>
+            )}
           </div>
         )
       )}
