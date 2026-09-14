@@ -18,12 +18,18 @@ function todayISO(): string {
  *  UTC midnight and renders in the device's zone, so a parent west of the
  *  school sees every day shifted back by one. The string names a day at the
  *  school; only its parts are used. */
-function dayLabel(dateStr: string): { weekday: string; day: string } {
+function dayLabel(dateStr: string): { weekday: string; day: string; isWeekend: boolean } {
   const [y, m, d] = dateStr.split('-').map(Number)
   const at = new Date(Date.UTC(y, m - 1, d))
+  const dow = at.getUTCDay() // 0 = Sunday, 6 = Saturday
   return {
     weekday: at.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }),
     day: at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }),
+    // Saturday and Sunday. True for the UAE school week and for most of the
+    // schools Connect serves; a school whose week runs Sunday–Thursday would
+    // need this from its own calendar rather than from the day number, and
+    // there is nothing on the wire that says so today.
+    isWeekend: dow === 0 || dow === 6,
   }
 }
 
@@ -97,7 +103,7 @@ function ItemCard({ item, childName, fixtures }: {
 }
 
 function DayBlock({ day, childName }: { day: ThisWeekDay; childName: string }) {
-  const { weekday, day: date } = dayLabel(day.date)
+  const { weekday, day: date, isWeekend } = dayLabel(day.date)
   // Fixtures are looked up by id so a displaced club can name the one that
   // took the child away.
   const fixtures = useMemo(() => {
@@ -115,8 +121,12 @@ function DayBlock({ day, childName }: { day: ThisWeekDay; childName: string }) {
       {day.items.length === 0 ? (
         // An empty day still says something. A blank space reads as a page that
         // failed to load.
+        //
+        // "Finishes at the usual time" is about the end of a school day, so on
+        // a Saturday it is not merely unhelpful, it describes a day that is not
+        // happening. A weekend with nothing on needs no explanation at all.
         <p className="text-xs px-3 py-2 rounded-xl" style={{ color: '#A8929A', backgroundColor: '#FBF7F7' }}>
-          Nothing on — finishes at the usual time.
+          {isWeekend ? 'Weekend.' : 'Nothing on — finishes at the usual time.'}
         </p>
       ) : (
         <div className="space-y-2">
