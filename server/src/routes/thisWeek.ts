@@ -47,20 +47,47 @@ router.get('/child/:studentId', isAuthenticated, requireModule('activeScheduleEn
     const { studentId } = req.params
     const user = (await loadUserWithRelations(req.user!.id))!
 
-    // The child-ownership check, mirroring the timetable route's resolution.
-    const mine = (user.studentLinks ?? [])
-      .map(l => l.student)
-      .filter((s): s is NonNullable<typeof s> => !!s)
-    const child = mine.find(s => s.id === studentId)
+    // The child-ownership check, resolving from BOTH sources the parent app's
+    // child switcher offers — studentLinks and the legacy `children` table.
+    //
+    // This read studentLinks alone and 404'd everything else, which is how a
+    // parent got a blank page for a child the menu had just offered them: the
+    // switcher resolves from two tables (copied from the timetable page), the
+    // route accepted one, and the ids from the second matched nothing. A picker
+    // and its endpoint disagreeing about what a valid id is will always look
+    // like the endpoint being broken for one particular child.
+    const entries: Array<{ id: string; name: string; hubPupilId: string | null }> = []
+    const seen = new Set<string>()
+    for (const link of user.studentLinks ?? []) {
+      const s = link.student
+      if (!s || seen.has(s.id)) continue
+      seen.add(s.id)
+      entries.push({
+        id: s.id,
+        name: `${s.firstName} ${s.lastName}`.trim(),
+        hubPupilId: s.hubPupilId ?? null,
+      })
+    }
+    for (const c of user.children ?? []) {
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      // A legacy Child carries no Hub pupil id by definition, so it resolves to
+      // `no_hub_link` below — which is the honest answer, and a different one
+      // from the 404 it used to get.
+      entries.push({ id: c.id, name: c.name.trim(), hubPupilId: null })
+    }
+
+    const child = entries.find(e => e.id === studentId)
     if (!child) {
       // Not one of the requester's children — don't reveal whether it exists.
       return res.status(404).json({ error: 'Child not found' })
     }
 
-    const childName = `${child.firstName} ${child.lastName}`.trim()
+    const childName = child.name
 
-    // A pupil Connect created by hand has no Hub id, so there is nothing to ask
-    // Active about. Said plainly rather than shown as a quiet week.
+    // A pupil Connect created by hand, or a legacy Child row, has no Hub id, so
+    // there is nothing to ask Active about. Said plainly rather than shown as a
+    // quiet week.
     if (!child.hubPupilId) {
       return res.json({ state: 'no_hub_link', childName, days: [], timezone: null })
     }
