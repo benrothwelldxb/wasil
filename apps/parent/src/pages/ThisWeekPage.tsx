@@ -162,7 +162,7 @@ export function ThisWeekPage() {
     ? selectedChildId
     : children[0]?.id ?? ''
 
-  const { data, isLoading } = useApi<ThisWeekResponse | null>(
+  const { data, isLoading, error } = useApi<ThisWeekResponse | null>(
     () => (activeChildId ? api.thisWeek.child(activeChildId, todayISO()) : Promise.resolve(null)),
     [activeChildId],
   )
@@ -200,6 +200,21 @@ export function ThisWeekPage() {
       )}
 
       {isLoading && <p className="text-sm" style={{ color: '#A8929A' }}>Loading…</p>}
+
+      {/* The state I forgot, and the worst one to forget: the request FAILED.
+          useApi leaves `data` null on an error, and every branch below asks
+          `data?.state`, so without this the page renders a heading and nothing
+          else — a blank screen, which tells a parent less than any of the
+          honest messages and tells whoever is debugging it nothing at all.
+          A 404 here is the ordinary case: the school does not have the module,
+          so the route is closed. Everything else is a fault. */}
+      {!isLoading && !data && (
+        <Notice>
+          {error?.message?.includes('404')
+            ? "This isn't switched on for your school."
+            : "We can't load clubs and fixtures right now. Please try again shortly."}
+        </Notice>
+      )}
 
       {/* Three of the four states would otherwise render as a quiet week, and
           "your child has no clubs" is a confident written claim to a family. */}
