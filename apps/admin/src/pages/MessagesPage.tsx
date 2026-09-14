@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { Plus, X, Pencil, Trash2, Paperclip } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant } from '@wasil/shared'
 import type { Message, Class, YearGroup, Group } from '@wasil/shared'
@@ -14,6 +14,11 @@ export function MessagesPage() {
   const { data: groups } = useApi<Group[]>(() => api.groups.list(), [])
 
   const [showForm, setShowForm] = useState(false)
+  // The composer renders INLINE at the top of the page, not as a modal. Editing
+  // a post from partway down the list opened it above the fold, so the click
+  // looked like it had done nothing at all — the one failure mode with no error
+  // to find, because nothing failed.
+  const formRef = useRef<HTMLDivElement>(null)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -105,6 +110,10 @@ export function MessagesPage() {
     )
     setEditingMessage(message)
     setShowForm(true)
+    // After the form has rendered. Delete felt like it worked for the same
+    // reason this did not: ConfirmModal is an overlay and appears wherever you
+    // are looking.
+    requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
   const resetForm = () => {
@@ -172,6 +181,7 @@ export function MessagesPage() {
         </button>
       </div>
 
+      <div ref={formRef} />
       {showForm && (
         <MessageForm
           formData={formData}
