@@ -17,8 +17,10 @@ router.get('/', isAdmin, async (req: Request, res: Response) => {
     const limitNum = Math.min(parseInt(limit as string, 10), 100)
     const skip = (pageNum - 1) * limitNum
 
-    // Test Students are hidden from staff-facing management lists.
-    const where: Record<string, unknown> = { schoolId: user.schoolId, isTest: false }
+    // Test Students and pupils who have left are both hidden from
+    // staff-facing management lists — a leaver is no longer one of the school's
+    // pupils, and the roster sync marks them from Hub's own word.
+    const where: Record<string, unknown> = { schoolId: user.schoolId, isTest: false, leftAt: null }
 
     if (classId) {
       where.classId = classId
@@ -90,6 +92,7 @@ router.get('/search', isAdmin, async (req: Request, res: Response) => {
     const where: Record<string, unknown> = {
       schoolId: user.schoolId,
       isTest: false, // hide Test Students from staff autocomplete
+      leftAt: null,  // and pupils who have left — not someone to pick today
       OR: [
         { firstName: { contains: searchStr, mode: 'insensitive' } },
         { lastName: { contains: searchStr, mode: 'insensitive' } },

@@ -282,7 +282,8 @@ router.delete('/:id', isAdmin, async (req, res) => {
     // Check if class has real students (Test Students are hidden from staff and
     // must not block class deletion — the test-accounts DELETE cleans them up).
     const studentCount = await prisma.student.count({
-      where: { classId: id, isTest: false },
+      // Leavers are not in the class any more, so they are not in its count.
+      where: { classId: id, isTest: false, leftAt: null },
     })
 
     if (studentCount > 0) {

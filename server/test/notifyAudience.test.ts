@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const prismaMock = {
   studentGroupLink: { findMany: vi.fn() },
+  parentStudentLink: { findMany: vi.fn() },
   user: { findMany: vi.fn() },
   student: { findMany: vi.fn() },
   child: { findMany: vi.fn() },
@@ -30,6 +31,7 @@ beforeEach(() => {
   prismaMock.deviceToken.findMany.mockResolvedValue([])
   prismaMock.user.findMany.mockResolvedValue([]) // no inactive parents for the email fallback
   prismaMock.school.findUnique.mockResolvedValue({ name: 'VH Primary' })
+  prismaMock.parentStudentLink.findMany.mockResolvedValue([])
 })
 
 describe('sendNotification audience resolution (modern Student tables)', () => {
@@ -45,7 +47,9 @@ describe('sendNotification audience resolution (modern Student tables)', () => {
     // Reads Student, not Child.
     expect(prismaMock.child.findMany).not.toHaveBeenCalled()
     expect(prismaMock.student.findMany).toHaveBeenCalledWith({
-      where: { classId: 'cls-1' },
+      // leftAt: null — a pupil who has left is not in the class, so their
+      // family is not in the audience.
+      where: { classId: 'cls-1', leftAt: null },
       select: { parentLinks: { select: { userId: true } } },
     })
     // Deduped parent recipients drive the Notification fan-out.
@@ -63,7 +67,7 @@ describe('sendNotification audience resolution (modern Student tables)', () => {
     })
     expect(prismaMock.child.findMany).not.toHaveBeenCalled()
     expect(prismaMock.student.findMany).toHaveBeenCalledWith({
-      where: { schoolId: 'sch-1', class: { yearGroupId: 'yg-1' } },
+      where: { schoolId: 'sch-1', class: { yearGroupId: 'yg-1' }, leftAt: null },
       select: { parentLinks: { select: { userId: true } } },
     })
     const rows = prismaMock.notification.createMany.mock.calls[0][0].data
@@ -77,5 +81,66 @@ describe('sendNotification audience resolution (modern Student tables)', () => {
       target: { targetClass: '1A', classId: 'cls-empty', schoolId: 'sch-1' },
     })
     expect(prismaMock.notification.createMany).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A family who left the school stop being an audience.
+ *
+ * This is delivery, not a list: without it a child who left in September's
+ * parents went on receiving every class and year-group message for the rest of
+ * the year — the school's own communications, about a class their child is not
+ * in, to a family who have gone.
+ */
+describe('sendNotification — families who have left', () => {
+  const send = (target: Record<string, unknown>) =>
+    sendNotification({
+      req, type: 'MESSAGE', title: 'T', body: 'B',
+      resourceType: 'MESSAGE', resourceId: 'm-1',
+      target: { schoolId: 'sch-1', ...target } as any,
+    })
+
+  it('excludes leavers from a class audience', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    await send({ classId: 'c-1' })
+
+    expect(prismaMock.student.findMany.mock.calls[0][0].where).toEqual({ classId: 'c-1', leftAt: null })
+  })
+
+  it('excludes leavers from a year-group audience', async () => {
+    prismaMock.student.findMany.mockResolvedValue([])
+    await send({ yearGroupId: 'yg-1' })
+
+    expect(prismaMock.student.findMany.mock.calls[0][0].where).toEqual({
+      schoolId: 'sch-1', class: { yearGroupId: 'yg-1' }, leftAt: null,
+    })
+  })
+
+  // Whole School has no class or year to filter on, so the departed family has
+  // to be recognised at the parent level.
+  it('drops a whole-school parent whose children have ALL left', async () => {
+    prismaMock.user.findMany.mockResolvedValueOnce([{ id: 'p-gone' }, { id: 'p-here' }])
+    prismaMock.parentStudentLink.findMany.mockResolvedValue([
+      { userId: 'p-gone', student: { leftAt: new Date() } },
+      { userId: 'p-here', student: { leftAt: new Date() } },
+      { userId: 'p-here', student: { leftAt: null } },   // still has one on roll
+    ])
+
+    await send({ targetClass: 'Whole School' })
+
+    const notified = prismaMock.notification.createMany.mock.calls[0]?.[0].data.map((d: any) => d.userId)
+    expect(notified).toEqual(['p-here'])
+  })
+
+  // The narrow rule: no link at all is a LINKING GAP, not a departure, and
+  // wrongly silencing a current family is worse than including a departed one.
+  it('keeps a whole-school parent who has no linked children at all', async () => {
+    prismaMock.user.findMany.mockResolvedValueOnce([{ id: 'p-unlinked' }])
+    prismaMock.parentStudentLink.findMany.mockResolvedValue([])
+
+    await send({ targetClass: 'Whole School' })
+
+    const notified = prismaMock.notification.createMany.mock.calls[0]?.[0].data.map((d: any) => d.userId)
+    expect(notified).toEqual(['p-unlinked'])
   })
 })

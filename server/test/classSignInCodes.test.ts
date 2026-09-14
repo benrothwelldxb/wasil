@@ -195,9 +195,10 @@ describe('POST /sign-in-codes/by-class — whole school', () => {
     expect(res.body.className).toBeNull()
     expect(res.body.codes).toHaveLength(2)
     expect(prismaMock.class.findFirst).not.toHaveBeenCalled()
-    // Whole school, still school-scoped and still no Test Students.
+    // Whole school, still school-scoped, and no Test Students or leavers — a
+    // pupil who has left does not need a sign-in code printing for them.
     expect(prismaMock.student.findMany.mock.calls[0][0].where).toEqual({
-      schoolId: 'sch-1', isTest: false,
+      schoolId: 'sch-1', isTest: false, leftAt: null,
     })
   })
 

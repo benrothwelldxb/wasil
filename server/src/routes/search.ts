@@ -191,11 +191,12 @@ router.get('/', isAuthenticated, async (req, res) => {
 
     // Staff/Admin only searches
     if (isStaffOrAdmin) {
-      // Search students (Test Students hidden from staff search)
+      // Search students (Test Students and leavers hidden from staff search)
       const students = await prisma.student.findMany({
         where: {
           schoolId,
           isTest: false,
+          leftAt: null,
           OR: [
             { firstName: { contains: q, mode: 'insensitive' } },
             { lastName: { contains: q, mode: 'insensitive' } },
