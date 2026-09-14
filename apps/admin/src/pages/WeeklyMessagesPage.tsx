@@ -27,6 +27,8 @@ export function WeeklyMessagesPage() {
   const { data: messages, refetch } = useApi<WeeklyMessage[]>(() => api.weeklyMessage.list(), [])
 
   const [showForm, setShowForm] = useState(false)
+  // Same inline composer, same silent failure — see MessagesPage.
+  const formRef = useRef<HTMLDivElement>(null)
   const [form, setForm] = useState<WeeklyForm>(emptyForm)
   const [editingMessage, setEditingMessage] = useState<WeeklyMessage | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<WeeklyMessage | null>(null)
@@ -101,6 +103,7 @@ export function WeeklyMessagesPage() {
       scheduledAt: toLocalInputValue(msg.scheduledAt),
     })
     setShowForm(true)
+    requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
   const handleCancel = () => {
@@ -145,6 +148,7 @@ export function WeeklyMessagesPage() {
       </div>
 
       {/* Form */}
+      <div ref={formRef} />
       {showForm && (
         <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
