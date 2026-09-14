@@ -102,6 +102,9 @@ router.get('/child/:studentId', isAuthenticated, requireModule('activeScheduleEn
       from,
       to,
       days: week.days,
+      // Passed straight through, undefined and all. The page decides what to
+      // say; this route does not collapse three possible meanings into two.
+      clubsPublished: week.clubsPublished,
     })
   } catch (error) {
     if (error instanceof ActiveScheduleError) {

@@ -2464,6 +2464,10 @@ export interface ThisWeekResponse {
   from?: string
   to?: string
   days?: ThisWeekDay[]
+  /** Could this child have had a club this week — are any published? Clubs
+   *  only; a fixture has no publication step. Undefined when Active doesn't
+   *  say, which is a third thing and not the same as false. */
+  clubsPublished?: boolean
 }
 
 export const thisWeek = {
