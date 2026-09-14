@@ -39,6 +39,10 @@ function makeApp() {
 const CHILD = { id: 'stu-1', firstName: 'Amira', lastName: 'Hassan', hubPupilId: 'hp-1' }
 const asParentOf = (...students: unknown[]) =>
   loadUserWithRelations.mockResolvedValue({ studentLinks: students.map(student => ({ student })) })
+/** A parent whose children come from the LEGACY `children` table, which the
+ *  parent app's child switcher offers alongside studentLinks. */
+const asLegacyParentOf = (...children: unknown[]) =>
+  loadUserWithRelations.mockResolvedValue({ studentLinks: [], children })
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -64,6 +68,27 @@ describe('GET /api/this-week/child/:studentId — the guardian check', () => {
 
     expect(res.status).toBe(404)
     expect(fetchChildWeek).not.toHaveBeenCalled()
+  })
+
+  // The switcher resolves children from BOTH studentLinks and the legacy
+  // `children` table; this route accepted only the first, so a legacy child was
+  // offered by the menu and then 404'd — which rendered as a blank page.
+  it('accepts a legacy child the menu offers, rather than 404ing it', async () => {
+    asLegacyParentOf({ id: 'child-1', name: 'Sophie Maclaren' })
+
+    const res = await request(makeApp()).get('/api/this-week/child/child-1')
+
+    expect(res.status).toBe(200)
+    // No Hub id by definition, so it is the honest "nothing to ask about"
+    // rather than a 404 — and never an empty week.
+    expect(res.body.state).toBe('no_hub_link')
+    expect(res.body.childName).toBe('Sophie Maclaren')
+    expect(fetchChildWeek).not.toHaveBeenCalled()
+  })
+
+  it('still 404s a child belonging to neither source', async () => {
+    asLegacyParentOf({ id: 'child-1', name: 'Sophie Maclaren' })
+    expect((await request(makeApp()).get('/api/this-week/child/someone-else')).status).toBe(404)
   })
 
   it('asks Active for the child’s Hub id, scoped to the school', async () => {
