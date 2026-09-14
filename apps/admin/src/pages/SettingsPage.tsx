@@ -58,6 +58,7 @@ const MODULE_GROUPS: ModuleGroup[] = [
       // different dates. Turning one off closes the route, not just the menu.
       { key: 'activeScheduleEnabled', label: 'This Week (Wasil Active)', description: "Clubs and fixtures for each child, read from Wasil Active" },
       { key: 'sendInclusionEnabled', label: 'Inclusion (Wasil Inclusion)', description: "A child's published plan, read from Wasil Inclusion" },
+      { key: 'activeIntentsEnabled', label: 'Activity notifications (Wasil Active)', description: 'Lets Wasil Active notify parents when a place is offered or confirmed' },
     ],
   },
 ]

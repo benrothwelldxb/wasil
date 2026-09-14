@@ -99,6 +99,11 @@ model School {
   activeScheduleEnabled  Boolean @default(false)
   /// The Inclusion page — a child's published plan, read from Wasil Inclusion.
   sendInclusionEnabled   Boolean @default(false)
+  /// Activity outcome notifications PUSHED IN by Wasil Active (a place offered,
+  /// a waitlist place confirmed). Separate from activeScheduleEnabled because
+  /// the direction is opposite and so is the risk: the schedule is a screen a
+  /// parent chooses to open, this reaches into their notifications unasked.
+  activeIntentsEnabled   Boolean @default(false)
 
   // Attendance digest
   attendanceDigestEnabled      Boolean @default(false)

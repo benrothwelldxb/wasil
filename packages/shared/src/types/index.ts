@@ -1720,6 +1720,7 @@ export type SchoolModuleFlag =
   // than only in the navigation.
   | 'activeScheduleEnabled'
   | 'sendInclusionEnabled'
+  | 'activeIntentsEnabled'
 
 export type SchoolModuleFlags = Record<SchoolModuleFlag, boolean>
 

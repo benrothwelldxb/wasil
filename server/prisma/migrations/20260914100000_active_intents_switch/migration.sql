@@ -1,0 +1,12 @@
+-- A switch for the intents Wasil Active pushes IN.
+--
+-- The existing cross-app switches gate what Connect READS. This gates what
+-- another app can make Connect SEND: an activity intent creates a Notification
+-- for a child's parents, and nothing on this side gated it — so the first
+-- successful authentication after a token was issued flushed Active's durable
+-- outbox and notified families about activity outcomes, before anyone had
+-- switched anything on in Connect.
+--
+-- Default false, like its siblings. An integration that can reach a parent's
+-- phone should arrive switched off.
+ALTER TABLE "School" ADD COLUMN "activeIntentsEnabled" BOOLEAN NOT NULL DEFAULT false;

@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import type { Request, Response } from 'express'
+import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { isKnownEventType, recordIntent } from '../services/activityIntents.js'
 
@@ -53,6 +54,32 @@ router.post('/intents', requirePartner, async (req: Request, res: Response) => {
 
     if (typeof eventType !== 'string' || !eventType.trim()) {
       return badRequest(res, 'event_type is required')
+    }
+
+    // Is this school taking activity intents at all?
+    //
+    // 503, NOT 2xx, and the difference is the whole point. 2xx means delivered
+    // and Active drops the message from its outbox — so a switch that answered
+    // 2xx would silently destroy every intent while it was off, and a family
+    // would simply never be told their child got a place. 503 is retryable by
+    // Active's contract, so the intent waits in their outbox and arrives when
+    // the school switches the module on. A switch should PAUSE a queue, never
+    // consume it.
+    //
+    // Checked before anything is recorded: a deferred intent is not an
+    // undeliverable one and must not leave an UNDELIVERABLE row behind.
+    //
+    // An unknown school falls through deliberately — recordIntent answers that
+    // 2xx-with-a-reason, because no retry fixes a school Connect has never
+    // heard of, and a 503 would have Active retrying it for ever.
+    if (typeof schoolId === 'string' && schoolId.trim()) {
+      const school = await prisma.school.findFirst({
+        where: { OR: [{ hubSchoolId: schoolId.trim() }, { id: schoolId.trim() }] },
+        select: { activeIntentsEnabled: true },
+      })
+      if (school && !school.activeIntentsEnabled) {
+        return res.status(503).json({ error: 'module_disabled' })
+      }
     }
     // Unknown-but-well-formed is 422, not 400: Active has event types we do not
     // handle and may add more, and this distinguishes "malformed" from "not
