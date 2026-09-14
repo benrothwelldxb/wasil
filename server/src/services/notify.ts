@@ -151,6 +151,34 @@ export async function sendStaffNotification({
  * people. Two implementations of "who is in Year 3" would drift, and the one
  * that drifted would be the one nobody noticed.
  */
+/**
+ * Drop the parents whose children have ALL left.
+ *
+ * Only used for the whole-school audience, where there is no class or year to
+ * filter on and the query is "every parent in the school" — which keeps
+ * delivering a school's messages to families who left it.
+ *
+ * The rule is deliberately narrow, and the same one the activation funnel uses:
+ * a parent is dropped only if they have links AND every one is to a leaver. A
+ * parent with NO link at all stays in — that is a linking gap, not a departure,
+ * and wrongly silencing a current family is a worse failure than wrongly
+ * including a departed one.
+ */
+async function withoutFamiliesWhoHaveLeft(parentIds: string[]): Promise<string[]> {
+  if (parentIds.length === 0) return parentIds
+  const links = await prisma.parentStudentLink.findMany({
+    where: { userId: { in: parentIds } },
+    select: { userId: true, student: { select: { leftAt: true } } },
+  })
+  const linked = new Set<string>()
+  const hasCurrentChild = new Set<string>()
+  for (const l of links) {
+    linked.add(l.userId)
+    if (!l.student.leftAt) hasCurrentChild.add(l.userId)
+  }
+  return parentIds.filter(id => !linked.has(id) || hasCurrentChild.has(id))
+}
+
 export async function resolveAudienceParentIds(target: NotificationTarget): Promise<string[]> {
   const { targetClass, classId, yearGroupId, groupId, schoolId } = target
   let parentUserIds: string[] = []
@@ -175,18 +203,21 @@ export async function resolveAudienceParentIds(target: NotificationTarget): Prom
       where: { schoolId, role: 'PARENT' },
       select: { id: true },
     })
-    parentUserIds = parents.map(p => p.id)
+    parentUserIds = await withoutFamiliesWhoHaveLeft(parents.map(p => p.id))
   } else if (yearGroupId) {
     // Modern Student/ParentStudentLink tables (ADR 0004); the legacy Child
     // table is no longer consulted.
     const students = await prisma.student.findMany({
-      where: { schoolId, class: { yearGroupId } },
+      // A pupil who has left is not in this year group, so their family is not
+      // in this audience. Without it, a family who left in September went on
+      // receiving every year-group message for the rest of the year.
+      where: { schoolId, class: { yearGroupId }, leftAt: null },
       select: { parentLinks: { select: { userId: true } } },
     })
     parentUserIds = [...new Set(students.flatMap(s => s.parentLinks.map(pl => pl.userId)))]
   } else if (classId) {
     const students = await prisma.student.findMany({
-      where: { classId },
+      where: { classId, leftAt: null },
       select: { parentLinks: { select: { userId: true } } },
     })
     parentUserIds = [...new Set(students.flatMap(s => s.parentLinks.map(pl => pl.userId)))]

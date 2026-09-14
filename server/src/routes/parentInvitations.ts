@@ -1140,11 +1140,12 @@ router.post('/sign-in-codes/by-class', isAdmin, async (req: Request, res: Respon
       if (!klass) return res.status(404).json({ error: 'Class not found' })
     }
 
-    // Test Students never appear on a sign-up sheet.
+    // Test Students and leavers never appear on a sign-up sheet.
     const students = await prisma.student.findMany({
       where: {
         schoolId: user.schoolId,
         isTest: false,
+        leftAt: null,
         ...(klass ? { classId: klass.id } : {}),
       },
       select: {
