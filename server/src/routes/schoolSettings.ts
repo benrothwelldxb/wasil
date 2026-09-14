@@ -30,6 +30,7 @@ const MODULE_FLAG_FIELDS = [
   // and enforced on the route rather than only in the menu.
   'activeScheduleEnabled',
   'sendInclusionEnabled',
+  'activeIntentsEnabled',
 ] as const
 
 type ModuleFlagField = (typeof MODULE_FLAG_FIELDS)[number]
@@ -59,6 +60,7 @@ const SETTINGS_SELECT = {
   knowledgeBaseEnabled: true,
   activeScheduleEnabled: true,
   sendInclusionEnabled: true,
+  activeIntentsEnabled: true,
   attendanceDigestEnabled: true,
   attendanceDigestTime: true,
   attendanceFigureVisibleToParents: true,

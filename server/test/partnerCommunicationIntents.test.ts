@@ -20,7 +20,7 @@ import { createHash } from 'crypto'
 const prismaMock = {
   partnerToken: { findUnique: vi.fn(), update: vi.fn() },
   partnerIntent: { findUnique: vi.fn(), create: vi.fn() },
-  school: { findUnique: vi.fn() },
+  school: { findUnique: vi.fn(), findFirst: vi.fn() },
   student: { findUnique: vi.fn() },
   user: { findMany: vi.fn() },
   notificationPreference: { findMany: vi.fn() },
@@ -72,6 +72,9 @@ const txMock = {
 }
 
 beforeEach(() => {
+  // The school takes intents unless a test says otherwise — the existing
+  // cases here are about the status contract, not the switch.
+  prismaMock.school.findFirst.mockResolvedValue({ activeIntentsEnabled: true })
   vi.clearAllMocks()
 
   prismaMock.partnerToken.findUnique.mockResolvedValue({
@@ -298,5 +301,59 @@ describe('nobody to tell is accepted, never 404', () => {
     const res = await post(intent())
     expect(res.status).toBe(200)
     expect(res.body.reason).toBe('unknown_pupil')
+  })
+})
+
+/**
+ * A switch on an INBOUND integration has to pause the queue, not consume it.
+ *
+ * This path is how another app reaches a parent's phone: an intent becomes a
+ * Notification for a child's guardians. Nothing on this side gated it, so the
+ * first successful authentication after a token was issued flushed Active's
+ * durable outbox and notified families about activity outcomes before anyone
+ * had switched anything on in Connect.
+ */
+describe('POST /intents — the module switch', () => {
+  const body = {
+    event_type: 'assignment_confirmed',
+    school_id: 'hub-sch-1',
+    hub_pupil_id: 'hp-1',
+    idempotency_key: 'k-1',
+    payload: { activity_name: 'Netball' },
+  }
+  const post = () =>
+    request(makeApp()).post('/api/partner/communication/intents')
+      .set('Authorization', `Bearer ${TOKEN}`).send(body)
+
+  it('503s when the school has the module off — retryable, so Active holds it', async () => {
+    prismaMock.school.findFirst.mockResolvedValue({ activeIntentsEnabled: false })
+
+    const res = await post()
+
+    // NOT 2xx. A 2xx means delivered and Active drops it from the outbox, so a
+    // switch that answered 2xx would silently destroy every intent while it
+    // was off and a family would never learn their child got a place.
+    expect(res.status).toBe(503)
+    // Nothing recorded either: a deferred intent is not an undeliverable one.
+    expect(prismaMock.partnerIntent.create).not.toHaveBeenCalled()
+    expect(prismaMock.notification.createMany).not.toHaveBeenCalled()
+  })
+
+  it('lets the intent through when the module is on', async () => {
+    prismaMock.school.findFirst.mockResolvedValue({ activeIntentsEnabled: true })
+
+    const res = await post()
+
+    expect(res.status).toBeLessThan(500)
+  })
+
+  // An unknown school must NOT become a 503, or Active retries it for ever.
+  // No retry fixes a school Connect has never heard of.
+  it('lets an unknown school fall through to the permanent answer', async () => {
+    prismaMock.school.findFirst.mockResolvedValue(null)
+
+    const res = await post()
+
+    expect(res.status).not.toBe(503)
   })
 })
