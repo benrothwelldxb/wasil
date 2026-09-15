@@ -13,7 +13,26 @@ import type { TransportResponse, TransportLegInfo } from '@wasil/shared'
  * is a child's home address (see docs/adr/0001).
  */
 
-const LEG_LABEL: Record<string, string> = { AM: 'Morning', PM: 'Afternoon' }
+const LEG_LABEL: Record<string, string> = { AM: 'Morning', PM: 'Afternoon', FRI_PM: 'Friday afternoon' }
+
+/**
+ * What to call a leg, given the others this child has.
+ *
+ * The label does the work here, not the icon — "Afternoon" and "Friday
+ * afternoon" distinguish themselves in words whatever glyph sits beside them,
+ * and a third icon that is not obviously "Friday" would be decoration.
+ *
+ * The subtle half is the OTHER card. A child with a Friday bus has an ordinary
+ * afternoon bus that no longer runs on Fridays, and two cards reading
+ * "Afternoon" and "Friday afternoon" leave a parent to guess whether the first
+ * one includes Friday. So it only says Mon–Thu when there is actually a Friday
+ * service to exclude; a child with no Friday bus keeps the plain label, because
+ * for them the afternoon bus IS every day.
+ */
+function legLabel(leg: string, allLegs: string[]): string {
+  if (leg === 'PM' && allLegs.includes('FRI_PM')) return 'Afternoon (Mon–Thu)'
+  return LEG_LABEL[leg] || leg
+}
 
 function formatTime(time: string) {
   const [h, m] = time.split(':')
@@ -24,7 +43,7 @@ function formatTime(time: string) {
   return `${h12}:${m} ${ampm}`
 }
 
-function Leg({ leg }: { leg: TransportLegInfo }) {
+function Leg({ leg, allLegs }: { leg: TransportLegInfo; allLegs: string[] }) {
   const Icon = leg.leg === 'AM' ? Sunrise : Sunset
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 0' }}>
@@ -39,7 +58,7 @@ function Leg({ leg }: { leg: TransportLegInfo }) {
       </div>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 700, color: '#2D2225', fontSize: 15 }}>{LEG_LABEL[leg.leg] || leg.leg}</span>
+          <span style={{ fontWeight: 700, color: '#2D2225', fontSize: 15 }}>{legLabel(leg.leg, allLegs)}</span>
           <span style={{ fontWeight: 800, color: '#C4506E', fontSize: 15 }}>{formatTime(leg.timeLocal)}</span>
         </div>
         <div style={{ fontSize: 13, color: '#7A6469', marginTop: 2 }}>
@@ -117,7 +136,7 @@ export function TransportPage() {
                 {child.legs.map((leg, i) => (
                   <React.Fragment key={leg.leg}>
                     {i > 0 && <div style={{ height: 1, background: '#F5EDEE' }} />}
-                    <Leg leg={leg} />
+                    <Leg leg={leg} allLegs={child.legs.map(l => l.leg)} />
                   </React.Fragment>
                 ))}
               </div>
