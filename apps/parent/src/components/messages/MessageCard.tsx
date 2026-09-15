@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import DOMPurify from 'dompurify'
-import { ThumbsUp, Share2, AlertTriangle, Pin, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
+import { Share2, AlertTriangle, Pin, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
 
@@ -725,10 +725,14 @@ export function MessageCard({
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#A8929A' }}>
-            <ThumbsUp className="h-3.5 w-3.5" />
-            <span>{message.acknowledgmentCount || 0}</span>
-          </div>
+          {/* The acknowledgement COUNT used to sit here, as a thumbs-up and a
+              number. It was never a control — the action is the Acknowledge
+              button above — but a thumbs-up icon reads as one, so parents
+              clicked it and nothing happened.
+              It is also not a parent's information: how many other families
+              have acknowledged a post is something the school needs and a
+              parent can do nothing with. The admin Posts page already shows it
+              to the people it is for. */}
         </div>
 
         {/* Sender */}
