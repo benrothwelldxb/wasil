@@ -12,7 +12,7 @@ const prismaMock = {
   user: { findUnique: vi.fn(), findFirst: vi.fn() },
   conversation: { count: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   conversationMessage: { create: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn() },
-  conversationParticipant: { update: vi.fn() },
+  conversationParticipant: { update: vi.fn(), create: vi.fn() },
   conversationAttachment: { createMany: vi.fn() },
   notification: { create: vi.fn() },
   deviceToken: { findMany: vi.fn() },
@@ -29,6 +29,8 @@ const prismaMock = {
   studentGroupLink: { createMany: vi.fn(), deleteMany: vi.fn() },
   yearGroup: { findFirst: vi.fn() },
   auditLog: { create: vi.fn() },
+  // Needed for the ILSA-actor path on the guardian route.
+  ilsaLink: { findFirst: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -785,6 +787,117 @@ describe('POST /api/partner/inbox/threads', () => {
     expect(res.body).toEqual({ id: 'c-old' })
     expect(prismaMock.conversation.update).toHaveBeenCalledWith({ where: { id: 'c-old' }, data: { archivedByStaff: false } })
     expect(prismaMock.conversation.create).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Joint-guardian threads — a reversal, with the safeguard moved rather than
+ * removed.
+ *
+ * Co-guardian sharing used to be the parent's own opt-in, on the grounds that a
+ * teacher must not make it for them. That is now permitted, behind a
+ * confirmation a named person ticks in Desk. The system-level guarantee is
+ * weaker by design, so what is left here are the backstops — and they are what
+ * stops a Desk-side bug putting one family's correspondence in front of
+ * another.
+ */
+describe('POST /api/partner/inbox/threads/:id/guardians', () => {
+  const auth = (r: request.Test) => r.set('Authorization', `Bearer ${TOKEN}`)
+  const STAFF = { id: 'staff-1', role: 'STAFF', schoolId: 'sch-1', name: 'Ms Khan' }
+  const THREAD = {
+    id: 'c-1', parentId: 'p-mum', studentId: 'stu-1', staffId: 'staff-1',
+    participants: [],
+  }
+  const add = (body: Record<string, unknown> = {}) =>
+    auth(request(makeApp()).post('/api/partner/inbox/threads/c-1/guardians'))
+      .send({ hub_user_id: 'hu-staff', userId: 'p-dad', ...body })
+
+  beforeEach(() => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    prismaMock.conversation.findFirst.mockResolvedValue(THREAD)
+    prismaMock.parentStudentLink.findFirst.mockResolvedValue({ id: 'psl-1' })
+    prismaMock.conversationParticipant.create.mockResolvedValue({ id: 'cp-1' })
+    prismaMock.auditLog.create.mockResolvedValue({})
+  })
+
+  it('adds the guardian, recording the STAFF member who did it', async () => {
+    prismaMock.conversation.findFirst
+      .mockResolvedValueOnce(THREAD)
+      .mockResolvedValueOnce({ ...THREAD, participants: [{ userId: 'p-dad', role: 'PARENT', user: { name: 'Omar Hassan' } }] })
+
+    const res = await add()
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ sharedWith: ['Omar Hassan'] })
+    // addedById is the whole safeguarding story: every row before this one held
+    // a parent, and a guardian added by a teacher must not look like one the
+    // other parent invited.
+    expect(prismaMock.conversationParticipant.create.mock.calls[0][0].data).toMatchObject({
+      conversationId: 'c-1', userId: 'p-dad', role: 'PARENT', addedById: 'staff-1',
+    })
+  })
+
+  it('audits who joined whom onto whose conversation', async () => {
+    await add()
+    expect(prismaMock.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        userId: 'staff-1', resourceType: 'CONVERSATION', resourceId: 'c-1',
+        metadata: expect.objectContaining({ event: 'GUARDIAN_ADDED_BY_STAFF', addedUserId: 'p-dad' }),
+      }),
+    }))
+  })
+
+  // The backstop. Desk only ever sends an id from that pupil's own guardians
+  // array, so this should never fire in normal use — which is the point.
+  it('refuses a parent who is not linked to THIS child', async () => {
+    prismaMock.parentStudentLink.findFirst.mockResolvedValue(null)
+
+    const res = await add({ userId: 'p-unrelated' })
+
+    expect(res.status).toBe(400)
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  it('404s a thread the caller is not on, rather than revealing it exists', async () => {
+    prismaMock.conversation.findFirst.mockResolvedValue(null)
+    const res = await add()
+    expect(res.status).toBe(404)
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses a thread that is not about a student', async () => {
+    prismaMock.conversation.findFirst.mockResolvedValue({ ...THREAD, studentId: null })
+    expect((await add()).status).toBe(400)
+  })
+
+  it('refuses the primary parent — they are already on it', async () => {
+    expect((await add({ userId: 'p-mum' })).status).toBe(400)
+  })
+
+  // ADR 0006: an ILSA thread is private to the one guardian, and an ILSA is
+  // engaged by that parent rather than employed by the school. Refused
+  // outright, not ignored — silently doing nothing would leave Desk believing
+  // it had shared a thread it had not.
+  it('403s an ILSA actor outright', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'ilsa-1', role: 'ILSA', schoolId: 'sch-1', name: 'Ms Support' })
+    prismaMock.ilsaLink.findFirst.mockResolvedValue({ studentId: 'stu-1', hubPupilId: 'hp-1' })
+
+    const res = await add()
+
+    expect(res.status).toBe(403)
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  it('is idempotent — adding someone already on the thread makes no second row', async () => {
+    prismaMock.conversation.findFirst.mockResolvedValue({
+      ...THREAD, participants: [{ userId: 'p-dad', role: 'PARENT', user: { name: 'Omar Hassan' } }],
+    })
+
+    const res = await add()
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ sharedWith: ['Omar Hassan'] })
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
   })
 })
 

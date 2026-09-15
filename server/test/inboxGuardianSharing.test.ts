@@ -16,7 +16,7 @@ const prismaMock = {
   parentStudentLink: { findFirst: vi.fn(), findMany: vi.fn() },
   notification: { create: vi.fn() },
   deviceToken: { findMany: vi.fn() },
-  user: { findUnique: vi.fn() },
+  user: { findUnique: vi.fn(), findMany: vi.fn() },
   school: { findUnique: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
@@ -228,13 +228,18 @@ describe('DELETE /conversations/:id/guardians/:userId', () => {
 describe('added guardian access', () => {
   it('added guardian can GET the thread (authorized via the participants OR-clause) and it stamps participant.lastReadAt', async () => {
     CURRENT_USER = { ...GUARDIAN }
+    // Who `addedById` points at — a plain column, so the route looks it up.
+    prismaMock.user.findMany.mockResolvedValue([{ id: 'staff-1', name: 'Ms Noor', role: 'STAFF' }])
     prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c-1', parentId: 'primary-1', staffId: 'staff-1', studentId: 'stu-1', schoolId: 'school-1',
       parent: { id: 'primary-1', name: 'Primary Parent', avatarUrl: null },
       staff: { id: 'staff-1', name: 'Ms Noor', avatarUrl: null },
       student: { id: 'stu-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' } },
       schoolContact: null,
-      participants: [{ id: 'part-1', userId: 'guardian-2', mutedAt: null, user: { name: 'Guardian Two' } }],
+      // addedById: the STAFF member, which is the case Ask 2 exists for — a
+      // guardian the school put on the thread rather than one the other parent
+      // invited.
+      participants: [{ id: 'part-1', userId: 'guardian-2', role: 'PARENT', mutedAt: null, addedById: 'staff-1', user: { name: 'Guardian Two' } }],
       lastMessageAt: new Date('2026-08-19T10:00:00.000Z'),
       createdAt: new Date('2026-08-18T10:00:00.000Z'),
       mutedByParent: false, mutedByStaff: false,
@@ -245,7 +250,15 @@ describe('added guardian access', () => {
     // Detail response exposes sharing state: `shared` true for an added guardian,
     // and the participant roster (for the "shared with" header indicator).
     expect(res.body.shared).toBe(true)
-    expect(res.body.participants).toContainEqual({ userId: 'guardian-2', name: 'Guardian Two' })
+    // The roster now says WHO added each guardian. Without it, the first a
+    // mother knows of a joint thread is her co-guardian replying in a
+    // conversation she believed was private, with nothing on screen explaining
+    // how — which is the scenario the old parent-opt-in design prevented.
+    expect(res.body.participants).toContainEqual({
+      userId: 'guardian-2', name: 'Guardian Two', role: 'PARENT',
+      addedBy: { name: 'Ms Noor', role: 'STAFF' },
+      addedByStaff: true,
+    })
     // The where-clause authorizes the guardian via participants.some(userId).
     const orClause = prismaMock.conversation.findFirst.mock.calls[0][0].where.OR
     expect(orClause).toContainEqual({ participants: { some: { userId: 'guardian-2' } } })

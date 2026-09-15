@@ -217,7 +217,12 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
         parent: { select: { id: true, name: true, avatarUrl: true } },
         student: { select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } } },
         schoolContact: { select: { id: true, name: true, icon: true } },
-        participants: { select: { id: true, userId: true, role: true, mutedAt: true, user: { select: { name: true } } } },
+        participants: {
+          select: {
+            id: true, userId: true, role: true, mutedAt: true, addedById: true,
+            user: { select: { name: true } },
+          },
+        },
         messages: {
           include: {
             sender: { select: { id: true, name: true } },
@@ -245,6 +250,24 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
     const isPrimaryParent = user.id === conversation.parentId
     const isStaffParty = user.id === conversation.staffId
     const myParticipant = conversation.participants.find(p => p.userId === user.id)
+
+    // Who added each participant. `addedById` is a plain column with no
+    // relation behind it, so it cannot be traversed in the include above — one
+    // lookup for the distinct adders instead.
+    //
+    // This mattered little while only a parent could add anyone: the answer was
+    // always the primary parent. Now that a teacher can, it is the difference
+    // between a co-guardian a mother invited and one the school put there, and
+    // those must not look identical on her screen.
+    const adderIds = [...new Set(conversation.participants.map(p => p.addedById).filter((x): x is string => !!x))]
+    const addedBy = new Map<string, { name: string; role: string }>(
+      adderIds.length === 0
+        ? []
+        : (await prisma.user.findMany({
+            where: { id: { in: adderIds } },
+            select: { id: true, name: true, role: true },
+          })).map(u => [u.id, { name: u.name, role: u.role }]),
+    )
 
     if (myParticipant && !isPrimaryParent && !isStaffParty) {
       // Added guardian: their read-state lives on the participant row, not on the
@@ -291,7 +314,21 @@ router.get('/conversations/:id', isAuthenticated, async (req, res) => {
       // Additional people on this thread with their role, so the parent UI can
       // separate co-guardians (PARENT) from CC'd staff (STAFF). `shared` = the
       // requester is one of them (an added guardian) rather than the owner.
-      participants: conversation.participants.map(p => ({ userId: p.userId, name: p.user.name, role: p.role })),
+      participants: conversation.participants.map(p => {
+        const adder = p.addedById ? addedBy.get(p.addedById) : undefined
+        return {
+          userId: p.userId,
+          name: p.user.name,
+          role: p.role,
+          // Named, and flagged. The flag is what the parent app renders off
+          // ("your child's teacher added Omar"); the name covers the case where
+          // it needs to say which teacher. A guardian added by a parent carries
+          // the same shape, so the UI branches on `addedByStaff` rather than on
+          // the field being present.
+          addedBy: adder ? { name: adder.name, role: adder.role } : null,
+          addedByStaff: !!adder && adder.role !== 'PARENT',
+        }
+      }),
       shared: !!myParticipant && !isPrimaryParent && !isStaffParty,
       messages: conversation.messages.map(m =>
         serializeMessage(m as Parameters<typeof serializeMessage>[0], user.id, user.role === 'PARENT')),

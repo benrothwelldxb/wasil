@@ -1346,6 +1346,128 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
   }
 })
 
+// 4b. Add a second guardian to a thread — the joint-guardian conversation.
+//
+// Desk asked for this once and withdrew it, on the grounds that co-guardian
+// sharing is the parent's own opt-in and a teacher must not make it for them.
+// Ben has reversed that: for most families a joint message is the normal and
+// courteous thing, and the old design made the ordinary case impossible in
+// order to protect the exceptional one.
+//
+// The safeguard has not disappeared, it has MOVED — from the system to a named
+// person ticking a box in Desk. That is a weaker guarantee, deliberately
+// accepted, and it is why the provenance half of this matters more than the
+// route: `addedById` records the staff member, and the parent app reads it back
+// so a mother sees "your child's teacher added Omar" rather than meeting her
+// co-guardian for the first time in a reply.
+//
+//   POST /api/partner/inbox/threads/:id/guardians
+//   { hub_user_id, userId }  →  { sharedWith: ["Omar Hassan"] }
+//
+// Idempotent: adding someone already on the thread is a no-op success, as the
+// parent-side route is.
+router.post('/inbox/threads/:id/guardians', requirePartner, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { hub_user_id, userId } = req.body ?? {}
+    const actor = await resolveActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    // An ILSA thread is private to the one guardian by design (ADR 0006), and
+    // an ILSA is engaged by that parent rather than employed by the school.
+    // Refused outright rather than ignored — quietly doing nothing here would
+    // leave Desk believing it had shared a thread it had not.
+    if (actor.kind === 'ILSA') return res.status(403).json({ error: 'forbidden' })
+
+    if (typeof userId !== 'string' || !userId.trim()) {
+      return res.status(400).json({ error: 'userId is required' })
+    }
+    const staff = actor.staff
+
+    // The caller must be ON the thread — its staff party, or CC'd onto it. A
+    // teacher may not join two guardians into somebody else's conversation.
+    // `kind: 'STAFF'` also keeps an ILSA thread unreachable from here even if
+    // the actor resolution above ever changed.
+    const conversation = await prisma.conversation.findFirst({
+      where: staffThreadWhere(id, staff),
+      include: {
+        participants: { select: { userId: true, role: true, user: { select: { name: true } } } },
+      },
+    })
+    // 404 on a miss, never 403 — the same rule as every other thread route:
+    // a staff member who cannot see a thread is not told it exists.
+    if (!conversation) return res.status(404).json({ error: 'not_found' })
+
+    if (!conversation.studentId) {
+      return res.status(400).json({ error: 'This conversation is not about a student and cannot be shared' })
+    }
+    if (userId === conversation.parentId) {
+      return res.status(400).json({ error: 'Cannot add the primary parent' })
+    }
+
+    const sharedNames = (c: typeof conversation) =>
+      c.participants.filter((p) => p.role !== 'STAFF').map((p) => p.user.name)
+
+    // Already there: success, and no second row.
+    if (conversation.participants.some((p) => p.userId === userId)) {
+      return res.json({ sharedWith: sharedNames(conversation) })
+    }
+
+    // A guardian OF THIS CHILD, not merely a parent at this school. Desk only
+    // ever sends an id from that pupil's own `guardians` array, so this is the
+    // backstop rather than the filter — the thing that stops a Desk-side bug
+    // putting one family's correspondence in front of another.
+    const link = await prisma.parentStudentLink.findFirst({
+      where: {
+        userId,
+        studentId: conversation.studentId,
+        user: { schoolId: staff.schoolId, role: 'PARENT' },
+      },
+      select: { id: true },
+    })
+    if (!link) {
+      return res.status(400).json({ error: 'User is not a linked guardian of this student' })
+    }
+
+    await prisma.conversationParticipant.create({
+      data: {
+        conversationId: id,
+        userId,
+        role: 'PARENT',
+        // The acting STAFF member, which is what makes this visible downstream.
+        // Every row before this one held a parent.
+        addedById: staff.id,
+      },
+    })
+
+    // Audited. The question after something goes wrong is who decided, and the
+    // answer should not require reading the database.
+    await prisma.auditLog.create({
+      data: {
+        userId: staff.id,
+        userName: staff.name,
+        action: 'CREATE',
+        resourceType: 'CONVERSATION',
+        resourceId: id,
+        metadata: { event: 'GUARDIAN_ADDED_BY_STAFF', addedUserId: userId, studentId: conversation.studentId },
+        schoolId: staff.schoolId,
+        ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+      },
+    })
+
+    const refreshed = await prisma.conversation.findFirst({
+      where: { id },
+      include: {
+        participants: { select: { userId: true, role: true, user: { select: { name: true } } } },
+      },
+    })
+    res.json({ sharedWith: refreshed ? sharedNames(refreshed as typeof conversation) : [] })
+  } catch (error) {
+    console.error('Error adding guardian to partner thread:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 // 5. The pupils a staff member may start a thread with — completes Desk's
 // composer (replies already work). `scope=own` (default) = pupils in classes the
 // actor teaches (StaffClassAssignment); `scope=school` = all pupils in the
