@@ -810,7 +810,7 @@ describe('POST /api/partner/inbox/threads/:id/guardians', () => {
   }
   const add = (body: Record<string, unknown> = {}) =>
     auth(request(makeApp()).post('/api/partner/inbox/threads/c-1/guardians'))
-      .send({ hub_user_id: 'hu-staff', userId: 'p-dad', ...body })
+      .send({ hub_user_id: 'hu-staff', userId: 'p-dad', jointConfirmed: true, ...body })
 
   beforeEach(() => {
     prismaMock.user.findUnique.mockResolvedValue(STAFF)
@@ -834,6 +834,9 @@ describe('POST /api/partner/inbox/threads/:id/guardians', () => {
     // other parent invited.
     expect(prismaMock.conversationParticipant.create.mock.calls[0][0].data).toMatchObject({
       conversationId: 'c-1', userId: 'p-dad', role: 'PARENT', addedById: 'staff-1',
+      // Stored, not just validated: the question asked months later is whether
+      // anyone was asked, and it should be answerable from Connect's own record.
+      jointConfirmed: true,
     })
   })
 
@@ -845,6 +848,25 @@ describe('POST /api/partner/inbox/threads/:id/guardians', () => {
         metadata: expect.objectContaining({ event: 'GUARDIAN_ADDED_BY_STAFF', addedUserId: 'p-dad' }),
       }),
     }))
+  })
+
+  // The confirmation is required, and strictly `true`. A caller that has not
+  // built the tick yet is refused outright rather than half-accepted — which is
+  // the correct state for a feature no teacher can reach.
+  it('refuses without an explicit jointConfirmed', async () => {
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/threads/c-1/guardians'))
+      .send({ hub_user_id: 'hu-staff', userId: 'p-dad' })
+
+    expect(res.status).toBe(400)
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses a truthy non-true — a "1" or a "yes" is not a confirmation', async () => {
+    for (const value of ['true', 1, 'yes']) {
+      const res = await add({ jointConfirmed: value })
+      expect(res.status).toBe(400)
+    }
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
   })
 
   // The backstop. Desk only ever sends an id from that pupil's own guardians

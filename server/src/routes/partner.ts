@@ -1369,7 +1369,7 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
 router.post('/inbox/threads/:id/guardians', requirePartner, async (req, res) => {
   try {
     const { id } = req.params
-    const { hub_user_id, userId } = req.body ?? {}
+    const { hub_user_id, userId, jointConfirmed } = req.body ?? {}
     const actor = await resolveActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'forbidden' })
 
@@ -1381,6 +1381,14 @@ router.post('/inbox/threads/:id/guardians', requirePartner, async (req, res) => 
 
     if (typeof userId !== 'string' || !userId.trim()) {
       return res.status(400).json({ error: 'userId is required' })
+    }
+
+    // Was a named person asked before two guardians are put in a thread
+    // together? Required, and stored — see the column comment. Strictly `true`:
+    // a truthy string or a 1 is not a confirmation, and a caller that has not
+    // built the tick yet should be refused rather than half-accepted.
+    if (jointConfirmed !== true) {
+      return res.status(400).json({ error: 'jointConfirmed is required' })
     }
     const staff = actor.staff
 
@@ -1437,6 +1445,7 @@ router.post('/inbox/threads/:id/guardians', requirePartner, async (req, res) => 
         // The acting STAFF member, which is what makes this visible downstream.
         // Every row before this one held a parent.
         addedById: staff.id,
+        jointConfirmed: true,
       },
     })
 
@@ -1449,7 +1458,12 @@ router.post('/inbox/threads/:id/guardians', requirePartner, async (req, res) => 
         action: 'CREATE',
         resourceType: 'CONVERSATION',
         resourceId: id,
-        metadata: { event: 'GUARDIAN_ADDED_BY_STAFF', addedUserId: userId, studentId: conversation.studentId },
+        metadata: {
+          event: 'GUARDIAN_ADDED_BY_STAFF',
+          addedUserId: userId,
+          studentId: conversation.studentId,
+          jointConfirmed: true,
+        },
         schoolId: staff.schoolId,
         ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
       },
