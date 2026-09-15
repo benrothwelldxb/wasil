@@ -187,7 +187,20 @@ describe('PUT /api/partner/transport/assignments', () => {
     expect(prismaMock.transportAssignment.upsert.mock.calls[0][0].create.hideStopName).toBe(true)
   })
 
-  it('rejects a leg that is not AM or PM', async () => {
+  // The consolidated Friday afternoon service — a distinct run, not a re-timed
+  // PM, so it is its own leg and its own replacement.
+  it('accepts FRI_PM, replacing only that leg', async () => {
+    const res = await put({ school_id: 'hub-1', leg: 'FRI_PM', routes: [] })
+
+    expect(res.status).toBe(200)
+    // Scoped to FRI_PM: pushing the Friday bus never disturbs a school's
+    // ordinary AM/PM rows.
+    expect(prismaMock.transportAssignment.deleteMany.mock.calls[0][0].where).toMatchObject({
+      schoolId: 'school-1', leg: 'FRI_PM',
+    })
+  })
+
+  it('rejects a leg that is not AM, PM or FRI_PM', async () => {
     const res = await put({ school_id: 'hub-1', leg: 'EVENING', routes: [] })
     expect(res.status).toBe(400)
     expect(prismaMock.transportAssignment.deleteMany).not.toHaveBeenCalled()

@@ -2499,6 +2499,25 @@ model TransportAssignment {
 enum TransportLeg {
   AM
   PM
+  /// The consolidated Friday afternoon service. VHPS finishes earlier on a
+  /// Friday and everyone leaves at once, so several routes collapse onto one
+  /// bus — a DIFFERENT run carrying a different set of children with its own
+  /// stops and order, not a re-timing of the ordinary afternoon.
+  ///
+  /// A named leg per variant, chosen rather than drifted into: the alternative
+  /// was scoping an assignment to weekdays, which would change the uniqueness
+  /// rule from one row per child per leg to one per child per leg per day. That
+  /// rule is what makes the guardian read structurally incapable of returning
+  /// another family's child (ADR 0001) rather than incapable because the query
+  /// happens to be written correctly today, so it is not reopened for a
+  /// requirement nobody has stated. If named legs ever reach a third variant,
+  /// that is the moment to revisit it — not before.
+  ///
+  /// No resolution step comes with this. A child with no FRI_PM row simply has
+  /// no Friday card and their ordinary PM arrangement stands, so there is no
+  /// "on Fridays use the Friday bus" rule to get wrong for the children who are
+  /// not on it.
+  FRI_PM
 }
 
 model ClubOperator {

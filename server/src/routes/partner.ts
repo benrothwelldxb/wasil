@@ -3089,7 +3089,7 @@ router.delete('/services/registrations/:regId', requirePartner, async (req, res)
 // why there is no staff-facing transport surface in Connect.
 //
 //   PUT /api/partner/transport/assignments
-//     { school_id, leg: 'AM'|'PM',
+//     { school_id, leg: 'AM'|'PM'|'FRI_PM',
 //       routes: [ { id, name, code?,
 //                   stops: [ { id, name, time_local, hide_stop_name?,
 //                              pupils: [ { hub_pupil_id } ] } ] } ] }
@@ -3104,8 +3104,14 @@ router.put('/transport/assignments', requirePartner, async (req, res) => {
     const schoolIdParam = typeof body.school_id === 'string' ? body.school_id.trim() : ''
     if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
 
+    // FRI_PM is the consolidated Friday afternoon service — a distinct run, not
+    // a re-timed PM. Replacement is still per leg, so pushing FRI_PM never
+    // disturbs a school's ordinary AM/PM rows and a school with no Friday
+    // service simply never sends one.
     const leg = body.leg
-    if (leg !== 'AM' && leg !== 'PM') return res.status(400).json({ error: "leg must be 'AM' or 'PM'" })
+    if (leg !== 'AM' && leg !== 'PM' && leg !== 'FRI_PM') {
+      return res.status(400).json({ error: "leg must be 'AM', 'PM' or 'FRI_PM'" })
+    }
 
     const school = await partnerSchool(schoolIdParam)
     if (!school) return res.status(404).json({ error: 'school_not_found' })

@@ -1,0 +1,12 @@
+-- The consolidated Friday afternoon bus.
+--
+-- VHPS finishes earlier on a Friday and everyone leaves at once, so several
+-- routes collapse onto one service — a different bus carrying a different set
+-- of children, with its own stops and order. A child on Route C most days is on
+-- the consolidated bus on Friday.
+--
+-- A named leg rather than a weekday scope on the assignment: scoping would
+-- change the uniqueness rule from one row per child per leg to one per child
+-- per leg per day, and that rule is what makes the guardian read structurally
+-- unable to return another family's child (ADR 0001).
+ALTER TYPE "TransportLeg" ADD VALUE 'FRI_PM';
