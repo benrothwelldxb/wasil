@@ -2059,7 +2059,27 @@ model ConversationParticipant {
   userId         String
   user           User         @relation("ConversationParticipations", fields: [userId], references: [id])
   role           String       @default("PARENT") // forward-compat: future "STAFF"
-  addedById      String? // who added this participant (the acting primary parent)
+  addedById      String? // who added this participant (a parent, or a staff member)
+  // Did a named person confirm this family is happy to be corresponded with
+  // jointly, before staff put two guardians in a thread together?
+  //
+  // NULL means the question does not apply — a parent sharing their own thread
+  // is their own decision, which is what every row before staff sharing existed
+  // was. TRUE is a staff member who ticked the confirmation in Desk.
+  //
+  // Persisted rather than merely validated, deliberately. A required field that
+  // is checked and discarded proves only that the caller passed a literal; the
+  // question actually asked months later is "was anyone asked before these two
+  // were put in a thread together", and it should be answerable from Connect's
+  // own record rather than from another system's audit log with its own
+  // retention story.
+  //
+  // It does not make this safe. The human is still the check and a tick can be
+  // a reflex. What it does is make the check STRUCTURAL rather than
+  // conventional: "Desk shows a confirmation" is a property of Desk's current
+  // UI that a refactor could quietly drop with nothing noticing, and a required
+  // field means the safeguard cannot be removed by accident from one side.
+  jointConfirmed Boolean?
   lastReadAt     DateTime?
   mutedAt        DateTime?
   archivedAt     DateTime?
