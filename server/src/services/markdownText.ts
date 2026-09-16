@@ -73,3 +73,33 @@ export function repairTranslatedMarkdown(input: string): string {
       .replace(/＊/g, '*')
   )
 }
+
+/**
+ * Staff @mentions, stored as a markdown link to the parent app's compose route:
+ *
+ *     [@Rob Davies](/inbox/new?staff=clx123abc)
+ *
+ * Deliberate twin of `packages/shared/src/utils/mentions.ts` — see the note on
+ * `stripMarkdown` above for why the server keeps its own copy. The format is a
+ * contract shared with Desk's broadcast composer; change both, and the spec.
+ */
+const MENTION_RE = /\[@([^\]]*)\]\(\/inbox\/new\?staff=([A-Za-z0-9_-]+)\)/g
+
+export interface ParsedMention {
+  staffId: string
+  name: string
+}
+
+/** Every mention in a body, in document order, de-duplicated by staff id. */
+export function parseMentions(content: string): ParsedMention[] {
+  if (!content) return []
+  const seen = new Set<string>()
+  const out: ParsedMention[] = []
+  for (const m of content.matchAll(MENTION_RE)) {
+    const staffId = m[2]
+    if (seen.has(staffId)) continue
+    seen.add(staffId)
+    out.push({ staffId, name: m[1] })
+  }
+  return out
+}

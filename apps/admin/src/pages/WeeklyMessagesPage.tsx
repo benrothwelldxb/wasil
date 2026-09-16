@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react'
 import { Plus, X, Pencil, Trash2, CheckCircle, MessageSquare, Upload, Image, Clock } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant, stripMarkdown } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant, stripMarkdown, buildMention, mentionStaffId } from '@wasil/shared'
 import { MarkdownToolbarEditor } from '../components/MarkdownToolbarEditor'
+import { StaffMentionPicker } from '../components/StaffMentionPicker'
 import type { WeeklyMessage } from '@wasil/shared'
 
 interface WeeklyForm {
@@ -27,6 +28,9 @@ export function WeeklyMessagesPage() {
   const toast = useToast()
   const { data: messages, refetch } = useApi<WeeklyMessage[]>(() => api.weeklyMessage.list(), [])
 
+  // Holds the editor's "drop this at the caret" callback while the staff picker
+  // is open, so the mention lands where the author was typing.
+  const [mentionInsert, setMentionInsert] = useState<((markdown: string) => void) | null>(null)
   const [showForm, setShowForm] = useState(false)
   // Same inline composer, same silent failure — see MessagesPage.
   const formRef = useRef<HTMLDivElement>(null)
@@ -154,6 +158,16 @@ export function WeeklyMessagesPage() {
         </button>
       </div>
 
+      {mentionInsert && (
+        <StaffMentionPicker
+          onClose={() => setMentionInsert(null)}
+          onSelect={(staffMember) => {
+            mentionInsert(buildMention(staffMember.id, staffMember.name))
+            setMentionInsert(null)
+          }}
+        />
+      )}
+
       {/* Form */}
       <div ref={formRef} />
       {showForm && (
@@ -185,6 +199,20 @@ export function WeeklyMessagesPage() {
                 rows={10}
                 required
                 placeholder="What do families need to know this week?"
+                onRequestMention={(insert) => setMentionInsert(() => insert)}
+                // Preview must show a tag the way a parent will see it, not as
+                // a bare link — otherwise Preview stops being a preview.
+                renderLink={(href, children) =>
+                  mentionStaffId(href) ? (
+                    <span className="inline px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 font-semibold">
+                      {children}
+                    </span>
+                  ) : (
+                    <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="text-blue-600 underline">
+                      {children}
+                    </a>
+                  )
+                }
               />
             </div>
 

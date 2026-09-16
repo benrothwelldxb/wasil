@@ -20,6 +20,8 @@ export { resolveTenantSlug } from './services/tenant'
 
 // Utils
 export { toLocalInputValue, toIsoInstant } from './utils/datetime'
+export { buildMention, parseMentions, mentionStaffId, MENTION_PATH } from './utils/mentions'
+export type { ParsedMention } from './utils/mentions'
 
 // Hooks
 export { useApi, useMutation } from './hooks/useApi'
