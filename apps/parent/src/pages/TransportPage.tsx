@@ -28,6 +28,13 @@ const LEG_LABEL: Record<string, string> = { AM: 'Morning', PM: 'Afternoon', FRI_
  * one includes Friday. So it only says Mon–Thu when there is actually a Friday
  * service to exclude; a child with no Friday bus keeps the plain label, because
  * for them the afternoon bus IS every day.
+ *
+ * THIS IS PER CHILD, NOT PER SCHOOL, and it is meant to be. Two children at the
+ * same school — one on the consolidated Friday bus, one not — correctly see
+ * different words for the same leg, because the same leg means different things
+ * to them. It looks like an inconsistency to anyone who has not thought it
+ * through, so: it is not one, and making the label school-wide would tell every
+ * family without a Friday bus that their afternoon bus stops on Thursday.
  */
 function legLabel(leg: string, allLegs: string[]): string {
   if (leg === 'PM' && allLegs.includes('FRI_PM')) return 'Afternoon (Mon–Thu)'
