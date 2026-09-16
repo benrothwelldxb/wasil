@@ -1917,6 +1917,66 @@ function toIdArray(v: unknown): string[] {
   return [...new Set(v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map(x => x.trim()))]
 }
 
+// The staff a Desk broadcast may @mention, with the ids that mentions resolve
+// against.
+//
+//   GET /api/partner/staff/mentionable?school_id=<Hub school id | Connect id>
+//   → { staff: [ { userId, name, role, position } ] }
+//
+// Desk holds Hub user ids and nothing else; the Hub→Connect mapping lives on
+// this side, so a mention cannot be built there without asking. `userId` is the
+// Connect `User.id` that goes into the mention link — see
+// docs/adr/0003-staff-mentions-are-markdown-links.md.
+//
+// The role filter (STAFF/ADMIN/SUPER_ADMIN) is applied HERE rather than shipping
+// a wider list for Desk to filter. That rule is part of the mention contract,
+// and a second copy of it in another repo would drift from the day it was
+// written. ILSAs are excluded deliberately: an ILSA is scoped to one pupil
+// (ADR 0006), so they are not a whole-school broadcast's business.
+//
+// Returns display data only — no email, no password state, no last-login. A
+// composer needs to tell two people named Rob apart and nothing more. Unknown
+// school → empty list, not an error, matching the other partner reads.
+router.get('/staff/mentionable', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) {
+      return res.status(400).json({ error: 'school_id required' })
+    }
+
+    // Accept the Hub school id (Desk's world) or a Connect school id.
+    const school = await prisma.school.findFirst({
+      where: { OR: [{ hubSchoolId: schoolIdParam }, { id: schoolIdParam }] },
+      select: { id: true },
+    })
+    if (!school) return res.json({ staff: [] })
+
+    const staff = await prisma.user.findMany({
+      where: {
+        schoolId: school.id,
+        role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
+        // Test accounts stay out of every staff enumeration.
+        isTest: false,
+      },
+      select: { id: true, name: true, role: true, position: true },
+      orderBy: { name: 'asc' },
+    })
+
+    res.json({
+      staff: staff.map(s => ({
+        userId: s.id,
+        name: s.name,
+        role: s.role,
+        position: s.position || null,
+      })),
+    })
+  } catch (error) {
+    console.error('Error fetching mentionable staff:', error)
+    res.status(500).json({ error: 'Failed to fetch mentionable staff' })
+  }
+})
+
+
 // --- Broadcast -------------------------------------------------------------
 
 // Send a native broadcast to one or more audiences within the actor's school.
