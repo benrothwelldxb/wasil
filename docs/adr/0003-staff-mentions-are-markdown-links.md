@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-09-16
 - **Deciders:** Ben Rothwell
-- **Related:** Connect PR #86 (markdown in weekly updates), PR #87 (mentions). Desk's broadcast composer is the second writer of this format and must match it.
+- **Related:** Connect PR #86 (markdown in weekly updates), PR #89 (mentions; supersedes the auto-closed #87), PR #88 (`/api/partner/staff/mentionable`, which Desk needs to build a mention at all). Desk's broadcast composer is the second writer of this format and must match it.
 
 ## Context
 
