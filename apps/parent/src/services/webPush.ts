@@ -1,6 +1,13 @@
 import { Capacitor } from '@capacitor/core'
 import { initializeApp, getApps, getApp } from 'firebase/app'
-import { getMessaging, getToken, onMessage, isSupported, type Messaging } from 'firebase/messaging'
+import {
+  getMessaging,
+  getToken,
+  deleteToken,
+  onMessage,
+  isSupported,
+  type Messaging,
+} from 'firebase/messaging'
 import { deviceTokens } from '@wasil/shared'
 
 /**
@@ -32,6 +39,48 @@ const VAPID_KEY =
 // the root scope, so the two never clobber each other.
 const FCM_SW_URL = '/firebase-messaging-sw.js'
 const FCM_SW_SCOPE = '/firebase-cloud-messaging-push-scope'
+
+/**
+ * Remembered dismissal of the post-login <NotificationOptIn/> nudge. Shared with
+ * that component (and cleared by the settings card) so the banner is a nudge we
+ * can take back, not a one-way door.
+ */
+export const OPTIN_DISMISSED_KEY = 'wasil-notif-optin-dismissed'
+
+/**
+ * Set when the parent turns this device OFF from notification settings. Browsers
+ * expose no way to *revoke* an already-granted permission, so "off" means "drop
+ * this device's FCM token and don't silently re-register it on next login" —
+ * without this flag, ensureWebPushRegistered() would quietly undo the toggle.
+ */
+const LOCALLY_DISABLED_KEY = 'wasil-webpush-disabled'
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === 'true'
+  } catch {
+    // Storage unavailable (private mode, blocked cookies) — treat as unset.
+    return false
+  }
+}
+
+function writeFlag(key: string, value: boolean) {
+  try {
+    if (value) localStorage.setItem(key, 'true')
+    else localStorage.removeItem(key)
+  } catch {
+    // Best effort — the server-side token is the source of truth either way.
+  }
+}
+
+export function isLocallyDisabled(): boolean {
+  return readFlag(LOCALLY_DISABLED_KEY)
+}
+
+/** Forget the banner dismissal, so a parent who swiped it away can be nudged again. */
+export function clearOptInDismissal() {
+  writeFlag(OPTIN_DISMISSED_KEY, false)
+}
 
 function isStandalone(): boolean {
   if (typeof window === 'undefined') return false
@@ -77,6 +126,51 @@ export function isWebPushSupported(): boolean {
 export function getNotificationPermission(): NotificationPermission | 'unsupported' {
   if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported'
   return Notification.permission
+}
+
+/**
+ * Everything the notification settings UI needs to know about THIS device, as a
+ * single state. The distinction that matters most is `default` vs `denied`:
+ *
+ *  - `default`  — the prompt was never answered (dismissed, swiped away, or the
+ *                 parent never tapped the nudge). We CAN prompt again.
+ *  - `denied`   — the parent actively tapped "Don't Allow". No API can bring the
+ *                 prompt back; only the OS/browser settings can undo it. Any UI
+ *                 offering a "turn on" button here would be lying.
+ */
+export type DevicePushState =
+  | 'native'
+  | 'unsupported'
+  | 'ios-needs-install'
+  | 'default'
+  | 'denied'
+  | 'granted-off'
+  | 'granted'
+
+export function getDevicePushState(): DevicePushState {
+  if (typeof window === 'undefined') return 'unsupported'
+  // Native runs the Capacitor push path in services/pushNotifications.ts; this
+  // card is web-only and hides itself there.
+  if (Capacitor.isNativePlatform()) return 'native'
+  if (
+    !('serviceWorker' in navigator) ||
+    !('Notification' in window) ||
+    !('PushManager' in window)
+  ) {
+    return 'unsupported'
+  }
+  // iOS refuses web push outside an installed PWA — a "turn on" button in a
+  // Safari tab could never work, so say what's actually needed instead.
+  if (isIos() && !isStandalone()) return 'ios-needs-install'
+
+  switch (Notification.permission) {
+    case 'granted':
+      return isLocallyDisabled() ? 'granted-off' : 'granted'
+    case 'denied':
+      return 'denied'
+    default:
+      return 'default'
+  }
 }
 
 let messagingInstance: Messaging | null = null
@@ -175,6 +269,8 @@ export async function enableWebPush(): Promise<string | null> {
     if (!token) return null
 
     await deviceTokens.register({ token, platform: 'web' })
+    // This device is on again — undo any earlier explicit "off".
+    writeFlag(LOCALLY_DISABLED_KEY, false)
 
     if (!foregroundBound) {
       foregroundBound = true
@@ -202,6 +298,8 @@ export async function requestAndEnableWebPush(): Promise<string | null> {
   if (!isWebPushSupported()) return null
 
   let permission = Notification.permission
+  // Re-asking is the whole point when permission is still `default`: a parent who
+  // swiped the prompt away the first time gets a real second chance here.
   if (permission === 'default') {
     permission = await Notification.requestPermission()
   }
@@ -218,5 +316,48 @@ export async function requestAndEnableWebPush(): Promise<string | null> {
 export async function ensureWebPushRegistered(): Promise<void> {
   if (!isWebPushSupported()) return
   if (Notification.permission !== 'granted') return
+  // The parent turned this device off deliberately — don't re-register behind
+  // their back on the next login.
+  if (isLocallyDisabled()) return
   await enableWebPush()
+}
+
+/**
+ * Turn this device OFF. There is no browser API to revoke a granted permission,
+ * so "off" is implemented where it actually controls delivery: delete the FCM
+ * token (locally and on the backend) and remember the choice so login doesn't
+ * silently re-register it. Turning back on needs no new permission prompt.
+ */
+export async function disableWebPush(): Promise<void> {
+  writeFlag(LOCALLY_DISABLED_KEY, true)
+  if (!isWebPushSupported()) return
+  if (Notification.permission !== 'granted') return
+
+  try {
+    if (!(await isSupported())) return
+
+    const registration = await navigator.serviceWorker.register(FCM_SW_URL, {
+      scope: FCM_SW_SCOPE,
+    })
+    const messaging = getFirebaseMessaging()
+
+    // We need the current token to tell the backend which row to drop.
+    const token = await getToken(messaging, {
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: registration,
+    })
+
+    if (token) {
+      try {
+        await deviceTokens.remove(token)
+      } catch (err) {
+        // Backend removal failed — still delete locally so this device stops
+        // producing a token; the stale row is harmless (sends just no-op).
+        console.error('Web push: failed to remove token from backend', err)
+      }
+      await deleteToken(messaging)
+    }
+  } catch (err) {
+    console.error('Web push: failed to disable', err)
+  }
 }
