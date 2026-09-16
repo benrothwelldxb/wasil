@@ -27,7 +27,9 @@ No new syntax, no parallel column, no custom element.
 
 ### Why this shape
 
-1. **It degrades to a name, never to syntax.** Any renderer that understands markdown — including ones written before this decision — shows "@Rob Davies". A bespoke token shows its own punctuation to the reader.
+1. **It degrades to a name, not to syntax — in any renderer that handles links.** A renderer that already supports markdown links shows "@Rob Davies" with no mention-specific code. A bespoke token shows its own punctuation to every reader, forever.
+
+   This is a weaker claim than it first appears, and the weakness is load-bearing. Desk's `FormattedText` handles bold, italic and bullets and has **no link rule at all**, so a mention would render there as raw `[@Rob Davies](/inbox/new?staff=…)` — Desk would be the counterexample to the contract it is adopting. Link support is therefore a **prerequisite** for any renderer that writes or displays mentions, not a nicety. The format removes the need for mention-specific code; it does not remove the need for markdown-complete code.
 
 2. **The link target *is* the behaviour.** `/inbox/new?staff=<id>` is a real route that really opens a thread with that person. There is no lookup table mapping tags to destinations, so there is nothing to fall out of step.
 
@@ -50,6 +52,10 @@ Writers **must** pick the staff member from a real staff list rather than accept
 
 Readers **must** treat an unresolvable id as ordinary text, not an error: staff leave, and old updates stay published.
 
+Readers **must** support markdown links before displaying a body that can contain mentions — see the caveat under "Why this shape".
+
+Readers **should not** render a mention as a navigable anchor outside the parent app. `/inbox/new?staff=…` is a route in Connect's parent app and nothing anywhere else; a teacher reviewing what they sent is not the reader the link is for, and following it would either 404 or open a compose window aimed at the wrong inbox. Outside the parent app, render the display name, styled, inert.
+
 ### Guardrails
 
 1. **Tagging notifies the tagged.** A tag is a promise made on someone else's behalf — it points every reader at a person who may not know. Connect sends a `STAFF_MENTION` notification on publish, and on edit sends only to the *newly* added ids, so correcting a typo is not a second round of pings.
@@ -61,5 +67,7 @@ Readers **must** treat an unresolvable id as ordinary text, not an error: staff 
 ## Consequences
 
 - Desk's broadcast composer must write this exact format. Any divergence surfaces as literal markdown in the parent app.
-- A mention deep link creates a thread with no `studentId`, so it is a general enquiry and cannot later be shared with a co-guardian. Acceptable for a whole-school announcement; wrong if this format is ever reused for child-specific content, which would need `?student=` added to the route and to this ADR.
+- Desk must add link rendering to `FormattedText` and link-label extraction to its own `stripMarkdown` **before** the composer writes a single mention, or the first tag published from Desk appears as raw syntax in Desk's own Sent list.
+- The staff list Desk picks from comes from `GET /api/partner/staff/mentionable` — Connect applies the role rule, because Desk holds Hub user ids and the Hub→Connect mapping lives here. A list Desk filtered itself would be a second copy of this ADR's own rule.
+- A mention deep link creates a thread with no `studentId`, so it is a general enquiry and cannot later be shared with a co-guardian. Acceptable for a whole-school announcement; wrong if this format is ever reused for child-specific content, which would need `?student=` added to the route and to this ADR. (Checked against Desk: a broadcast's audience is classes, groups or whole-school — there is no single-child broadcast, so no divergence today.)
 - `POST /api/inbox/conversations` accepts any same-school staff member; the contactable-staff restriction lives only in the UI list (`isStaffContactableByParent` gates staff CCs but not creation). The deep link adds no capability a parent lacked via the API, but it does make the gap easier to reach. Tightening it is a separate decision, because it could cut off legitimate existing threads.
