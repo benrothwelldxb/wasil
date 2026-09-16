@@ -4,9 +4,8 @@ import {
   isWebPushSupported,
   getNotificationPermission,
   requestAndEnableWebPush,
+  OPTIN_DISMISSED_KEY as DISMISSED_KEY,
 } from '../../services/webPush'
-
-const DISMISSED_KEY = 'wasil-notif-optin-dismissed'
 
 /**
  * Post-login "Turn on notifications" nudge for the parent PWA. Web-only, and a
@@ -18,7 +17,9 @@ const DISMISSED_KEY = 'wasil-notif-optin-dismissed'
  * is actually usable (see isWebPushSupported — includes the iOS "must be
  * installed/standalone" guard) AND permission is still `default`. Clicking
  * "Turn on" triggers the permission prompt, then the getToken+register flow.
- * Dismissal is remembered in localStorage so it never nags.
+ * Dismissal is remembered in localStorage so it never nags — but notification
+ * settings clears that flag (and offers its own "turn on"), so a parent who
+ * swiped this away still has a way back.
  */
 export function NotificationOptIn() {
   const [visible, setVisible] = useState(false)

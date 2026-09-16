@@ -4,6 +4,7 @@ import { PageLogo } from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import * as api from '@wasil/shared'
 import type { NotificationPreferences } from '@wasil/shared'
+import { DeviceNotificationCard } from '../components/settings/DeviceNotificationCard'
 
 interface PreferenceItem {
   key: keyof NotificationPreferences
@@ -94,6 +95,11 @@ export function NotificationSettingsPage() {
         </div>
       </div>
 
+      {/* Device permission sits ABOVE the per-category preferences: if this is
+          off, nothing below it can arrive. Rendered independently of `prefs` so
+          it's usable even if the preferences request is slow or fails. */}
+      <DeviceNotificationCard />
+
       {!prefs ? (
         <div className="space-y-4">
           {[1, 2, 3].map(i => (
@@ -170,7 +176,7 @@ export function NotificationSettingsPage() {
 
       {/* Footer note */}
       <p className="text-xs text-center px-4" style={{ color: '#A8929A' }}>
-        Emergency alerts cannot be disabled for your safety. All other notifications can be customised to your preference.
+        Emergency alerts cannot be disabled for your safety. All other notifications can be customised to your preference. The switch at the top controls this device only — if that is off, nothing below will reach you here.
       </p>
     </div>
   )
