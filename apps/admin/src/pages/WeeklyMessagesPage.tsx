@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react'
 import { Plus, X, Pencil, Trash2, CheckCircle, MessageSquare, Upload, Image, Clock } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant, stripMarkdown } from '@wasil/shared'
+import { MarkdownToolbarEditor } from '../components/MarkdownToolbarEditor'
 import type { WeeklyMessage } from '@wasil/shared'
 
 interface WeeklyForm {
@@ -63,6 +64,12 @@ export function WeeklyMessagesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // The content field is `required`, but it is unmounted while the composer
+    // is showing Preview — so the browser cannot enforce it from that tab.
+    if (!form.content.trim()) {
+      toast.error('Add some content before saving.')
+      return
+    }
     setIsSubmitting(true)
     try {
       const data = {
@@ -172,12 +179,12 @@ export function WeeklyMessagesPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Content</label>
-              <textarea
+              <MarkdownToolbarEditor
                 value={form.content}
-                onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                rows={6}
+                onChange={(content) => setForm((f) => ({ ...f, content }))}
+                rows={10}
                 required
+                placeholder="What do families need to know this week?"
               />
             </div>
 
@@ -315,7 +322,7 @@ export function WeeklyMessagesPage() {
                     )}
                   </div>
                   <p className="text-sm text-slate-500 mt-1">{getWeekLabel(msg.weekOf)}</p>
-                  <p className="text-sm text-slate-600 mt-2 line-clamp-2">{msg.content}</p>
+                  <p className="text-sm text-slate-600 mt-2 line-clamp-2">{stripMarkdown(msg.content)}</p>
                   <p className="text-xs text-slate-400 mt-2">
                     {msg.heartCount} heart{msg.heartCount !== 1 ? 's' : ''}
                   </p>
