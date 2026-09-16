@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { X } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
-import { useAuth, useApi, useMutation, RichText, stripMarkdown } from '@wasil/shared'
+import { useAuth, useApi, useMutation, stripMarkdown } from '@wasil/shared'
+import { RichBody } from '../components/RichBody'
 import * as api from '@wasil/shared'
 import type { WeeklyMessage } from '@wasil/shared'
 
@@ -253,7 +254,7 @@ export function PrincipalUpdatesPage() {
 
               {/* Content */}
               <div className="text-[15px] leading-[1.7]" style={{ color: '#4A3A40' }}>
-                <RichText content={selectedMessage.content} />
+                <RichBody content={selectedMessage.content} />
               </div>
 
               {/* Footer */}

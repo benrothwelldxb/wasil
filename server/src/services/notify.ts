@@ -61,6 +61,10 @@ interface SendStaffNotificationParams {
   data?: Record<string, unknown>
   /** Which staff to reach. Defaults to the school office (ADMIN/SUPER_ADMIN). */
   roles?: string[]
+  /** Narrow to named individuals — e.g. the staff @mentioned in a weekly
+   *  update. Still intersected with `roles`, so this cannot widen the audience
+   *  or reach a parent; an empty array after filtering sends nothing. */
+  userIds?: string[]
 }
 
 /**
@@ -87,6 +91,7 @@ export async function sendStaffNotification({
   resourceId,
   data,
   roles = ['ADMIN', 'SUPER_ADMIN'],
+  userIds,
 }: SendStaffNotificationParams): Promise<void> {
   try {
     // Hard floor: a parent or an ILSA can never be an audience here, whatever
@@ -94,8 +99,15 @@ export async function sendStaffNotification({
     const staffRoles = roles.filter((r) => r === 'STAFF' || r === 'ADMIN' || r === 'SUPER_ADMIN')
     if (staffRoles.length === 0) return
 
+    // A named-individual send with nobody named is a no-op, never a broadcast.
+    if (userIds && userIds.length === 0) return
+
     const staff = await prisma.user.findMany({
-      where: { schoolId, role: { in: staffRoles as never } },
+      where: {
+        schoolId,
+        role: { in: staffRoles as never },
+        ...(userIds ? { id: { in: userIds } } : {}),
+      },
       select: { id: true },
     })
     const staffIds = staff.map((u) => u.id)
