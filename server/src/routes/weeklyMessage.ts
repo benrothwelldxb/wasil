@@ -7,12 +7,13 @@ import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
 import { parseWallClockForSchool } from '../services/dateTime.js'
+import { stripMarkdown, repairTranslatedMarkdown } from '../services/markdownText.js'
 
 const router = Router()
 
 const createWeeklyMessageSchema = z.object({
   title: z.string().min(1).max(500),
-  content: z.string().min(1),
+  content: z.string().min(1).max(20000),
   weekOf: z.string().min(1),
   isCurrent: z.boolean().optional(),
   imageUrl: z.string().optional(),
@@ -56,7 +57,8 @@ router.get('/current', isAuthenticated, async (req, res) => {
     if (targetLang !== 'en') {
       const translations = await translateTexts([message.title, message.content], targetLang)
       translatedTitle = translations[0]
-      translatedContent = translations[1]
+      // Content is markdown; translation pads the markers. See the helper.
+      translatedContent = repairTranslatedMarkdown(translations[1])
     }
 
     res.json({
@@ -108,7 +110,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       let translationIndex = 0
       messages.forEach(msg => {
         translationMap.set(msg.title, translations[translationIndex++])
-        translationMap.set(msg.content, translations[translationIndex++])
+        translationMap.set(msg.content, repairTranslatedMarkdown(translations[translationIndex++]))
       })
     }
 
@@ -167,7 +169,7 @@ router.post('/', isAdmin, validate(createWeeklyMessageSchema), async (req, res) 
 
     // Only send notification if not scheduled for later
     if (!message.scheduledAt || message.scheduledAt <= new Date()) {
-      sendNotification({ req, type: 'WEEKLY_MESSAGE', title: message.title, body: message.content.substring(0, 200), resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, target: { targetClass: 'Whole School', schoolId: user.schoolId } })
+      sendNotification({ req, type: 'WEEKLY_MESSAGE', title: message.title, body: stripMarkdown(message.content).substring(0, 200), resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, target: { targetClass: 'Whole School', schoolId: user.schoolId } })
     }
 
     res.status(201).json({

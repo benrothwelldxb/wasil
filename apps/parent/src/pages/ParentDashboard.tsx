@@ -6,7 +6,7 @@ import { PulseBanner, PulseSurveyModal } from '../components/pulse'
 // ScheduleWidget no longer used — schedule items shown inline in child cards
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
-import { useApi, useMutation } from '@wasil/shared'
+import { useApi, useMutation, RichText, stripMarkdown } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild, SchoolSettings, DashboardFeature } from '@wasil/shared'
 import { Clock, Sparkles, MapPin, ChevronRight, Calendar, Shield, Cloud, AlertTriangle, Heart, Siren, X, Check, ClipboardList } from 'lucide-react'
@@ -1073,7 +1073,7 @@ export function ParentDashboard() {
               </div>
             </div>
             <p className="text-[14px] leading-relaxed font-medium" style={{ color: '#7A6469' }}>
-              {weeklyMessageData.content?.substring(0, 160)}...
+              {stripMarkdown(weeklyMessageData.content || '').substring(0, 160)}...
             </p>
             <div className="flex items-center justify-between mt-4 pt-3" style={{ borderTop: '1px solid rgba(196,80,110,0.08)' }}>
               <button
@@ -1129,12 +1129,8 @@ export function ParentDashboard() {
                   &times;
                 </button>
               </div>
-              <div className="prose prose-sm max-w-none">
-                {weeklyMessageData.content.split('\n').map((paragraph, idx) => (
-                  <p key={idx} className="mb-3 text-[15px] leading-relaxed" style={{ color: '#4A3A40' }}>
-                    {paragraph}
-                  </p>
-                ))}
+              <div className="prose prose-sm max-w-none text-[15px] leading-relaxed" style={{ color: '#4A3A40' }}>
+                <RichText content={weeklyMessageData.content} />
               </div>
               <div className="mt-6 pt-4 flex items-center justify-between" style={{ borderTop: '1px solid #F0E4E6' }}>
                 <button

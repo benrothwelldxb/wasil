@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { X } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
-import { useAuth, useApi, useMutation } from '@wasil/shared'
+import { useAuth, useApi, useMutation, RichText, stripMarkdown } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { WeeklyMessage } from '@wasil/shared'
 
@@ -149,7 +149,7 @@ export function PrincipalUpdatesPage() {
                         overflow: 'hidden',
                       }}
                     >
-                      {message.content}
+                      {stripMarkdown(message.content)}
                     </p>
                   )}
 
@@ -252,14 +252,8 @@ export function PrincipalUpdatesPage() {
               )}
 
               {/* Content */}
-              <div>
-                {selectedMessage.content.split('\n').map((paragraph, idx) => (
-                  paragraph.trim() ? (
-                    <p key={idx} className="text-[15px] leading-[1.7] mb-4" style={{ color: '#4A3A40' }}>
-                      {paragraph}
-                    </p>
-                  ) : <div key={idx} className="h-2" />
-                ))}
+              <div className="text-[15px] leading-[1.7]" style={{ color: '#4A3A40' }}>
+                <RichText content={selectedMessage.content} />
               </div>
 
               {/* Footer */}
