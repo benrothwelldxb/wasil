@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { stripMarkdown, repairTranslatedMarkdown } from '../src/services/markdownText.js'
+import { stripMarkdown, repairTranslatedMarkdown, parseMentions } from '../src/services/markdownText.js'
 
 /**
  * Weekly updates are authored as markdown. Two places have to undo that:
@@ -68,5 +68,31 @@ describe('repairTranslatedMarkdown', () => {
     expect(repairTranslatedMarkdown('**Already fine** and *so is this*')).toBe(
       '**Already fine** and *so is this*'
     )
+  })
+})
+
+describe('parseMentions', () => {
+  it('pulls the staff id and the name as published', () => {
+    expect(parseMentions('Message [@Rob Davies](/inbox/new?staff=clx123abc) for details.')).toEqual([
+      { staffId: 'clx123abc', name: 'Rob Davies' },
+    ])
+  })
+
+  it('finds several, in document order', () => {
+    const body = 'Ask [@Rob](/inbox/new?staff=a1) or [@Sam](/inbox/new?staff=b2).'
+    expect(parseMentions(body).map(m => m.staffId)).toEqual(['a1', 'b2'])
+  })
+
+  it('de-duplicates, so tagging someone twice notifies them once', () => {
+    const body = '[@Rob](/inbox/new?staff=a1) ... [@Rob](/inbox/new?staff=a1)'
+    expect(parseMentions(body)).toHaveLength(1)
+  })
+
+  it('ignores ordinary links and bare @ text', () => {
+    expect(parseMentions('See [the policy](https://example.com) or email @rob')).toEqual([])
+  })
+
+  it('returns nothing for an empty body', () => {
+    expect(parseMentions('')).toEqual([])
   })
 })

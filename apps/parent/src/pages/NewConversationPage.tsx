@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useApi } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { AvailableContactsResponse } from '@wasil/shared'
@@ -16,10 +16,39 @@ const DEFAULT_WARNING =
 
 export function NewConversationPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { data, isLoading } = useApi<AvailableContactsResponse>(
     () => api.inbox.availableContacts(),
     []
   )
+
+  /**
+   * Deep link from a staff @mention: `/inbox/new?staff=<id>`.
+   *
+   * Creating the thread is find-or-create and idempotent, so arriving here
+   * twice reopens the same conversation rather than making a second one. We do
+   * not pass `studentId`: a weekly update is whole-school, so the thread it
+   * starts is a general enquiry rather than one about a particular child. (That
+   * also means it is not a child-scoped thread and so cannot later be shared
+   * with a co-guardian — the right trade for "message Rob about Sports Day".)
+   */
+  const deepLinkStaffId = searchParams.get('staff')
+  const deepLinkStarted = useRef(false)
+  const [deepLinkFailed, setDeepLinkFailed] = useState(false)
+
+  useEffect(() => {
+    if (!deepLinkStaffId || deepLinkStarted.current) return
+    deepLinkStarted.current = true
+    api.inbox
+      .createConversation({ staffId: deepLinkStaffId })
+      .then(result => navigate(`/inbox/${result.id}`, { replace: true }))
+      .catch(error => {
+        // Staff member has left, or the link is stale. Fall back to the picker
+        // rather than stranding the parent on a dead end.
+        console.error('Failed to open tagged conversation:', error)
+        setDeepLinkFailed(true)
+      })
+  }, [deepLinkStaffId, navigate])
 
   const handleSelectTeacher = async (teacherId: string, studentId?: string) => {
     try {
@@ -150,7 +179,24 @@ export function NewConversationPage() {
         <h1 className="text-xl font-bold" style={{ color: '#2D2225' }}>New Message</h1>
       </div>
 
-      {isLoading ? (
+      {/* Opening the tagged conversation — skip the picker entirely. */}
+      {deepLinkStaffId && !deepLinkFailed && (
+        <div className="bg-white rounded-[22px] p-5 space-y-3" style={{ border: '1px solid #F0E4E6' }}>
+          <div className="skeleton-pulse h-4 w-1/2 rounded" />
+          <div className="skeleton-pulse h-12 w-full rounded-xl" />
+        </div>
+      )}
+
+      {deepLinkFailed && (
+        <div
+          className="rounded-[22px] px-4 py-3 text-sm"
+          style={{ backgroundColor: '#FDF8F9', border: '1px solid #F0E4E6', color: '#7A6469' }}
+        >
+          That person is no longer available to message. Choose someone below instead.
+        </div>
+      )}
+
+      {deepLinkStaffId && !deepLinkFailed ? null : isLoading ? (
         <div className="space-y-4">
           {[1, 2].map(i => (
             <div key={i} className="bg-white rounded-[22px] p-5 space-y-3">

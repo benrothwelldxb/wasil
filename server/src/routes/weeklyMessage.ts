@@ -4,10 +4,10 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
-import { sendNotification } from '../services/notify.js'
+import { sendNotification, sendStaffNotification } from '../services/notify.js'
 import { translateTexts } from '../services/translation.js'
 import { parseWallClockForSchool } from '../services/dateTime.js'
-import { stripMarkdown, repairTranslatedMarkdown } from '../services/markdownText.js'
+import { stripMarkdown, repairTranslatedMarkdown, parseMentions } from '../services/markdownText.js'
 
 const router = Router()
 
@@ -21,6 +21,45 @@ const createWeeklyMessageSchema = z.object({
 })
 
 const updateWeeklyMessageSchema = createWeeklyMessageSchema.partial()
+
+
+/**
+ * Tell staff they have been @mentioned in a weekly update.
+ *
+ * A tag is a promise made on someone else's behalf — "message Rob about Sports
+ * Day" sends parents to Rob whether or not Rob knows. So the tag notifies him,
+ * with the update's title, before the messages start arriving.
+ *
+ * `newlyMentionedOnly` matters on edit: re-saving a published update must not
+ * re-notify everyone already tagged in it, or correcting a typo becomes a
+ * second round of pings.
+ */
+function notifyMentionedStaff(opts: {
+  schoolId: string
+  messageId: string
+  title: string
+  content: string
+  previousContent?: string
+}) {
+  const mentions = parseMentions(opts.content)
+  if (mentions.length === 0) return
+
+  const already = new Set(parseMentions(opts.previousContent || '').map(m => m.staffId))
+  const staffIds = mentions.map(m => m.staffId).filter(id => !already.has(id))
+  if (staffIds.length === 0) return
+
+  sendStaffNotification({
+    schoolId: opts.schoolId,
+    type: 'STAFF_MENTION',
+    title: 'You were tagged in a weekly update',
+    body: `${opts.title} — parents have been pointed to you for more details.`,
+    resourceType: 'WEEKLY_MESSAGE',
+    resourceId: opts.messageId,
+    // Any member of staff can be tagged, not just the office.
+    roles: ['STAFF', 'ADMIN', 'SUPER_ADMIN'],
+    userIds: staffIds,
+  })
+}
 
 // Get current weekly message
 router.get('/current', isAuthenticated, async (req, res) => {
@@ -170,6 +209,7 @@ router.post('/', isAdmin, validate(createWeeklyMessageSchema), async (req, res) 
     // Only send notification if not scheduled for later
     if (!message.scheduledAt || message.scheduledAt <= new Date()) {
       sendNotification({ req, type: 'WEEKLY_MESSAGE', title: message.title, body: stripMarkdown(message.content).substring(0, 200), resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, target: { targetClass: 'Whole School', schoolId: user.schoolId } })
+      notifyMentionedStaff({ schoolId: user.schoolId, messageId: message.id, title: message.title, content: message.content })
     }
 
     res.status(201).json({
@@ -244,6 +284,17 @@ router.put('/:id', isAdmin, validate(updateWeeklyMessageSchema), async (req, res
       heartCount: message._count.hearts,
       createdAt: message.createdAt.toISOString(),
     })
+
+    // Editing a live update can add a tag that was not there before.
+    if (!message.scheduledAt || message.scheduledAt <= new Date()) {
+      notifyMentionedStaff({
+        schoolId: user.schoolId,
+        messageId: message.id,
+        title: message.title,
+        content: message.content,
+        previousContent: existing.content,
+      })
+    }
 
     const changes = computeChanges(existing as any, message as any, ['title', 'content', 'weekOf', 'isCurrent', 'imageUrl', 'scheduledAt'])
     logAudit({ req, action: 'UPDATE', resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, metadata: { title: message.title }, changes })

@@ -1,6 +1,7 @@
 import React from 'react'
 import { Heart } from 'lucide-react'
-import { useTheme, RichText } from '@wasil/shared'
+import { useTheme } from '@wasil/shared'
+import { RichBody } from '../RichBody'
 import type { WeeklyMessage } from '@wasil/shared'
 
 interface WeeklyMessageCardProps {
@@ -29,7 +30,7 @@ export function WeeklyMessageCard({ message, onHeart }: WeeklyMessageCardProps) 
 
       <div className="p-4">
         <div className="prose prose-sm max-w-none text-gray-700">
-          <RichText content={message.content} />
+          <RichBody content={message.content} />
         </div>
       </div>
 

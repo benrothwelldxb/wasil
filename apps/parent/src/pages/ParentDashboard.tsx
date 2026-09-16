@@ -6,7 +6,8 @@ import { PulseBanner, PulseSurveyModal } from '../components/pulse'
 // ScheduleWidget no longer used — schedule items shown inline in child cards
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
-import { useApi, useMutation, RichText, stripMarkdown } from '@wasil/shared'
+import { useApi, useMutation, stripMarkdown } from '@wasil/shared'
+import { RichBody } from '../components/RichBody'
 import * as api from '@wasil/shared'
 import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild, SchoolSettings, DashboardFeature } from '@wasil/shared'
 import { Clock, Sparkles, MapPin, ChevronRight, Calendar, Shield, Cloud, AlertTriangle, Heart, Siren, X, Check, ClipboardList } from 'lucide-react'
@@ -1130,7 +1131,7 @@ export function ParentDashboard() {
                 </button>
               </div>
               <div className="prose prose-sm max-w-none text-[15px] leading-relaxed" style={{ color: '#4A3A40' }}>
-                <RichText content={weeklyMessageData.content} />
+                <RichBody content={weeklyMessageData.content} />
               </div>
               <div className="mt-6 pt-4 flex items-center justify-between" style={{ borderTop: '1px solid #F0E4E6' }}>
                 <button
