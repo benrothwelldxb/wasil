@@ -1287,6 +1287,15 @@ export const deviceTokens = {
 }
 
 // Parent Invitations
+/** Whether push can actually reach this parent's device(s), and on what. */
+export interface ParentPushStatus {
+  /** True when at least one device token is registered. */
+  enabled: boolean
+  /** Distinct platforms with a live token: 'ios' | 'android' | 'web'. */
+  platforms: string[]
+  /** Most recent token registration/refresh; null when there are none. */
+  lastRegisteredAt: string | null
+}
 export interface ParentRow {
   id: string
   email: string
@@ -1302,6 +1311,8 @@ export interface ParentRow {
   hasPassword?: boolean
   createdAt: string
   children: Array<{ name: string; className: string; studentId?: string | null }>
+  /** Optional so older cached responses still type-check. */
+  push?: ParentPushStatus
 }
 export interface ParentListResponse {
   parents: ParentRow[]

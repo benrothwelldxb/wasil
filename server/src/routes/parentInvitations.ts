@@ -192,6 +192,10 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
             include: { student: { include: { class: { select: { id: true, name: true } } } } },
           },
           children: { include: { class: { select: { id: true, name: true } } } },
+          // Push status for the roster's "Notifications" column. Page-scoped
+          // (50 rows), so this stays a cheap join rather than a roster-wide
+          // pre-pass like parentsBySignInStatus.
+          deviceTokens: { select: { platform: true, updatedAt: true } },
         },
         // orderBy below stays name-asc so the chase list reads like the roster.
         orderBy: { name: 'asc' },
@@ -225,6 +229,20 @@ router.get('/parents', isAdmin, async (req: Request, res: Response) => {
         hasSignedIn: signedIn.has(p.id),
         hasPassword: !!p.passwordHash,
         createdAt: p.createdAt.toISOString(),
+        // Whether anything we send can actually REACH them. A parent can be
+        // signed in, invited, and have every notification preference on, and
+        // still receive nothing because this device layer was never granted —
+        // which is invisible from every other column here.
+        push: {
+          enabled: p.deviceTokens.length > 0,
+          platforms: [...new Set(p.deviceTokens.map(t => t.platform))].sort(),
+          lastRegisteredAt:
+            p.deviceTokens.length > 0
+              ? new Date(
+                  Math.max(...p.deviceTokens.map(t => t.updatedAt.getTime()))
+                ).toISOString()
+              : null,
+        },
         children: [
           ...p.children.map(c => ({ name: c.name, className: c.class.name, studentId: null as string | null })),
           ...p.studentLinks.map(sl => ({ name: `${sl.student.firstName} ${sl.student.lastName}`, className: sl.student.class.name, studentId: sl.student.id })),

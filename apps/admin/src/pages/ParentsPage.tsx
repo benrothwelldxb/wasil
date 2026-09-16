@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { X, Trash2, Users, RefreshCw, Mail, Copy, CheckCircle, XCircle, Clock, Eye, Search, Send, KeyRound, Printer, Ticket, BellRing } from 'lucide-react'
+import { X, Trash2, Users, RefreshCw, Mail, Copy, CheckCircle, XCircle, Clock, Eye, Search, Send, KeyRound, Printer, Ticket, BellRing, BellOff } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
-import type { ParentInvitation, InvitationStatus, Class, ClassSignInCodes, ClassSignInCode } from '@wasil/shared'
+import type { ParentInvitation, InvitationStatus, Class, ClassSignInCodes, ClassSignInCode, ParentRow } from '@wasil/shared'
 import QRCode from 'qrcode'
 import { HubSyncBanner } from '../components/HubSyncBanner'
 
@@ -316,6 +316,56 @@ export function ParentsPage() {
     }
   }
 
+  const PLATFORM_LABELS: Record<string, string> = { ios: 'iOS', android: 'Android', web: 'Web' }
+
+  /**
+   * Can anything we send actually reach this parent's device?
+   *
+   * Every other column here answers a question one layer up — were they
+   * invited, did they sign in — and a parent can pass all of them and still
+   * receive nothing, because notifications need a device permission the app
+   * cannot grant on their behalf. That gap is what sends staff digging through
+   * the database, so it gets a column.
+   *
+   * Deliberately NOT flagged as a problem for parents who have never signed in:
+   * they have a bigger one, already shown in "Signed in", and amber on both
+   * would just be noise.
+   */
+  const getNotificationBadge = (parent: ParentRow) => {
+    const push = parent.push
+    // Older cached response with no push field — say nothing rather than guess.
+    if (!push) return <span className="text-xs text-gray-400">—</span>
+
+    if (push.enabled) {
+      const platforms = push.platforms.map(pf => PLATFORM_LABELS[pf] || pf).join(', ')
+      return (
+        <>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <BellRing className="h-3 w-3 mr-1" />
+            {platforms || 'On'}
+          </span>
+          {push.lastRegisteredAt && (
+            <div className="text-xs text-gray-400 mt-1">
+              Since {new Date(push.lastRegisteredAt).toLocaleDateString()}
+            </div>
+          )}
+        </>
+      )
+    }
+
+    if (!parent.hasSignedIn) return <span className="text-xs text-gray-400">—</span>
+
+    return (
+      <span
+        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800"
+        title="Signed in, but no device is registered for push — they receive nothing. They can fix this themselves in the app under Notifications."
+      >
+        <BellOff className="h-3 w-3 mr-1" />
+        Not enabled
+      </span>
+    )
+  }
+
   const invitations = invitationsData?.invitations || []
   const pagination = invitationsData?.pagination
   const registeredParents = parentsData?.parents || []
@@ -604,6 +654,7 @@ export function ParentsPage() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Children</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Signed in</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Invite Status</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Notifications</th>
                   <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">Actions</th>
                 </tr>
               </thead>
@@ -679,6 +730,9 @@ export function ParentsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
+                      {getNotificationBadge(parent)}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center justify-end space-x-1">
                         <button
                           onClick={() => handleSendInviteOne(parent.id)}
@@ -715,7 +769,7 @@ export function ParentsPage() {
                 ))}
                 {registeredParents.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
                       <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p>No registered parents found.</p>
                     </td>
