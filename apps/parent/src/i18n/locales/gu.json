@@ -26,7 +26,8 @@
     "links": "ઉપયોગી લિંક્સ",
     "activities": "પ્રવૃત્તિઓ",
     "superAdmin": "સુપર એડમિન",
-    "logout": "લોગઆઉટ"
+    "logout": "લોગઆઉટ",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "લૉગિન",

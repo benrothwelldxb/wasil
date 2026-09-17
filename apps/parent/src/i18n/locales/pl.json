@@ -26,7 +26,8 @@
     "links": "Przydatne linki",
     "activities": "Zajęcia",
     "superAdmin": "Superadministrator",
-    "logout": "Wyloguj"
+    "logout": "Wyloguj",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "Login",

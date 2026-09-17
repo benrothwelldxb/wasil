@@ -26,7 +26,8 @@
     "links": "দরকারী লিঙ্ক",
     "activities": "কার্যক্রম",
     "superAdmin": "সুপার অ্যাডমিন",
-    "logout": "লগআউট"
+    "logout": "লগআউট",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "লগইন",

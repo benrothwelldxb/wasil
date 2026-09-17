@@ -2862,6 +2862,16 @@ export const adminNotices = {
 // ─── Transport (parent-facing) ───────────────────────────────────────────────
 // The only transport read in Connect, and it takes no arguments: it returns the
 // signed-in guardian's own children and nothing else. See docs/adr/0001.
+/** The office's mark for one bus today: the two times, never a sentence. The
+ *  app does the wording (AM arrives at school, PM/FRI_PM leaves it) and the
+ *  translation, which is why Desk sends neither. */
+export interface TransportRunInfo {
+  /** ISO instant the bus was actually marked. */
+  markedAt: string
+  /** Expected local wall clock ("15:40"), or null — recording one is optional
+   *  in Desk. With none there is no lateness to state; never assume on time. */
+  dueAt: string | null
+}
 export interface TransportLegInfo {
   /** FRI_PM is the consolidated Friday afternoon service — a distinct run, not
    *  a re-timed PM. The server has emitted it since the Friday-bus work; this
@@ -2874,6 +2884,8 @@ export interface TransportLegInfo {
   stopName: string | null
   stopNameHidden: boolean
   timeLocal: string
+  /** Null when the bus has not been marked today, or the mark was withdrawn. */
+  run?: TransportRunInfo | null
 }
 export interface TransportChild {
   studentId: string

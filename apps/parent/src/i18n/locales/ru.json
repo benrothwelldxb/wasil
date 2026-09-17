@@ -26,7 +26,8 @@
     "links": "Полезные ссылки",
     "activities": "Занятия",
     "superAdmin": "Супер администратор",
-    "logout": "Выйти"
+    "logout": "Выйти",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "Авторизоваться",

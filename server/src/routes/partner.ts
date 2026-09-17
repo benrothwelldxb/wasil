@@ -1917,6 +1917,228 @@ function toIdArray(v: unknown): string[] {
   return [...new Set(v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map(x => x.trim()))]
 }
 
+
+
+/** Shared validation for the two run endpoints, so a mark and its withdrawal
+ *  can never disagree about which row they mean. */
+async function parseRunBody(
+  req: { body?: unknown },
+): Promise<
+  | { error: string; status: number }
+  | { school: { id: string }; routeId: string; leg: 'AM' | 'PM' | 'FRI_PM'; dateLocal: string; markedAt: Date | null; dueAt: string | null }
+> {
+  const body = (req.body ?? {}) as Record<string, unknown>
+  const schoolIdParam = typeof body.school_id === 'string' ? body.school_id.trim() : ''
+  if (!schoolIdParam) return { error: 'school_id required', status: 400 }
+
+  const routeId = typeof body.route_id === 'string' ? body.route_id.trim() : ''
+  if (!routeId) return { error: 'route_id required', status: 400 }
+
+  const leg = body.leg
+  if (leg !== 'AM' && leg !== 'PM' && leg !== 'FRI_PM') {
+    return { error: "leg must be 'AM', 'PM' or 'FRI_PM'", status: 400 }
+  }
+
+  const dateLocal = typeof body.date_local === 'string' ? body.date_local.trim() : ''
+  if (!DATE_RE.test(dateLocal)) return { error: 'date_local must be YYYY-MM-DD', status: 400 }
+
+  // An unparseable instant is rejected rather than silently becoming "now":
+  // the whole value of this row is that it says when the bus actually went.
+  let markedAt: Date | null = null
+  if (body.marked_at !== undefined && body.marked_at !== null) {
+    if (typeof body.marked_at !== 'string') return { error: 'marked_at must be an ISO instant', status: 400 }
+    const parsedAt = new Date(body.marked_at)
+    if (Number.isNaN(parsedAt.getTime())) return { error: 'marked_at must be an ISO instant', status: 400 }
+    markedAt = parsedAt
+  }
+  // A marked_at that is absent or explicitly null is a WITHDRAWAL, not an
+  // error — Desk's brief allows either spelling, and the POST handler treats a
+  // null mark as a delete.
+
+  // A wall clock on a route, never an instant — "15:40" as the driver reads it.
+  const dueAt = typeof body.due_at === 'string' && body.due_at.trim() ? body.due_at.trim() : null
+
+  const school = await partnerSchool(schoolIdParam)
+  if (!school) return { error: 'school_not_found', status: 404 }
+
+  return { school, routeId, leg, dateLocal, markedAt, dueAt }
+}
+
+/**
+ * Notify the guardians of the children on one bus.
+ *
+ * The audience is the assignment table joined by routeId + leg, so it is
+ * exactly the families whose child rides that bus on that leg — not a class,
+ * not the school. A child with no assignment for the leg hears nothing.
+ *
+ * The body carries the wording, because a push has no app to do it: AM arrives,
+ * PM and FRI_PM depart. Lateness is stated only where Desk recorded an expected
+ * time; with none, the honest sentence simply ends.
+ */
+async function notifyTransportRun(run: {
+  schoolId: string
+  routeId: string
+  leg: 'AM' | 'PM' | 'FRI_PM'
+  markedAt: Date
+  dueAt: string | null
+}): Promise<void> {
+  const assignments = await prisma.transportAssignment.findMany({
+    where: { schoolId: run.schoolId, routeId: run.routeId, leg: run.leg },
+    select: { studentId: true, routeName: true },
+  })
+  if (assignments.length === 0) return
+
+  const school = await prisma.school.findUnique({
+    where: { id: run.schoolId },
+    select: { transportEnabled: true, timezone: true },
+  })
+  // A school still testing transport in Desk must not have its parents told
+  // anything. The read is gated the same way; this is the same gate on the push.
+  if (!school?.transportEnabled) return
+
+  const routeName = assignments[0].routeName
+  const at = formatWallClock(run.markedAt, school.timezone ?? 'UTC')
+  const verb = run.leg === 'AM' ? 'arrived at school' : 'left school'
+  const lateness = run.dueAt ? describeLateness(at, run.dueAt) : null
+
+  await sendNotification({
+    type: 'TRANSPORT_RUN',
+    title: `${routeName} ${verb}`,
+    body: lateness ? `${at} — ${lateness}` : `${at}`,
+    resourceType: 'TRANSPORT_RUN',
+    resourceId: `${run.routeId}:${run.leg}`,
+    target: {
+      targetClass: 'Transport',
+      schoolId: run.schoolId,
+      studentIds: assignments.map(a => a.studentId),
+    },
+  })
+}
+
+/** "15:42" in the school's own zone — the clock the parent and driver read. */
+function formatWallClock(instant: Date, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: timezone,
+    }).format(instant)
+  } catch {
+    // An unknown zone must not cost the parent the notification.
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(instant)
+  }
+}
+
+/**
+ * "4 minutes late" / "2 minutes early" / "on time", from two wall clocks.
+ *
+ * Returns null when the expected time cannot be read, rather than guessing:
+ * with no usable comparison there is no lateness to state, and saying "on time"
+ * would be an assertion nobody made.
+ */
+function describeLateness(actual: string, due: string): string | null {
+  const toMinutes = (hhmm: string): number | null => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim())
+    if (!m) return null
+    const h = Number(m[1])
+    const min = Number(m[2])
+    if (h > 23 || min > 59) return null
+    return h * 60 + min
+  }
+  const a = toMinutes(actual)
+  const d = toMinutes(due)
+  if (a === null || d === null) return null
+
+  const diff = a - d
+  if (diff === 0) return 'on time'
+  const mins = Math.abs(diff)
+  const unit = mins === 1 ? 'minute' : 'minutes'
+  return diff > 0 ? `${mins} ${unit} late` : `${mins} ${unit} early`
+}
+
+// A bus marked away: "Bus 14 left at 15:42".
+//
+//   POST   /api/partner/transport/runs
+//   DELETE /api/partner/transport/runs     (withdrawal — same body, no marked_at)
+//
+//   { school_id, route_id, leg: "AM"|"PM"|"FRI_PM", date_local: "2026-09-17",
+//     marked_at: "2026-09-17T11:42:00Z",   // the instant it happened
+//     due_at: "15:40" | null }             // school-local wall clock
+//
+// Two deliberate omissions, both load-bearing:
+//
+// Connect stores the TIMES and never a sentence. Desk knows both numbers and
+// could send "2 minutes late" ready-made; it does not, because this app has its
+// own voice and translates for families who need it, and a finished English
+// sentence is the one thing translation handles worst.
+//
+// And the wording is per leg, opposite between them: a morning bus ARRIVES at
+// school, an afternoon or Friday one DEPARTS from it. Same row, opposite
+// journey. Desk's board said "arrived" for all three until the office noticed
+// it was reading back the wrong journey — so the leg travels with the mark and
+// the app does the words.
+//
+// `due_at` may be null and often is. Then there is no lateness to state, and it
+// must never default to on-time.
+//
+// Idempotent per (school, route, leg, date) — the office re-marking after a
+// correction overwrites rather than duplicating. Withdrawal matters as much as
+// the mark: a bus marked away by mistake is a parent told their child has left
+// when they have not, so DELETE removes it and the parent app stops saying it.
+router.post('/transport/runs', requirePartner, async (req, res) => {
+  try {
+    const parsed = await parseRunBody(req)
+    if ('error' in parsed) return res.status(parsed.status).json({ error: parsed.error })
+    const { school, routeId, leg, dateLocal, markedAt, dueAt } = parsed
+
+    // A withdrawal sent as a POST with no mark, which Desk's brief allows.
+    if (!markedAt) {
+      const removed = await prisma.transportRun.deleteMany({
+        where: { schoolId: school.id, routeId, leg, dateLocal },
+      })
+      return res.json({ withdrawn: removed.count })
+    }
+
+    const run = await prisma.transportRun.upsert({
+      where: { schoolId_routeId_leg_dateLocal: { schoolId: school.id, routeId, leg, dateLocal } },
+      create: { schoolId: school.id, routeId, leg, dateLocal, markedAt, dueAt },
+      update: { markedAt, dueAt },
+    })
+
+    // Tell the families on that bus — and only them. Notifying is best-effort:
+    // the mark itself is the record, and a push that fails must not fail the
+    // office's action or make Desk retry a mark it already landed.
+    notifyTransportRun({ schoolId: school.id, routeId, leg, markedAt, dueAt }).catch(err =>
+      console.error('Transport run notify failed:', err),
+    )
+
+    res.json({ id: run.id, marked: true })
+  } catch (error) {
+    console.error('Partner transport run error:', error)
+    res.status(500).json({ error: 'Failed to record transport run' })
+  }
+})
+
+router.delete('/transport/runs', requirePartner, async (req, res) => {
+  try {
+    const parsed = await parseRunBody(req)
+    if ('error' in parsed) return res.status(parsed.status).json({ error: parsed.error })
+    const { school, routeId, leg, dateLocal } = parsed
+
+    const removed = await prisma.transportRun.deleteMany({
+      where: { schoolId: school.id, routeId, leg, dateLocal },
+    })
+    // No notification on withdrawal. A correction within the office's grace
+    // window is usually seconds; a second push saying "ignore that" would be
+    // louder than the mistake. The parent app simply stops showing it.
+    res.json({ withdrawn: removed.count })
+  } catch (error) {
+    console.error('Partner transport run withdraw error:', error)
+    res.status(500).json({ error: 'Failed to withdraw transport run' })
+  }
+})
+
 // The staff a Desk broadcast may @mention, with the ids that mentions resolve
 // against.
 //
@@ -3179,12 +3401,15 @@ router.put('/transport/assignments', requirePartner, async (req, res) => {
     // Flatten the route → stop → pupil tree into the one line each child needs.
     // A pupil listed twice in a leg keeps the first stop; the alternative is a
     // unique-constraint failure that fails the whole push over one bad row.
-    type Row = { hubPupilId: string; routeName: string; routeCode: string | null; stopName: string; timeLocal: string; hideStopName: boolean }
+    type Row = { hubPupilId: string; routeId: string | null; routeName: string; routeCode: string | null; stopName: string; timeLocal: string; hideStopName: boolean }
     const rows = new Map<string, Row>()
     const routes = Array.isArray(body.routes) ? body.routes : []
     for (const route of routes as Array<Record<string, unknown>>) {
       const routeName = typeof route?.name === 'string' ? route.name.trim() : ''
       if (!routeName) continue
+      // Desk's own route id. Always sent, never read until runs needed a key to
+      // join "Bus 3 has left" to the children on Bus 3.
+      const routeId = typeof route?.id === 'string' && route.id.trim() ? route.id.trim() : null
       const routeCode = typeof route?.code === 'string' && route.code.trim() ? route.code.trim() : null
       const stops = Array.isArray(route?.stops) ? route.stops : []
       for (const stop of stops as Array<Record<string, unknown>>) {
@@ -3214,7 +3439,7 @@ router.put('/transport/assignments', requirePartner, async (req, res) => {
         for (const pupil of pupils as Array<Record<string, unknown>>) {
           const hubPupilId = typeof pupil?.hub_pupil_id === 'string' ? pupil.hub_pupil_id.trim() : ''
           if (!hubPupilId || rows.has(hubPupilId)) continue
-          rows.set(hubPupilId, { hubPupilId, routeName, routeCode, stopName, timeLocal, hideStopName })
+          rows.set(hubPupilId, { hubPupilId, routeId, routeName, routeCode, stopName, timeLocal, hideStopName })
         }
       }
     }
@@ -3234,6 +3459,7 @@ router.put('/transport/assignments', requirePartner, async (req, res) => {
       if (!studentId) continue
       keptStudentIds.push(studentId)
       const data = {
+        routeId: row.routeId,
         routeName: row.routeName,
         routeCode: row.routeCode,
         stopName: row.stopName,

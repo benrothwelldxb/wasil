@@ -1712,6 +1712,7 @@ export type SchoolModuleFlag =
   | 'lunchMenuEnabled'
   | 'termDatesEnabled'
   | 'scheduleEnabled'
+  | 'transportEnabled'
   | 'policiesEnabled'
   | 'filesEnabled'
   | 'linksEnabled'

@@ -26,7 +26,8 @@
     "links": "实用链接",
     "activities": "活动",
     "superAdmin": "超级管理员",
-    "logout": "注销"
+    "logout": "注销",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "登录",

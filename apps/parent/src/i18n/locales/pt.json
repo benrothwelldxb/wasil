@@ -26,7 +26,8 @@
     "links": "Links úteis",
     "activities": "Atividades",
     "superAdmin": "Superadministrador",
-    "logout": "Sair"
+    "logout": "Sair",
+    "transport": "Autocarro escolar"
   },
   "auth": {
     "login": "Conecte-se",

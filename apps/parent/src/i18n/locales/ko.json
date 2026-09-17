@@ -26,7 +26,8 @@
     "links": "유용한 링크",
     "activities": "활동",
     "superAdmin": "슈퍼 관리자",
-    "logout": "로그아웃"
+    "logout": "로그아웃",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "로그인",

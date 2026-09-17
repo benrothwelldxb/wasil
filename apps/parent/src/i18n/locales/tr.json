@@ -26,7 +26,8 @@
     "links": "Faydalı Bağlantılar",
     "activities": "Etkinlikler",
     "superAdmin": "Süper Yönetici",
-    "logout": "Çıkış yap"
+    "logout": "Çıkış yap",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "Giriş yapmak",
