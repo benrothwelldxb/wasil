@@ -1019,9 +1019,17 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
         // — they are not co-guardians. On an ILSA thread these are the pupil's
         // other guardian(s); there are never STAFF CCs on one.
         sharedWith: conversation.participants.filter((p) => p.role !== 'STAFF').map((p) => p.user.name),
-        // Names of additional staff CC'd onto this thread (empty on an ordinary
-        // thread, and always empty on an ILSA thread — no teacher is ever on one).
-        ccStaff: conversation.participants.filter((p) => p.role === 'STAFF').map((p) => p.user.name),
+        // Additional staff CC'd onto this thread (empty on an ordinary thread,
+        // and always empty on an ILSA thread — no teacher is ever on one).
+        //
+        // Objects rather than names, matching POST /inbox/threads/:id/staff.
+        // `userId` is not decoration: a picker offering colleagues to add has to
+        // exclude the ones already here, and doing that by display name fails
+        // the day a school has two people called Rob Davies — silently, by
+        // hiding the wrong person from the list.
+        ccStaff: conversation.participants
+          .filter((p) => p.role === 'STAFF')
+          .map((p) => ({ userId: p.userId, name: p.user.name })),
       },
       messages: conversation.messages.map((m) => {
         // Same tombstone shape the parent inbox already uses (serializeMessage
@@ -1929,7 +1937,7 @@ router.get('/oversight/parent-threads', requirePartner, async (req, res) => {
       include: {
         parent: { select: { id: true, name: true } },
         staff: { select: { id: true, name: true } },
-        participants: { select: { role: true, user: { select: { name: true } } } },
+        participants: { select: { userId: true, role: true, user: { select: { name: true } } } },
         messages: {
           include: { sender: { select: { name: true } }, attachments: true },
           orderBy: { createdAt: 'asc' },
@@ -2001,7 +2009,10 @@ router.get('/oversight/parent-threads', requirePartner, async (req, res) => {
         // "who else could see this" is a different fact from "who else at the
         // school was on it", and a pack that merges them misreports both.
         sharedWith: c.participants.filter((p) => p.role !== 'STAFF').map((p) => p.user.name),
-        ccStaff: c.participants.filter((p) => p.role === 'STAFF').map((p) => p.user.name),
+        // Objects, as on the thread detail and the add route — see the note there.
+        ccStaff: c.participants
+          .filter((p) => p.role === 'STAFF')
+          .map((p) => ({ userId: p.userId, name: p.user.name })),
         createdAt: c.createdAt.toISOString(),
         lastMessageAt: c.lastMessageAt.toISOString(),
         messages: c.messages.map((m) => {
