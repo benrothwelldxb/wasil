@@ -26,7 +26,8 @@
     "links": "Linkuri utile",
     "activities": "Activități",
     "superAdmin": "Superadministrator",
-    "logout": "Deconectare"
+    "logout": "Deconectare",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "Log in",

@@ -26,7 +26,8 @@
     "links": "便利なリンク",
     "activities": "アクティビティ",
     "superAdmin": "スーパー管理者",
-    "logout": "ログアウト"
+    "logout": "ログアウト",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "ログイン",

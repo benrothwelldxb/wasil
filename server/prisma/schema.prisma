@@ -78,6 +78,11 @@ model School {
   lunchMenuEnabled       Boolean @default(true)
   termDatesEnabled       Boolean @default(true)
   scheduleEnabled        Boolean @default(true)
+  /// Buses. Default FALSE, unlike the module flags above: a stop name is in
+  /// practice a child's home address (ADR 0001), so a school that has not asked
+  /// for transport should not have it appear in its parent app. Desk pushing a
+  /// roster must never be what turns this on — the gate is on the READ.
+  transportEnabled       Boolean @default(false)
   policiesEnabled        Boolean @default(true)
   filesEnabled           Boolean @default(true)
   linksEnabled           Boolean @default(true)
@@ -189,6 +194,7 @@ model School {
   googleCalendarRefreshToken String?
   googleCalendarEmail        String?
   transportAssignments       TransportAssignment[]
+  transportRuns              TransportRun[]
 }
 
 // Users (Parents, Staff & Admins)
@@ -2474,6 +2480,11 @@ model TransportAssignment {
   student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   leg       TransportLeg
 
+  /// Desk's own route id, carried so a run ("Bus 3 left at 15:42") can be
+  /// joined to the children on it. Desk has always sent it on the assignments
+  /// push; Connect did not read it until runs needed a key. Nullable because
+  /// rows written before that exist, and a run simply does not match them.
+  routeId   String?
   routeName String
   routeCode String?
   /// The pickup/drop-off point. Door-to-door collection means this is in
@@ -2494,6 +2505,48 @@ model TransportAssignment {
 
   @@unique([studentId, leg])
   @@index([schoolId, leg])
+}
+
+/// One bus, one leg, one day: the moment the office marked it away.
+///
+/// Carries the two TIMES and not a sentence. Desk knows both and could send
+/// "2 minutes late" ready-made; it deliberately does not, because the parent app
+/// has its own voice and translates for families who need it, and a finished
+/// English sentence is the thing translation handles worst.
+///
+/// The wording is per leg and opposite between them — a morning bus ARRIVES at
+/// school, an afternoon or Friday one DEPARTS from it. Same row, opposite
+/// journey. Desk's own board said "arrived" for all three until the office
+/// noticed it was reading back the wrong journey, so the leg travels with the
+/// mark and the app does the words.
+///
+/// No child is named here. A run is a property of a bus; who was on it is the
+/// assignment table's business, joined at read time by `routeId`.
+model TransportRun {
+  id        String       @id @default(cuid())
+  schoolId  String
+  school    School       @relation(fields: [schoolId], references: [id])
+  /// Desk's route id, matching TransportAssignment.routeId.
+  routeId   String
+  leg       TransportLeg
+  /// School-local calendar date, "2026-09-17" — the day the bus ran, not an
+  /// instant. A run belongs to a school day, and the day is what a parent reads.
+  dateLocal String
+
+  /// When it actually happened.
+  markedAt  DateTime
+  /// The route's expected time for this leg as a local wall clock ("15:40"),
+  /// or NULL. Recording one is optional in Desk, and where there is none there
+  /// is no lateness to state — it must never default to on-time.
+  dueAt     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One mark per bus per leg per day: re-marking after a correction overwrites
+  /// rather than duplicating, which is the same uniqueness Desk's own table has.
+  @@unique([schoolId, routeId, leg, dateLocal])
+  @@index([schoolId, dateLocal])
 }
 
 enum TransportLeg {

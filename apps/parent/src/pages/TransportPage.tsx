@@ -1,5 +1,5 @@
 import React from 'react'
-import { Bus, MapPin, Sunrise, Sunset, AlertCircle } from 'lucide-react'
+import { Bus, MapPin, Sunrise, Sunset, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useApi } from '@wasil/shared'
 import * as api from '@wasil/shared'
@@ -36,6 +36,43 @@ const LEG_LABEL: Record<string, string> = { AM: 'Morning', PM: 'Afternoon', FRI_
  * through, so: it is not one, and making the label school-wide would tell every
  * family without a Friday bus that their afternoon bus stops on Thursday.
  */
+/**
+ * "Left school at 15:42 · 2 minutes late".
+ *
+ * The wording is OPPOSITE between legs and that is the whole point of carrying
+ * the leg: a morning bus ARRIVES at school, an afternoon or Friday one DEPARTS
+ * from it. Same mark, opposite journey. A parent told their child's bus
+ * "arrived" when it has just driven away from school is worse than telling them
+ * nothing.
+ *
+ * Built here rather than sent ready-made by Desk, which knows both numbers and
+ * could. A finished English sentence is the one thing machine translation
+ * handles worst, and this app translates for families who need it.
+ *
+ * With no expected time there is no lateness to state — and "on time" is an
+ * assertion nobody made, so it is not the fallback.
+ */
+function runSentence(leg: TransportLegInfo): string | null {
+  const run = leg.run
+  if (!run) return null
+
+  const when = new Date(run.markedAt)
+  if (Number.isNaN(when.getTime())) return null
+  const at = when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const verb = leg.leg === 'AM' ? 'Arrived at school' : 'Left school'
+
+  const due = run.dueAt ? /^(\d{1,2}):(\d{2})$/.exec(run.dueAt.trim()) : null
+  if (!due) return `${verb} at ${at}`
+
+  const dueMins = Number(due[1]) * 60 + Number(due[2])
+  const actualMins = when.getHours() * 60 + when.getMinutes()
+  const diff = actualMins - dueMins
+  if (diff === 0) return `${verb} at ${at} · on time`
+  const mins = Math.abs(diff)
+  const unit = mins === 1 ? 'minute' : 'minutes'
+  return `${verb} at ${at} · ${mins} ${unit} ${diff > 0 ? 'late' : 'early'}`
+}
+
 function legLabel(leg: string, allLegs: string[]): string {
   if (leg === 'PM' && allLegs.includes('FRI_PM')) return 'Afternoon (Mon–Thu)'
   return LEG_LABEL[leg] || leg
@@ -82,6 +119,19 @@ function Leg({ leg, allLegs }: { leg: TransportLegInfo; allLegs: string[] }) {
             Pickup point not shown here — please contact the school office.
           </div>
         ) : null}
+        {runSentence(leg) && (
+          // Today's mark from the school office. Absent until the bus is
+          // marked, and gone again if the mark is withdrawn — a bus marked away
+          // by mistake must stop saying so.
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5, marginTop: 6,
+              fontSize: 13, fontWeight: 700, color: '#2D7A4E',
+            }}
+          >
+            <CheckCircle2 size={13} /> {runSentence(leg)}
+          </div>
+        )}
       </div>
     </div>
   )

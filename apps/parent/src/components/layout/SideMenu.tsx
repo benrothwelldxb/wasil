@@ -26,7 +26,8 @@ import {
   ClipboardCheck,
   CalendarDays,
   Download,
-  Share, Newspaper } from 'lucide-react'
+  Share, Newspaper,
+  Bus } from 'lucide-react'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import * as api from '@wasil/shared'
@@ -64,6 +65,7 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   const [hasActiveEca, setHasActiveEca] = useState(false)
   const [hasActiveConsultations, setHasActiveConsultations] = useState(false)
   const [hasReports, setHasReports] = useState(false)
+  const [hasTransport, setHasTransport] = useState(false)
   const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null)
   const { isInstallable, canPrompt, promptInstall } = useInstallState()
   const [showIosInstall, setShowIosInstall] = useState(false)
@@ -98,6 +100,13 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
       api.students.myChildrenReports()
         .then(reports => setHasReports(reports && reports.length > 0))
         .catch(() => setHasReports(false))
+
+      // Buses appear only for a family that actually has a child on one. The
+      // endpoint already returns nothing when the school has transport switched
+      // off, so this is both gates in one call: no roster, no menu item.
+      api.transport.mine()
+        .then(res => setHasTransport(!!res?.children?.length))
+        .catch(() => setHasTransport(false))
     }
   }, [open, user])
 
@@ -182,6 +191,12 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   }
   if (isEnabled('scheduleEnabled')) {
     schoolLife.push({ icon: CalendarDays, labelKey: 'nav.timetable', path: '/timetable' })
+  }
+  // Both conditions on purpose: the flag is the school's decision, and
+  // hasTransport is this family's. A school can switch buses on without putting
+  // a dead menu item in front of every family that does not use one.
+  if (hasTransport && isEnabled('transportEnabled')) {
+    schoolLife.push({ icon: Bus, labelKey: 'nav.transport', path: '/transport' })
   }
   if (hasActiveEca && isEnabled('ecaEnabled')) {
     schoolLife.push({ icon: Sparkles, labelKey: 'nav.activities', path: '/activities' })

@@ -44,6 +44,7 @@ const MODULE_GROUPS: ModuleGroup[] = [
     flags: [
       { key: 'termDatesEnabled', label: 'Term Dates', description: 'Academic year term dates' },
       { key: 'scheduleEnabled', label: 'Schedule', description: 'Class timetables and schedules' },
+      { key: 'transportEnabled', label: 'School Bus', description: "Bus routes and pickup times from Desk, plus arrival and departure alerts. Off until you switch it on — parents see nothing while transport is still being set up." },
     ],
   },
   {

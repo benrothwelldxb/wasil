@@ -26,7 +26,8 @@
     "links": "Liens utiles",
     "activities": "Activités",
     "superAdmin": "Super Administrateur",
-    "logout": "Déconnexion"
+    "logout": "Déconnexion",
+    "transport": "Bus scolaire"
   },
   "auth": {
     "login": "Se connecter",

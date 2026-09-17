@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
+import { todayInTimezone } from '../services/dateTime.js'
 
 /**
  * A guardian's own children's bus arrangements.
@@ -23,6 +24,16 @@ router.get('/mine', isAuthenticated, async (req, res) => {
     const studentIds = (user.studentLinks || []).map(l => l.studentId)
     if (studentIds.length === 0) return res.json({ children: [] })
 
+    // The school's own switch, and the reason it is HERE rather than on the
+    // push: Desk sending a roster must never be what makes buses appear in a
+    // parent app. A school still testing transport in Desk pushes freely and
+    // parents see nothing until someone turns it on deliberately.
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { transportEnabled: true, timezone: true },
+    })
+    if (!school?.transportEnabled) return res.json({ children: [] })
+
     const assignments = await prisma.transportAssignment.findMany({
       // Scoped to this guardian's own children, and to their school. Both, so
       // that a stale link across a tenancy cannot reach another school's row.
@@ -30,6 +41,18 @@ router.get('/mine', isAuthenticated, async (req, res) => {
       orderBy: [{ leg: 'asc' }, { timeLocal: 'asc' }],
     })
     if (assignments.length === 0) return res.json({ children: [] })
+
+    // Today's marks for the buses these children are actually on. Keyed by
+    // route + leg because that is what a run is about: a bus, not a child.
+    const today = todayInTimezone(school.timezone ?? 'UTC')
+    const routeIds = [...new Set(assignments.map(a => a.routeId).filter((r): r is string => !!r))]
+    const runs = routeIds.length
+      ? await prisma.transportRun.findMany({
+          where: { schoolId: user.schoolId, dateLocal: today, routeId: { in: routeIds } },
+          select: { routeId: true, leg: true, markedAt: true, dueAt: true },
+        })
+      : []
+    const runByRouteLeg = new Map(runs.map(r => [`${r.routeId}:${r.leg}`, r]))
 
     const nameByStudentId = new Map(
       (user.studentLinks || []).map(l => [l.studentId, `${l.student.firstName} ${l.student.lastName}`.trim()]),
@@ -58,6 +81,14 @@ router.get('/mine', isAuthenticated, async (req, res) => {
         stopName: a.hideStopName ? null : a.stopName,
         stopNameHidden: a.hideStopName,
         timeLocal: a.timeLocal,
+        // The two TIMES, never a sentence: the app words it and translates it.
+        // Null when the office has not marked this bus today, or has withdrawn
+        // the mark — a withdrawal must make the app stop saying it.
+        run: (() => {
+          const r = a.routeId ? runByRouteLeg.get(`${a.routeId}:${a.leg}`) : undefined
+          if (!r) return null
+          return { markedAt: r.markedAt.toISOString(), dueAt: r.dueAt }
+        })(),
       })
     }
 

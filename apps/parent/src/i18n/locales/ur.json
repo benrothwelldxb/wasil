@@ -26,7 +26,8 @@
     "links": "مفید لنکس",
     "activities": "سرگرمیاں",
     "superAdmin": "سپر ایڈمن",
-    "logout": "لاگ آؤٹ"
+    "logout": "لاگ آؤٹ",
+    "transport": "اسکول بس"
   },
   "auth": {
     "login": "لاگ ان",

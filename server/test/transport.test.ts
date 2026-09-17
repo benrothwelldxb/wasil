@@ -11,16 +11,18 @@ import request from 'supertest'
  */
 const prismaMock = {
   partnerToken: { findUnique: vi.fn(), update: vi.fn() },
-  school: { findFirst: vi.fn() },
   student: { findMany: vi.fn() },
   transportAssignment: { upsert: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn() },
+  transportRun: { upsert: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn() },
+  school: { findFirst: vi.fn(), findUnique: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/services/logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 vi.mock('../src/services/outbox', () => ({ enqueuePush: vi.fn(), drainOutbox: vi.fn() }))
-vi.mock('../src/services/notify', () => ({ sendNotification: vi.fn() }))
+const sendNotification = vi.fn()
+vi.mock('../src/services/notify', () => ({ sendNotification, resolveAudienceParentIds: vi.fn() }))
 vi.mock('../src/services/firebase', () => ({ sendPushNotification: vi.fn(), removeInvalidTokens: vi.fn() }))
 vi.mock('../src/services/hubStaffActor', () => ({ resolveHubStaffMembership: vi.fn(async () => null) }))
 vi.mock('../src/services/audit', () => ({ logAudit: vi.fn(), computeChanges: vi.fn(() => ({})) }))
@@ -74,6 +76,11 @@ beforeEach(() => {
   ])
   prismaMock.transportAssignment.upsert.mockResolvedValue({})
   prismaMock.transportAssignment.deleteMany.mockResolvedValue({ count: 0 })
+  prismaMock.transportRun.upsert.mockResolvedValue({ id: 'run-1' })
+  prismaMock.transportRun.deleteMany.mockResolvedValue({ count: 0 })
+  prismaMock.transportRun.findMany.mockResolvedValue([])
+  prismaMock.school.findUnique.mockResolvedValue({ transportEnabled: true, timezone: 'Asia/Dubai' })
+  prismaMock.transportAssignment.findMany.mockResolvedValue([])
 })
 
 describe('PUT /api/partner/transport/assignments', () => {
@@ -297,5 +304,218 @@ describe('GET /api/transport/mine', () => {
     const res = await request(makeApp()).get('/api/transport/mine')
     expect(res.status).toBe(500)
     expect(res.body.children).toBeUndefined()
+  })
+})
+
+/**
+ * A bus marked away.
+ *
+ * The trap this feature exists around is the wording: a morning bus ARRIVES at
+ * school, an afternoon one DEPARTS from it. Desk's own board said "arrived" for
+ * all three legs until the office noticed it was reading back the opposite
+ * journey. A parent told their child's bus arrived when it has just driven away
+ * from school is worse than telling them nothing — so the leg travels with the
+ * mark, and these tests hold that.
+ */
+describe('POST /api/partner/transport/runs', () => {
+  const post = (body: Record<string, unknown>) =>
+    auth(request(makeApp()).post('/api/partner/transport/runs').send(body))
+
+  const RUN = {
+    school_id: 'hub-1',
+    route_id: 'r1',
+    leg: 'PM',
+    date_local: '2026-09-17',
+    marked_at: '2026-09-17T11:42:00Z',
+    due_at: '15:40',
+  }
+
+  it('records the mark against the bus, not against a child', async () => {
+    const res = await post(RUN)
+
+    expect(res.status).toBe(200)
+    const call = prismaMock.transportRun.upsert.mock.calls[0][0]
+    expect(call.where).toEqual({
+      schoolId_routeId_leg_dateLocal: {
+        schoolId: 'school-1', routeId: 'r1', leg: 'PM', dateLocal: '2026-09-17',
+      },
+    })
+    expect(call.create.dueAt).toBe('15:40')
+    // No child is named on the row — who was on the bus is the assignment
+    // table's business, joined at read time.
+    expect(JSON.stringify(call)).not.toContain('stu-')
+  })
+
+  it('is idempotent per bus, leg and day — a re-mark corrects rather than duplicates', async () => {
+    await post(RUN)
+    await post({ ...RUN, marked_at: '2026-09-17T11:45:00Z' })
+
+    expect(prismaMock.transportRun.upsert).toHaveBeenCalledTimes(2)
+    const second = prismaMock.transportRun.upsert.mock.calls[1][0]
+    expect(second.where.schoolId_routeId_leg_dateLocal.dateLocal).toBe('2026-09-17')
+    expect(second.update.markedAt.toISOString()).toBe('2026-09-17T11:45:00.000Z')
+  })
+
+  it('keeps a null expected time null — it must never default to on time', async () => {
+    await post({ ...RUN, due_at: null })
+    expect(prismaMock.transportRun.upsert.mock.calls[0][0].create.dueAt).toBeNull()
+  })
+
+  it('treats a null mark as a withdrawal, not as a mark', async () => {
+    const res = await post({ ...RUN, marked_at: null })
+
+    expect(res.status).toBe(200)
+    expect(prismaMock.transportRun.upsert).not.toHaveBeenCalled()
+    expect(prismaMock.transportRun.deleteMany).toHaveBeenCalledWith({
+      where: { schoolId: 'school-1', routeId: 'r1', leg: 'PM', dateLocal: '2026-09-17' },
+    })
+  })
+
+  it('rejects a mark it cannot read rather than silently calling it now', async () => {
+    const res = await post({ ...RUN, marked_at: 'quarter past' })
+    expect(res.status).toBe(400)
+    expect(prismaMock.transportRun.upsert).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [{ route_id: undefined }, 'route_id'],
+    [{ leg: 'EVENING' }, 'leg'],
+    [{ date_local: '17-09-2026' }, 'date_local'],
+  ])('refuses a malformed %o', async (patch) => {
+    const res = await post({ ...RUN, ...patch })
+    expect(res.status).toBe(400)
+    expect(prismaMock.transportRun.upsert).not.toHaveBeenCalled()
+  })
+
+  describe('the notification', () => {
+    beforeEach(() => {
+      prismaMock.transportAssignment.findMany.mockResolvedValue([
+        { studentId: 'stu-1', routeName: 'Bus 3' },
+        { studentId: 'stu-2', routeName: 'Bus 3' },
+      ])
+    })
+
+    it('says LEFT school on an afternoon leg', async () => {
+      await post(RUN)
+      await new Promise(r => setImmediate(r))
+
+      const arg = sendNotification.mock.calls[0][0]
+      expect(arg.title).toBe('Bus 3 left school')
+      expect(arg.target.studentIds).toEqual(['stu-1', 'stu-2'])
+    })
+
+    it('says ARRIVED at school on the morning leg — the opposite journey', async () => {
+      await post({ ...RUN, leg: 'AM' })
+      await new Promise(r => setImmediate(r))
+
+      expect(sendNotification.mock.calls[0][0].title).toBe('Bus 3 arrived at school')
+    })
+
+    it('states lateness against the expected time, in the school-s own zone', async () => {
+      // 11:42Z is 15:42 in Dubai, against a 15:40 expectation.
+      await post(RUN)
+      await new Promise(r => setImmediate(r))
+
+      expect(sendNotification.mock.calls[0][0].body).toBe('15:42 — 2 minutes late')
+    })
+
+    it('says nothing about lateness when no expected time was recorded', async () => {
+      await post({ ...RUN, due_at: null })
+      await new Promise(r => setImmediate(r))
+
+      const body = sendNotification.mock.calls[0][0].body
+      expect(body).toBe('15:42')
+      expect(body).not.toContain('on time')
+    })
+
+    it('tells nobody while the school still has transport switched off', async () => {
+      prismaMock.school.findUnique.mockResolvedValue({ transportEnabled: false, timezone: 'Asia/Dubai' })
+      await post(RUN)
+      await new Promise(r => setImmediate(r))
+
+      expect(sendNotification).not.toHaveBeenCalled()
+    })
+
+    it('tells nobody when no child rides that bus on that leg', async () => {
+      prismaMock.transportAssignment.findMany.mockResolvedValue([])
+      await post(RUN)
+      await new Promise(r => setImmediate(r))
+
+      expect(sendNotification).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('DELETE /api/partner/transport/runs', () => {
+  it('withdraws the mark, because a bus marked away by mistake is a parent misinformed', async () => {
+    prismaMock.transportRun.deleteMany.mockResolvedValue({ count: 1 })
+    const res = await auth(
+      request(makeApp()).delete('/api/partner/transport/runs').send({
+        school_id: 'hub-1', route_id: 'r1', leg: 'PM', date_local: '2026-09-17',
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ withdrawn: 1 })
+    // No second push saying "ignore that" — the app simply stops showing it.
+    expect(sendNotification).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /api/transport/mine — the school switch and today\'s run', () => {
+  beforeEach(() => {
+    loadUserWithRelations.mockResolvedValue({
+      id: 'parent-1',
+      schoolId: 'school-1',
+      studentLinks: [{ studentId: 'stu-1', student: { firstName: 'Amina', lastName: 'Said', class: { name: '3A' } } }],
+    })
+    prismaMock.transportAssignment.findMany.mockResolvedValue([
+      { studentId: 'stu-1', leg: 'PM', routeId: 'r1', routeName: 'Bus 3', routeCode: 'B3', stopName: 'Villa 27', timeLocal: '15:40', hideStopName: false },
+    ])
+  })
+
+  // The gate is on the READ, not the push: a school can be mid-setup in Desk,
+  // pushing rosters freely, and its parents still see nothing until somebody
+  // turns buses on deliberately.
+  it('shows nothing at all while the school has transport switched off', async () => {
+    prismaMock.school.findUnique.mockResolvedValue({ transportEnabled: false, timezone: 'Asia/Dubai' })
+
+    const res = await request(makeApp()).get('/api/transport/mine')
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ children: [] })
+    // Not even queried — the address never leaves the database.
+    expect(prismaMock.transportAssignment.findMany).not.toHaveBeenCalled()
+  })
+
+  it('carries the two times and no sentence, so the app can word and translate it', async () => {
+    prismaMock.transportRun.findMany.mockResolvedValue([
+      { routeId: 'r1', leg: 'PM', markedAt: new Date('2026-09-17T11:42:00Z'), dueAt: '15:40' },
+    ])
+
+    const res = await request(makeApp()).get('/api/transport/mine')
+
+    const leg = res.body.children[0].legs[0]
+    expect(leg.run).toEqual({ markedAt: '2026-09-17T11:42:00.000Z', dueAt: '15:40' })
+    // No pre-built wording anywhere on the wire.
+    expect(JSON.stringify(leg)).not.toMatch(/left|departed|arrived|late/i)
+  })
+
+  it('is null when the bus has not been marked today', async () => {
+    prismaMock.transportRun.findMany.mockResolvedValue([])
+
+    const res = await request(makeApp()).get('/api/transport/mine')
+
+    expect(res.body.children[0].legs[0].run).toBeNull()
+  })
+
+  it('does not attach another leg\'s run to this one', async () => {
+    prismaMock.transportRun.findMany.mockResolvedValue([
+      { routeId: 'r1', leg: 'AM', markedAt: new Date('2026-09-17T02:52:00Z'), dueAt: '06:52' },
+    ])
+
+    const res = await request(makeApp()).get('/api/transport/mine')
+
+    expect(res.body.children[0].legs[0].run).toBeNull()
   })
 })

@@ -35,6 +35,10 @@ interface NotificationTarget {
   classId?: string
   yearGroupId?: string
   groupId?: string
+  /** The guardians of these specific children — the audience for something that
+   *  is true of a named set of pupils rather than of a class or a year, e.g.
+   *  the children on one bus. Resolves to parents like every other branch. */
+  studentIds?: string[]
   schoolId: string
 }
 
@@ -192,10 +196,20 @@ async function withoutFamiliesWhoHaveLeft(parentIds: string[]): Promise<string[]
 }
 
 export async function resolveAudienceParentIds(target: NotificationTarget): Promise<string[]> {
-  const { targetClass, classId, yearGroupId, groupId, schoolId } = target
+  const { targetClass, classId, yearGroupId, groupId, studentIds, schoolId } = target
   let parentUserIds: string[] = []
 
-  if (groupId) {
+  if (studentIds) {
+    // Checked FIRST and short-circuits on empty: an explicit list of nobody
+    // must send to nobody, never fall through to a wider branch. The whole
+    // point of this audience is that it is narrow.
+    if (studentIds.length === 0) return []
+    const students = await prisma.student.findMany({
+      where: { id: { in: studentIds }, schoolId, leftAt: null },
+      select: { parentLinks: { select: { userId: true } } },
+    })
+    parentUserIds = [...new Set(students.flatMap(s => s.parentLinks.map(pl => pl.userId)))]
+  } else if (groupId) {
     // A group derived from a school service is recomputed HERE, at the moment
     // its audience is resolved, rather than maintained as registrations change
     // in nine places across three files. This is the send: whoever is in the

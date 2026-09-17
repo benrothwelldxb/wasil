@@ -26,7 +26,8 @@
     "links": "Liên kết hữu ích",
     "activities": "Hoạt động",
     "superAdmin": "Quản trị viên cấp cao",
-    "logout": "Đăng xuất"
+    "logout": "Đăng xuất",
+    "transport": "School Bus"
   },
   "auth": {
     "login": "Đăng nhập",
