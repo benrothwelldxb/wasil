@@ -781,14 +781,15 @@ router.get('/public-export/:token', async (req, res) => {
       return res.status(404).json({ error: 'Form not found or link expired' })
     }
 
-    // Check if the export token has expired (24 hours)
-    if (form.exportTokenCreatedAt) {
-      const tokenAge = Date.now() - new Date(form.exportTokenCreatedAt).getTime()
-      const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000
-      if (tokenAge > TWENTY_FOUR_HOURS) {
-        return res.status(403).json({ error: 'Export link has expired' })
-      }
-    }
+    // No expiry. The point of this link is a Google Sheet that stays current —
+    // =IMPORTDATA on a URL that dies after a day is a sheet that silently stops
+    // updating, and nothing in the admin screen ever said it would, so the
+    // failure looked like the form having no responses.
+    //
+    // The link is controlled by existing rather than by ageing: it does not
+    // exist until someone creates one, Regenerate invalidates the old URL, and
+    // Revoke removes it. That is a lever someone holds, rather than a timer
+    // nobody is told about.
 
     const fields = form.fields as Array<{ id: string; label: string; type: string }>
 
@@ -867,7 +868,7 @@ router.get('/:id/export-token', isAdmin, async (req, res) => {
 
     const form = await prisma.form.findFirst({
       where: { id, schoolId: user.schoolId },
-      select: { id: true, exportToken: true },
+      select: { id: true, exportToken: true, exportTokenCreatedAt: true },
     })
 
     if (!form) {
@@ -877,6 +878,7 @@ router.get('/:id/export-token', isAdmin, async (req, res) => {
     res.json({
       hasExportToken: !!form.exportToken,
       exportToken: form.exportToken,
+      exportTokenCreatedAt: form.exportTokenCreatedAt?.toISOString() || null,
     })
   } catch (error) {
     console.error('Error getting export token:', error)

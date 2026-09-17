@@ -981,7 +981,11 @@ model Form {
   school               School    @relation(fields: [schoolId], references: [id])
   expiresAt            DateTime?
   exportToken          String?   @unique // Secret token for public CSV export (Google Sheets IMPORTDATA)
-  exportTokenCreatedAt DateTime? // When the export token was generated (expires after 24h)
+  /// When the export link was generated. Not an expiry — the link lasts until
+  /// it is regenerated or revoked, because its whole purpose is a Google Sheet
+  /// that stays current. Kept so the admin screen can say how old a
+  /// credential-shaped URL is.
+  exportTokenCreatedAt DateTime?
 
   /// Every post this form has been attached to — the first send and any
   /// reminders after it.

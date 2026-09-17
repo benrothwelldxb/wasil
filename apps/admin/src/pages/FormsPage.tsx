@@ -181,6 +181,9 @@ export function FormsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null)
   const [exportLinkForm, setExportLinkForm] = useState<FormWithResponses | null>(null)
   const [exportToken, setExportToken] = useState<string | null>(null)
+  // A link that never expires deserves a visible age — "since when" is the
+  // question anyone asks about a URL that shows parent names and emails.
+  const [exportTokenCreatedAt, setExportTokenCreatedAt] = useState<string | null>(null)
   const [isLoadingToken, setIsLoadingToken] = useState(false)
   const [copied, setCopied] = useState(false)
   const [formData, setFormData] = useState<FormFormData>({
@@ -316,6 +319,7 @@ export function FormsPage() {
     try {
       const result = await api.forms.getExportToken(form.id)
       setExportToken(result.exportToken)
+      setExportTokenCreatedAt(result.exportTokenCreatedAt ?? null)
     } catch {
       setExportToken(null)
     } finally {
@@ -330,6 +334,7 @@ export function FormsPage() {
     try {
       const result = await api.forms.generateExportToken(exportLinkForm.id)
       setExportToken(result.exportToken)
+      setExportTokenCreatedAt(new Date().toISOString())
     } catch {
       toast.error('Failed to generate export link')
     } finally {
@@ -542,6 +547,9 @@ export function FormsPage() {
                       This link allows <strong>anyone</strong> with access to view all form responses, including parent names and emails.
                       Only share with trusted parties.
                     </p>
+                    <p className="text-amber-700 mt-1">
+                      It does not expire. Use <strong>Regenerate</strong> to invalidate the old URL, or <strong>Revoke</strong> to remove it.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -553,7 +561,14 @@ export function FormsPage() {
               ) : exportToken ? (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Public CSV URL</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Public CSV URL
+                      {exportTokenCreatedAt && (
+                        <span className="ml-2 font-normal text-gray-500">
+                          created {new Date(exportTokenCreatedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </label>
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
