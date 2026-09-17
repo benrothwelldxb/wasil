@@ -5,7 +5,6 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
-import { sendNotification } from '../services/notify.js'
 import { tenant } from '../services/tenant.js'
 
 const router = Router()
@@ -43,49 +42,22 @@ function serializeForm(form: any, extra?: Record<string, unknown>) {
   }
 }
 
-function sendFormNotifications(req: any, form: any, schoolId: string) {
-  const classIds = form.classIds as string[]
-  const yearGroupIds = form.yearGroupIds as string[]
-
-  if (form.targetClass === 'Whole School' || (classIds.length === 0 && yearGroupIds.length === 0)) {
-    sendNotification({
-      req,
-      type: 'FORM',
-      title: 'New Form',
-      body: form.title,
-      resourceType: 'FORM',
-      resourceId: form.id,
-      target: { targetClass: 'Whole School', schoolId },
-    })
-    return
-  }
-
-  // Send per class
-  for (const classId of classIds) {
-    sendNotification({
-      req,
-      type: 'FORM',
-      title: 'New Form',
-      body: form.title,
-      resourceType: 'FORM',
-      resourceId: form.id,
-      target: { targetClass: form.targetClass, classId, schoolId },
-    })
-  }
-
-  // Send per year group (only for year groups without specific classes already targeted)
-  for (const yearGroupId of yearGroupIds) {
-    sendNotification({
-      req,
-      type: 'FORM',
-      title: 'New Form',
-      body: form.title,
-      resourceType: 'FORM',
-      resourceId: form.id,
-      target: { targetClass: form.targetClass, yearGroupId, schoolId },
-    })
-  }
-}
+/**
+ * Forms do not announce themselves.
+ *
+ * A form is attached to a post, and the post is the announcement — it carries
+ * the words explaining what is being asked and why. A form firing its own
+ * notification on creation meant a parent got two: one saying "New Form" with
+ * no context, and then the post that actually explained it.
+ *
+ * "New Form" was also the entire body of the first one, which is a notification
+ * that tells a parent to go and look rather than telling them anything.
+ *
+ * The consequence, stated rather than discovered: a form left unattached to any
+ * post is now silent. That is the intended flow — a form without a post is a
+ * form nobody has been told the reason for — but nothing stops one being
+ * created, so it will sit unanswered rather than announce itself.
+ */
 
 // Get active forms (filtered by user's children's classes)
 router.get('/', isAuthenticated, async (req, res) => {
@@ -250,10 +222,6 @@ router.post('/', isAdmin, validate(createFormSchema), async (req, res) => {
 
     logAudit({ req, action: 'CREATE', resourceType: 'FORM', resourceId: form.id, metadata: { title: form.title, type: form.type } })
 
-    if (form.status === 'ACTIVE') {
-      sendFormNotifications(req, form, user.schoolId)
-    }
-
     res.status(201).json(serializeForm(form))
   } catch (error) {
     console.error('Error creating form:', error)
@@ -293,10 +261,6 @@ router.put('/:id', isAdmin, validate(updateFormSchema), async (req, res) => {
 
     const changes = computeChanges(existing as any, form as any, ['title', 'description', 'type', 'status', 'targetClass', 'expiresAt'])
     logAudit({ req, action: 'UPDATE', resourceType: 'FORM', resourceId: form.id, metadata: { title: form.title }, changes })
-
-    if (existing.status !== 'ACTIVE' && form.status === 'ACTIVE') {
-      sendFormNotifications(req, form, user.schoolId)
-    }
 
     res.json(serializeForm(form))
   } catch (error) {

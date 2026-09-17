@@ -11,11 +11,12 @@ import request from 'supertest'
  * for a short list.
  */
 const prismaMock = {
-  form: { findMany: vi.fn(), count: vi.fn() },
+  form: { findMany: vi.fn(), count: vi.fn(), create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/services/audit', () => ({ logAudit: vi.fn(), computeChanges: vi.fn(() => ({})) }))
-vi.mock('../src/services/notify', () => ({ sendNotification: vi.fn() }))
+const sendNotification = vi.fn()
+vi.mock('../src/services/notify', () => ({ sendNotification }))
 vi.mock('../src/middleware/validate', () => ({
   validate: () => (_r: unknown, _s: unknown, n: () => void) => n(),
 }))
@@ -53,6 +54,16 @@ beforeEach(() => {
   role = 'STAFF'
   prismaMock.form.findMany.mockResolvedValue([])
   prismaMock.form.count.mockResolvedValue(0)
+  const stamps = { createdAt: new Date('2026-09-17T09:00:00Z'), updatedAt: new Date('2026-09-17T09:00:00Z'), expiresAt: null }
+  prismaMock.form.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+    Promise.resolve({ id: 'f-1', fields: [], classIds: [], yearGroupIds: [], ...stamps, ...data }))
+  prismaMock.form.findFirst.mockResolvedValue({
+    id: 'f-1', schoolId: 'school-1', status: 'DRAFT', title: 'Trip consent',
+    fields: [], classIds: [], yearGroupIds: [], targetClass: 'Whole School', ...stamps,
+  })
+  prismaMock.form.update.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+    Promise.resolve({ id: 'f-1', schoolId: 'school-1', title: 'Trip consent',
+      fields: [], classIds: [], yearGroupIds: [], targetClass: 'Whole School', ...stamps, ...data }))
 })
 
 describe('GET /api/forms/available', () => {
@@ -114,5 +125,39 @@ describe('GET /api/forms/available', () => {
   it('a genuinely empty school reports zero closed, not an error', async () => {
     const res = await request(makeApp()).get('/api/forms/available')
     expect(res.body).toEqual({ forms: [], unavailable: { closed: 0 } })
+  })
+})
+
+/**
+ * A form does not announce itself.
+ *
+ * It is attached to a post, and the post is the announcement — it carries the
+ * words explaining what is being asked and why. Creating the form fired its own
+ * notification too, so a parent got two: one reading "New Form" with no
+ * context, then the post that actually explained it.
+ *
+ * Nothing covered this, which is how it survived. These tests exist so the
+ * absence of a send is a stated intention rather than something that looks like
+ * an oversight to the next person reading the route.
+ */
+describe('creating a form', () => {
+  const body = {
+    title: 'Trip consent', type: 'trip-consent', targetClass: 'Whole School', status: 'ACTIVE',
+  }
+
+  it('sends nothing, even when created ACTIVE', async () => {
+    role = 'ADMIN'
+    const res = await request(makeApp()).post('/api/forms').send(body)
+
+    expect(res.status).toBe(201)
+    expect(sendNotification).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing when a draft is later activated', async () => {
+    role = 'ADMIN'
+    const res = await request(makeApp()).put('/api/forms/f-1').send({ ...body, status: 'ACTIVE' })
+
+    expect(res.status).toBe(200)
+    expect(sendNotification).not.toHaveBeenCalled()
   })
 })
