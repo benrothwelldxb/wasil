@@ -1346,6 +1346,134 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
   }
 })
 
+
+// Put a colleague on a thread: an inclusion teacher bringing in the SENDCO, a
+// class teacher bringing in a head of year.
+//
+//   POST /api/partner/inbox/threads/:id/staff   { hub_user_id, userId }
+//   → { ccStaff: [{ userId, name }] }
+//
+// WHO MAY BE ADDED: any STAFF/ADMIN/SUPER_ADMIN at this school. Deliberately
+// NOT isStaffContactableByParent, which gates the parent-initiated CC on the
+// parent's own children's classes and timetabled specialists. That set is built
+// from the PARENT's relationships, and this caller's whole purpose is involving
+// people the parent has no timetabled relationship with — a SENDCO, a head of
+// year, a safeguarding lead. Applying it here would refuse exactly the
+// colleagues the feature exists to add, and refuse them with an error about the
+// parent. Ben's decision, taken as a policy question rather than a code one.
+//
+// The narrowing that does the work is the CALLER, not the target: `staffThreadWhere`
+// requires the actor to be the thread's staff party or already CC'd onto it. A
+// teacher who can already read the conversation showing it to a colleague is an
+// ordinary professional act; a teacher reaching into a thread she is not on is
+// the thing to prevent, and that is what is prevented.
+//
+// What makes it fair rather than merely convenient is downstream: `addedById`
+// is recorded, and the parent's thread view already renders who added whom, so
+// a new name arrives labelled as the school's doing rather than unexplained.
+// The parent can also remove a CC'd staff member through the existing
+// parent-side route, so this is not one-way.
+//
+// No DELETE here on purpose. The parent can already remove someone, and a
+// teacher un-CCing another teacher mid-conversation is a different feature
+// nobody has asked for.
+router.post('/inbox/threads/:id/staff', requirePartner, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { hub_user_id, userId } = req.body ?? {}
+    const actor = await resolveActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
+    if (!actor) return res.status(403).json({ error: 'forbidden' })
+
+    // An ILSA thread is private to the one guardian by design (ADR 0006), and
+    // an ILSA is engaged by the parent rather than employed by the school.
+    // Refused outright rather than ignored, so Desk cannot believe it CC'd
+    // someone onto a thread it did not.
+    if (actor.kind === 'ILSA') return res.status(403).json({ error: 'forbidden' })
+
+    if (typeof userId !== 'string' || !userId.trim()) {
+      return res.status(400).json({ error: 'userId is required' })
+    }
+    const staff = actor.staff
+
+    const conversation = await prisma.conversation.findFirst({
+      where: staffThreadWhere(id, staff),
+      include: {
+        participants: { select: { userId: true, role: true, user: { select: { name: true } } } },
+      },
+    })
+    // 404 on a miss, never 403 — a staff member who cannot see a thread is not
+    // told it exists.
+    if (!conversation) return res.status(404).json({ error: 'not_found' })
+
+    const ccStaff = (c: typeof conversation) =>
+      c.participants
+        .filter((pt) => pt.role === 'STAFF')
+        .map((pt) => ({ userId: pt.userId, name: pt.user.name }))
+
+    if (userId === conversation.staffId) {
+      return res.status(400).json({ error: 'That staff member is already on this conversation' })
+    }
+    // Idempotent: adding someone already there is a success with no second row.
+    if (conversation.participants.some((pt) => pt.userId === userId)) {
+      return res.json({ ccStaff: ccStaff(conversation) })
+    }
+
+    // Any colleague at this school — but a colleague. An ILSA is pupil-scoped
+    // and is not staff (ADR 0006); a parent is obviously not one either, and
+    // the role check is what stops a mistyped id putting a family on the thread.
+    const target = await prisma.user.findFirst({
+      where: {
+        id: userId,
+        schoolId: staff.schoolId,
+        role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
+        isTest: false,
+      },
+      select: { id: true },
+    })
+    if (!target) {
+      return res.status(400).json({ error: 'Not a staff member at this school' })
+    }
+
+    await prisma.conversationParticipant.create({
+      data: {
+        conversationId: id,
+        userId,
+        role: 'STAFF',
+        // Who did it. The parent's thread view reads this to say the school
+        // added a colleague rather than leaving a name to be worked out.
+        addedById: staff.id,
+      },
+    })
+
+    // Audited: the question after something goes wrong is who decided, and the
+    // answer should not require reading the database.
+    await prisma.auditLog.create({
+      data: {
+        userId: staff.id,
+        userName: staff.name,
+        action: 'CREATE',
+        resourceType: 'CONVERSATION',
+        resourceId: id,
+        metadata: { event: 'STAFF_CC_ADDED_BY_STAFF', addedUserId: userId },
+        schoolId: staff.schoolId,
+        ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+      },
+    })
+
+    const refreshed = await prisma.conversation.findFirst({
+      where: { id },
+      include: {
+        participants: { select: { userId: true, role: true, user: { select: { name: true } } } },
+      },
+    })
+    res.json({ ccStaff: refreshed ? ccStaff(refreshed as typeof conversation) : [] })
+  } catch (error) {
+    console.error('Error adding staff to partner thread:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+
 // 4b. Add a second guardian to a thread — the joint-guardian conversation.
 //
 // Desk asked for this once and withdrew it, on the grounds that co-guardian

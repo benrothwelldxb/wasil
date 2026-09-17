@@ -1811,3 +1811,151 @@ describe('reactions on a partner thread', () => {
     })
   })
 })
+
+/**
+ * Putting a colleague on a thread — an inclusion teacher bringing in the
+ * SENDCO, a class teacher bringing in a head of year.
+ *
+ * This widens who can read what a family told the school in confidence, so the
+ * tests are mostly about the gates rather than the happy path. The deliberate
+ * design decision: the TARGET is any colleague at the school, and the narrowing
+ * that does the work is the CALLER having to be on the thread already.
+ */
+describe('POST /api/partner/inbox/threads/:id/staff', () => {
+  const auth = (r: request.Test) => r.set('Authorization', `Bearer ${TOKEN}`)
+  const STAFF = { id: 'staff-1', role: 'STAFF', schoolId: 'sch-1', name: 'Ms Khan' }
+  const THREAD = {
+    id: 'c-1', parentId: 'p-mum', studentId: 'stu-1', staffId: 'staff-1',
+    participants: [],
+  }
+  const add = (body: Record<string, unknown> = {}) =>
+    auth(request(makeApp()).post('/api/partner/inbox/threads/c-1/staff'))
+      .send({ hub_user_id: 'hu-staff', userId: 'staff-sendco', ...body })
+
+  beforeEach(() => {
+    prismaMock.user.findUnique.mockResolvedValue(STAFF)
+    prismaMock.conversation.findFirst.mockResolvedValue(THREAD)
+    prismaMock.user.findFirst.mockResolvedValue({ id: 'staff-sendco' })
+    prismaMock.conversationParticipant.create.mockResolvedValue({ id: 'cp-1' })
+    prismaMock.auditLog.create.mockResolvedValue({})
+  })
+
+  it('adds the colleague and records who did it', async () => {
+    prismaMock.conversation.findFirst
+      .mockResolvedValueOnce(THREAD)
+      .mockResolvedValueOnce({ ...THREAD, participants: [{ userId: 'staff-sendco', role: 'STAFF', user: { name: 'Mr Idris' } }] })
+
+    const res = await add()
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ccStaff: [{ userId: 'staff-sendco', name: 'Mr Idris' }] })
+    // addedById is what lets the parent see the school added a colleague,
+    // rather than a name appearing on the thread unexplained.
+    expect(prismaMock.conversationParticipant.create.mock.calls[0][0].data).toMatchObject({
+      conversationId: 'c-1', userId: 'staff-sendco', role: 'STAFF', addedById: 'staff-1',
+    })
+  })
+
+  // The point of the whole design: a SENDCO has no timetabled relationship with
+  // this family, and the parent-side rule would refuse them. Here they are the
+  // expected case, not the exception.
+  it('accepts a colleague the PARENT could never have contacted', async () => {
+    const res = await add({ userId: 'staff-sendco' })
+
+    expect(res.status).toBe(200)
+    // The parent's contactable set is never consulted.
+    expect(prismaMock.staffClassAssignment.findMany).not.toHaveBeenCalled()
+    expect(prismaMock.user.findFirst.mock.calls[0][0].where).toMatchObject({
+      id: 'staff-sendco',
+      schoolId: 'sch-1',
+      role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
+    })
+  })
+
+  it('refuses a caller who is not on the thread, as 404 rather than 403', async () => {
+    // staffThreadWhere matches nothing for a teacher who is neither the staff
+    // party nor CC'd. A staff member who cannot see a thread is not told it exists.
+    prismaMock.conversation.findFirst.mockResolvedValue(null)
+
+    const res = await add()
+
+    expect(res.status).toBe(404)
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses a target who is not staff at this school', async () => {
+    prismaMock.user.findFirst.mockResolvedValue(null)
+
+    const res = await add({ userId: 'p-dad' })
+
+    expect(res.status).toBe(400)
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  it('is idempotent — adding someone already CC\'d makes no second row', async () => {
+    prismaMock.conversation.findFirst.mockResolvedValue({
+      ...THREAD,
+      participants: [{ userId: 'staff-sendco', role: 'STAFF', user: { name: 'Mr Idris' } }],
+    })
+
+    const res = await add()
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ccStaff: [{ userId: 'staff-sendco', name: 'Mr Idris' }] })
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses to re-add the thread\'s own staff party', async () => {
+    const res = await add({ userId: 'staff-1' })
+
+    expect(res.status).toBe(400)
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  it('audits who added whom to whose conversation', async () => {
+    await add()
+
+    expect(prismaMock.auditLog.create.mock.calls[0][0].data).toMatchObject({
+      userId: 'staff-1',
+      resourceType: 'CONVERSATION',
+      resourceId: 'c-1',
+      metadata: { event: 'STAFF_CC_ADDED_BY_STAFF', addedUserId: 'staff-sendco' },
+    })
+  })
+
+  it('requires a userId', async () => {
+    const res = await auth(request(makeApp()).post('/api/partner/inbox/threads/c-1/staff'))
+      .send({ hub_user_id: 'hu-staff' })
+
+    expect(res.status).toBe(400)
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  // ADR 0006: an ILSA is engaged by the parent rather than employed by the
+  // school, and their threads are private to the one guardian. An ILSA must not
+  // be able to widen a thread's audience at all. Refused outright rather than
+  // ignored — doing nothing quietly would leave Desk believing it had CC'd
+  // someone it had not.
+  it('403s an ILSA actor outright', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'ilsa-1', role: 'ILSA', schoolId: 'sch-1', name: 'Ms Support' })
+    prismaMock.ilsaLink.findFirst.mockResolvedValue({ studentId: 'stu-1', hubPupilId: 'hp-1' })
+
+    const res = await add()
+
+    expect(res.status).toBe(403)
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+
+  // An ILSA cannot be the TARGET either, for the same reason in the other
+  // direction: they are pupil-scoped, not a colleague to loop in.
+  it('refuses an ILSA as the person being added', async () => {
+    // The role filter on the lookup is what excludes them — no ILSA row matches.
+    prismaMock.user.findFirst.mockResolvedValue(null)
+
+    const res = await add({ userId: 'ilsa-1' })
+
+    expect(res.status).toBe(400)
+    expect(prismaMock.user.findFirst.mock.calls[0][0].where.role.in).not.toContain('ILSA')
+    expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
+  })
+})
