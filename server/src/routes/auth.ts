@@ -3,7 +3,7 @@ import { formalSchoolName } from '../services/schoolName.js'
 import passport from 'passport'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
-import rateLimit from 'express-rate-limit'
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { z } from 'zod'
 import QRCode from 'qrcode'
 import prisma from '../services/prisma.js'
@@ -289,12 +289,32 @@ const magicLinkVerifyLimiter = rateLimit({
   legacyHeaders: false,
 })
 
+/**
+ * Session-scoped key with an IP fallback, for the 2FA limiters.
+ *
+ * The fallback must go through `ipKeyGenerator`, not `req.ip`. A raw IPv6
+ * address is a useless bucket: an ordinary residential allocation is a /64, so
+ * one attacker holds trillions of addresses and every request can carry a fresh
+ * one. `ipKeyGenerator` normalises to a /56 so the whole allocation shares a
+ * bucket. express-rate-limit 8 refuses to let this pass silently and logs
+ * ERR_ERL_KEY_GEN_IPV6 at startup, which it had been doing on every boot.
+ *
+ * Extracted rather than inlined so the fallback is testable — the failure is
+ * invisible in normal use, because the sessionToken branch is the one every
+ * real request takes.
+ */
+export function sessionOrIpKey(req: { body?: { sessionToken?: unknown }; ip?: string }): string {
+  const token = req.body?.sessionToken
+  if (typeof token === 'string' && token.trim()) return token
+  return ipKeyGenerator(req.ip ?? '') || 'unknown'
+}
+
 // 2FA verify and recovery limits. These are session-scoped (the sessionToken
 // the user just got from /login) so a brute-force attempt is bounded.
 const twoFactorVerifyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  keyGenerator: (req) => req.body?.sessionToken || req.ip || 'unknown',
+  keyGenerator: sessionOrIpKey,
   message: { error: 'Too many 2FA attempts, please log in again' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -305,7 +325,7 @@ const twoFactorVerifyLimiter = rateLimit({
 const twoFactorRecoverLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 3,
-  keyGenerator: (req) => req.body?.sessionToken || req.ip || 'unknown',
+  keyGenerator: sessionOrIpKey,
   message: { error: 'Too many recovery attempts, please log in again' },
   standardHeaders: true,
   legacyHeaders: false,
