@@ -1931,6 +1931,26 @@ describe('POST /api/partner/inbox/threads/:id/staff', () => {
     expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
   })
 
+  // The add response and the READ responses must carry ccStaff in the same
+  // shape. They did not: the reads answered a plain array of names while this
+  // route answered objects, so the same field name meant two things across two
+  // endpoints of one API. Desk caught it before building against it. Pinned
+  // here because the drift is invisible from either endpoint alone.
+  it('answers ccStaff in the same shape the thread reads use', async () => {
+    prismaMock.conversation.findFirst
+      .mockResolvedValueOnce(THREAD)
+      .mockResolvedValueOnce({ ...THREAD, participants: [{ userId: 'staff-sendco', role: 'STAFF', user: { name: 'Mr Idris' } }] })
+
+    const res = await add()
+
+    expect(Array.isArray(res.body.ccStaff)).toBe(true)
+    for (const entry of res.body.ccStaff) {
+      expect(Object.keys(entry).sort()).toEqual(['name', 'userId'])
+      expect(typeof entry.userId).toBe('string')
+      expect(typeof entry.name).toBe('string')
+    }
+  })
+
   // ADR 0006: an ILSA is engaged by the parent rather than employed by the
   // school, and their threads are private to the one guardian. An ILSA must not
   // be able to widen a thread's audience at all. Refused outright rather than

@@ -477,8 +477,8 @@ describe('GET /api/partner/oversight/parent-threads', () => {
         parent: { id: 'p-1', name: 'Sara Khan' },
         staff: { id: 'staff-1', name: 'Ms Noor' },
         participants: [
-          { role: 'PARENT', user: { name: 'Omar Khan' } },
-          { role: 'STAFF', user: { name: 'Head of Year' } },
+          { userId: 'p-dad', role: 'PARENT', user: { name: 'Omar Khan' } },
+          { userId: 'staff-hoy', role: 'STAFF', user: { name: 'Head of Year' } },
         ],
         messages: [
           { id: 'm-1', senderId: 'staff-1', content: 'Reading update', createdAt: new Date('2026-08-14T09:00:00.000Z'), deletedAt: null, sender: { name: 'Ms Noor' }, attachments: [{ fileName: 'report.pdf', fileUrl: 'https://r2/x', fileType: 'application/pdf', fileSize: 12 }] },
@@ -500,8 +500,11 @@ describe('GET /api/partner/oversight/parent-threads', () => {
     })
     expect(res.body.threads[0]).toMatchObject({
       id: 'c-1', staffName: 'Ms Noor', guardianName: 'Sara Khan',
-      // Co-guardians and CC'd staff stay apart — different facts.
-      sharedWith: ['Omar Khan'], ccStaff: ['Head of Year'],
+      // Co-guardians and CC'd staff stay apart — different facts. ccStaff
+      // carries userId as well as the name: a picker has to exclude the people
+      // already on a thread, and doing that by display name fails silently the
+      // day a school has two colleagues with the same one.
+      sharedWith: ['Omar Khan'], ccStaff: [{ userId: 'staff-hoy', name: 'Head of Year' }],
     })
     expect(res.body.threads[0].messages.map((m: { senderRole: string }) => m.senderRole)).toEqual(['STAFF', 'GUARDIAN', 'STAFF'])
     // A withdrawn message survives as a tombstone: it happened, and a record of
