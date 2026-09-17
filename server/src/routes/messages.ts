@@ -5,7 +5,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin, isStaff, canSendToTarget, canMarkUrgent, loadUserWithRelations } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
-import { sendNotification } from '../services/notify.js'
+import { sendNotification, resolveAudienceParentIds } from '../services/notify.js'
 import { signalAdminNotice, unseenNoticeCount } from '../services/adminNotices.js'
 import { translateTexts } from '../services/translation.js'
 import { uploadFile, generateKey } from '../services/storage.js'
@@ -22,6 +22,11 @@ const createMessageSchema = z.object({
   classId: z.string().optional(),
   yearGroupId: z.string().optional(),
   groupId: z.string().optional(),
+  // Several audiences in one send. The singular fields above stay for every
+  // existing caller; these are additive, and a request may use either.
+  classIds: z.array(z.string()).optional(),
+  yearGroupIds: z.array(z.string()).optional(),
+  groupIds: z.array(z.string()).optional(),
   actionType: z.string().optional(),
   actionLabel: z.string().optional(),
   actionDueDate: z.string().optional(),
@@ -516,7 +521,7 @@ router.get('/all', isAdmin, async (req, res) => {
 router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMarkUrgent, async (req, res) => {
   try {
     const user = req.user!
-    const { title, content, targetClass, classId, yearGroupId, groupId, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, requiresAcknowledgment, scheduledAt, expiresAt, formId, attachments, channel, department } = req.body
+    const { title, content, targetClass, classId, yearGroupId, groupId, classIds, yearGroupIds, groupIds, actionType, actionLabel, actionDueDate, actionAmount, isPinned, isUrgent, requiresAcknowledgment, scheduledAt, expiresAt, formId, attachments, channel, department } = req.body
     const isNotice = channel === 'ADMIN_NOTICE'
 
     // Staff cannot pin messages (only admin)
@@ -535,14 +540,67 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
     const expiresDate = expiresAt ? await parseExpiryForSchool(expiresAt, user.schoolId) : null
     const liveNow = !scheduledDate || scheduledDate <= new Date()
 
+    // One post to several audiences is several rows, one per audience — the
+    // same fan-out the partner route does for Desk, so a post composed here and
+    // one composed there behave identically in a parent's feed.
+    //
+    // Each id is checked against this school before it becomes a row. The
+    // permission middleware has already refused a staff member reaching outside
+    // their assigned classes; this is the other half — a valid id belonging to
+    // somebody else's school.
+    const wantedClassIds: string[] = [...new Set([
+      ...(classId ? [classId] : []),
+      ...(Array.isArray(classIds) ? classIds.filter((c: unknown): c is string => typeof c === 'string' && !!c) : []),
+    ])]
+    const wantedYearGroupIds: string[] = [...new Set([
+      ...(yearGroupId ? [yearGroupId] : []),
+      ...(Array.isArray(yearGroupIds) ? yearGroupIds.filter((c: unknown): c is string => typeof c === 'string' && !!c) : []),
+    ])]
+    const wantedGroupIds: string[] = [...new Set([
+      ...(groupId ? [groupId] : []),
+      ...(Array.isArray(groupIds) ? groupIds.filter((c: unknown): c is string => typeof c === 'string' && !!c) : []),
+    ])]
+
+    const [okClasses, okYearGroups, okGroups] = await Promise.all([
+      wantedClassIds.length
+        ? prisma.class.findMany({ where: { id: { in: wantedClassIds }, schoolId: user.schoolId }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+      wantedYearGroupIds.length
+        ? prisma.yearGroup.findMany({ where: { id: { in: wantedYearGroupIds }, schoolId: user.schoolId }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+      wantedGroupIds.length
+        ? prisma.group.findMany({ where: { id: { in: wantedGroupIds }, schoolId: user.schoolId }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+    ])
+    if (
+      okClasses.length !== wantedClassIds.length ||
+      okYearGroups.length !== wantedYearGroupIds.length ||
+      okGroups.length !== wantedGroupIds.length
+    ) {
+      return res.status(400).json({ error: 'Unknown or cross-school audience' })
+    }
+
+    type Fanout = { targetClass: string; classId: string | null; yearGroupId: string | null; groupId: string | null }
+    const fanout: Fanout[] = [
+      ...okClasses.map(c => ({ targetClass: c.name, classId: c.id, yearGroupId: null, groupId: null })),
+      ...okYearGroups.map(y => ({ targetClass: y.name, classId: null, yearGroupId: y.id, groupId: null })),
+      ...okGroups.map(g => ({ targetClass: g.name, classId: null, yearGroupId: null, groupId: g.id })),
+    ]
+    // No specific audience named at all means whole-school, which is what
+    // `targetClass` already carried on its own.
+    if (fanout.length === 0) {
+      fanout.push({ targetClass, classId: null, yearGroupId: null, groupId: null })
+    }
+    const [primary, ...extraTargets] = fanout
+
     const message = await prisma.message.create({
       data: {
         title,
         content: sanitizeRichText(content),
-        targetClass,
-        classId: classId || null,
-        yearGroupId: yearGroupId || null,
-        groupId: groupId || null,
+        targetClass: primary.targetClass,
+        classId: primary.classId,
+        yearGroupId: primary.yearGroupId,
+        groupId: primary.groupId,
         schoolId: user.schoolId,
         senderId: user.id,
         senderName: user.name,
@@ -593,7 +651,71 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
 
     logAudit({ req, action: 'CREATE', resourceType: 'MESSAGE', resourceId: message.id, metadata: { title: message.title, attachmentCount: createdAttachments.length } })
 
-    const target = { targetClass, classId: classId || undefined, yearGroupId: yearGroupId || undefined, groupId: groupId || undefined, schoolId: user.schoolId }
+    // The remaining audiences get their own rows, carrying the same content,
+    // attachments and form.
+    for (const t of extraTargets) {
+      const extra = await prisma.message.create({
+        data: {
+          title,
+          content: sanitizeRichText(content),
+          targetClass: t.targetClass,
+          classId: t.classId,
+          yearGroupId: t.yearGroupId,
+          groupId: t.groupId,
+          schoolId: user.schoolId,
+          senderId: user.id,
+          senderName: user.name,
+          actionType: actionType || null,
+          actionLabel: actionLabel || null,
+          actionDueDate: actionDueDate ? new Date(actionDueDate) : null,
+          actionAmount: actionAmount || null,
+          isPinned: canPin ? (isPinned || false) : false,
+          isUrgent: isUrgent || false,
+          requiresAcknowledgment: requiresAcknowledgment || false,
+          scheduledAt: scheduledDate,
+          notifiedAt: liveNow ? new Date() : null,
+          channel: isNotice ? 'ADMIN_NOTICE' : 'FEED',
+          department: isNotice && typeof department === 'string' && department.trim() ? department.trim() : null,
+          expiresAt: expiresDate,
+          formId: formId || null,
+        },
+      })
+      if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+        await prisma.messageAttachment.createMany({
+          data: attachments.map((a: { fileName: string; fileUrl: string; fileType: string; fileSize: number }) => ({
+            messageId: extra.id,
+            fileName: a.fileName,
+            fileUrl: a.fileUrl,
+            fileType: a.fileType,
+            fileSize: a.fileSize,
+          })),
+        })
+      }
+      logAudit({ req, action: 'CREATE', resourceType: 'MESSAGE', resourceId: extra.id, metadata: { title: extra.title, targetClass: extra.targetClass } })
+    }
+
+    // ONE announcement, however many rows it became. Three classes is three
+    // things in a feed but one thing that happened, and a parent with children
+    // in two of them should not have their phone buzz twice — which is what
+    // notifying per target does, and what the partner route still does.
+    //
+    // The union is resolved here rather than inside sendNotification because
+    // only the caller knows the targets belong to one send.
+    const audience = new Set<string>()
+    for (const t of fanout) {
+      for (const id of await resolveAudienceParentIds({
+        targetClass: t.targetClass,
+        classId: t.classId || undefined,
+        yearGroupId: t.yearGroupId || undefined,
+        groupId: t.groupId || undefined,
+        schoolId: user.schoolId,
+      })) audience.add(id)
+    }
+    const target = {
+      targetClass: primary.targetClass,
+      parentUserIds: [...audience],
+      schoolId: user.schoolId,
+    }
 
     if (liveNow) {
       if (isNotice) {

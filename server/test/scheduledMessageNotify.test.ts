@@ -20,7 +20,9 @@ const prismaMock = {
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
-const notifyMock = { sendNotification: vi.fn() }
+// resolveAudienceParentIds is used by the fan-out to notify ONCE across several
+// targets — a post to three classes is one announcement, not three.
+const notifyMock = { sendNotification: vi.fn(), resolveAudienceParentIds: vi.fn(async () => ['p-1']) }
 vi.mock('../src/services/notify', () => notifyMock)
 vi.mock('../src/services/logger', () => ({
   default: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },

@@ -470,6 +470,13 @@ export const messages = {
     classId?: string
     yearGroupId?: string
     groupId?: string
+    /** Post to several audiences at once: the server creates one post per
+     *  audience — as Desk does — and announces once across the whole set, so a
+     *  parent with children in two of them is not notified twice. The singular
+     *  fields above are the first of them. */
+    classIds?: string[]
+    yearGroupIds?: string[]
+    groupIds?: string[]
     actionType?: string
     actionLabel?: string
     actionDueDate?: string

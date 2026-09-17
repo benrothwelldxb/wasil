@@ -74,10 +74,18 @@ export function MessagesPage() {
         ...(formData.hasAction && { actionType: formData.actionType, actionLabel: formData.actionLabel, actionDueDate: formData.actionDueDate, actionAmount: formData.actionAmount }),
       }
       if (editingMessage) {
+        // Editing changes one post. The audience arrays are deliberately not
+        // sent: fanning out on an edit would create NEW posts beside the one
+        // being edited, which is not what "save" means.
         await api.messages.update(editingMessage.id, data)
         setEditingMessage(null)
       } else {
-        await api.messages.create(data)
+        await api.messages.create({
+          ...data,
+          classIds: formData.classIds?.length ? formData.classIds : undefined,
+          yearGroupIds: formData.yearGroupIds?.length ? formData.yearGroupIds : undefined,
+          groupIds: formData.groupIds?.length ? formData.groupIds : undefined,
+        })
       }
       resetForm()
       refetchMessages()
@@ -190,6 +198,9 @@ export function MessagesPage() {
           audienceOptions={audienceOptions}
           isSubmitting={isSubmitting}
           submitLabel={editingMessage ? 'Update Message' : 'Send Message'}
+          // Editing changes the post in front of you. Offering several
+          // audiences there would imply the edit fans out, which it does not.
+          allowMultipleAudiences={!editingMessage}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
         />
