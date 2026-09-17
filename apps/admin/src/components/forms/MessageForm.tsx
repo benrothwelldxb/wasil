@@ -18,6 +18,13 @@ export interface MessageFormData {
   classId?: string
   yearGroupId?: string
   groupId?: string
+  /** Additional audiences. The server fans out one post per audience, the same
+   *  way Desk does, and announces once across the whole selection. The singular
+   *  fields above remain the first selection, so nothing that reads them
+   *  changes. */
+  classIds?: string[]
+  yearGroupIds?: string[]
+  groupIds?: string[]
   isPinned: boolean
   isUrgent: boolean
   requiresAcknowledgment: boolean
@@ -51,6 +58,8 @@ interface MessageFormProps {
   submitLabel?: string
   attachments: AttachmentData[]
   onAttachmentsChange: (attachments: AttachmentData[]) => void
+  /** False while editing: an edit changes one post rather than fanning out. */
+  allowMultipleAudiences?: boolean
 }
 
 const FORM_TYPE_LABELS: Record<string, string> = {
@@ -82,6 +91,7 @@ export function MessageForm({
   submitLabel = 'Send Message',
   attachments,
   onAttachmentsChange,
+  allowMultipleAudiences = true,
 }: MessageFormProps) {
   const theme = useTheme()
   const { data: formsResponse, error: formsError } = useApi(() => api.forms.listAvailable(), [])
@@ -89,20 +99,62 @@ export function MessageForm({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
 
-  const handleAudienceChange = (value: string) => {
-    if (audienceOptions) {
-      const option = audienceOptions.find(o => o.value === value)
-      if (option && option.type !== 'divider') {
-        onChange({
-          ...formData,
-          targetClass: option.value,
-          classId: option.type === 'class' ? option.id : undefined,
-          yearGroupId: option.type === 'yearGroup' ? option.id : undefined,
-          groupId: option.type === 'group' ? option.id : undefined,
-        })
-        return
-      }
+  /**
+   * Which audiences are ticked, as one flat list.
+   *
+   * The form data keeps a primary audience in the singular fields and the rest
+   * in the arrays, because that is the shape the server and every existing
+   * reader already understand. This collapses both into one set so the UI can
+   * think in ticks, and `applySelection` puts them back.
+   */
+  const selectedIds = new Set<string>([
+    ...(formData.classId ? [formData.classId] : []),
+    ...(formData.yearGroupId ? [formData.yearGroupId] : []),
+    ...(formData.groupId ? [formData.groupId] : []),
+    ...(formData.classIds || []),
+    ...(formData.yearGroupIds || []),
+    ...(formData.groupIds || []),
+  ])
+  const wholeSchoolSelected = selectedIds.size === 0
+
+  const applySelection = (ids: Set<string>) => {
+    const chosen = (audienceOptions || []).filter(o => o.type !== 'divider' && o.id && ids.has(o.id))
+    if (chosen.length === 0) {
+      // Nothing ticked means whole school — the state the composer opens in.
+      onChange({
+        ...formData, targetClass: 'Whole School',
+        classId: undefined, yearGroupId: undefined, groupId: undefined,
+        classIds: [], yearGroupIds: [], groupIds: [],
+      })
+      return
     }
+    const classes = chosen.filter(o => o.type === 'class').map(o => o.id as string)
+    const years = chosen.filter(o => o.type === 'yearGroup').map(o => o.id as string)
+    const groups = chosen.filter(o => o.type === 'group').map(o => o.id as string)
+    onChange({
+      ...formData,
+      // The first tick stays in the singular fields so existing readers — and
+      // the post's own label — behave exactly as before for a single audience.
+      targetClass: chosen[0].value,
+      classId: classes[0], yearGroupId: years[0], groupId: groups[0],
+      classIds: classes, yearGroupIds: years, groupIds: groups,
+    })
+  }
+
+  const toggleAudience = (id: string) => {
+    if (!allowMultipleAudiences) {
+      // Single-select: ticking one replaces the selection rather than adding.
+      applySelection(selectedIds.has(id) ? new Set() : new Set([id]))
+      return
+    }
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    applySelection(next)
+  }
+
+  /** Legacy path: no audienceOptions means a plain list of class names. */
+  const handleAudienceChange = (value: string) => {
     onChange({ ...formData, targetClass: value, classId: undefined, yearGroupId: undefined, groupId: undefined })
   }
 
@@ -159,29 +211,60 @@ export function MessageForm({
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience</label>
-          <select
-            value={formData.targetClass}
-            onChange={(e) => handleAudienceChange(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            {audienceOptions ? (
-              audienceOptions.map((opt) => (
+          {audienceOptions ? (
+            <div className="border border-gray-300 rounded-lg divide-y divide-gray-100 max-h-64 overflow-y-auto bg-white">
+              {/* Whole school is the absence of a selection rather than an
+                  option competing with the others — ticking classes and "whole
+                  school" together is a contradiction the UI should not allow. */}
+              <button
+                type="button"
+                onClick={() => applySelection(new Set())}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 ${wholeSchoolSelected ? 'font-semibold text-gray-900' : 'text-gray-700'}`}
+              >
+                <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${wholeSchoolSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'}`}>
+                  {wholeSchoolSelected ? '\u2713' : ''}
+                </span>
+                Whole School
+              </button>
+              {audienceOptions.filter(o => o.type !== 'school').map((opt) => (
                 opt.type === 'divider' ? (
-                  <option key={opt.value} value="" disabled className="font-semibold">
+                  <div key={opt.value} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400 bg-gray-50">
                     {opt.value}
-                  </option>
+                  </div>
                 ) : (
-                  <option key={`${opt.type}-${opt.id || opt.value}`} value={opt.value}>
-                    {opt.type === 'class' ? `  \u2514 ${opt.value}` : opt.type === 'group' ? `  ${opt.value}` : opt.value}
-                  </option>
+                  <label
+                    key={`${opt.type}-${opt.id || opt.value}`}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4"
+                      checked={!!opt.id && selectedIds.has(opt.id)}
+                      onChange={() => opt.id && toggleAudience(opt.id)}
+                    />
+                    {opt.type === 'class' ? `\u2514 ${opt.value}` : opt.value}
+                  </label>
                 )
-              ))
-            ) : (
-              options.map((cls) => (
+              ))}
+            </div>
+          ) : (
+            <select
+              value={formData.targetClass}
+              onChange={(e) => handleAudienceChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              {options.map((cls) => (
                 <option key={cls} value={cls}>{cls}</option>
-              ))
-            )}
-          </select>
+              ))}
+            </select>
+          )}
+          {selectedIds.size > 1 && (
+            // Said plainly, because it is the thing a sender would otherwise
+            // discover from a parent: several audiences means several posts.
+            <p className="text-xs text-gray-500 mt-1">
+              Posts to {selectedIds.size} audiences \u2014 one post each, and parents in more than one are notified once.
+            </p>
+          )}
         </div>
 
         {/* Attachments */}

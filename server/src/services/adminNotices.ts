@@ -30,6 +30,10 @@ export async function signalAdminNotice(params: {
     classId?: string
     yearGroupId?: string
     groupId?: string
+    /** A pre-resolved audience, for a notice that fanned out to several
+     *  targets — emailing one parent twice about one notice is the same
+     *  mistake as buzzing them twice. */
+    parentUserIds?: string[]
     schoolId: string
   }
 }): Promise<{ sent: number; skippedNoEmail: number }> {

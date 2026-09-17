@@ -272,7 +272,14 @@ export async function canSendToTarget(req: Request, res: Response, next: NextFun
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  const { targetClass, classId } = req.body
+  const { targetClass, classId, classIds } = req.body
+  // A post can now name several classes at once. Every one of them is checked:
+  // gating on the singular field alone would let a staff member reach any class
+  // in the school by putting it in the array instead.
+  const requestedClassIds: string[] = [
+    ...(typeof classId === 'string' && classId ? [classId] : []),
+    ...(Array.isArray(classIds) ? classIds.filter((c): c is string => typeof c === 'string' && !!c) : []),
+  ]
 
   if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
     return next()
@@ -283,13 +290,15 @@ export async function canSendToTarget(req: Request, res: Response, next: NextFun
       return res.status(403).json({ error: 'Only admins can send whole-school messages' })
     }
 
-    if (classId) {
+    if (requestedClassIds.length > 0) {
       const assignedClasses = await prisma.staffClassAssignment.findMany({
         where: { userId: user.id },
         select: { classId: true },
       })
-      const assignedClassIds = assignedClasses.map(ac => ac.classId)
-      if (!assignedClassIds.includes(classId)) {
+      const assignedClassIds = new Set(assignedClasses.map(ac => ac.classId))
+      // ALL of them, not some: a selection is refused whole rather than
+      // quietly posted to the subset the sender happens to teach.
+      if (requestedClassIds.some(id => !assignedClassIds.has(id))) {
         return res.status(403).json({ error: 'You can only send messages to your assigned classes' })
       }
     }

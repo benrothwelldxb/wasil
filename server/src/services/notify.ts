@@ -39,6 +39,12 @@ interface NotificationTarget {
    *  is true of a named set of pupils rather than of a class or a year, e.g.
    *  the children on one bus. Resolves to parents like every other branch. */
   studentIds?: string[]
+  /** An audience already resolved by the caller, used when one announcement
+   *  fans out to several targets: a post to three classes is three rows in the
+   *  feed but ONE thing that happened, and a parent with children in two of
+   *  them should be told once rather than have their phone buzz twice. Still
+   *  parents only — the ids are filtered to PARENT-role users at this school. */
+  parentUserIds?: string[]
   schoolId: string
 }
 
@@ -196,10 +202,23 @@ async function withoutFamiliesWhoHaveLeft(parentIds: string[]): Promise<string[]
 }
 
 export async function resolveAudienceParentIds(target: NotificationTarget): Promise<string[]> {
-  const { targetClass, classId, yearGroupId, groupId, studentIds, schoolId } = target
+  const { targetClass, classId, yearGroupId, groupId, studentIds, parentUserIds: explicitParentIds, schoolId } = target
   let parentUserIds: string[] = []
 
-  if (studentIds) {
+  if (explicitParentIds) {
+    // Checked first and short-circuits on empty, for the same reason as
+    // studentIds: an explicit list of nobody sends to nobody rather than
+    // falling through to a wider branch.
+    if (explicitParentIds.length === 0) return []
+    // Re-filtered rather than trusted. The caller resolved these from targets
+    // in this school a moment ago, but the guarantee that this function only
+    // ever reaches parents should not depend on a caller getting it right.
+    const parents = await prisma.user.findMany({
+      where: { id: { in: explicitParentIds }, schoolId, role: 'PARENT' },
+      select: { id: true },
+    })
+    parentUserIds = parents.map(p => p.id)
+  } else if (studentIds) {
     // Checked FIRST and short-circuits on empty: an explicit list of nobody
     // must send to nobody, never fall through to a wider branch. The whole
     // point of this audience is that it is narrow.
