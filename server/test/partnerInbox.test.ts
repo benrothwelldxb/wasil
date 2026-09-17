@@ -24,7 +24,10 @@ const prismaMock = {
   attendanceRequest: { findMany: vi.fn() },
   message: { create: vi.fn(), findMany: vi.fn() },
   messageAttachment: { createMany: vi.fn() },
-  group: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  // findUnique + serviceRegistration are the service-group refresh that now runs
+  // before a partner group read, so what Desk sees is who is in the service NOW.
+  group: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+  serviceRegistration: { findMany: vi.fn() },
   groupCategory: { findFirst: vi.fn(), findMany: vi.fn() },
   studentGroupLink: { createMany: vi.fn(), deleteMany: vi.fn() },
   yearGroup: { findFirst: vi.fn() },
@@ -84,6 +87,11 @@ beforeEach(() => {
   firebaseMock.removeInvalidTokens.mockResolvedValue(undefined)
   storageMock.uploadFile.mockResolvedValue('https://cdn.example/message-attachments/a.pdf')
   uploadValidationMock.checkUpload.mockReturnValue({ valid: true })
+  // The service-group refresh that now precedes a partner group read. Default
+  // is "not a service group", which makes it a no-op — the ordinary case.
+  prismaMock.group.findUnique.mockResolvedValue(null)
+  prismaMock.group.findMany.mockResolvedValue([])
+  prismaMock.serviceRegistration.findMany.mockResolvedValue([])
 })
 
 describe('partner auth', () => {
@@ -1190,10 +1198,56 @@ describe('GET /api/partner/groups', () => {
       where: { OR: [{ hubSchoolId: 'hub-1' }, { id: 'hub-1' }] },
       select: { id: true },
     })
-    // Only active groups are listed.
-    expect(prismaMock.group.findMany.mock.calls[0][0].where).toEqual({ schoolId: 'sch-1', isActive: true })
+    // Only active groups are listed. Found by shape rather than by call index:
+    // service groups are refreshed first, which issues its own group.findMany,
+    // and an index would silently start asserting about the wrong query.
+    const listCall = prismaMock.group.findMany.mock.calls
+      .map(c => c[0])
+      .find(a => a?.select?.name === true)
+    expect(listCall.where).toEqual({ schoolId: 'sch-1', isActive: true })
     expect(res.body.groups[0]).toEqual({ id: 'g-1', name: 'Choir', memberCount: 3 })
     expect(Object.keys(res.body.groups[0]).sort()).toEqual(['id', 'memberCount', 'name'])
+  })
+
+  // A service-derived group is "the children currently in this service". Desk
+  // was reading the stored membership, so a Friday aftercare group showed four
+  // children while six had signed up — and nothing on the screen said the
+  // number was old. The SEND was always right, which is what made it hard to
+  // see: the count was wrong and the message still reached everyone.
+  it('recomputes service-group membership before answering', async () => {
+    prismaMock.group.findMany
+      // The refresh's own query: one service group at this school.
+      .mockResolvedValueOnce([{ id: 'g-svc' }])
+      // The listing.
+      .mockResolvedValueOnce([{ id: 'g-svc', name: 'Friday aftercare', _count: { studentMembers: 6 } }])
+    prismaMock.group.findUnique.mockResolvedValue({
+      id: 'g-svc', schoolId: 'sch-1', sourceServiceId: 'svc-1', sourceYearGroupId: null,
+    })
+    prismaMock.serviceRegistration.findMany.mockResolvedValue([
+      { studentId: 's1' }, { studentId: 's2' }, { studentId: 's3' },
+      { studentId: 's4' }, { studentId: 's5' }, { studentId: 's6' },
+    ])
+
+    const res = await auth(request(makeApp()).get('/api/partner/groups?school_id=hub-1'))
+
+    expect(res.status).toBe(200)
+    // The refresh ran against the service, not just the stored links.
+    expect(prismaMock.serviceRegistration.findMany).toHaveBeenCalled()
+    expect(res.body.groups[0].memberCount).toBe(6)
+  })
+
+  // A recompute that fails must not cost the coordinator the whole screen —
+  // slightly stale membership beats no group list at all.
+  it('still answers when the refresh throws', async () => {
+    prismaMock.group.findMany
+      .mockResolvedValueOnce([{ id: 'g-svc' }])
+      .mockResolvedValueOnce([{ id: 'g-svc', name: 'Friday aftercare', _count: { studentMembers: 4 } }])
+    prismaMock.group.findUnique.mockRejectedValue(new Error('db blip'))
+
+    const res = await auth(request(makeApp()).get('/api/partner/groups?school_id=hub-1'))
+
+    expect(res.status).toBe(200)
+    expect(res.body.groups[0].memberCount).toBe(4)
   })
 })
 
