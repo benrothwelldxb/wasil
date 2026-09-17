@@ -3189,7 +3189,14 @@ router.put('/transport/assignments', requirePartner, async (req, res) => {
       const stops = Array.isArray(route?.stops) ? route.stops : []
       for (const stop of stops as Array<Record<string, unknown>>) {
         const hideStopName = stop?.hide_stop_name === true
-        const stopName = typeof stop?.name === 'string' ? stop.name.trim() : ''
+        // A suppressed stop's name is dropped AT THE DOOR, not merely hidden on
+        // read. ADR 0001's strongest claim is that a withheld address never
+        // enters this database or its backups at all — and until now that rested
+        // on Desk choosing to send an empty name, not on anything here. A flag
+        // arriving beside a populated name is a mistake somewhere upstream, and
+        // the safe reading of it is the one that cannot disclose an address.
+        const sentName = typeof stop?.name === 'string' ? stop.name.trim() : ''
+        const stopName = hideStopName ? '' : sentName
         const timeLocal = typeof stop?.time_local === 'string' ? stop.time_local.trim() : ''
         // A suppressed stop legitimately arrives with no name. Desk withholds
         // the address rather than sending it beside a "don't show this" flag —
