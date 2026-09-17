@@ -187,6 +187,35 @@ describe('PUT /api/partner/transport/assignments', () => {
     expect(prismaMock.transportAssignment.upsert.mock.calls[0][0].create.hideStopName).toBe(true)
   })
 
+  // ADR 0001's strongest claim is that a withheld address never enters this
+  // database at all — not that it is hidden on read. That has to be true even
+  // when the sender gets it wrong, or the claim is about Desk's conduct rather
+  // than about Connect's storage.
+  it('never stores a suppressed stop name, even when one is sent', async () => {
+    await put({
+      ...PAYLOAD,
+      routes: [{ id: 'r1', name: 'Bus 3', stops: [
+        { id: 's1', name: 'Villa 27', time_local: '06:52', hide_stop_name: true, pupils: [{ hub_pupil_id: 'hp-1' }] },
+      ] }],
+    })
+    const call = prismaMock.transportAssignment.upsert.mock.calls[0][0]
+    expect(call.create.stopName).toBe('')
+    expect(call.update.stopName).toBe('')
+    expect(JSON.stringify(call)).not.toContain('Villa 27')
+  })
+
+  // A re-push is how a school clears addresses it should never have sent. If
+  // update() kept the old value, the clear-out would silently not happen.
+  it('overwrites a stored address when the stop is later suppressed', async () => {
+    await put({
+      ...PAYLOAD,
+      routes: [{ id: 'r1', name: 'Bus 3', stops: [
+        { id: 's1', name: '', time_local: '06:52', hide_stop_name: true, pupils: [{ hub_pupil_id: 'hp-1' }] },
+      ] }],
+    })
+    expect(prismaMock.transportAssignment.upsert.mock.calls[0][0].update.stopName).toBe('')
+  })
+
   // The consolidated Friday afternoon service — a distinct run, not a re-timed
   // PM, so it is its own leg and its own replacement.
   it('accepts FRI_PM, replacing only that leg', async () => {

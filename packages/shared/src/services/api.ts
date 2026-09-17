@@ -2863,7 +2863,10 @@ export const adminNotices = {
 // The only transport read in Connect, and it takes no arguments: it returns the
 // signed-in guardian's own children and nothing else. See docs/adr/0001.
 export interface TransportLegInfo {
-  leg: 'AM' | 'PM'
+  /** FRI_PM is the consolidated Friday afternoon service — a distinct run, not
+   *  a re-timed PM. The server has emitted it since the Friday-bus work; this
+   *  type did not say so, while the page it feeds already handled it. */
+  leg: 'AM' | 'PM' | 'FRI_PM'
   routeName: string
   routeCode: string | null
   /** Null when the school has suppressed it — a separated family where the
