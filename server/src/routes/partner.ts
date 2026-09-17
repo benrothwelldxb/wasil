@@ -33,6 +33,7 @@ import { sanitizeRichText } from '../services/htmlSanitizer.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { ALLOWED_REACTION_EMOJIS } from './inbox.js'
+import { refreshServiceGroup, refreshServiceGroupsForSchool } from '../services/serviceGroups.js'
 
 const router = Router()
 
@@ -2720,6 +2721,18 @@ router.get('/groups', requirePartner, async (req, res) => {
     // Unknown school is not an error — Desk may probe ids we don't host.
     if (!school) return res.json({ groups: [] })
 
+    // Service groups are recomputed at the point of use, so what Desk shows is
+    // who is in the service NOW. Without this the composer reported the count
+    // from whenever the group was last touched: a Friday aftercare group read
+    // four children while six had signed up, and nothing on the screen said so.
+    //
+    // The SEND was always right — resolveAudienceParentIds refreshes before it
+    // resolves — so this was a lie in the display rather than a delivery fault.
+    // That is the worse half of the two: a coordinator who believes the number
+    // does not go looking, and a coordinator who mistrusts it stops trusting
+    // the send as well.
+    await refreshServiceGroupsForSchool(school.id)
+
     const groups = await prisma.group.findMany({
       where: { schoolId: school.id, isActive: true },
       select: { id: true, name: true, _count: { select: { studentMembers: true } } },
@@ -2916,6 +2929,20 @@ router.get('/groups/:id', requirePartner, async (req, res) => {
 
     const addressed = await findGroupByIdOrRef(req.params.id, actor.schoolId)
     if (!addressed) return res.status(404).json({ error: 'not_found' })
+
+    // As on the list: the members Desk shows are the service's members now, not
+    // the ones stored when the group was last written. A no-op for an ordinary
+    // group, whose membership is nobody's to recompute.
+    //
+    // Swallowed deliberately. refreshServiceGroup has no error handling of its
+    // own (refreshServiceGroupsForSchool does), and a read that 500s because a
+    // recompute failed is worse than a read that serves a slightly stale list:
+    // the coordinator loses the whole screen instead of a few minutes' accuracy.
+    try {
+      await refreshServiceGroup(addressed.id)
+    } catch (err) {
+      console.error('Group refresh failed, serving stored membership:', err)
+    }
 
     const group = await prisma.group.findFirst({
       where: { id: addressed.id, schoolId: actor.schoolId },
