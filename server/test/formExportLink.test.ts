@@ -90,6 +90,22 @@ describe('GET /api/forms/public-export/:token', () => {
     expect(res.text).toContain('Sadia Tegally')
   })
 
+  // Google Sheets decides what it received from the content type. Served as
+  // anything else — or from a host that answers unknown paths with index.html,
+  // which is how the admin link was built until it pointed at the API — the
+  // sheet imports a page of markup and shows it as rows.
+  it('is served as CSV, inline, and uncached', async () => {
+    prismaMock.form.findUnique.mockResolvedValue(formAged(0))
+
+    const res = await request(makeApp()).get(`/api/forms/public-export/${TOKEN}`)
+
+    expect(res.headers['content-type']).toContain('text/csv')
+    // No attachment disposition: IMPORTDATA reads the body, it does not download.
+    expect(res.headers['content-disposition']).toBeUndefined()
+    expect(res.headers['cache-control']).toContain('no-cache')
+    expect(res.text.startsWith('<')).toBe(false)
+  })
+
   it('refuses an unknown token', async () => {
     prismaMock.form.findUnique.mockResolvedValue(null)
 
