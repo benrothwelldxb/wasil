@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, X, Pencil, Trash2, XCircle, Eye, FileText, Download, Link2, Copy, RefreshCw, AlertTriangle, Check, BarChart3 } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, FORM_TEMPLATES, createFieldsFromTemplate, useToast } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, FORM_TEMPLATES, createFieldsFromTemplate, useToast, config } from '@wasil/shared'
 import type { Class, YearGroup, FormWithResponses, FormType, FormField, FormStatus, FormAnalytics } from '@wasil/shared'
 import { FormForm } from '../components/forms'
 import type { FormFormData, AudienceOption } from '../components/forms'
@@ -355,9 +355,20 @@ export function FormsPage() {
     }
   }
 
+  /**
+   * The public CSV URL, built against the API rather than against whatever
+   * origin the admin app happens to be served from.
+   *
+   * This used to be `window.location.origin.replace(/:\d+$/, ':3000')` — a
+   * development assumption that the API is the same host on another port. In
+   * production the origin carries no port, so the replace did nothing and the
+   * URL pointed at the admin site itself, which answers any unknown path with
+   * index.html. The link therefore "worked": it returned 200, and Google Sheets
+   * dutifully imported a page of HTML.
+   */
   const getPublicExportUrl = (token: string) => {
-    const baseUrl = window.location.origin.replace(/:\d+$/, ':3000') // Use API port
-    return `${baseUrl}/api/forms/public-export/${token}`
+    const base = (config.apiUrl || window.location.origin).replace(/\/$/, '')
+    return `${base}/api/forms/public-export/${token}`
   }
 
   const copyToClipboard = (text: string) => {
