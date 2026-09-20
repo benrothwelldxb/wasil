@@ -2424,6 +2424,10 @@ router.post('/messages', requirePartner, async (req, res) => {
     const targets: { targetClass: string; classId?: string; yearGroupId?: string; groupId?: string }[] = []
     // Distinct parent users across the whole send — see the resolve below.
     const audienceParentIds = new Set<string>()
+    // The row a tapped notification opens. With several rows there is no single
+    // right answer, so the first is used — every one carries the same content,
+    // and the alternative is a notification that opens nothing.
+    let firstMessageId: string | null = null
     for (const c of resolvedClasses) targets.push({ targetClass: c.name, classId: c.id })
     for (const g of resolvedGroups) targets.push({ targetClass: g.name, groupId: g.id })
     if (resolvedYearGroup) targets.push({ targetClass: resolvedYearGroup.name, yearGroupId: resolvedYearGroup.id })
@@ -2516,33 +2520,53 @@ router.post('/messages', requirePartner, async (req, res) => {
       // its contract is worth more than the duplicate query.
       for (const id of await resolveAudienceParentIds(target)) audienceParentIds.add(id)
 
-      // Same rule as the native create: announce only what is live now. A
-      // future-dated broadcast is picked up by the publishScheduledMessages
-      // sweep when its time arrives, and `notifiedAt` staying null is the marker.
-      if (broadcastLiveNow) {
-        if (isNotice) {
-          // Quiet in the app, but always signalled by email — that is what
-          // makes a section outside the feed discoverable. The email carries
-          // the department and nothing else, never the content.
-          await signalAdminNotice({ schoolId: actor.schoolId, department: noticeDepartment, target })
-          // Escalation is the sender's call: a whole-school health message
-          // pushes, a fee reminder does not.
-          if (isUrgent === true) {
-            await sendNotification({
-              req, type: 'MESSAGE',
-              title: noticeDepartment || 'Admin notice',
-              body: cleanTitle,
-              resourceType: 'MESSAGE', resourceId: message.id, target,
-            })
-          }
-        } else {
+      // The announcement itself is sent ONCE for the whole fan-out, after this
+      // loop — see below. Only the row and its audience are built here.
+      firstMessageId = firstMessageId ?? message.id
+    }
+
+    // ONE announcement, however many rows it became.
+    //
+    // This used to sit inside the loop, so a parent with children in two of the
+    // targeted classes had their phone buzz twice for one thing the school
+    // said. The union was already being computed here — for the headcount in
+    // the response — and then not used for the send, which is the whole bug in
+    // one sentence.
+    //
+    // Same rule as the native create: announce only what is live now. A
+    // future-dated broadcast is picked up by the publishScheduledMessages
+    // sweep when its time arrives, and `notifiedAt` staying null is the marker.
+    if (broadcastLiveNow && firstMessageId) {
+      const target = {
+        // A label for the send rather than a selector: the audience is the
+        // resolved list, and targetClass is only what a notification says it
+        // is about when there is one target.
+        targetClass: targets.length === 1 ? targets[0].targetClass : 'Several classes',
+        parentUserIds: [...audienceParentIds],
+        schoolId: actor.schoolId,
+      }
+      if (isNotice) {
+        // Quiet in the app, but always signalled by email — that is what makes
+        // a section outside the feed discoverable. The email carries the
+        // department and nothing else, never the content.
+        await signalAdminNotice({ schoolId: actor.schoolId, department: noticeDepartment, target })
+        // Escalation is the sender's call: a whole-school health message
+        // pushes, a fee reminder does not.
+        if (isUrgent === true) {
           await sendNotification({
             req, type: 'MESSAGE',
-            title: cleanTitle,
-            body: safeContent.substring(0, 200),
-            resourceType: 'MESSAGE', resourceId: message.id, target,
+            title: noticeDepartment || 'Admin notice',
+            body: cleanTitle,
+            resourceType: 'MESSAGE', resourceId: firstMessageId, target,
           })
         }
+      } else {
+        await sendNotification({
+          req, type: 'MESSAGE',
+          title: cleanTitle,
+          body: safeContent.substring(0, 200),
+          resourceType: 'MESSAGE', resourceId: firstMessageId, target,
+        })
       }
     }
 

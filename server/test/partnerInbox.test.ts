@@ -1061,7 +1061,7 @@ describe('POST /api/partner/messages', () => {
     expect(prismaMock.message.create).not.toHaveBeenCalled()
   })
 
-  it('fans out one row per resolved target (classes + group + whole-school) with the right targetClass/target ids, one notification each', async () => {
+  it('fans out one row per resolved target (classes + group + whole-school) with the right targetClass/target ids, and announces ONCE', async () => {
     prismaMock.class.findMany.mockResolvedValue([
       { id: 'cls-1', name: '1A' },
       { id: 'cls-2', name: '1B' },
@@ -1113,15 +1113,35 @@ describe('POST /api/partner/messages', () => {
     }
     // Attachments written for every row.
     expect(prismaMock.messageAttachment.createMany).toHaveBeenCalledTimes(4)
-    // A notification per row, with that row's target.
-    expect(notifyMock.sendNotification).toHaveBeenCalledTimes(4)
-    const targets = notifyMock.sendNotification.mock.calls.map(c => c[0].target)
-    expect(targets).toEqual([
-      { targetClass: '1A', classId: 'cls-1', groupId: undefined, yearGroupId: undefined, schoolId: 'sch-1' },
-      { targetClass: '1B', classId: 'cls-2', groupId: undefined, yearGroupId: undefined, schoolId: 'sch-1' },
-      { targetClass: 'Choir', classId: undefined, groupId: 'g-1', yearGroupId: undefined, schoolId: 'sch-1' },
-      { targetClass: 'Whole School', classId: undefined, groupId: undefined, yearGroupId: undefined, schoolId: 'sch-1' },
-    ])
+    // ONE notification for the whole fan-out, not one per row.
+    //
+    // This previously asserted four — a notification per target — which is
+    // what the route did and what made a parent with children in 1A and 1B
+    // receive two buzzes for one thing the school said. The union was already
+    // being computed for the `parents` count in the response and then not used
+    // for the send.
+    expect(notifyMock.sendNotification).toHaveBeenCalledTimes(1)
+    const target = notifyMock.sendNotification.mock.calls[0][0].target
+    // A resolved audience rather than a selector, and de-duplicated: `parents`
+    // in the response is 2 across four targets, and that is who is notified.
+    expect(target.parentUserIds).toHaveLength(2)
+    expect(target.schoolId).toBe('sch-1')
+    // With several targets there is no one class this is "about", and claiming
+    // one would be wrong on three of the four rows.
+    expect(target.targetClass).toBe('Several classes')
+    expect(target.classId).toBeUndefined()
+  })
+
+  it('names the class when there is only one, so the notification still says what it is about', async () => {
+    prismaMock.class.findMany.mockResolvedValue([{ id: 'cls-1', name: '1A' }])
+
+    await auth(request(makeApp()).post('/api/partner/messages')).send({
+      hub_user_id: 'hu-staff', title: 'Sports Day', content: 'Bring water',
+      audience: { classHubIds: ['hc-1'] },
+    })
+
+    expect(notifyMock.sendNotification).toHaveBeenCalledTimes(1)
+    expect(notifyMock.sendNotification.mock.calls[0][0].target.targetClass).toBe('1A')
   })
 
   it('a year-group audience creates a single year-group row', async () => {
