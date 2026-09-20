@@ -419,6 +419,31 @@ router.post('/conversations', isAuthenticated, async (req, res) => {
       return res.json({ id: existing.id, created: false })
     }
 
+    // A NEW thread must be with someone this parent is allowed to contact.
+    //
+    // Until now the restriction lived only in the picker: the endpoint accepted
+    // any staff member at the school, so the list a parent was shown and the
+    // list the API honoured were different things. `isStaffContactableByParent`
+    // is the same rule the staff-CC route already enforces, so there is one
+    // definition rather than two.
+    //
+    // Checked HERE, after the find-or-create above, and that placement is the
+    // decision. Gating the whole endpoint would also block RE-OPENING an
+    // existing thread — with last year's teacher, say, who has left this
+    // parent's contactable set since. That conversation already exists, the
+    // parent can already read it, and refusing to let them reply to it would
+    // be a new fault introduced in the name of closing an old one.
+    //
+    // ILSA threads are exempt: the branch above already required an active
+    // IlsaLink to this parent's own child, which is a stricter rule than this
+    // one and a different relationship.
+    if (kind === 'STAFF') {
+      const contactable = await isStaffContactableByParent(user.id, user.schoolId, staffId)
+      if (!contactable) {
+        return res.status(400).json({ error: 'This staff member cannot be messaged' })
+      }
+    }
+
     const conversation = await prisma.conversation.create({
       data: {
         schoolId: user.schoolId,
