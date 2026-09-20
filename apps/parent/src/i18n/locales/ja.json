@@ -203,5 +203,10 @@
     "registerNow": "今すぐ登録",
     "registrationOpenBanner": "活動の登録が開始されました！クラブや活動に登録しましょう。",
     "daysLeft": "登録まであと{{count}}日"
+  },
+  "transport": {
+    "betaTitle": "New feature — still settling in.",
+    "betaBody": "Times and arrival updates come from the school office and may occasionally be missing or late. Please don't rely on this page alone for collection — if something looks wrong, or you're expecting your child and haven't heard, contact the school office.",
+    "pickupHidden": "Pickup point not shown here — please contact the school office."
   }
 }

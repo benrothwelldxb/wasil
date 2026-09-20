@@ -207,5 +207,10 @@
     "registerNow": "S'inscrire maintenant",
     "registrationOpenBanner": "Les inscriptions aux activités sont ouvertes ! Inscrivez-vous aux clubs et activités.",
     "daysLeft": "{{count}} jours restants pour s'inscrire"
+  },
+  "transport": {
+    "betaTitle": "Nouvelle fonctionnalité — en cours de rodage.",
+    "betaBody": "Les horaires et les notifications d'arrivée proviennent du secrétariat et peuvent parfois manquer ou arriver en retard. Merci de ne pas vous fier uniquement à cette page pour venir chercher votre enfant — si quelque chose semble incorrect, ou si vous attendez votre enfant sans nouvelle, contactez le secrétariat.",
+    "pickupHidden": "Le point de ramassage n'est pas affiché ici — merci de contacter le secrétariat."
   }
 }

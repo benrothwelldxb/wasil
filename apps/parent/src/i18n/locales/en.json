@@ -225,5 +225,10 @@
     "registerNow": "Register Now",
     "registrationOpenBanner": "Activity registration is now open! Sign up for clubs and activities.",
     "daysLeft": "{{count}} days left to register"
+  },
+  "transport": {
+    "betaTitle": "New feature — still settling in.",
+    "betaBody": "Times and arrival updates come from the school office and may occasionally be missing or late. Please don't rely on this page alone for collection — if something looks wrong, or you're expecting your child and haven't heard, contact the school office.",
+    "pickupHidden": "Pickup point not shown here — please contact the school office."
   }
 }

@@ -203,5 +203,10 @@
     "registerNow": "Iscriviti ora",
     "registrationOpenBanner": "Le iscrizioni alle attività sono aperte! Iscriviti ai club e alle attività.",
     "daysLeft": "{{count}} giorni rimasti per iscriversi"
+  },
+  "transport": {
+    "betaTitle": "New feature — still settling in.",
+    "betaBody": "Times and arrival updates come from the school office and may occasionally be missing or late. Please don't rely on this page alone for collection — if something looks wrong, or you're expecting your child and haven't heard, contact the school office.",
+    "pickupHidden": "Pickup point not shown here — please contact the school office."
   }
 }
