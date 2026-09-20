@@ -1,5 +1,5 @@
 import React from 'react'
-import { Bus, MapPin, Sunrise, Sunset, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Bus, MapPin, Sunrise, Sunset, AlertCircle, CheckCircle2, Info } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useApi } from '@wasil/shared'
 import * as api from '@wasil/shared'
@@ -145,9 +145,32 @@ export function TransportPage() {
       <PageLogo />
       <div style={{ padding: '0 20px' }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: '#2D2225', margin: '4px 0 2px' }}>School bus</h1>
-        <p style={{ fontSize: 14, color: '#7A6469', margin: '0 0 18px' }}>
+        <p style={{ fontSize: 14, color: '#7A6469', margin: '0 0 12px' }}>
           Your child's route and pickup time.
         </p>
+
+        {/* New feature, still being checked against the office's own records.
+            Worded as what to DO rather than as a disclaimer: "may contain
+            errors" tells a parent standing at a gate nothing they can act on.
+            The specific risk is a parent treating a missing or late arrival
+            alert as evidence the bus has not gone — so the notice says the
+            office is the answer, and says it before they need it. */}
+        <div
+          style={{
+            display: 'flex', gap: 10, alignItems: 'flex-start',
+            background: '#FFF7EC', border: '1px solid #F3E1C7',
+            borderRadius: 14, padding: '10px 12px', marginBottom: 18,
+          }}
+        >
+          <Info size={15} color="#C47A20" style={{ marginTop: 1, flexShrink: 0 }} />
+          <div style={{ fontSize: 12.5, lineHeight: 1.5, color: '#7A5A2E' }}>
+            <strong style={{ fontWeight: 700 }}>New feature — still settling in.</strong>{' '}
+            Times and arrival updates come from the school office and may occasionally be
+            missing or late. Please don't rely on this page alone for collection — if
+            something looks wrong, or you're expecting your child and haven't heard,
+            contact the school office.
+          </div>
+        </div>
 
         {isLoading && <div style={{ color: '#A8929A', fontSize: 14 }}>Loading…</div>}
 
