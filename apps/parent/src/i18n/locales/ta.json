@@ -203,5 +203,10 @@
     "registerNow": "இப்போது பதிவு செய்யுங்கள்",
     "registrationOpenBanner": "செயல்பாட்டு பதிவு இப்போது திறந்திருக்கிறது! கழகங்கள் மற்றும் செயல்பாடுகளுக்கு பதிவு செய்யுங்கள்.",
     "daysLeft": "பதிவு செய்ய {{count}} நாட்கள் மீதமுள்ளன"
+  },
+  "transport": {
+    "betaTitle": "New feature — still settling in.",
+    "betaBody": "Times and arrival updates come from the school office and may occasionally be missing or late. Please don't rely on this page alone for collection — if something looks wrong, or you're expecting your child and haven't heard, contact the school office.",
+    "pickupHidden": "Pickup point not shown here — please contact the school office."
   }
 }

@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { Bus, MapPin, Sunrise, Sunset, AlertCircle, CheckCircle2, Info } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useApi } from '@wasil/shared'
@@ -88,6 +89,10 @@ function formatTime(time: string) {
 }
 
 function Leg({ leg, allLegs }: { leg: TransportLegInfo; allLegs: string[] }) {
+  // Translated for the same reason as the beta notice: a parent who cannot
+  // read "contact the school office" is left believing the app simply has no
+  // pickup point for their child.
+  const { t } = useTranslation()
   const Icon = leg.leg === 'AM' ? Sunrise : Sunset
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 0' }}>
@@ -116,7 +121,7 @@ function Leg({ leg, allLegs }: { leg: TransportLegInfo; allLegs: string[] }) {
           // Withheld deliberately, so say so rather than leaving a blank a
           // parent would read as missing information.
           <div style={{ fontSize: 12, color: '#A8929A', marginTop: 4 }}>
-            Pickup point not shown here — please contact the school office.
+            {t('transport.pickupHidden')}
           </div>
         ) : null}
         {runSentence(leg) && (
@@ -138,6 +143,13 @@ function Leg({ leg, allLegs }: { leg: TransportLegInfo; allLegs: string[] }) {
 }
 
 export function TransportPage() {
+  // Only the two strings a parent could be HARMED by misreading are
+  // translated: the beta notice, and the line explaining a withheld pickup
+  // point. The rest of this page's chrome stays English, consistent with the
+  // sixteen other untranslated parent pages — translating one page's headings
+  // and not the app's would be tidiness rather than help, and would leave a
+  // half-Arabic screen that reads worse than a plainly English one.
+  const { t } = useTranslation()
   const { data, isLoading, error } = useApi<TransportResponse>(() => api.transport.mine(), [])
 
   return (
@@ -164,11 +176,8 @@ export function TransportPage() {
         >
           <Info size={15} color="#C47A20" style={{ marginTop: 1, flexShrink: 0 }} />
           <div style={{ fontSize: 12.5, lineHeight: 1.5, color: '#7A5A2E' }}>
-            <strong style={{ fontWeight: 700 }}>New feature — still settling in.</strong>{' '}
-            Times and arrival updates come from the school office and may occasionally be
-            missing or late. Please don't rely on this page alone for collection — if
-            something looks wrong, or you're expecting your child and haven't heard,
-            contact the school office.
+            <strong style={{ fontWeight: 700 }}>{t('transport.betaTitle')}</strong>{' '}
+            {t('transport.betaBody')}
           </div>
         </div>
 
