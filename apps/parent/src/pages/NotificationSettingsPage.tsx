@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, Bell, MessageSquare, Mail, AlertTriangle, ClipboardList, Calendar, Newspaper, Activity, Sparkles, CalendarCheck, Clock } from 'lucide-react'
+import { ArrowLeft, Bell, MessageSquare, Mail, AlertTriangle, Calendar, Newspaper, Activity, Sparkles, CalendarCheck, Clock } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import * as api from '@wasil/shared'
@@ -30,7 +30,6 @@ const SECTIONS: Array<{
   {
     title: 'Engagement',
     items: [
-      { key: 'forms', label: 'Forms & Permissions', description: 'Consent forms, surveys, and requests', icon: ClipboardList, color: '#8B6EAE' },
       { key: 'events', label: 'Events', description: 'School events and calendar updates', icon: Calendar, color: '#5BA97B' },
       { key: 'weeklyUpdates', label: "Principal's Updates", description: 'Weekly messages from leadership', icon: Newspaper, color: '#E8A54B' },
       { key: 'pulseSurveys', label: 'Parent Pulse', description: 'Half-termly feedback surveys', icon: Activity, color: '#C47A5B' },

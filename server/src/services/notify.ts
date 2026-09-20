@@ -284,6 +284,11 @@ export async function sendNotification({ req, type, title, body, resourceType, r
       WEEKLY_MESSAGE: 'weeklyUpdates',
       DIRECT_MESSAGE: 'directMessages',
       EMERGENCY_ALERT: 'emergencyAlerts',
+      // Nothing sends FORM any more — a form is announced by the post it is
+      // attached to, which is a MESSAGE. The mapping is kept so that if forms
+      // ever announce themselves again the preference is already wired; the
+      // parent-facing toggle was removed, because a switch controlling nothing
+      // is a small lie told to everyone who finds it.
       FORM: 'forms',
       EVENT: 'events',
       EVENT_REMINDER: 'events',
