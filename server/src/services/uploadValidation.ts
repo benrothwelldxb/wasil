@@ -131,15 +131,18 @@ export function checkUpload(
   allowedMimes: string[],
 ): UploadCheck {
   const mime = declaredMime.toLowerCase()
+  // The reasons are read by a parent, on a phone, having just tried to send a
+  // photograph of a letter. "mime not allowed" reads as a broken app and gives
+  // them nothing to do; naming what IS allowed gives them their next move.
   if (!allowedMimes.map(m => m.toLowerCase()).includes(mime)) {
-    return { valid: false, reason: 'mime not allowed' }
+    return { valid: false, reason: 'that kind of file cannot be attached. Photos, videos, PDFs and documents can.' }
   }
   if (!extensionMatchesMime(filename, mime)) {
-    return { valid: false, reason: 'file extension does not match declared type' }
+    return { valid: false, reason: "the file name and its contents do not match. Try saving it again, or send it as a photo." }
   }
   const sniffer = SNIFFERS[mime]
   if (sniffer && !sniffer(buffer)) {
-    return { valid: false, reason: 'file content does not match declared type' }
+    return { valid: false, reason: "the file seems damaged or is not the type it claims to be. Try saving it again." }
   }
   return { valid: true }
 }
@@ -155,6 +158,11 @@ export function checkUpload(
  */
 export const ATTACHMENT_MIME_TYPES = [
   'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif',
+  // Video. The sniffers for these already existed here, unreferenced, because
+  // the allowlist never included them — so a parent filming an injury for the
+  // nurse got "mime not allowed" from a system that knew perfectly well what
+  // the file was.
+  'video/mp4', 'video/quicktime',
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

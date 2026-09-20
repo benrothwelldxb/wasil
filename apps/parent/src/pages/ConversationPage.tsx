@@ -292,7 +292,16 @@ export function ConversationPage() {
       } : prev)
       inputRef.current?.focus()
     } catch (error) {
+      // Silence here is what turned a 400 into "the file just doesn't send":
+      // the button re-enabled, the text stayed, the attachment stayed pending,
+      // and nothing anywhere said why. The upload path already surfaced its
+      // errors; the send path did not, so it is the one that got reported.
       console.error('Failed to send message:', error)
+      setUploadError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'That message could not be sent. Please try again.'
+      )
     } finally {
       setSending(false)
     }
@@ -1111,6 +1120,10 @@ export function ConversationPage() {
             ref={fileRef}
             type="file"
             multiple
+            // Offer only what the server will take. Without this the picker
+            // showed every file on the phone and the refusal came afterwards,
+            // which is a worse way to learn it than not being offered.
+            accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,video/mp4,video/quicktime,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
             className="hidden"
             onChange={(e) => handlePickFiles(e.target.files)}
           />
