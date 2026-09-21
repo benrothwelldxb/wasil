@@ -2102,6 +2102,10 @@ export const consultations = {
       /** Whether THIS school has connected a calendar. */
       connected?: boolean
       connectedEmail?: string | null
+      /** Exactly what the server will send Google, to be pasted into the
+       *  OAuth client's Authorised redirect URIs. A mismatch names nothing,
+       *  so without this the fix is comparing two strings you cannot see. */
+      redirectUri?: string
     }>('/api/consultations/google-auth-url'),
 
   // Parent endpoints
