@@ -105,6 +105,7 @@ router.get('/parent', isAuthenticated, async (req, res) => {
                     parentId: true,
                     studentName: true,
                     notes: true,
+                    locationType: true,
                     meetingLink: true,
                     createdAt: true,
                   },
@@ -179,6 +180,7 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
                     studentId: true,
                     studentName: true,
                     notes: true,
+                    locationType: true,
                     meetingLink: true,
                     createdAt: true,
                   },
@@ -212,8 +214,21 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
       teacherClassMap[a.userId].push(a.class.name)
     })
 
+    // Whether a Google Meet appointment can actually be created.
+    //
+    // A teacher set to PARENT_CHOICE offers Meet, but the link comes from the
+    // school's connected Google Calendar. If nobody has connected one, offering
+    // the choice produces an appointment with no way to attend it — so the app
+    // is told, and does not offer what will not work.
+    const schoolGoogle = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { googleCalendarRefreshToken: true },
+    })
+    const googleMeetAvailable = !!schoolGoogle?.googleCalendarRefreshToken
+
     res.json({
       ...consultation,
+      googleMeetAvailable,
       teachers: consultation.teachers.map(t => ({
         id: t.id,
         consultationId: t.consultationId,
@@ -347,11 +362,29 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
       })
     }
 
+    // What kind of appointment this is.
+    //
+    // A teacher set to PARENT_CHOICE will do either, and the parent picks here.
+    // Any other setting is the teacher's decision and a choice sent by the
+    // client is ignored rather than honoured — the picker only offers one where
+    // one exists, so a choice arriving otherwise is a stale page or a crafted
+    // request, and neither should move a meeting online.
+    const offersChoice = slot.consultationTeacher.locationType === 'PARENT_CHOICE'
+    const wanted = typeof req.body?.locationType === 'string' ? req.body.locationType : null
+    if (offersChoice && wanted !== 'IN_PERSON' && wanted !== 'GOOGLE_MEET') {
+      return res.status(400).json({ error: 'Choose whether this appointment is in person or on Google Meet' })
+    }
+    const chosenLocationType = offersChoice ? (wanted as 'IN_PERSON' | 'GOOGLE_MEET') : null
+    const effectiveLocationType = chosenLocationType ?? slot.consultationTeacher.locationType
+
     // Create the booking
     let meetingLink: string | null = null
+    // A Meet appointment with no link is the failure worth naming: the parent
+    // has an appointment and no way to attend it, and until now that happened
+    // silently whenever the school had not connected Google Calendar.
+    let meetingLinkFailed = false
 
-    // If teacher's locationType is GOOGLE_MEET, try to create a Meet event
-    if (slot.consultationTeacher.locationType === 'GOOGLE_MEET') {
+    if (effectiveLocationType === 'GOOGLE_MEET') {
       const school = await prisma.school.findUnique({
         where: { id: user.schoolId },
         select: { googleCalendarRefreshToken: true },
@@ -373,7 +406,15 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
 
         if (meetResult) {
           meetingLink = meetResult.meetLink
+        } else {
+          meetingLinkFailed = true
         }
+      } else {
+        // No refresh token: the school has never connected Google Calendar.
+        // The booking still stands — the parent holds the slot and losing it
+        // would be the worse outcome — but they are told, rather than being
+        // left to discover it on the evening.
+        meetingLinkFailed = true
       }
     }
 
@@ -384,6 +425,7 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
         studentId: wantedStudentId,
         studentName: resolvedStudentName,
         notes: notes || null,
+        locationType: chosenLocationType,
         meetingLink,
       },
     })
@@ -426,6 +468,12 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
 
     res.status(201).json({
       ...booking,
+      // The effective kind of appointment, resolved — so a client never has to
+      // reproduce the fallback rule to know what it booked.
+      locationType: effectiveLocationType,
+      // True when this is a Meet appointment with no link. The booking is
+      // real; the joining detail is not, and saying so is the whole point.
+      meetingLinkFailed,
       createdAt: booking.createdAt.toISOString(),
     })
   } catch (error) {
@@ -536,8 +584,21 @@ router.get('/google-auth-url', isAdmin, async (req, res) => {
       return res.json({ url: null, configured: false })
     }
 
+    // Whether this school has already connected, and to which account — a
+    // button reading "Connect" beside an existing connection is how somebody
+    // reconnects the wrong Google account by accident.
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { googleCalendarEmail: true, googleCalendarRefreshToken: true },
+    })
+
     const url = getGoogleAuthUrl(user.schoolId, user.id)
-    res.json({ url, configured: true })
+    res.json({
+      url,
+      configured: true,
+      connected: !!school?.googleCalendarRefreshToken,
+      connectedEmail: school?.googleCalendarEmail || null,
+    })
   } catch (error) {
     console.error('Error getting Google auth URL:', error)
     res.status(500).json({ error: 'Failed to get Google auth URL' })

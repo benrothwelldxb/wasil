@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Plus,
   X,
@@ -90,6 +90,10 @@ function formatDayHeader(dateStr: string): string {
 const LOCATION_TYPE_OPTIONS: { value: ConsultationLocationType; label: string }[] = [
   { value: 'IN_PERSON', label: 'In Person' },
   { value: 'GOOGLE_MEET', label: 'Google Meet' },
+  // The parent decides at booking. Offered here rather than as a separate
+  // switch because it is the same question — how does this appointment happen
+  // — and a teacher who cannot do video simply does not pick it.
+  { value: 'PARENT_CHOICE', label: 'Parent chooses (in person or Meet)' },
   { value: 'ZOOM', label: 'Zoom' },
   { value: 'TEAMS', label: 'Microsoft Teams' },
   { value: 'CUSTOM', label: 'Custom' },
@@ -98,6 +102,7 @@ const LOCATION_TYPE_OPTIONS: { value: ConsultationLocationType; label: string }[
 const LOCATION_TYPE_LABELS: Record<string, string> = {
   IN_PERSON: 'In Person',
   GOOGLE_MEET: 'Google Meet',
+  PARENT_CHOICE: 'Parent chooses',
   ZOOM: 'Zoom',
   TEAMS: 'Teams',
   CUSTOM: 'Custom',
@@ -134,6 +139,33 @@ export function ConsultationsPage() {
   // the form is identical either way, so it is the same view rather than a
   // second copy of nine fields that would drift apart.
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  /**
+   * Google Calendar, which is what actually produces a Meet link.
+   *
+   * The whole OAuth flow already existed server-side — auth URL, state
+   * binding, callback, token storage, even the redirect back here. Nothing in
+   * the admin app ever called it, so no school had connected one, and a
+   * GOOGLE_MEET booking quietly produced an appointment with no link.
+   */
+  const { data: googleState, refetch: refetchGoogle } = useApi(
+    () => api.consultations.getGoogleAuthUrl(),
+    [],
+  )
+  const [googleBanner, setGoogleBanner] = useState<'connected' | 'error' | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const outcome = params.get('google_calendar')
+    if (outcome === 'connected' || outcome === 'error') {
+      setGoogleBanner(outcome)
+      // Clear it so a refresh does not re-announce a connection made minutes ago.
+      params.delete('google_calendar')
+      const qs = params.toString()
+      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
+      if (outcome === 'connected') refetchGoogle()
+    }
+  }, [])
   const [form, setForm] = useState<ConsultationForm>(emptyForm)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -1478,6 +1510,54 @@ export function ConsultationsPage() {
           <span>New Consultation</span>
         </button>
       </div>
+
+      {/* Google Calendar. Shown on this page because it is the only thing that
+          uses it, and because the OAuth callback redirects back here. */}
+      {googleState?.configured && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-start justify-between gap-4">
+          <div className="text-sm">
+            <p className="font-medium text-gray-900">Google Calendar</p>
+            {googleState.connected ? (
+              <p className="text-gray-500 mt-0.5">
+                Connected{googleState.connectedEmail ? ` as ${googleState.connectedEmail}` : ''}. Meet links are
+                created automatically when a parent books a video appointment.
+              </p>
+            ) : (
+              <p className="text-gray-500 mt-0.5">
+                Not connected. Until it is, a Google Meet appointment is booked without a joining
+                link — so "Parent chooses" and "Google Meet" should not be offered yet.
+              </p>
+            )}
+          </div>
+          {googleState.url && (
+            <a
+              href={googleState.url}
+              className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium ${
+                googleState.connected
+                  ? 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  : 'text-white'
+              }`}
+              style={googleState.connected ? undefined : { backgroundColor: theme.colors.brandColor }}
+            >
+              {googleState.connected ? 'Reconnect' : 'Connect Google Calendar'}
+            </a>
+          )}
+        </div>
+      )}
+
+      {googleBanner && (
+        <div
+          className={`rounded-lg p-3 text-sm ${
+            googleBanner === 'connected'
+              ? 'bg-green-50 border border-green-200 text-green-800'
+              : 'bg-red-50 border border-red-200 text-red-800'
+          }`}
+        >
+          {googleBanner === 'connected'
+            ? 'Google Calendar connected. Meet links will be created automatically from now on.'
+            : 'Google Calendar could not be connected. Nothing has changed — try again, or check the Google credentials on the server.'}
+        </div>
+      )}
 
       {(!consultations || consultations.length === 0) ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
