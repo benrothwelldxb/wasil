@@ -2283,8 +2283,16 @@ router.delete('/transport/runs', requirePartner, async (req, res) => {
 // The principal's weekly update, for Desk's "Sent to parents" view.
 //
 //   GET /api/partner/weekly-messages?school_id=<Hub school id | Connect id>&limit=<n>
-//   → { messages: [ { id, title, content, weekOf, imageUrl,
-//                     publishedAt, scheduledAt, hearts } ] }
+//   → { enabled, messages: [ { id, title, content, weekOf, imageUrl,
+//                              publishedAt, scheduledAt, hearts } ] }
+//
+// `enabled` exists because an empty list means two different things and the
+// reader cannot tell them apart. A school with the module OFF has not adopted
+// this, and a section headed "no update this week" invents a feature they do
+// not use; a school with it ON and nothing written has a real absence somebody
+// might chase. Returning [] for both makes the wrong guess the likely one, and
+// the wrong guess in the worse direction — implying a principal is failing to
+// write something he never undertook to.
 //
 // Desk already merges Connect's admin posts into that view, on the principle
 // that staff should see what families have been told. It reads
@@ -2328,10 +2336,13 @@ router.get('/weekly-messages', requirePartner, async (req, res) => {
       select: { id: true, weeklyUpdatesEnabled: true },
     })
     // Unknown school is not an error — Desk may probe ids we don't host.
-    if (!school) return res.json({ messages: [] })
+    // A school we do not host is not a school with the feature on and nothing
+    // written, so it reads as disabled rather than as empty.
+    if (!school) return res.json({ enabled: false, messages: [] })
     // A school with the module off gets an empty list rather than rows Desk
-    // would then have to make a judgement about.
-    if (!school.weeklyUpdatesEnabled) return res.json({ messages: [] })
+    // would then have to make a judgement about — and `enabled: false` so it
+    // shows no section at all rather than an empty one.
+    if (!school.weeklyUpdatesEnabled) return res.json({ enabled: false, messages: [] })
 
     const rows = await prisma.weeklyMessage.findMany({
       where: { schoolId: school.id },
@@ -2351,6 +2362,7 @@ router.get('/weekly-messages', requirePartner, async (req, res) => {
 
     const now = new Date()
     res.json({
+      enabled: true,
       messages: rows.map(m => ({
         id: m.id,
         title: m.title,

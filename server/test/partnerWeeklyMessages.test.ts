@@ -117,13 +117,26 @@ describe('GET /api/partner/weekly-messages', () => {
 
   // A school that has not turned the module on has not told parents anything
   // through it, so there is nothing for staff to be shown.
-  it('returns nothing when the school has weekly updates switched off', async () => {
+  // An empty list means two different things and a reader cannot tell them
+  // apart: a school that has not adopted this, and a school that has and has
+  // written nothing this week. The first should show no section at all; the
+  // second is a real absence somebody might chase. Guessing wrong implies a
+  // principal is failing to write something he never undertook to.
+  it('says the feature is off rather than just returning nothing', async () => {
     prismaMock.school.findFirst.mockResolvedValue({ id: 'sch-1', weeklyUpdatesEnabled: false })
 
     const res = await get('?school_id=hub-1')
 
-    expect(res.body).toEqual({ messages: [] })
+    expect(res.body).toEqual({ enabled: false, messages: [] })
     expect(prismaMock.weeklyMessage.findMany).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes "on, nothing written" from "off"', async () => {
+    prismaMock.weeklyMessage.findMany.mockResolvedValue([])
+
+    const res = await get('?school_id=hub-1')
+
+    expect(res.body).toEqual({ enabled: true, messages: [] })
   })
 
   it('accepts a Hub school id or a Connect one, and treats unknown as empty', async () => {
@@ -132,7 +145,8 @@ describe('GET /api/partner/weekly-messages', () => {
     const res = await get('?school_id=nope')
 
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ messages: [] })
+    // A school we do not host is not "enabled with nothing written".
+    expect(res.body).toEqual({ enabled: false, messages: [] })
     expect(prismaMock.school.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { OR: [{ hubSchoolId: 'nope' }, { id: 'nope' }] } })
     )
