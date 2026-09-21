@@ -17,14 +17,8 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
+import type { StaffMember } from '@wasil/shared'
 import type { ConsultationEvent, ConsultationTeacher, ConsultationStatus, ConsultationLocationType } from '@wasil/shared'
-
-interface StaffMember {
-  id: string
-  name: string
-  email: string
-  role: string
-}
 
 interface ConsultationForm {
   title: string
@@ -295,6 +289,43 @@ export function ConsultationsPage() {
   }
 
   // Compute booking stats from consultation teachers
+  /**
+   * Telling two staff with the same name apart.
+   *
+   * Names duplicate here because upsertStaff matches on Hub id, then on exact
+   * email, and never on name — correctly, since names are not unique. So the
+   * same person under two addresses becomes two accounts, and the picker shows
+   * two identical rows with no way to choose.
+   *
+   * The class is the useful discriminator when there is one, which is the case
+   * Ben asked for. It is NOT sufficient on its own: the stray account is
+   * usually the one with no classes, so a duplicate pair can read "Minette" and
+   * "Minette — 3A" and still leave you guessing which "Minette" is which.
+   *
+   * So for a name that appears more than once, the email is shown as well. It
+   * is the thing that is actually unique, and it is what distinguishes the two
+   * accounts in the first place.
+   */
+  const duplicateNames = useMemo(() => {
+    const seen = new Map<string, number>()
+    for (const s of staffList ?? []) {
+      const key = (s.name || '').trim().toLowerCase()
+      seen.set(key, (seen.get(key) ?? 0) + 1)
+    }
+    return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([k]) => k))
+  }, [staffList])
+
+  const staffDetail = (s: StaffMember): string | null => {
+    const parts: string[] = []
+    const classes = (s.assignedClasses ?? []).map(c => c.name).filter(Boolean)
+    if (classes.length > 0) parts.push(classes.join(', '))
+    else if (s.position) parts.push(s.position)
+    // Only where it is actually needed — an email beside every name is noise
+    // that makes the list harder to scan, not easier.
+    if (duplicateNames.has((s.name || '').trim().toLowerCase())) parts.push(s.email)
+    return parts.length > 0 ? parts.join(' · ') : null
+  }
+
   const getStats = (c: ConsultationEvent) => {
     let totalSlots = 0
     let bookedSlots = 0
@@ -1002,9 +1033,14 @@ export function ConsultationsPage() {
                       disabled
                     >
                       <option value="">Select a teacher...</option>
-                      {staffList?.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
+                      {staffList?.map(s => {
+                        const detail = staffDetail(s)
+                        return (
+                          <option key={s.id} value={s.id}>
+                            {detail ? `${s.name} — ${detail}` : s.name}
+                          </option>
+                        )
+                      })}
                     </select>
                   </div>
                 ) : (
@@ -1058,7 +1094,12 @@ export function ConsultationsPage() {
                               })}
                               className="h-4 w-4"
                             />
-                            <span className="text-sm text-gray-700">{st.name}</span>
+                            <span className="text-sm text-gray-700">
+                              {st.name}
+                              {staffDetail(st) && (
+                                <span className="text-gray-400"> — {staffDetail(st)}</span>
+                              )}
+                            </span>
                           </label>
                         )
                       })}
