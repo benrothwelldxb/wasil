@@ -3,7 +3,25 @@ import { issueOAuthState } from './oauthState.js'
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET
-const REDIRECT_URI = process.env.GOOGLE_CALENDAR_REDIRECT_URI || 'http://localhost:4000/auth/google-calendar/callback'
+
+/**
+ * Where Google sends the school back after they authorise.
+ *
+ * It must match an Authorised redirect URI on the OAuth client in Google
+ * Cloud EXACTLY — scheme, host, path, no trailing slash. A mismatch is
+ * refused by Google before anything of ours runs, with `redirect_uri_mismatch`
+ * and no indication of what was actually sent.
+ *
+ * The localhost fallback is for development. In production, an unset variable
+ * means we send Google a localhost URL that nobody has registered, and the
+ * school sees that error with nothing to act on — so `isGoogleCalendarConfigured`
+ * now refuses to advertise the feature at all in that state, and the admin
+ * screen shows the exact URI to paste into Google Cloud.
+ */
+export const GOOGLE_CALENDAR_REDIRECT_URI =
+  process.env.GOOGLE_CALENDAR_REDIRECT_URI || 'http://localhost:4000/auth/google-calendar/callback'
+
+const REDIRECT_URI = GOOGLE_CALENDAR_REDIRECT_URI
 
 function getOAuth2Client() {
   return new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
@@ -89,7 +107,12 @@ export async function createGoogleMeetEvent(params: {
 }
 
 export function isGoogleCalendarConfigured(): boolean {
-  return !!(CLIENT_ID && CLIENT_SECRET)
+  if (!CLIENT_ID || !CLIENT_SECRET) return false
+  // A localhost redirect in production is not configuration, it is the
+  // default nobody replaced — and offering a Connect button that can only
+  // ever return redirect_uri_mismatch is worse than offering none.
+  if (process.env.NODE_ENV === 'production' && REDIRECT_URI.includes('localhost')) return false
+  return true
 }
 
 /**

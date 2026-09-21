@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, deleteGoogleMeetEvent, isGoogleCalendarConfigured } from '../services/googleMeet.js'
+import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, deleteGoogleMeetEvent, isGoogleCalendarConfigured, GOOGLE_CALENDAR_REDIRECT_URI } from '../services/googleMeet.js'
 import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, sendCancellationToParent, sendCancellationToTeacher } from '../services/consultationEmails.js'
 import { sendConsultationBookingNotification, sendConsultationCancellationNotification } from '../services/consultationNotify.js'
 import { serializeBookingForParent } from '../services/consultationSerializers.js'
@@ -733,7 +733,9 @@ router.get('/google-auth-url', isAdmin, async (req, res) => {
     const configured = isGoogleCalendarConfigured()
 
     if (!configured) {
-      return res.json({ url: null, configured: false })
+      // The URI goes out even here — it is exactly what somebody needs in
+      // order to fix this, and withholding it makes the fix a guess.
+      return res.json({ url: null, configured: false, redirectUri: GOOGLE_CALENDAR_REDIRECT_URI })
     }
 
     // Whether this school has already connected, and to which account — a
@@ -750,6 +752,10 @@ router.get('/google-auth-url', isAdmin, async (req, res) => {
       configured: true,
       connected: !!school?.googleCalendarRefreshToken,
       connectedEmail: school?.googleCalendarEmail || null,
+      // Shown in the admin so it can be pasted into Google Cloud. A
+      // redirect_uri_mismatch names nothing, so without this the fix is
+      // comparing two strings you cannot both see.
+      redirectUri: GOOGLE_CALENDAR_REDIRECT_URI,
     })
   } catch (error) {
     console.error('Error getting Google auth URL:', error)

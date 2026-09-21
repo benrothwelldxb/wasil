@@ -1601,6 +1601,22 @@ export function ConsultationsPage() {
 
       {/* Google Calendar. Shown on this page because it is the only thing that
           uses it, and because the OAuth callback redirects back here. */}
+      {googleState && !googleState.configured && googleState.redirectUri?.includes('localhost') && (
+        // The state that produced redirect_uri_mismatch: credentials present,
+        // redirect URI never set, so the app sent Google a localhost URL. Said
+        // here rather than behind a button that cannot work.
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+          <p className="font-medium text-amber-800">Google Calendar is not configured</p>
+          <p className="text-amber-700 mt-1">
+            <code className="bg-amber-100 px-1 rounded">GOOGLE_CALENDAR_REDIRECT_URI</code> is not set
+            on the API, so it would send Google a localhost address and be refused with
+            <code className="bg-amber-100 px-1 rounded ml-1">redirect_uri_mismatch</code>. Set it to the
+            API's own callback URL, and add the same URL to the OAuth client's Authorised redirect URIs
+            in Google Cloud.
+          </p>
+        </div>
+      )}
+
       {googleState?.configured && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-start justify-between gap-4">
           <div className="text-sm">
@@ -1617,6 +1633,12 @@ export function ConsultationsPage() {
               </p>
             )}
           </div>
+          {googleState.redirectUri && (
+            <p className="text-xs text-gray-400 mt-2 break-all">
+              Redirect URI: <code>{googleState.redirectUri}</code> — this must be listed in the OAuth
+              client's Authorised redirect URIs in Google Cloud, character for character.
+            </p>
+          )}
           {googleState.url && (
             <a
               href={googleState.url}
