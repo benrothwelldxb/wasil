@@ -16,7 +16,7 @@ import request from 'supertest'
  */
 const prismaMock = {
   consultationSlot: { findUnique: vi.fn() },
-  consultationBooking: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
+  consultationBooking: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   parentStudentLink: { findFirst: vi.fn() },
   child: { findFirst: vi.fn() },
   school: { findUnique: vi.fn() },
@@ -26,11 +26,14 @@ const prismaMock = {
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/services/audit', () => ({ logAudit: vi.fn(), computeChanges: vi.fn(() => null) }))
 vi.mock('../src/services/notify', () => ({ sendNotification: vi.fn() }))
+// Promise-returning: the route no longer awaits these, it chains .catch() on
+// them — so a booking cannot be failed by a wobble from the email provider,
+// which used to return 500 on an appointment that had actually been made.
 vi.mock('../src/services/consultationEmails', () => ({
-  sendBookingConfirmationToParent: vi.fn(),
-  sendBookingNotificationToTeacher: vi.fn(),
-  sendCancellationToParent: vi.fn(),
-  sendCancellationToTeacher: vi.fn(),
+  sendBookingConfirmationToParent: vi.fn(async () => undefined),
+  sendBookingNotificationToTeacher: vi.fn(async () => undefined),
+  sendCancellationToParent: vi.fn(async () => undefined),
+  sendCancellationToTeacher: vi.fn(async () => undefined),
 }))
 vi.mock('../src/services/consultationNotify', () => ({
   sendConsultationBookingNotification: vi.fn(() => Promise.resolve()),

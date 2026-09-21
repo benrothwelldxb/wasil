@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
-import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, isGoogleCalendarConfigured } from '../services/googleMeet.js'
+import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, deleteGoogleMeetEvent, isGoogleCalendarConfigured } from '../services/googleMeet.js'
 import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, sendCancellationToParent, sendCancellationToTeacher } from '../services/consultationEmails.js'
 import { sendConsultationBookingNotification, sendConsultationCancellationNotification } from '../services/consultationNotify.js'
 import { serializeBookingForParent } from '../services/consultationSerializers.js'
@@ -377,8 +377,47 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
     const chosenLocationType = offersChoice ? (wanted as 'IN_PERSON' | 'GOOGLE_MEET') : null
     const effectiveLocationType = chosenLocationType ?? slot.consultationTeacher.locationType
 
-    // Create the booking
+    // CLAIM THE SLOT FIRST.
+    //
+    // ConsultationBooking.slotId is unique, so two parents can never both hold
+    // a slot — the database decides. What matters is how long the gap is
+    // between checking and claiming, and what happens to whoever loses.
+    //
+    // This used to create the Google Meet event BEFORE the insert, so the gap
+    // was a one-to-two second call to Google. On a booking-opens rush, two
+    // parents would both pass the check, both wait on Google, and the loser
+    // would hit the unique violation — after an orphaned calendar event had
+    // already been made for a meeting that will never happen.
+    //
+    // Inserting first collapses that gap to a single statement, and means the
+    // Meet event is only ever created for a slot already won.
+    let booking
+    try {
+      booking = await prisma.consultationBooking.create({
+        data: {
+          slotId,
+          parentId: user.id,
+          studentId: wantedStudentId,
+          studentName: resolvedStudentName,
+          notes: notes || null,
+          locationType: chosenLocationType,
+          meetingLink: null,
+        },
+      })
+    } catch (err) {
+      // P2002 on slotId: somebody else claimed it between the check above and
+      // here. That is an ordinary outcome of a popular evening, not an error —
+      // 409 so the app can say so and refresh the grid, rather than the 500
+      // this produced, which reads as "the app is broken" and invites a retry
+      // into the same wall.
+      if ((err as { code?: string }).code === 'P2002') {
+        return res.status(409).json({ error: 'That time has just been taken. Please choose another slot.' })
+      }
+      throw err
+    }
+
     let meetingLink: string | null = null
+    let meetingEventId: string | null = null
     // A Meet appointment with no link is the failure worth naming: the parent
     // has an appointment and no way to attend it, and until now that happened
     // silently whenever the school had not connected Google Calendar.
@@ -387,7 +426,7 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
     if (effectiveLocationType === 'GOOGLE_MEET') {
       const school = await prisma.school.findUnique({
         where: { id: user.schoolId },
-        select: { googleCalendarRefreshToken: true },
+        select: { googleCalendarRefreshToken: true, timezone: true },
       })
 
       if (school?.googleCalendarRefreshToken) {
@@ -395,17 +434,26 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
         const startISO = `${consultationDate}T${slot.startTime}:00`
         const endISO = `${consultationDate}T${slot.endTime}:00`
 
+        // BOTH parties. Only the parent was invited, so the event landed on
+        // the school Google account's calendar and the teacher — the person
+        // who has to be in the room — was never told by Google at all. They
+        // found out from Connect's own email and had nothing in their diary.
+        const attendees = [user.email, slot.consultationTeacher.teacher.email]
+          .filter((e): e is string => !!e)
+
         const meetResult = await createGoogleMeetEvent({
           refreshToken: school.googleCalendarRefreshToken,
           summary: `${slot.consultationTeacher.teacher.name} - ${resolvedStudentName} Consultation`,
           description: `Parent consultation booking via Wasil`,
           startTime: startISO,
           endTime: endISO,
-          attendees: user.email ? [user.email] : undefined,
+          attendees: attendees.length > 0 ? attendees : undefined,
+          timeZone: school.timezone ?? undefined,
         })
 
         if (meetResult) {
           meetingLink = meetResult.meetLink
+          meetingEventId = meetResult.eventId
         } else {
           meetingLinkFailed = true
         }
@@ -418,17 +466,12 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
       }
     }
 
-    const booking = await prisma.consultationBooking.create({
-      data: {
-        slotId,
-        parentId: user.id,
-        studentId: wantedStudentId,
-        studentName: resolvedStudentName,
-        notes: notes || null,
-        locationType: chosenLocationType,
-        meetingLink,
-      },
-    })
+    if (meetingLink) {
+      booking = await prisma.consultationBooking.update({
+        where: { id: booking.id },
+        data: { meetingLink, meetingEventId },
+      })
+    }
 
     // Fire-and-forget notifications
     const teacher = slot.consultationTeacher.teacher
@@ -448,11 +491,23 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
       schoolName,
     }
 
+    // Fire-and-forget, like the push below it, and NOT awaited.
+    //
+    // These were awaited and unguarded, so a wobble from the email provider —
+    // most likely precisely when fifty parents book at once — threw into the
+    // outer catch and returned 500. The booking already existed. The parent
+    // was told it had failed, tried again, and got "Slot is already booked".
+    //
+    // A confirmation email is worth sending and is not worth failing a booking
+    // over. The appointment is the thing that happened; the email is a copy of
+    // the news.
     if (user.email) {
-      await sendBookingConfirmationToParent(user.email, emailDetails)
+      sendBookingConfirmationToParent(user.email, emailDetails)
+        .catch(e => console.error('[Consultation] Parent confirmation email failed:', e))
     }
     if (teacher.email) {
-      await sendBookingNotificationToTeacher(teacher.email, { ...emailDetails, parentName: user.name || 'Parent' })
+      sendBookingNotificationToTeacher(teacher.email, { ...emailDetails, parentName: user.name || 'Parent' })
+        .catch(e => console.error('[Consultation] Teacher notification email failed:', e))
     }
 
     sendConsultationBookingNotification({
@@ -528,6 +583,29 @@ router.delete('/parent/bookings/:bookingId', isAuthenticated, async (req, res) =
     }
 
     await prisma.consultationBooking.delete({ where: { id: bookingId } })
+
+    // Cancel the meeting too, where there was one.
+    //
+    // Deleting the booking used to leave the Google event standing, with a
+    // working joining link, in both the teacher's calendar and the parent's —
+    // so a teacher would sit waiting for a family who cancelled a fortnight
+    // ago, with nothing to suggest otherwise.
+    //
+    // After the delete and not awaited: the cancellation has happened, and it
+    // must not fail because Google is unreachable. Bookings made before the
+    // event id was stored have none, and cannot be cleaned up automatically.
+    if (booking.meetingEventId) {
+      prisma.school
+        .findUnique({ where: { id: user.schoolId }, select: { googleCalendarRefreshToken: true } })
+        .then(school => {
+          if (!school?.googleCalendarRefreshToken) return
+          return deleteGoogleMeetEvent({
+            refreshToken: school.googleCalendarRefreshToken,
+            eventId: booking.meetingEventId as string,
+          })
+        })
+        .catch(e => console.error('[Consultation] Could not remove the calendar event:', e))
+    }
 
     // Fire-and-forget notifications
     const teacher = booking.slot.consultationTeacher.teacher
