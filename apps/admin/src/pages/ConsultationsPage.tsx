@@ -13,6 +13,8 @@ import {
   MapPin,
   Clock,
   Copy,
+  Pencil,
+  AlertTriangle,
 } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { ConsultationEvent, ConsultationTeacher, ConsultationStatus, ConsultationLocationType } from '@wasil/shared'
@@ -134,6 +136,10 @@ export function ConsultationsPage() {
   const theme = useTheme()
   const toast = useToast()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
+  // Null when the form is creating. Set when it is editing an existing one —
+  // the form is identical either way, so it is the same view rather than a
+  // second copy of nine fields that would drift apart.
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ConsultationForm>(emptyForm)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -162,6 +168,28 @@ export function ConsultationsPage() {
     if (!selectedId || !consultations) return null
     return consultations.find(c => c.id === selectedId) || null
   }, [selectedId, consultations])
+
+  /**
+   * The consultation the form is editing, and whether parents have booked into
+   * it yet.
+   *
+   * The timings are not just display: slots are generated per teacher from the
+   * duration and the start/end times. Changing them afterwards does NOT
+   * regenerate slots, so the event would claim 10-minute appointments while
+   * parents hold 15-minute ones — a disagreement nothing surfaces and nobody
+   * would think to look for.
+   *
+   * So once a booking exists the timings are locked and the rest stays
+   * editable. Fixing a typo in the title is the common case and should not
+   * require rebuilding an evening.
+   */
+  const editingConsultation = useMemo(
+    () => (editingId && consultations ? consultations.find(c => c.id === editingId) || null : null),
+    [editingId, consultations],
+  )
+  const editingHasBookings = !!editingConsultation?.teachers?.some(
+    t => t.slots?.some(sl => !sl.isBreak && sl.booking),
+  )
 
   // Compute weekday dates for the selected consultation
   const consultationDates = useMemo(() => {
@@ -281,10 +309,27 @@ export function ConsultationsPage() {
     return { totalSlots, bookedSlots }
   }
 
+  /** Open the form on an existing consultation. */
+  const handleEdit = (c: ConsultationEvent) => {
+    setForm({
+      title: c.title,
+      description: c.description || '',
+      date: c.date,
+      endDate: c.endDate || '',
+      slotDuration: c.slotDuration,
+      breakDuration: c.breakDuration ?? 0,
+      targetClass: c.targetClass || '',
+      defaultStartTime: c.defaultStartTime || '',
+      defaultEndTime: c.defaultEndTime || '',
+    })
+    setEditingId(c.id)
+    setViewMode('create')
+  }
+
   const handleCreate = async () => {
     setIsSubmitting(true)
     try {
-      await api.consultations.create({
+      const payload = {
         title: form.title,
         description: form.description || undefined,
         date: form.date,
@@ -294,12 +339,25 @@ export function ConsultationsPage() {
         defaultEndTime: form.defaultEndTime || null,
         breakDuration: form.breakDuration,
         targetClass: form.targetClass || undefined,
-      })
+      }
+      if (editingId) {
+        await api.consultations.update(editingId, payload)
+      } else {
+        await api.consultations.create(payload)
+      }
       setForm(emptyForm)
+      setEditingId(null)
       setViewMode('list')
       await refetch()
     } catch (err) {
-      console.error('Failed to create consultation:', err)
+      console.error('Failed to save consultation:', err)
+      // Said out loud rather than logged. A save that fails silently looks
+      // exactly like a save that worked until the list refreshes unchanged.
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : editingId ? 'Failed to update consultation' : 'Failed to create consultation'
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -462,6 +520,13 @@ export function ConsultationsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handleEdit(selectedConsultation)}
+              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100"
+              title="Edit details"
+            >
+              <Pencil className="h-5 w-5" />
+            </button>
             {selectedConsultation.status === 'DRAFT' && (
               <button
                 onClick={() => setDeleteTarget(selectedConsultation)}
@@ -1195,13 +1260,30 @@ export function ConsultationsPage() {
       <div className="space-y-6">
         <div className="flex items-center space-x-3">
           <button
-            onClick={() => { setViewMode('list'); setForm(emptyForm) }}
+            onClick={() => { setViewMode(editingId ? 'detail' : 'list'); setForm(emptyForm); setEditingId(null) }}
             className="p-2 rounded-lg hover:bg-gray-100"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <h1 className="text-2xl font-bold">New Consultation</h1>
+          <h1 className="text-2xl font-bold">{editingId ? 'Edit Consultation' : 'New Consultation'}</h1>
         </div>
+
+        {editingHasBookings && (
+          // Said before they reach the greyed-out fields, not after — a
+          // disabled input with no explanation reads as a broken page.
+          <div className="max-w-2xl bg-amber-50 border border-amber-200 rounded-lg p-4 flex gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-800">
+              <p className="font-medium">Parents have already booked into this evening.</p>
+              <p className="mt-1 text-amber-700">
+                The dates, times and slot lengths are locked, because the appointments parents
+                hold were built from them — changing them now would leave this saying one thing
+                and their bookings another. The title, description and audience can still be
+                edited. To change the timings, cancel the bookings first.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4 max-w-2xl">
           <div>
@@ -1232,6 +1314,7 @@ export function ConsultationsPage() {
               <input
                 type="date"
                 value={form.date}
+                disabled={editingHasBookings}
                 onChange={(e) => setForm({ ...form, date: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
               />
@@ -1241,6 +1324,7 @@ export function ConsultationsPage() {
               <input
                 type="date"
                 value={form.endDate}
+                disabled={editingHasBookings}
                 onChange={(e) => setForm({ ...form, endDate: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
               />
@@ -1257,6 +1341,7 @@ export function ConsultationsPage() {
               <input
                 type="time"
                 value={form.defaultStartTime}
+                disabled={editingHasBookings}
                 onChange={(e) => setForm({ ...form, defaultStartTime: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
               />
@@ -1266,6 +1351,7 @@ export function ConsultationsPage() {
               <input
                 type="time"
                 value={form.defaultEndTime}
+                disabled={editingHasBookings}
                 onChange={(e) => setForm({ ...form, defaultEndTime: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
               />
@@ -1282,6 +1368,7 @@ export function ConsultationsPage() {
               <input
                 type="number"
                 value={form.slotDuration}
+                disabled={editingHasBookings}
                 onChange={(e) => setForm({ ...form, slotDuration: parseInt(e.target.value) || 10 })}
                 min={5}
                 max={60}
@@ -1293,6 +1380,7 @@ export function ConsultationsPage() {
               <input
                 type="number"
                 value={form.breakDuration}
+                disabled={editingHasBookings}
                 onChange={(e) => setForm({ ...form, breakDuration: parseInt(e.target.value) || 0 })}
                 min={0}
                 max={30}
@@ -1325,7 +1413,7 @@ export function ConsultationsPage() {
               className="px-6 py-2 rounded-lg text-sm font-semibold text-white"
               style={{ backgroundColor: theme.colors.brandColor, opacity: isSubmitting || !form.title || !form.date ? 0.6 : 1 }}
             >
-              {isSubmitting ? 'Creating...' : 'Create Consultation'}
+              {isSubmitting ? 'Saving...' : editingId ? 'Save Changes' : 'Create Consultation'}
             </button>
           </div>
         </div>
