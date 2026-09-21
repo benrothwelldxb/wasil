@@ -1776,6 +1776,11 @@ model ConsultationBooking {
   /// offer one. Read it as "the teacher decided" rather than as missing data.
   locationType   String?
   meetingLink    String? // Google Meet / video call link
+  /// The Google Calendar event behind that link, so cancelling the booking can
+  /// cancel the meeting. Without it a cancelled appointment stayed in both
+  /// calendars with a working link, and a teacher would wait for a family who
+  /// had cancelled a fortnight earlier.
+  meetingEventId String?
   reminderSentAt DateTime? // Tracks whether 24h reminder was sent
   createdAt      DateTime         @default(now())
 }
