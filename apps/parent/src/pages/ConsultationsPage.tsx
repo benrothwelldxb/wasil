@@ -5,6 +5,7 @@ import { PageLogo } from '../components/PageHeader'
 import { useApi, useAuth } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { ConsultationEvent, ConsultationSlot, ConsultationTeacher } from '@wasil/shared'
+import { proximityOf, proximityMessage, type ExistingAppointment } from '../utils/slotProximity'
 
 type ViewMode = 'list' | 'booking'
 
@@ -137,6 +138,32 @@ export function ConsultationsPage() {
     }
     return fresh
   }
+
+  /**
+   * Every appointment this family already holds in this consultation.
+   *
+   * Across ALL teachers and all children: the constraint is the parent's own
+   * diary, since they have to physically get between two rooms whichever
+   * child each appointment is for. The data is already here — the page
+   * identifies its own bookings to render them — so this needs nothing new
+   * from the server.
+   */
+  const myAppointments: ExistingAppointment[] = useMemo(() => {
+    if (!selectedConsultation?.teachers) return []
+    const out: ExistingAppointment[] = []
+    for (const t of selectedConsultation.teachers) {
+      for (const sl of t.slots || []) {
+        if (sl.isBreak || !sl.booking || sl.booking.parentId !== user?.id) continue
+        out.push({
+          startTime: sl.startTime,
+          endTime: sl.endTime,
+          date: sl.date,
+          label: `${sl.booking.studentName || 'your child'} with ${t.teacherName}`,
+        })
+      }
+    }
+    return out
+  }, [selectedConsultation, user?.id])
 
   const handleBook = async () => {
     if (!bookingSlot || !bookingStudentId) return
@@ -439,10 +466,27 @@ export function ConsultationsPage() {
                           const myBookingWithTeacher = allTeacherSlots.find(s => s.booking && s.booking.parentId === user?.id)
 
                           return (
+                            <>
+                            {myAppointments.length > 0 && !myBookingWithTeacher && (
+                              // Says what the dots are FOR. A green dot with
+                              // no explanation is decoration; with this line
+                              // above it, it is an instruction.
+                              <p className="text-[12px] mb-2" style={{ color: '#7A6469' }}>
+                                You already have {myAppointments.length === 1 ? 'an appointment' : `${myAppointments.length} appointments`} this
+                                evening — {myAppointments.map(a => `${a.startTime} ${a.label}`).join(', ')}.
+                                <span style={{ color: '#2D8B4E', fontWeight: 700 }}> Green</span> marks a slot close to one.
+                              </p>
+                            )}
                             <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2">
                               {filteredSlots.map(slot => {
                                 const isBookedByMe = slot.booking && slot.booking.parentId === user?.id
                                 const isTaken = slot.booking && !isBookedByMe
+                                // How this sits beside the family's other
+                                // appointments. Only worth showing on a slot
+                                // they could actually take.
+                                const prox = (!slot.booking && myAppointments.length > 0)
+                                  ? proximityOf(slot, myAppointments)
+                                  : { kind: 'none' as const }
                                 const isOpen = selectedConsultation.status === 'BOOKING_OPEN'
                                 const isCompleted = selectedConsultation.status === 'COMPLETED'
                                 // Disable if parent already booked a different slot with this teacher
@@ -492,10 +536,25 @@ export function ConsultationsPage() {
                                     <p className="text-[11px] font-semibold" style={{ color: isBookedByMe ? '#C4506E' : (isTaken || alreadyBookedOtherSlot) ? '#C9BCC0' : '#A8929A' }}>
                                       {isBookedByMe ? 'Your Booking' : isTaken ? 'Booked' : alreadyBookedOtherSlot ? slot.endTime : slot.endTime}
                                     </p>
+                                    {(prox.kind === 'ideal' || prox.kind === 'clash') && (
+                                      // A dot, not words: thirty tiles with
+                                      // sentences on them is harder to scan
+                                      // than thirty tiles with one marked. The
+                                      // sentence waits until they tap it.
+                                      <span
+                                        aria-label={prox.kind === 'ideal' ? 'Close to your other appointment' : 'Clashes with your other appointment'}
+                                        style={{
+                                          position: 'absolute', top: 4, right: 4,
+                                          width: 7, height: 7, borderRadius: '50%',
+                                          background: prox.kind === 'ideal' ? '#2D8B4E' : '#C4506E',
+                                        }}
+                                      />
+                                    )}
                                   </button>
                                 )
                               })}
                             </div>
+                            </>
                           )
                         })()}
                       </div>
@@ -618,6 +677,31 @@ export function ConsultationsPage() {
                   <User className="h-4 w-4" style={{ color: '#5B8EC4' }} />
                   <span>Booking for <strong>{bookingStudentName}</strong></span>
                 </div>
+
+                {/* How this sits beside the family's other appointments.
+                    Shown BEFORE they confirm, because afterwards the useful
+                    thing to know has become a thing to undo. */}
+                {(() => {
+                  const prox = proximityOf(bookingSlot.slot, myAppointments)
+                  const msg = proximityMessage(prox)
+                  if (!msg) return null
+                  const tone =
+                    prox.kind === 'clash' ? { bg: '#FDF0F3', border: '#F2C9D4', fg: '#9B2C45' }
+                    : prox.kind === 'tight' ? { bg: '#FFF7EC', border: '#F3E1C7', fg: '#7A5A2E' }
+                    : prox.kind === 'far' ? { bg: '#FFF7EC', border: '#F3E1C7', fg: '#7A5A2E' }
+                    : { bg: '#EDFAF2', border: '#C7E8D4', fg: '#22683F' }
+                  return (
+                    <div
+                      style={{
+                        background: tone.bg, border: `1px solid ${tone.border}`,
+                        borderRadius: 14, padding: '10px 12px',
+                        fontSize: 12.5, lineHeight: 1.5, color: tone.fg,
+                      }}
+                    >
+                      {msg}
+                    </div>
+                  )
+                })()}
 
                 {/* Notes */}
                 <div>
