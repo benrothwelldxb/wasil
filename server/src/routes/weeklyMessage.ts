@@ -123,8 +123,24 @@ router.get('/', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
 
+    // A scheduled update is NOT yet for parents.
+    //
+    // /current has always filtered on this; the list never did, so an update
+    // written on Thursday and scheduled for Monday was hidden from the
+    // dashboard card and sitting in the Principal's Updates list the whole
+    // time. Nothing contradicted the principal's belief that it was held back:
+    // the create route deliberately suppresses the notification for a
+    // future-dated one, so it went out silently rather than not at all.
+    //
+    // Staff and admin DO see them — the admin page badges them as scheduled
+    // and would be unusable without them, and the same route serves both.
+    const staffViewer = user.role !== 'PARENT'
+    const visibility = staffViewer
+      ? {}
+      : { OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }] }
+
     const messages = await prisma.weeklyMessage.findMany({
-      where: { schoolId: user.schoolId },
+      where: { schoolId: user.schoolId, ...visibility },
       include: {
         _count: { select: { hearts: true } },
         hearts: {
