@@ -1634,6 +1634,18 @@ export interface ConsultationEvent {
   breakDuration: number
   targetClass?: string | null
   teachers?: ConsultationTeacher[]
+  /** When each year group may begin booking. Empty or absent means the evening
+   *  opens to everybody at once, which is what every event did before waves.
+   *  Admin detail only — a parent gets `bookingOpensAt`, already resolved. */
+  bookingWindows?: Array<{ id: string; yearGroupId: string; yearGroupName: string; opensAt: string }>
+  /** When THIS family may begin booking, where the evening opens in waves.
+   *  Null means now — including every evening with no waves at all. Resolved
+   *  by the server, because the rule for a family spanning two year groups
+   *  (their earliest window applies to all their children) is the kind of
+   *  thing two implementations would disagree about. Parent detail only. */
+  bookingOpensAt?: string | null
+  /** The year group whose wave they are waiting on, for the message. */
+  bookingOpensForYearGroup?: string | null
   /** Whether a Google Meet link can actually be created — i.e. whether the
    *  school has connected a Google Calendar. False means do not offer Meet:
    *  the booking would succeed with no way to attend it. Parent detail only. */

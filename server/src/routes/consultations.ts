@@ -5,6 +5,7 @@ import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, deleteGoog
 import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, sendCancellationToParent, sendCancellationToTeacher } from '../services/consultationEmails.js'
 import { sendConsultationBookingNotification, sendConsultationCancellationNotification } from '../services/consultationNotify.js'
 import { serializeBookingForParent } from '../services/consultationSerializers.js'
+import { parseWallClockForSchool } from '../services/dateTime.js'
 
 const router = Router()
 
@@ -226,9 +227,19 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
     })
     const googleMeetAvailable = !!schoolGoogle?.googleCalendarRefreshToken
 
+    // When this family may start, where the evening opens in waves. Resolved
+    // here rather than shipping the windows and letting the app work it out:
+    // the earliest-child rule is the kind of thing two implementations would
+    // disagree about, and the disagreement would be a parent told they can
+    // book when they cannot.
+    const notYet = await bookingOpensAtForFamily(consultation.id, user.id)
+
     res.json({
       ...consultation,
       googleMeetAvailable,
+      // Null means "you may book now" — including every event with no waves.
+      bookingOpensAt: notYet ? notYet.opensAt.toISOString() : null,
+      bookingOpensForYearGroup: notYet ? notYet.yearGroupName : null,
       teachers: consultation.teachers.map(t => ({
         id: t.id,
         consultationId: t.consultationId,
@@ -263,6 +274,54 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
   }
 })
 
+/**
+ * When THIS family may start booking a given consultation.
+ *
+ * An evening can open in waves — Year 3 at 19:00, Year 4 at 19:10 — so four
+ * hundred families do not arrive in the same minute. An event with no windows
+ * has none of this: it opens to everybody when its status says so, which is
+ * what every event did before waves existed.
+ *
+ * THE FAMILY'S EARLIEST WINDOW APPLIES TO ALL THEIR CHILDREN, deliberately.
+ *
+ * Judging each child against their own year would split a family across
+ * waves: a parent with a child in Year 3 and one in Year 4 could book the
+ * first at 19:00 and would have to wait until 19:10 for the second — by which
+ * time the slots next to the first have gone. That defeats the whole point of
+ * helping siblings book close together, for precisely the families who need
+ * it. It is also the fairer reading: the family with most to coordinate gets
+ * in first rather than last.
+ *
+ * Returns null when they may book now.
+ */
+async function bookingOpensAtForFamily(
+  consultationId: string,
+  parentUserId: string,
+): Promise<{ opensAt: Date; yearGroupName: string } | null> {
+  const windows = await prisma.consultationBookingWindow.findMany({
+    where: { consultationId },
+    select: { opensAt: true, yearGroupId: true, yearGroup: { select: { name: true } } },
+  })
+  if (windows.length === 0) return null
+
+  const links = await prisma.parentStudentLink.findMany({
+    where: { userId: parentUserId },
+    select: { student: { select: { class: { select: { yearGroupId: true } } } } },
+  })
+  const yearGroupIds = new Set(
+    links.map(l => l.student?.class?.yearGroupId).filter((id): id is string => !!id),
+  )
+
+  const mine = windows.filter(w => yearGroupIds.has(w.yearGroupId))
+  // A family in no year group that has a window is not held back by one. Waves
+  // are for spreading load, not for excluding anybody the school forgot.
+  if (mine.length === 0) return null
+
+  const earliest = mine.reduce((a, b) => (a.opensAt <= b.opensAt ? a : b))
+  if (earliest.opensAt <= new Date()) return null
+  return { opensAt: earliest.opensAt, yearGroupName: earliest.yearGroup.name }
+}
+
 // Book a slot
 router.post('/parent/book', isAuthenticated, async (req, res) => {
   try {
@@ -295,6 +354,21 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
 
     if (slot.consultationTeacher.consultation.status !== 'BOOKING_OPEN') {
       return res.status(400).json({ error: 'Booking is not open for this consultation' })
+    }
+
+    // Waves, checked AFTER the status: an event that is closed outright
+    // should say so, rather than promising a wave that will never come. And
+    // before anything is claimed or Google is asked.
+    const notYet = await bookingOpensAtForFamily(
+      slot.consultationTeacher.consultation.id,
+      user.id,
+    )
+    if (notYet) {
+      const when = notYet.opensAt.toISOString()
+      return res.status(403).json({
+        error: `Booking opens for ${notYet.yearGroupName} shortly. Please come back then.`,
+        opensAt: when,
+      })
     }
 
     if (slot.isBreak) {
@@ -772,6 +846,10 @@ router.get('/:id', isAdmin, async (req, res) => {
     const consultation = await prisma.consultationEvent.findFirst({
       where: { id, schoolId: user.schoolId },
       include: {
+        bookingWindows: {
+          select: { id: true, yearGroupId: true, opensAt: true, yearGroup: { select: { name: true } } },
+          orderBy: { opensAt: 'asc' },
+        },
         teachers: {
           include: {
             teacher: { select: { id: true, name: true } },
@@ -799,6 +877,12 @@ router.get('/:id', isAdmin, async (req, res) => {
 
     res.json({
       ...consultation,
+      bookingWindows: consultation.bookingWindows.map(w => ({
+        id: w.id,
+        yearGroupId: w.yearGroupId,
+        yearGroupName: w.yearGroup.name,
+        opensAt: w.opensAt.toISOString(),
+      })),
       teachers: consultation.teachers.map(t => ({
         id: t.id,
         consultationId: t.consultationId,
@@ -868,6 +952,84 @@ router.put('/:id', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error updating consultation:', error)
     res.status(500).json({ error: 'Failed to update consultation' })
+  }
+})
+
+// Set when each year group may begin booking.
+//
+//   PUT /api/consultations/:id/booking-windows
+//   { windows: [ { yearGroupId, opensAt } ] }
+//
+// The whole set is replaced, so removing a year group is sending a list
+// without it — the alternative is a delete endpoint and two ways to get the
+// same state half-applied.
+//
+// An empty list means no waves: the evening opens to everybody when its
+// status says so, which is what every event did before waves existed.
+router.put('/:id/booking-windows', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+    const windows = Array.isArray(req.body?.windows) ? req.body.windows : []
+
+    const consultation = await prisma.consultationEvent.findFirst({
+      where: { id, schoolId: user.schoolId },
+      select: { id: true },
+    })
+    if (!consultation) return res.status(404).json({ error: 'Consultation not found' })
+
+    const parsed: { yearGroupId: string; opensAt: Date }[] = []
+    for (const w of windows as Array<Record<string, unknown>>) {
+      const yearGroupId = typeof w?.yearGroupId === 'string' ? w.yearGroupId.trim() : ''
+      const raw = typeof w?.opensAt === 'string' ? w.opensAt : ''
+      if (!yearGroupId || !raw) continue
+      // "19:00" from a datetime-local input means 19:00 AT THE SCHOOL. Read
+      // against the server's zone it would open a Dubai evening four hours
+      // early — the same mistake posts and consultations already guard.
+      const opensAt = await parseWallClockForSchool(raw, user.schoolId)
+      if (!opensAt) continue
+      parsed.push({ yearGroupId, opensAt })
+    }
+
+    // Year groups must be this school's. A wave keyed to somebody else's year
+    // group would silently never match a family here.
+    const ids = [...new Set(parsed.map(p => p.yearGroupId))]
+    const valid = ids.length
+      ? await prisma.yearGroup.findMany({
+          where: { id: { in: ids }, schoolId: user.schoolId },
+          select: { id: true },
+        })
+      : []
+    if (valid.length !== ids.length) {
+      return res.status(400).json({ error: 'Unknown or cross-school year group' })
+    }
+
+    await prisma.$transaction([
+      prisma.consultationBookingWindow.deleteMany({ where: { consultationId: id } }),
+      ...(parsed.length
+        ? [prisma.consultationBookingWindow.createMany({
+            data: parsed.map(w => ({ consultationId: id, yearGroupId: w.yearGroupId, opensAt: w.opensAt })),
+          })]
+        : []),
+    ])
+
+    const saved = await prisma.consultationBookingWindow.findMany({
+      where: { consultationId: id },
+      select: { id: true, yearGroupId: true, opensAt: true, yearGroup: { select: { name: true, order: true } } },
+      orderBy: { opensAt: 'asc' },
+    })
+
+    res.json({
+      windows: saved.map(w => ({
+        id: w.id,
+        yearGroupId: w.yearGroupId,
+        yearGroupName: w.yearGroup.name,
+        opensAt: w.opensAt.toISOString(),
+      })),
+    })
+  } catch (error) {
+    console.error('Error setting booking windows:', error)
+    res.status(500).json({ error: 'Failed to set booking windows' })
   }
 })
 

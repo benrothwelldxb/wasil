@@ -16,8 +16,8 @@ import {
   Pencil,
   AlertTriangle,
 } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
-import type { StaffMember } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant } from '@wasil/shared'
+import type { StaffMember, YearGroup } from '@wasil/shared'
 import type { ConsultationEvent, ConsultationTeacher, ConsultationStatus, ConsultationLocationType } from '@wasil/shared'
 
 interface ConsultationForm {
@@ -154,6 +154,15 @@ export function ConsultationsPage() {
   )
   const [googleBanner, setGoogleBanner] = useState<'connected' | 'error' | null>(null)
 
+  /**
+   * Booking waves — opening Year 3 at 19:00 and Year 4 at 19:10 rather than
+   * the whole school at once. Empty means no waves, which is what every
+   * evening did before this and what most will continue to do.
+   */
+  const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
+  const [waveTimes, setWaveTimes] = useState<Record<string, string>>({})
+  const [savingWaves, setSavingWaves] = useState(false)
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const outcome = params.get('google_calendar')
@@ -209,6 +218,35 @@ export function ConsultationsPage() {
    * editable. Fixing a typo in the title is the common case and should not
    * require rebuilding an evening.
    */
+  useEffect(() => {
+    if (!selectedConsultation) return
+    const next: Record<string, string> = {}
+    for (const w of selectedConsultation.bookingWindows || []) {
+      next[w.yearGroupId] = toLocalInputValue(w.opensAt)
+    }
+    setWaveTimes(next)
+  }, [selectedConsultation?.id, selectedConsultation?.bookingWindows])
+
+  const handleSaveWaves = async () => {
+    if (!selectedId) return
+    setSavingWaves(true)
+    try {
+      // Blank means "no wave for this year group" — they book when the event
+      // opens. Sending the whole set each time means clearing one is just
+      // emptying its box.
+      const windows = Object.entries(waveTimes)
+        .filter(([, v]) => !!v)
+        .map(([yearGroupId, v]) => ({ yearGroupId, opensAt: toIsoInstant(v) || v }))
+      await api.consultations.setBookingWindows(selectedId, windows)
+      await refetch()
+      toast.success(windows.length === 0 ? 'Waves cleared — the evening opens to everyone at once' : 'Booking waves saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save booking waves')
+    } finally {
+      setSavingWaves(false)
+    }
+  }
+
   const editingConsultation = useMemo(
     () => (editingId && consultations ? consultations.find(c => c.id === editingId) || null : null),
     [editingId, consultations],
@@ -666,6 +704,56 @@ export function ConsultationsPage() {
               <p className="text-sm text-gray-700 mt-1">{selectedConsultation.description}</p>
             </div>
           )}
+        </div>
+
+        {/* Booking waves. Above Teachers because it is a property of the
+            evening rather than of a person, and because it wants deciding
+            before the invitations go out. */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h2 className="text-lg font-bold">Staggered opening</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Give each year group its own opening time so the whole school does not arrive at once.
+            Leave them all blank to open to everybody when you set the evening to Booking Open.
+          </p>
+          <p className="text-xs text-gray-400 mt-2">
+            A family with children in more than one year group books for all of them from their
+            earliest time — so siblings can be booked together. Worth saying in the email.
+          </p>
+
+          <div className="mt-4 space-y-2 max-w-lg">
+            {(yearGroups || []).map(yg => (
+              <div key={yg.id} className="flex items-center gap-3">
+                <span className="text-sm text-gray-700 w-32 shrink-0">{yg.name}</span>
+                <input
+                  type="datetime-local"
+                  value={waveTimes[yg.id] || ''}
+                  onChange={e => setWaveTimes({ ...waveTimes, [yg.id]: e.target.value })}
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+                {waveTimes[yg.id] && (
+                  <button
+                    type="button"
+                    onClick={() => setWaveTimes({ ...waveTimes, [yg.id]: '' })}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            ))}
+            {(yearGroups || []).length === 0 && (
+              <p className="text-sm text-gray-400">No year groups set up yet.</p>
+            )}
+          </div>
+
+          <button
+            onClick={handleSaveWaves}
+            disabled={savingWaves}
+            className="mt-4 px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-60"
+            style={{ backgroundColor: theme.colors.brandColor }}
+          >
+            {savingWaves ? 'Saving…' : 'Save opening times'}
+          </button>
         </div>
 
         {/* Teachers Section */}

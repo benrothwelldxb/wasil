@@ -15,6 +15,9 @@ import request from 'supertest'
  * unread.
  */
 const prismaMock = {
+  // Booking waves: an evening can open Year 3 at 19:00 and Year 4 at 19:10.
+  // Empty here means no waves, which is what every existing event has.
+  consultationBookingWindow: { findMany: vi.fn() },
   consultationSlot: { findUnique: vi.fn() },
   consultationBooking: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   parentStudentLink: { findFirst: vi.fn() },
@@ -86,6 +89,7 @@ const book = (body: Record<string, unknown> = {}) =>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  prismaMock.consultationBookingWindow.findMany.mockResolvedValue([])
   prismaMock.consultationSlot.findUnique.mockResolvedValue(slotRow())
   prismaMock.consultationBooking.findFirst.mockResolvedValue(null)
   prismaMock.consultationBooking.create.mockResolvedValue({ id: 'cb-1', studentName: 'Amina Khan', createdAt: new Date('2026-09-07T10:00:00Z') })

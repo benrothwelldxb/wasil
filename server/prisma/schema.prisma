@@ -496,6 +496,7 @@ model YearGroup {
   events         Event[]
   eventTargets   EventTarget[]
   scheduleItems  ScheduleItem[]
+  consultationBookingWindows ConsultationBookingWindow[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   serviceGroups  Group[]        @relation("ServiceGroupYearGroup")
@@ -1716,6 +1717,32 @@ model ConsultationEvent {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   teachers         ConsultationTeacher[]
+  bookingWindows   ConsultationBookingWindow[]
+}
+
+/// When booking opens for one year group, so an evening does not open to four
+/// hundred families at once.
+///
+/// Optional and additive: an event with no windows opens to everybody the
+/// moment its status becomes BOOKING_OPEN, which is what every event did
+/// before this existed. Windows narrow WITHIN that — the event must still be
+/// open at all.
+///
+/// A real table rather than a JSON column on the event: these are read on
+/// every booking attempt and set one per year group in the admin, which is the
+/// shape of a relation rather than a blob.
+model ConsultationBookingWindow {
+  id             String            @id @default(cuid())
+  consultationId String
+  consultation   ConsultationEvent @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  yearGroupId    String
+  yearGroup      YearGroup         @relation(fields: [yearGroupId], references: [id], onDelete: Cascade)
+  /// The instant this year group may begin booking.
+  opensAt        DateTime
+  createdAt      DateTime          @default(now())
+
+  @@unique([consultationId, yearGroupId])
+  @@index([consultationId])
 }
 
 model ConsultationTeacher {
