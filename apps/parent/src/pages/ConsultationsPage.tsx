@@ -281,6 +281,32 @@ export function ConsultationsPage() {
           </p>
         </div>
 
+        {/* When this family may begin, where the evening opens in waves.
+            Above the grid rather than only on a refused tap: a parent who can
+            see slots and cannot take them deserves to know why before they
+            try, not after. */}
+        {selectedConsultation.bookingOpensAt && (
+          <div
+            style={{
+              background: '#FFF7EC', border: '1px solid #F3E1C7',
+              borderRadius: 14, padding: '10px 12px', marginBottom: 14,
+              fontSize: 12.5, lineHeight: 1.5, color: '#7A5A2E',
+            }}
+          >
+            <strong style={{ fontWeight: 700 }}>
+              Booking opens at{' '}
+              {new Date(selectedConsultation.bookingOpensAt).toLocaleTimeString('en-GB', {
+                hour: '2-digit', minute: '2-digit', hour12: false,
+              })}
+              {selectedConsultation.bookingOpensForYearGroup
+                ? ` for ${selectedConsultation.bookingOpensForYearGroup}`
+                : ''}.
+            </strong>{' '}
+            You can look now and book then. If you have children in more than one year group,
+            you book for all of them from your earliest time.
+          </div>
+        )}
+
         {/* Day selector for multi-day consultations */}
         {(() => {
           // Derive available days from actual slot data (respects which days have slots)

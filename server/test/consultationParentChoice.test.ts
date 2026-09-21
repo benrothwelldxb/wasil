@@ -23,12 +23,16 @@ import request from 'supertest'
  */
 
 const prismaMock = {
+  // Booking waves: an evening can open Year 3 at 19:00 and Year 4 at 19:10.
+  // Empty here means no waves, which is what every existing event has.
+  consultationBookingWindow: { findMany: vi.fn() },
   consultationSlot: { findUnique: vi.fn() },
   consultationBooking: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   school: { findUnique: vi.fn() },
   user: { findUnique: vi.fn() },
   student: { findFirst: vi.fn() },
   parentStudentLink: { findFirst: vi.fn(), findMany: vi.fn() },
+  yearGroup: { findMany: vi.fn() },
   notification: { create: vi.fn(), createMany: vi.fn() },
   notificationPreference: { findMany: vi.fn() },
   deviceToken: { findMany: vi.fn() },
@@ -98,6 +102,7 @@ const slotWith = (locationType: string) => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  prismaMock.consultationBookingWindow.findMany.mockResolvedValue([])
   prismaMock.consultationSlot.findUnique.mockResolvedValue(slotWith('PARENT_CHOICE'))
   prismaMock.consultationBooking.findFirst.mockResolvedValue(null)
   prismaMock.consultationBooking.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
@@ -291,5 +296,104 @@ describe('the Google Calendar event', () => {
     await book({ locationType: 'GOOGLE_MEET' })
 
     expect(prismaMock.consultationBooking.update.mock.calls[0][0].data.meetingEventId).toBe('ev-1')
+  })
+})
+
+/**
+ * Opening an evening in waves.
+ *
+ * Four hundred families arriving in the same minute is the load problem;
+ * opening Year 3 at 19:00 and Year 4 at 19:10 is the cheapest answer to it,
+ * and it needs no queue.
+ *
+ * THE RULE THAT MATTERS is which wave a family with children in two year
+ * groups belongs to. Judging each child against their own year would let a
+ * parent book the Year 3 child at 19:00 and make them wait until 19:10 for
+ * the Year 4 one — by which time the slots beside the first have gone. That
+ * defeats the sibling-proximity work for exactly the families it was for.
+ *
+ * So the family's EARLIEST window applies to all their children. Ben chose it
+ * knowing it gives sibling families a head start in the later year group, and
+ * that it should be said out loud rather than discovered.
+ */
+describe('POST /parent/book — waves', () => {
+  const soon = () => new Date(Date.now() + 60 * 60 * 1000)
+  const past = () => new Date(Date.now() - 60 * 60 * 1000)
+  const inYear = (...yearGroupIds: string[]) =>
+    prismaMock.parentStudentLink.findMany.mockResolvedValue(
+      yearGroupIds.map(id => ({ student: { class: { yearGroupId: id } } })),
+    )
+
+  it('lets everyone book when the evening has no waves', async () => {
+    prismaMock.consultationBookingWindow.findMany.mockResolvedValue([])
+
+    const res = await book({ locationType: 'IN_PERSON' })
+
+    expect(res.status).toBe(201)
+  })
+
+  it('holds back a family whose wave has not arrived', async () => {
+    prismaMock.consultationBookingWindow.findMany.mockResolvedValue([
+      { opensAt: soon(), yearGroupId: 'yg-4', yearGroup: { name: 'Year 4' } },
+    ])
+    inYear('yg-4')
+
+    const res = await book({ locationType: 'IN_PERSON' })
+
+    expect(res.status).toBe(403)
+    expect(res.body.error).toContain('Year 4')
+    expect(res.body.opensAt).toBeTruthy()
+    expect(prismaMock.consultationBooking.create).not.toHaveBeenCalled()
+  })
+
+  it('lets them in once their wave has passed', async () => {
+    prismaMock.consultationBookingWindow.findMany.mockResolvedValue([
+      { opensAt: past(), yearGroupId: 'yg-4', yearGroup: { name: 'Year 4' } },
+    ])
+    inYear('yg-4')
+
+    const res = await book({ locationType: 'IN_PERSON' })
+
+    expect(res.status).toBe(201)
+  })
+
+  // The decision, pinned. A Year 3 + Year 4 family books everything from the
+  // Year 3 time, including the Year 4 teacher's slots.
+  it('uses a sibling family\'s EARLIEST wave for all their children', async () => {
+    prismaMock.consultationBookingWindow.findMany.mockResolvedValue([
+      { opensAt: past(), yearGroupId: 'yg-3', yearGroup: { name: 'Year 3' } },
+      { opensAt: soon(), yearGroupId: 'yg-4', yearGroup: { name: 'Year 4' } },
+    ])
+    inYear('yg-3', 'yg-4')
+
+    const res = await book({ locationType: 'IN_PERSON' })
+
+    // Year 4 has not opened, but this family is in Year 3 as well.
+    expect(res.status).toBe(201)
+  })
+
+  it('still holds a sibling family back when NEITHER wave has arrived', async () => {
+    prismaMock.consultationBookingWindow.findMany.mockResolvedValue([
+      { opensAt: soon(), yearGroupId: 'yg-3', yearGroup: { name: 'Year 3' } },
+      { opensAt: soon(), yearGroupId: 'yg-4', yearGroup: { name: 'Year 4' } },
+    ])
+    inYear('yg-3', 'yg-4')
+
+    const res = await book({ locationType: 'IN_PERSON' })
+
+    expect(res.status).toBe(403)
+  })
+
+  // Waves spread load; they are not a way to exclude a family the school
+  // forgot to give one to.
+  it('does not hold back a family in no year group that has a wave', async () => {
+    prismaMock.consultationBookingWindow.findMany.mockResolvedValue([
+      { opensAt: soon(), yearGroupId: 'yg-4', yearGroup: { name: 'Year 4' } },
+    ])
+    inYear('yg-6')
+
+    const res = await book({ locationType: 'IN_PERSON' })
+
+    expect(res.status).toBe(201)
   })
 })

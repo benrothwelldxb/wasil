@@ -2086,6 +2086,14 @@ export const consultations = {
       }>
       stats: { totalSlots: number; bookedSlots: number }
     }>(`/api/consultations/${id}/bookings`),
+  /** Replace the whole set of booking waves for an event. An empty list means
+   *  no waves: it opens to everybody when its status says so. */
+  setBookingWindows: (id: string, windows: Array<{ yearGroupId: string; opensAt: string }>) =>
+    fetchApi<{ windows: Array<{ id: string; yearGroupId: string; yearGroupName: string; opensAt: string }> }>(
+      `/api/consultations/${id}/booking-windows`,
+      { method: 'PUT', body: JSON.stringify({ windows }) },
+    ),
+
   getGoogleAuthUrl: () =>
     fetchApi<{
       url: string | null
