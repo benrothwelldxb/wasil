@@ -1634,11 +1634,18 @@ export interface ConsultationEvent {
   breakDuration: number
   targetClass?: string | null
   teachers?: ConsultationTeacher[]
+  /** Whether a Google Meet link can actually be created — i.e. whether the
+   *  school has connected a Google Calendar. False means do not offer Meet:
+   *  the booking would succeed with no way to attend it. Parent detail only. */
+  googleMeetAvailable?: boolean
   createdAt: string
   updatedAt: string
 }
 
-export type ConsultationLocationType = 'IN_PERSON' | 'GOOGLE_MEET' | 'ZOOM' | 'TEAMS' | 'CUSTOM'
+/** How a consultation happens. PARENT_CHOICE is a teacher-level setting only:
+ *  it means "in person or Google Meet, the parent picks", and is never the
+ *  effective type of a booking — the booking carries what was chosen. */
+export type ConsultationLocationType = 'IN_PERSON' | 'GOOGLE_MEET' | 'ZOOM' | 'TEAMS' | 'CUSTOM' | 'PARENT_CHOICE'
 
 export interface ConsultationAvailabilityWindow {
   id: string
@@ -1684,6 +1691,10 @@ export interface ConsultationBooking {
   studentId: string
   studentName: string
   notes?: string | null
+  /** What this parent chose, where the teacher offered either. Null means the
+   *  teacher's own setting applies — every booking made before the choice
+   *  existed, and every teacher who does not offer one. */
+  locationType?: string | null
   meetingLink?: string | null
   createdAt: string
   // Enriched fields for display

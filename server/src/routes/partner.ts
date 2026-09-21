@@ -3992,6 +3992,7 @@ async function consultationSlotsFor(
             select: {
               studentName: true,
               notes: true,
+              locationType: true,
               meetingLink: true,
               parent: { select: { name: true } },
             },
@@ -4011,6 +4012,10 @@ async function consultationSlotsFor(
       start_time: s.startTime,
       end_time: s.endTime,
       location: t.location,
+      // What the teacher OFFERS. 'PARENT_CHOICE' means either — which is not a
+      // way an appointment can happen, so a booked slot also carries the
+      // effective type below. A teacher reading their evening needs to know
+      // which of the two THIS parent picked, not that they were offered both.
       location_type: t.locationType,
       is_break: s.isBreak,
       booked: !!s.booking,
@@ -4021,6 +4026,10 @@ async function consultationSlotsFor(
             student_name: s.booking.studentName,
             parent_name: s.booking.parent?.name ?? null,
             notes: s.booking.notes,
+            // Resolved: what this appointment actually is. Falls back to the
+            // teacher's setting for every booking made before the choice
+            // existed, and for a teacher who does not offer one.
+            location_type: s.booking.locationType || t.locationType,
             meeting_link: s.booking.meetingLink,
           }
         : {}),

@@ -2087,14 +2087,29 @@ export const consultations = {
       stats: { totalSlots: number; bookedSlots: number }
     }>(`/api/consultations/${id}/bookings`),
   getGoogleAuthUrl: () =>
-    fetchApi<{ url: string; configured: boolean }>('/api/consultations/google-auth-url'),
+    fetchApi<{
+      url: string | null
+      /** Whether Google credentials exist on the server at all. */
+      configured: boolean
+      /** Whether THIS school has connected a calendar. */
+      connected?: boolean
+      connectedEmail?: string | null
+    }>('/api/consultations/google-auth-url'),
 
   // Parent endpoints
   parent: {
     list: () => fetchApi<ConsultationEvent[]>('/api/consultations/parent'),
     get: (id: string) => fetchApi<ConsultationEvent>(`/api/consultations/parent/${id}`),
-    book: (data: { slotId: string; studentId: string; studentName: string; notes?: string }) =>
-      fetchApi<ConsultationBooking>('/api/consultations/parent/book', {
+    book: (data: {
+      slotId: string
+      studentId: string
+      studentName: string
+      notes?: string
+      /** Required when the teacher's locationType is PARENT_CHOICE; ignored
+       *  otherwise, since any other setting is the teacher's decision. */
+      locationType?: 'IN_PERSON' | 'GOOGLE_MEET'
+    }) =>
+      fetchApi<ConsultationBooking & { locationType?: string; meetingLinkFailed?: boolean }>('/api/consultations/parent/book', {
         method: 'POST',
         body: JSON.stringify(data),
       }),

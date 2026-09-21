@@ -44,6 +44,10 @@ export function ConsultationsPage() {
   const [bookingStudentId, setBookingStudentId] = useState('')
   const [bookingStudentName, setBookingStudentName] = useState('')
   const [bookingNotes, setBookingNotes] = useState('')
+  // Only used where the teacher offers the choice. Defaults to in person: it
+  // is what a parents' evening is unless someone says otherwise, and a default
+  // of Meet would quietly move meetings online for anyone who did not read.
+  const [bookingMode, setBookingMode] = useState<'IN_PERSON' | 'GOOGLE_MEET'>('IN_PERSON')
   const [isBooking, setIsBooking] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
@@ -138,15 +142,23 @@ export function ConsultationsPage() {
     if (!bookingSlot || !bookingStudentId) return
     setIsBooking(true)
     try {
-      await api.consultations.parent.book({
+      const result = await api.consultations.parent.book({
         slotId: bookingSlot.slot.id,
         studentId: bookingStudentId,
         studentName: bookingStudentName,
         notes: bookingNotes || undefined,
+        ...(bookingSlot.teacher.locationType === 'PARENT_CHOICE' ? { locationType: bookingMode } : {}),
       })
-      showToast(`Booked: ${bookingSlot.teacher.teacherName} at ${bookingSlot.slot.startTime}. Check your email for confirmation.`)
+      showToast(
+        result?.meetingLinkFailed
+          // The appointment is real and the joining link is not. Telling them
+          // now beats them discovering it on the evening.
+          ? `Booked: ${bookingSlot.teacher.teacherName} at ${bookingSlot.slot.startTime}. The video link could not be created — please contact the school office.`
+          : `Booked: ${bookingSlot.teacher.teacherName} at ${bookingSlot.slot.startTime}. Check your email for confirmation.`,
+      )
       setBookingSlot(null)
       setBookingNotes('')
+      setBookingMode('IN_PERSON')
       setBookingStudentId('')
       setBookingStudentName('')
       await refetchAndSync()
@@ -530,7 +542,63 @@ export function ConsultationsPage() {
                       {bookingSlot.slot.startTime} - {bookingSlot.slot.endTime}
                     </span>
                   </div>
-                  {['GOOGLE_MEET', 'ZOOM', 'TEAMS'].includes(bookingSlot.teacher.locationType || '') ? (
+                  {bookingSlot.teacher.locationType === 'PARENT_CHOICE' ? (
+                    // The teacher will do either. Offered only when the school
+                    // has connected Google Calendar — without it a Meet
+                    // booking has no link, and offering a choice that cannot
+                    // be honoured is worse than not offering one.
+                    selectedConsultation.googleMeetAvailable ? (
+                      <div>
+                        <p className="text-sm font-semibold mb-1.5" style={{ color: '#2D2225' }}>
+                          How would you like to meet?
+                        </p>
+                        <div className="flex gap-2">
+                          {([
+                            { value: 'IN_PERSON' as const, label: 'In person', icon: MapPin },
+                            { value: 'GOOGLE_MEET' as const, label: 'Google Meet', icon: Video },
+                          ]).map(opt => {
+                            const Icon = opt.icon
+                            const active = bookingMode === opt.value
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => setBookingMode(opt.value)}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-semibold"
+                                style={{
+                                  border: `1px solid ${active ? '#C4506E' : '#E8DCDF'}`,
+                                  background: active ? '#FDF3F6' : '#FFFFFF',
+                                  color: active ? '#C4506E' : '#7A6469',
+                                }}
+                              >
+                                <Icon className="h-4 w-4" />
+                                {opt.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {bookingMode === 'GOOGLE_MEET' && (
+                          <p className="text-xs mt-1.5" style={{ color: '#7A6469' }}>
+                            A joining link will be emailed to you and shown here after booking.
+                          </p>
+                        )}
+                        {bookingMode === 'IN_PERSON' && bookingSlot.teacher.location && (
+                          <p className="text-xs mt-1.5" style={{ color: '#7A6469' }}>
+                            {bookingSlot.teacher.location}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      // Meet is offered by the teacher but cannot be produced.
+                      // Say in person rather than offer a choice that fails.
+                      bookingSlot.teacher.location && (
+                        <div className="flex items-center space-x-2 text-sm" style={{ color: '#2D2225' }}>
+                          <MapPin className="h-4 w-4" style={{ color: '#C4506E' }} />
+                          <span>{bookingSlot.teacher.location}</span>
+                        </div>
+                      )
+                    )
+                  ) : ['GOOGLE_MEET', 'ZOOM', 'TEAMS'].includes(bookingSlot.teacher.locationType || '') ? (
                     <div className="flex items-center space-x-2 text-sm" style={{ color: '#5B6EC4' }}>
                       <Video className="h-4 w-4" />
                       <span className="font-medium">Video Call - link will be provided after booking</span>

@@ -13,6 +13,7 @@ export interface RawBooking {
   studentId?: string | null
   studentName?: string | null
   notes?: string | null
+  locationType?: string | null
   meetingLink?: string | null
   createdAt: Date
 }
@@ -23,6 +24,11 @@ export interface SerializedBooking {
   studentId: string | null
   studentName: string | null
   notes: string | null
+  /** What this parent chose, where the teacher offered in person or Meet.
+   *  Null means the teacher's own setting applies. Own bookings only — which
+   *  of the two another family picked is no more theirs to know than the
+   *  child's name on it. */
+  locationType: string | null
   meetingLink: string | null
   createdAt: string
   isOwn: boolean
@@ -42,6 +48,7 @@ export function serializeBookingForParent(
     studentId: isOwn ? (booking.studentId ?? null) : null,
     studentName: isOwn ? (booking.studentName ?? null) : null,
     notes: isOwn ? (booking.notes ?? null) : null,
+    locationType: isOwn ? (booking.locationType ?? null) : null,
     meetingLink: isOwn ? (booking.meetingLink ?? null) : null,
     createdAt: booking.createdAt.toISOString(),
     isOwn,
