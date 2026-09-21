@@ -83,3 +83,8 @@ jobs:
       - name: Build ${{ matrix.app }}
         working-directory: apps/${{ matrix.app }}
         run: npx vite build
+      # Only the parent app has any today. --passWithNoTests so admin and
+      # provider stay green rather than needing a placeholder each.
+      - name: Test ${{ matrix.app }}
+        working-directory: apps/${{ matrix.app }}
+        run: npx vitest run --passWithNoTests
