@@ -2279,6 +2279,97 @@ router.delete('/transport/runs', requirePartner, async (req, res) => {
   }
 })
 
+
+// The principal's weekly update, for Desk's "Sent to parents" view.
+//
+//   GET /api/partner/weekly-messages?school_id=<Hub school id | Connect id>&limit=<n>
+//   → { messages: [ { id, title, content, weekOf, imageUrl,
+//                     publishedAt, scheduledAt, hearts } ] }
+//
+// Desk already merges Connect's admin posts into that view, on the principle
+// that staff should see what families have been told. It reads
+// /api/partner/messages, which queries the Message model — and the weekly
+// update is WeeklyMessage, a different model entirely. So it has never come
+// through, and nothing said it was missing: a teacher asked "what did the
+// principal say about sports day" had no answer but "open the parent app".
+//
+// PUBLISHEDAT IS DERIVED, because there is no such column. A weekly message is
+// visible to parents when its scheduledAt has passed, or immediately if it has
+// none — the same rule the parent read applies. So:
+//
+//   no scheduledAt          → published when it was created
+//   scheduledAt in the past → published then
+//   scheduledAt in future   → NOT published; publishedAt is null
+//
+// The distinction is the point rather than a detail. A staff bulletin saying
+// "the principal told parents X" when he has not yet is worse than saying
+// nothing, so a scheduled update arrives visibly unsent rather than absent.
+//
+// HEARTS AS A COUNT. WeeklyMessageHeart carries userId, and which parents
+// reacted is not Desk's business — but the number is the only feedback signal
+// on that message, and it has until now been visible nowhere but Connect's
+// admin. The integer, never the identities.
+//
+// CONTENT AS WRITTEN. Markdown, with ADR 0003 staff mentions intact and
+// deliberately NOT translated: the parent routes translate per reader, and
+// Desk's reader is a staff member who wrote it. Mentions render inert outside
+// the parent app — /inbox/new?staff= is a parent-app route and a teacher
+// clicking it in Desk would 404.
+router.get('/weekly-messages', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+
+    const limitRaw = Number.parseInt(String(req.query.limit ?? ''), 10)
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 20
+
+    const school = await prisma.school.findFirst({
+      where: { OR: [{ hubSchoolId: schoolIdParam }, { id: schoolIdParam }] },
+      select: { id: true, weeklyUpdatesEnabled: true },
+    })
+    // Unknown school is not an error — Desk may probe ids we don't host.
+    if (!school) return res.json({ messages: [] })
+    // A school with the module off gets an empty list rather than rows Desk
+    // would then have to make a judgement about.
+    if (!school.weeklyUpdatesEnabled) return res.json({ messages: [] })
+
+    const rows = await prisma.weeklyMessage.findMany({
+      where: { schoolId: school.id },
+      orderBy: [{ weekOf: 'desc' }, { createdAt: 'desc' }],
+      take: limit,
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        weekOf: true,
+        imageUrl: true,
+        scheduledAt: true,
+        createdAt: true,
+        _count: { select: { hearts: true } },
+      },
+    })
+
+    const now = new Date()
+    res.json({
+      messages: rows.map(m => ({
+        id: m.id,
+        title: m.title,
+        content: m.content,
+        weekOf: m.weekOf.toISOString().split('T')[0],
+        imageUrl: m.imageUrl,
+        publishedAt: m.scheduledAt
+          ? (m.scheduledAt <= now ? m.scheduledAt.toISOString() : null)
+          : m.createdAt.toISOString(),
+        scheduledAt: m.scheduledAt?.toISOString() || null,
+        hearts: m._count.hearts,
+      })),
+    })
+  } catch (error) {
+    console.error('Error fetching partner weekly messages:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 // The staff a Desk broadcast may @mention, with the ids that mentions resolve
 // against.
 //
