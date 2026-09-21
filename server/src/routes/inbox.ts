@@ -467,6 +467,31 @@ router.post('/conversations', isAuthenticated, async (req, res) => {
 // admin for). Used to gate every per-conversation action. An added participant
 // (Phase 1: a co-guardian the primary parent opted to share the thread with) is
 // an authorized reader/sender via the `participants` relation.
+/**
+ * What to show where a message's words would go, when it has none.
+ *
+ * A thread list entry and a push notification both read the message text. An
+ * attachment-only message has none, and a blank line in an inbox reads as a
+ * bug — or worse, as nothing having arrived. So it says what was sent.
+ *
+ * The file NAME is deliberately not used: attachments arrive called IMG_4021
+ * or Scan_20260920, which tells the reader less than "a photo" does, and can
+ * carry a child's name into a lock-screen notification.
+ */
+function describeAttachments(files: Array<{ fileType?: string }>): string {
+  if (files.length === 0) return ''
+  const allImages = files.every(f => (f.fileType || '').startsWith('image/'))
+  const allVideos = files.every(f => (f.fileType || '').startsWith('video/'))
+  if (files.length === 1) {
+    if (allImages) return 'Sent a photo'
+    if (allVideos) return 'Sent a video'
+    return 'Sent a file'
+  }
+  if (allImages) return `Sent ${files.length} photos`
+  if (allVideos) return `Sent ${files.length} videos`
+  return `Sent ${files.length} files`
+}
+
 function participantWhere(id: string, user: Express.User) {
   return {
     id,
@@ -488,8 +513,17 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
     const { id } = req.params
     const { content, attachments, replyToId } = req.body
 
-    if (!content || !content.trim()) {
-      return res.status(400).json({ error: 'Message content is required' })
+    const body = typeof content === 'string' ? content.trim() : ''
+    const files = Array.isArray(attachments) ? attachments : []
+
+    // An attachment on its own IS a message. A parent photographing a letter
+    // often has nothing to add to it, and the composer has always allowed
+    // sending one with no text — this route did not, so the send 400'd and the
+    // app, which reported nothing, simply appeared to do nothing. That is the
+    // "the file just doesn't send" report: the upload worked, the send did not,
+    // and neither said so.
+    if (!body && files.length === 0) {
+      return res.status(400).json({ error: 'Write a message or attach a file' })
     }
 
     // Verify user is participant
@@ -522,7 +556,7 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
       data: {
         conversationId: id,
         senderId: user.id,
-        content: content.trim(),
+        content: body,
         ...(replyToId ? { replyToId } : {}),
       },
     })
@@ -543,7 +577,7 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
     // Update conversation denormalized fields (do NOT auto-unset archive for recipient)
     const updateData: Record<string, unknown> = {
       lastMessageAt: message.createdAt,
-      lastMessageText: content.trim().substring(0, 200),
+      lastMessageText: (body || describeAttachments(files)).substring(0, 200),
     }
 
     await prisma.conversation.update({
@@ -585,7 +619,7 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
           userId: r.userId,
           type: 'DIRECT_MESSAGE',
           title: `Message from ${senderDisplayName}`,
-          body: content.trim().substring(0, 200),
+          body: (body || describeAttachments(files)).substring(0, 200),
           resourceType: 'CONVERSATION',
           resourceId: id,
           // `messageId` so a later withdrawal can find THIS row and rewrite
@@ -1798,7 +1832,8 @@ router.post('/upload', isAuthenticated, singleAttachment(), async (req, res) => 
 
     const check = checkUpload(uploaded.buffer, uploaded.mimetype, uploaded.originalname, ATTACHMENT_MIME_TYPES)
     if (!check.valid) {
-      return res.status(400).json({ error: `File rejected: ${check.reason}` })
+      // Reads as a sentence to the parent who sees it, rather than as a log line.
+      return res.status(400).json({ error: `Couldn't attach that file — ${check.reason}` })
     }
 
     const safeName = uploaded.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')

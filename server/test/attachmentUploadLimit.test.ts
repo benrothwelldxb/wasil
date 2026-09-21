@@ -78,7 +78,14 @@ describe('a parent attaching a file', () => {
     expect(res.status).toBe(413)
     expect(res.body.error).toContain('too large')
     // The number a parent sees on their phone, not bytes.
-    expect(res.body.error).toContain('16MB')
+    // Derived from the constant rather than hardcoded: the limit moved from
+    // 16MB to 100MB when video became attachable, and a test naming the old
+    // number fails for the wrong reason — it says the message is wrong when
+    // only the ceiling changed. What matters is that the message states the
+    // real limit, whatever it is, because that is the one thing the parent can
+    // act on.
+    const limitMb = Math.round(ATTACHMENT_SIZE_LIMIT / (1024 * 1024))
+    expect(res.body.error).toContain(`${limitMb}MB`)
     expect(storageMock.uploadFile).not.toHaveBeenCalled()
   })
 

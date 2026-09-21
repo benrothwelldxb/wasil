@@ -4,12 +4,29 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express'
 /**
  * One attachment, held in memory on its way to storage.
  *
- * 16MB, which is roughly four photographs from a phone or a scanned letter.
  * Defined once because it was defined three times — inbox, posts and the
  * partner API — and a ceiling that differs by route is a ceiling nobody can
  * state to a parent.
+ *
+ * 100MB, raised from 16MB when video became attachable: 16MB is a few seconds
+ * of phone video, so allowing video without raising this would have been
+ * allowing it in name only.
+ *
+ * TWO THINGS THIS NUMBER DEPENDS ON, both outside this file:
+ *
+ * 1. Cloudflare sits in front of the API and caps request bodies at 100MB on
+ *    Free/Pro plans. A 100MB file plus multipart overhead exceeds that, so the
+ *    real ceiling is a little under — Cloudflare rejects it before Express
+ *    sees it, and its 413 will not carry the friendly message below. Anything
+ *    at the very top of this range wants testing against production rather
+ *    than against localhost.
+ *
+ * 2. multer.memoryStorage holds the whole file in RAM. One 100MB upload is
+ *    fine; several at once is a container's memory budget. If parents start
+ *    sending video in volume, this wants streaming to storage rather than a
+ *    bigger number.
  */
-export const ATTACHMENT_SIZE_LIMIT = 16 * 1024 * 1024
+export const ATTACHMENT_SIZE_LIMIT = 100 * 1024 * 1024
 
 export const attachmentUpload = multer({
   storage: multer.memoryStorage(),
