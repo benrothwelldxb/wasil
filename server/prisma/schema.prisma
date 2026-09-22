@@ -249,6 +249,21 @@ model User {
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
 
+  // Hub says this staff member has left. Set by the staff sync from Hub's
+  // `isArchived` flag, dated with Hub's `leftOn` when it sends one and with the
+  // sync time when it doesn't. Null = still here.
+  //
+  // A soft mark, exactly as for a pupil (see Student.leftAt) and for the same
+  // reason: posts, parent threads, consultation bookings and audit rows all
+  // hang off this row, so a leaver must stay readable. What it changes is
+  // PICKING them — a teacher who left in July has no business in September's
+  // consultation list. Cleared automatically if Hub un-archives them.
+  //
+  // Deliberately NOT a login block in this first pass: these fields only
+  // reached the wire this month and we have never seen the data, so locking a
+  // real teacher out on a Hub glitch is the more expensive way to be wrong.
+  leftAt DateTime?
+
   // Tracking
   lastLoginAt DateTime?
 

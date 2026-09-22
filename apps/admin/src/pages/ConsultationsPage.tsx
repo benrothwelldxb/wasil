@@ -376,14 +376,19 @@ export function ConsultationsPage() {
    * is the thing that is actually unique, and it is what distinguishes the two
    * accounts in the first place.
    */
+  // Who you can still put in front of a parent. Staff who have left stay in
+  // the list the API returns — the Staff page needs them — but picking one
+  // for an evening in three weeks' time is never what anyone meant.
+  const currentStaff = useMemo(() => (staffList ?? []).filter(s => !s.leftAt), [staffList])
+
   const duplicateNames = useMemo(() => {
     const seen = new Map<string, number>()
-    for (const s of staffList ?? []) {
+    for (const s of currentStaff) {
       const key = (s.name || '').trim().toLowerCase()
       seen.set(key, (seen.get(key) ?? 0) + 1)
     }
     return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([k]) => k))
-  }, [staffList])
+  }, [currentStaff])
 
   const staffDetail = (s: StaffMember): string | null => {
     const parts: string[] = []
@@ -1181,13 +1186,13 @@ export function ConsultationsPage() {
                         onClick={() => setTeacherForm({
                           ...teacherForm,
                           teacherIds:
-                            teacherForm.teacherIds.length === (staffList?.length ?? 0)
+                            teacherForm.teacherIds.length === currentStaff.length
                               ? []
-                              : (staffList ?? []).map(st => st.id),
+                              : currentStaff.map(st => st.id),
                         })}
                         className="text-xs font-semibold text-gray-500 hover:text-gray-700"
                       >
-                        {teacherForm.teacherIds.length === (staffList?.length ?? 0) && (staffList?.length ?? 0) > 0
+                        {teacherForm.teacherIds.length === currentStaff.length && currentStaff.length > 0
                           ? 'Clear all'
                           : 'Select all'}
                       </button>
@@ -1196,7 +1201,7 @@ export function ConsultationsPage() {
                       className="border border-gray-200 max-h-56 overflow-y-auto divide-y divide-gray-100"
                       style={{ borderRadius: '14px' }}
                     >
-                      {(staffList ?? []).map(st => {
+                      {currentStaff.map(st => {
                         const checked = teacherForm.teacherIds.includes(st.id)
                         return (
                           <label

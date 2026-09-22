@@ -207,7 +207,7 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       yearGroups: 1,
       classes: 1,
       pupils: 1,
-      staff: { created: 0, updated: 0 },
+      staff: { created: 0, updated: 0, left: 0, returned: 0 },
       pupilMisIds: { withMisId: 1, missing: 0 },
       attendance: { withFigure: 0, noFigure: 0, scopeGranted: false },
       // The one pupil Hub returned is on roll, and its class counted as
@@ -289,7 +289,7 @@ describe('syncSchoolFromHub — staff linking', () => {
     expect(updateArg.data).not.toHaveProperty('hubUserId')
     expect(prismaMock.user.create).not.toHaveBeenCalled()
 
-    expect(summary.staff).toEqual({ created: 0, updated: 1 })
+    expect(summary.staff).toEqual({ created: 0, updated: 1, left: 0, returned: 0 })
   })
 
   it('creates a brand-new staff user with a role mapped from Hub global roles', async () => {
@@ -319,7 +319,7 @@ describe('syncSchoolFromHub — staff linking', () => {
     expect(createArg.data.role).toBe('ADMIN')
     expect(prismaMock.user.update).not.toHaveBeenCalled()
 
-    expect(summary.staff).toEqual({ created: 1, updated: 0 })
+    expect(summary.staff).toEqual({ created: 1, updated: 0, left: 0, returned: 0 })
   })
 })
 

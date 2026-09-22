@@ -1100,6 +1100,9 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
         id: { in: requested },
         schoolId: user.schoolId,
         role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
+        // Somebody who has left cannot be added to an evening. Teachers already
+        // on one are untouched — removing them would delete parents' bookings.
+        leftAt: null,
       },
       select: { id: true },
     })

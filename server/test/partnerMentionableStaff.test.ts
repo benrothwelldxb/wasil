@@ -69,6 +69,17 @@ describe('GET /api/partner/staff/mentionable', () => {
     expect(where.schoolId).toBe('sch-1')
   })
 
+  it('never offers somebody who has left', async () => {
+    // A mention tells every parent reading the post to go and message that
+    // person. Offering a name that left in July is worse than offering none:
+    // the parent sends the message and waits for an answer that cannot come.
+    // Mentions already published still resolve — they carry the user id and
+    // render from the post, not from this list.
+    await auth(request(makeApp()).get('/api/partner/staff/mentionable?school_id=hub-1'))
+    const where = prismaMock.user.findMany.mock.calls[0][0].where
+    expect(where.leftAt).toBeNull()
+  })
+
   it('never exposes an ILSA — they are scoped to one pupil, not a broadcast', async () => {
     await auth(request(makeApp()).get('/api/partner/staff/mentionable?school_id=hub-1'))
     const where = prismaMock.user.findMany.mock.calls[0][0].where

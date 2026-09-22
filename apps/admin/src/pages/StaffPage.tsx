@@ -18,6 +18,13 @@ export function StaffPage() {
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Staff Hub has archived. They stay on this page — an admin needs to see who
+  // has gone, and their posts and parent threads are still there to read — but
+  // they are folded away by default and no picker anywhere offers them.
+  const current = (staffList ?? []).filter(m => !m.leftAt)
+  const leavers = (staffList ?? []).filter(m => !!m.leftAt)
+  const [showLeavers, setShowLeavers] = useState(false)
+
   // Edit form fields
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -74,6 +81,17 @@ export function StaffPage() {
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+  }
+
+  // Hub sends a real leaving date when it holds one; when it doesn't, the sync
+  // stamps the moment it noticed, which is close enough to show as a date and
+  // misleading to show as a time.
+  const formatLeftAt = (iso?: string | null) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   return (
@@ -210,7 +228,7 @@ export function StaffPage() {
       )}
 
       <div className="space-y-3">
-        {staffList?.map(member => (
+        {current.map(member => (
           <div key={member.id} className="bg-white rounded-lg border border-slate-200 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3 flex-1">
@@ -258,6 +276,44 @@ export function StaffPage() {
           <div className="text-center py-12 text-gray-500">
             <UserCog className="h-12 w-12 mx-auto mb-4 opacity-50" />
             <p>No staff members yet.</p>
+          </div>
+        )}
+
+        {leavers.length > 0 && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setShowLeavers(v => !v)}
+              className="text-sm text-slate-500 hover:text-slate-700 font-medium"
+            >
+              {showLeavers ? 'Hide' : 'Show'} {leavers.length} who {leavers.length === 1 ? 'has' : 'have'} left
+            </button>
+            {showLeavers && (
+              <div className="space-y-2 mt-3">
+                <p className="text-xs text-slate-400">
+                  Marked as left in Wasil Hub. Their posts and message threads stay readable, and
+                  they no longer appear when you pick staff for a consultation, a group or a tag.
+                </p>
+                {leavers.map(member => (
+                  <div key={member.id} className="bg-slate-50 rounded-lg border border-slate-200 p-3 opacity-80">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-300 flex items-center justify-center text-white text-xs font-medium">
+                        {getInitials(member.name)}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-slate-600">{member.name}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">
+                            Left {formatLeftAt(member.leftAt)}
+                          </span>
+                        </div>
+                        <span className="text-sm text-slate-400">{member.email}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -127,6 +127,10 @@ router.get('/', isAdmin, async (req, res) => {
       twoFactorEnabled: s.twoFactorEnabled,
       lastLoginAt: s.lastLoginAt?.toISOString() || null,
       fromHub: s.hubUserId != null,
+      // Hub says they've left. Deliberately still listed — an admin needs to
+      // see who has gone, and every picker in the app filters on this field
+      // rather than on the list being pre-trimmed for them.
+      leftAt: s.leftAt?.toISOString() || null,
       assignedClasses: s.assignedClasses.map(ac => ({
         id: ac.class.id,
         name: ac.class.name,

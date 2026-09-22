@@ -142,6 +142,17 @@ export interface HubStaff {
   hubUserId: string | null
   globalRoles: string[]
   isInviteAccepted: boolean
+  /** Hub's word that this person has left. A leaver is NOT removed from this
+   *  feed and never generates a `staff.deleted` — Hub keeps the record and
+   *  flags it, so absence means nothing here and this flag means everything.
+   *  Optional so an older Hub (which omitted both fields entirely) reads as
+   *  "didn't say" rather than "still here" — see `upsertStaff`, which leaves
+   *  `leftAt` untouched when it's undefined rather than clearing it. */
+  isArchived?: boolean
+  /** The leaving date, `YYYY-MM-DD`, when Hub holds one. Null or absent with
+   *  `isArchived: true` is normal — plenty of records are archived without a
+   *  date — and the sync falls back to the time it noticed. */
+  leftOn?: string | null
 }
 
 // Mirror of Hub's GuardianDTO (subset). A guardian is a parent/carer linked to

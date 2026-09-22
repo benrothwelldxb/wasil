@@ -1,0 +1,11 @@
+-- A staff member Hub says has left.
+--
+-- Additive and nullable: every existing row reads as "still here", which is
+-- what they were before this column existed. The staff sync fills it in on its
+-- next run from Hub's `isArchived` / `leftOn`, and clears it again if Hub
+-- un-archives someone — so no backfill is needed or wanted here.
+--
+-- Mirrors "Student"."leftAt" deliberately: same name, same nullable shape, same
+-- meaning (a soft mark that hides someone from pickers without touching the
+-- history hanging off their row).
+ALTER TABLE "User" ADD COLUMN "leftAt" TIMESTAMP(3);

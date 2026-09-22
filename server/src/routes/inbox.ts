@@ -1516,7 +1516,12 @@ router.get('/contacts/available', isAuthenticated, async (req, res) => {
     // Get teachers assigned to those classes
     const staffAssignments = classIds.length > 0
       ? await prisma.staffClassAssignment.findMany({
-          where: { classId: { in: classIds } },
+          // Hub's class `teachers[]` is reconciled authoritatively, so a leaver
+          // usually loses the assignment on the next sync — but not always, and
+          // not immediately: a teacher archived mid-term stays on the class
+          // until someone in Hub reassigns it. `leftAt` is the fact; the
+          // assignment is only a consequence of it.
+          where: { classId: { in: classIds }, user: { leftAt: null } },
           include: {
             user: { select: { id: true, name: true, avatarUrl: true } },
             class: { select: { id: true, name: true } },
@@ -1863,7 +1868,7 @@ router.get('/contacts', isAdmin, async (req, res) => {
     const contacts = await prisma.schoolContact.findMany({
       where: { schoolId: user.schoolId },
       include: {
-        assignedUser: { select: { id: true, name: true, email: true } },
+        assignedUser: { select: { id: true, name: true, email: true, leftAt: true } },
       },
       orderBy: { order: 'asc' },
     })
@@ -1876,6 +1881,10 @@ router.get('/contacts', isAdmin, async (req, res) => {
       assignedUserId: c.assignedUserId,
       assignedUserName: c.assignedUser.name,
       assignedUserEmail: c.assignedUser.email,
+      // A contact pointed at somebody who has left still shows to parents —
+      // removing "Head of Pastoral Care" from their list is worse than leaving
+      // it — but it needs reassigning, and only this flag would ever say so.
+      assignedUserLeftAt: c.assignedUser.leftAt?.toISOString() || null,
       warnBeforeMessaging: c.warnBeforeMessaging,
       warningMessage: c.warningMessage,
       alwaysVisible: c.alwaysVisible,

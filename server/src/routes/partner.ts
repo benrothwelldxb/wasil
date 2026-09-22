@@ -1436,6 +1436,8 @@ router.post('/inbox/threads/:id/staff', requirePartner, async (req, res) => {
         schoolId: staff.schoolId,
         role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
         isTest: false,
+        // A colleague who has left can't be brought onto a live thread.
+        leftAt: null,
       },
       select: { id: true },
     })
@@ -2422,6 +2424,12 @@ router.get('/staff/mentionable', requirePartner, async (req, res) => {
         role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
         // Test accounts stay out of every staff enumeration.
         isTest: false,
+        // As do leavers. This feed is what Desk offers when an author types
+        // "@" — a mention is an instruction to a parent to go and message
+        // somebody, so offering a name that has left is worse than offering
+        // none. Existing mentions in already-published posts still resolve:
+        // they carry the user id and render from the post, not from this list.
+        leftAt: null,
       },
       select: { id: true, name: true, role: true, position: true },
       orderBy: { name: 'asc' },
