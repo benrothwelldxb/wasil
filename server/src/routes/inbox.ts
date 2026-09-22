@@ -1044,7 +1044,10 @@ async function contactableStaff(parentUserId: string, schoolId: string): Promise
   const byId = new Map<string, string>()
   if (classIds.length > 0) {
     const assignments = await prisma.staffClassAssignment.findMany({
-      where: { classId: { in: classIds } },
+      // Same leaver filter as `/contacts/available` above — these two sets
+      // must stay identical or a parent sees a contact they cannot CC, or CCs
+      // one they were never shown.
+      where: { classId: { in: classIds }, user: { leftAt: null } },
       select: { userId: true, user: { select: { name: true } } },
     })
     for (const a of assignments) byId.set(a.userId, a.user.name)
