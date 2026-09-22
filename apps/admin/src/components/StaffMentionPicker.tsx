@@ -22,7 +22,10 @@ export function StaffMentionPicker({
   const [query, setQuery] = useState('')
 
   const results = useMemo(() => {
-    const all = staff || []
+    // Never offer somebody who has left. A mention is an instruction to a
+    // parent to go and message that person, so a stale name here becomes a
+    // message nobody will ever read.
+    const all = (staff || []).filter(s => !s.leftAt)
     const q = query.trim().toLowerCase()
     if (!q) return all
     return all.filter(

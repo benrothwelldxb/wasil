@@ -1140,6 +1140,11 @@ export interface StaffMember {
   lastLoginAt?: string | null
   /** True when this user is linked to Hub (hubUserId set). Admin only. */
   fromHub?: boolean
+  /** Hub says this person has left, ISO date. Null/absent = still here.
+   *  They stay in this list on purpose — the Staff page shows them, every
+   *  picker filters them out. Pickers must check this rather than assume the
+   *  list is already trimmed. */
+  leftAt?: string | null
   assignedClasses: Array<{ id: string; name: string }>
   createdAt: string
 }

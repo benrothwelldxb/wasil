@@ -148,6 +148,10 @@ describe('teachingStaffForClasses', () => {
     expect(prismaMock.user.findMany.mock.calls[0][0].where).toEqual({
       schoolId: 'sch-1',
       role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
+      // Nor anyone who has left. A published timetable outlives the staff on
+      // it, so a name here can belong to someone who went two terms ago —
+      // resolving it would put a parent in a thread nobody reads.
+      leftAt: null,
     })
   })
 

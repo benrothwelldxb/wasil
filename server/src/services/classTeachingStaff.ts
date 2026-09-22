@@ -78,7 +78,10 @@ function blockTeachers(b: HubTimetableBlock): string[] {
  * dropped, so they simply never resolve. */
 async function staffIndex(schoolId: string): Promise<Map<string, { id: string; name: string; avatarUrl: string | null }>> {
   const staff = await prisma.user.findMany({
-    where: { schoolId, role: { in: [...STAFF_ELIGIBLE_ROLES] } },
+    // Leavers excluded: a timetable can still name a teacher who has gone (the
+    // published version predates their leaving), and resolving that name to a
+    // messageable contact would put a parent in a thread nobody reads.
+    where: { schoolId, role: { in: [...STAFF_ELIGIBLE_ROLES] }, leftAt: null },
     select: { id: true, name: true, avatarUrl: true },
   })
   const byName = new Map<string, { id: string; name: string; avatarUrl: string | null } | null>()

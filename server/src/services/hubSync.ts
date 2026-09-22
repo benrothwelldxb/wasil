@@ -95,8 +95,12 @@ export interface SyncSummary {
     sweepRefused?: string
     unplaced: number
   }
-  /** Staff, split by whether the Connect user was created or updated/linked. */
-  staff: { created: number; updated: number }
+  /** Staff, split by whether the Connect user was created or updated/linked.
+   *  `left` and `returned` count Hub's archive flag arriving and being lifted —
+   *  newly marked this run and newly cleared, never a re-stamp. Hub keeps a
+   *  leaver in the feed rather than dropping them, so these two numbers are the
+   *  only place a departure shows up at all. */
+  staff: { created: number; updated: number; left: number; returned: number }
   /** Guardians provisioned as Connect PARENT users. `fetched` = how many Hub
    * returned (across all pages) — the number to compare against Hub's own
    * guardian count when parents appear to be missing; `created` = brand-new
@@ -432,13 +436,21 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
   }
 
   // --- 5. Staff ------------------------------------------------------------
+  // Upsert-only, unlike the pupil pass and unlike the class-teacher pass below:
+  // a Connect staff account is never deleted from here. A departure arrives as
+  // Hub's `isArchived` flag on a record that STAYS in this feed — absence means
+  // nothing, so there is nothing to sweep and no inference to make.
   const hubStaff = await listStaff(hubSchoolId)
   let created = 0
   let updated = 0
+  let staffLeft = 0
+  let staffReturned = 0
   for (const s of hubStaff) {
-    const wasCreated = await upsertStaff(s, schoolId)
-    if (wasCreated) created++
+    const r = await upsertStaff(s, schoolId)
+    if (r.created) created++
     else updated++
+    if (r.leftChange === 'marked') staffLeft++
+    else if (r.leftChange === 'returned') staffReturned++
   }
 
   // --- 6. Class-teacher assignments ----------------------------------------
@@ -571,7 +583,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
       ...(sweepRefused ? { sweepRefused } : {}),
       unplaced,
     },
-    staff: { created, updated },
+    staff: { created, updated, left: staffLeft, returned: staffReturned },
     guardians: guardianSummary,
     parentLinks: parentLinkSummary,
     teacherAssignments,
@@ -772,6 +784,46 @@ async function upsertGuardian(
   return created.id
 }
 
+/** Hub sends `leftOn` as a plain `YYYY-MM-DD`; tolerate a full ISO timestamp
+ *  too, and refuse anything that isn't a date rather than handing Prisma an
+ *  Invalid Date (which throws mid-sync and takes the whole run with it). */
+function parseLeftOn(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const d = new Date(value.includes('T') ? value : `${value}T00:00:00.000Z`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
+ * What `User.leftAt` should become for this Hub staff member, given what it is
+ * now. `undefined` means "change nothing", and it is returned in three
+ * distinct cases that all genuinely want no write:
+ *
+ *   • Hub didn't say. `isArchived` absent — an older Hub, or a payload without
+ *     the field. Silence is not "still here": clearing a mark because a field
+ *     went missing would un-leave every leaver on one bad deploy.
+ *   • Not archived, not marked. Nothing to do.
+ *   • Archived and already marked. Never re-stamp — an exit date that walks
+ *     forward on every sync looks authoritative and isn't (the same reasoning
+ *     as the pupil leaver pass above). The cost is that a date we guessed as
+ *     `now` is not corrected if Hub later supplies the real one; a wrong-by-days
+ *     date is a much smaller lie than a date that changes every night.
+ */
+function desiredLeftAt(s: HubStaff, current: Date | null): Date | null | undefined {
+  if (s.isArchived === undefined) return undefined
+  if (!s.isArchived) return current === null ? undefined : null
+  if (current !== null) return undefined
+  return parseLeftOn(s.leftOn) ?? new Date()
+}
+
+/** What an upsert did to this person's leaving mark, for the sync summary. */
+export type LeftChange = 'marked' | 'returned' | null
+
+function leftChangeOf(current: Date | null, desired: Date | null | undefined): LeftChange {
+  if (desired === undefined) return null
+  if (desired === null) return current === null ? null : 'returned'
+  return current === null ? 'marked' : null
+}
+
 /**
  * Upsert a single Hub staff member into Connect. Resolution order:
  *   1. Linked already — a Connect user with this `hubUserId` (when Hub has one).
@@ -779,10 +831,17 @@ async function upsertGuardian(
  *      matching email; link its `hubUserId` if Hub now has one. Role untouched.
  *   3. Brand-new — create a Connect user. Only here is a role assigned, mapped
  *      from Hub `globalRoles`.
- * Returns `true` when a new user was created, `false` when an existing one was
- * updated/linked (or skipped). Never rewrites an existing user's Connect role.
+ * Never rewrites an existing user's Connect role.
+ *
+ * Also mirrors Hub's archive flag into `User.leftAt`, which is what keeps
+ * departed staff out of the pickers. Hub does NOT drop a leaver from this feed
+ * and does not raise `staff.deleted` for one, so this pass is the only place
+ * Connect can learn that somebody has gone.
  */
-async function upsertStaff(s: HubStaff, schoolId: string): Promise<boolean> {
+async function upsertStaff(
+  s: HubStaff,
+  schoolId: string,
+): Promise<{ created: boolean; leftChange: LeftChange }> {
   const name = `${s.firstName} ${s.lastName}`.trim()
   const email = s.email?.trim().toLowerCase() || null
 
@@ -792,12 +851,17 @@ async function upsertStaff(s: HubStaff, schoolId: string): Promise<boolean> {
       where: { hubUserId: s.hubUserId, schoolId },
     })
     if (linked) {
+      const leftAt = desiredLeftAt(s, linked.leftAt)
       await prisma.user.update({
         where: { id: linked.id },
         // Refresh profile; deliberately DO NOT touch `role`.
-        data: { name, position: s.jobTitle ?? undefined },
+        data: {
+          name,
+          position: s.jobTitle ?? undefined,
+          ...(leftAt === undefined ? {} : { leftAt }),
+        },
       })
-      return false
+      return { created: false, leftChange: leftChangeOf(linked.leftAt, leftAt) }
     }
   }
 
@@ -813,22 +877,30 @@ async function upsertStaff(s: HubStaff, schoolId: string): Promise<boolean> {
         s.hubUserId && (!candidate.hubUserId || candidate.hubUserId === s.hubUserId)
           ? s.hubUserId
           : undefined
+      const leftAt = desiredLeftAt(s, candidate.leftAt)
       await prisma.user.update({
         where: { id: candidate.id },
         data: {
           name,
           position: s.jobTitle ?? undefined,
           ...(linkHubUserId ? { hubUserId: linkHubUserId } : {}),
+          ...(leftAt === undefined ? {} : { leftAt }),
         },
       })
-      return false
+      return { created: false, leftChange: leftChangeOf(candidate.leftAt, leftAt) }
     }
   }
 
   // (3) Brand-new. Needs an email (User.email is required + unique). Pending
   // invites with no email can't be mirrored yet — skip (counts as "updated"/
   // no-op so the summary never over-reports creations).
-  if (!email) return false
+  if (!email) return { created: false, leftChange: null }
+
+  // A brand-new row for someone already archived does happen — the first sync
+  // after Connect is pointed at a school that has had staff come and go. Create
+  // them marked, so they are readable (their name resolves on old Hub data)
+  // without ever appearing in a picker.
+  const leftAt = desiredLeftAt(s, null) ?? null
 
   await prisma.user.create({
     data: {
@@ -838,9 +910,10 @@ async function upsertStaff(s: HubStaff, schoolId: string): Promise<boolean> {
       schoolId,
       position: s.jobTitle ?? undefined,
       hubUserId: s.hubUserId ?? undefined,
+      leftAt,
     },
   })
-  return true
+  return { created: true, leftChange: leftAt ? 'marked' : null }
 }
 
 /** Map Hub global roles → a Connect role, for BRAND-NEW users only. Existing

@@ -452,6 +452,8 @@ router.post('/:id/staff', isAdmin, async (req, res) => {
         id: userId,
         schoolId: user.schoolId,
         role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
+        // Not somebody who has left — a group grants messaging rights.
+        leftAt: null,
       },
     })
 

@@ -172,6 +172,26 @@ describe('POST /conversations/:id/staff', () => {
     expect(prismaMock.conversationParticipant.create).not.toHaveBeenCalled()
   })
 
+  it('asks for class teachers who have not left, matching the contact list exactly', async () => {
+    // The contactable set and GET /contacts/available are two queries that must
+    // return the same people. If only one of them filters leavers, a parent
+    // either sees a contact they cannot CC or CCs one they were never shown —
+    // and which way round it fails depends on which query you edited last.
+    prismaMock.conversation.findFirst.mockResolvedValue({
+      id: 'c-1', parentId: 'primary-1', staffId: 'staff-1', schoolId: 'school-1', participants: [],
+    })
+    prismaMock.user.findFirst.mockResolvedValue({ id: 'gone-1' })
+    prismaMock.parentStudentLink.findMany.mockResolvedValue([{ student: { classId: 'cls-1' } }])
+    prismaMock.staffClassAssignment.findMany.mockResolvedValue([])
+    prismaMock.schoolContact.findMany.mockResolvedValue([])
+
+    await request(makeApp()).post('/api/inbox/conversations/c-1/staff').send({ userId: 'gone-1' })
+
+    const where = prismaMock.staffClassAssignment.findMany.mock.calls[0][0].where
+    expect(where.classId).toEqual({ in: ['cls-1'] })
+    expect(where.user).toEqual({ leftAt: null })
+  })
+
   it('cannot CC the primary staffId (already on the thread) — 400, no create, no gate lookup', async () => {
     prismaMock.conversation.findFirst.mockResolvedValue({
       id: 'c-1', parentId: 'primary-1', staffId: 'staff-1', schoolId: 'school-1', participants: [],
