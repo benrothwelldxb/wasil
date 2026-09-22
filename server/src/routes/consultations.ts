@@ -648,9 +648,19 @@ router.delete('/parent/bookings/:bookingId', isAuthenticated, async (req, res) =
       return res.status(400).json({ error: 'Cannot cancel booking — consultation is completed' })
     }
 
-    // Cannot cancel within 2 hours of appointment
+    // Cannot cancel within 2 hours of appointment.
+    //
+    // The slot is a WALL CLOCK — a date string and "15:30" — with no zone on
+    // it anywhere, because that is what a school means by an appointment time.
+    // `new Date("2026-09-25T15:30:00")` reads that in the SERVER's zone, which
+    // in production is UTC, so a Dubai appointment resolved four hours late
+    // and the lock engaged four hours late with it: cancellable until two
+    // hours after the teacher was already sitting there waiting.
     const slotDate = booking.slot.date || consultation.date
-    const appointmentTime = new Date(`${slotDate}T${booking.slot.startTime}:00`)
+    const appointmentTime = await parseWallClockForSchool(
+      `${slotDate}T${booking.slot.startTime}`,
+      user.schoolId,
+    )
     const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000)
     if (appointmentTime <= twoHoursFromNow) {
       return res.status(400).json({ error: 'Cannot cancel booking — appointment is less than 2 hours away' })

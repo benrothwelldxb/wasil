@@ -1,7 +1,7 @@
 import prisma from './prisma.js'
 import { sendReminderToParent } from './consultationEmails.js'
 import { sendConsultationReminderNotification } from './consultationNotify.js'
-import { nowInTimezone } from './dateTime.js'
+import { nowInTimezone, parseSchoolWallClock } from './dateTime.js'
 import { enqueuePush } from './outbox.js'
 import { withJobLock } from './jobLock.js'
 
@@ -70,7 +70,7 @@ export async function sendConsultationReminders(): Promise<void> {
             consultationTeacher: {
               include: {
                 teacher: { select: { id: true, name: true, email: true } },
-                consultation: { include: { school: { select: { name: true } } } },
+                consultation: { include: { school: { select: { name: true, timezone: true } } } },
               },
             },
           },
@@ -83,7 +83,14 @@ export async function sendConsultationReminders(): Promise<void> {
     for (const booking of bookings) {
       const slot = booking.slot
       const slotDate = slot.date || slot.consultationTeacher.consultation.date
-      const appointmentTime = new Date(`${slotDate}T${slot.startTime}:00`)
+      // "15:30" means 15:30 AT THE SCHOOL. Read in the server's zone (UTC in
+      // production) a Dubai appointment resolves four hours late, which both
+      // delays the reminder and — for a morning slot — leaves this job still
+      // treating it as "in the future" for hours after it has finished.
+      const appointmentTime = parseSchoolWallClock(
+        `${slotDate}T${slot.startTime}`,
+        slot.consultationTeacher.consultation.school?.timezone || 'UTC',
+      )
 
       // Only send if appointment is within 24 hours but still in the future
       if (appointmentTime <= now || appointmentTime > twentyFourHoursFromNow) continue
