@@ -16,7 +16,7 @@ import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
 import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
-import { currentStaffWhere } from '../services/currentStaff.js'
+import { currentStaffWhere, hasLeft } from '../services/currentStaff.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { resolveIlsa } from '../services/ilsaResolution.js'
@@ -68,6 +68,23 @@ function markdownToSafeHtml(md: string): string {
 // An ILSA must NEVER slip through this resolver (it would gain the staff
 // recipient picker / broadcast / group surfaces): they are a distinct,
 // pupil-scoped actor, refused both locally and in the Hub fallback (ADR 0006).
+// The refusal vocabulary on this surface, because a partner app writes prose
+// against it and prose is where a wrong guess does the damage:
+//
+//   actor_has_left    we know this person and they have left the school.
+//                     Nothing restores it. (Refused in requirePartner.)
+//   actor_not_known   no staff actor could be resolved for this hub_user_id —
+//                     Connect has no row and Hub does not list them as staff
+//                     here. A Hub sync, or Hub adding them, is the fix.
+//   forbidden         a KNOWN actor who may not do this particular thing —
+//                     not an admin, wrong school, an ILSA reaching a staff
+//                     surface. Their access is intact; this route is not.
+//
+// Desk previously had to infer the middle one from the ABSENCE of a code, and
+// then told the reader to ask for a Hub sync — which was already wrong for any
+// 403 raised by a proxy or an auth layer ahead of us, and asserted a fix for an
+// infrastructure fault. An explicit code lets a caller distinguish these three
+// from a fourth nobody has thought of yet, and say so honestly.
 type StaffActor = { id: string; role: string; schoolId: string; name: string }
 
 const STAFF_ELIGIBLE_ROLES = ['STAFF', 'ADMIN', 'SUPER_ADMIN']
@@ -77,9 +94,14 @@ async function resolveLocalStaffActor(hubUserId: string): Promise<StaffActor | n
   if (!hubUserId) return null
   const u = await prisma.user.findUnique({
     where: { hubUserId },
-    select: { id: true, role: true, schoolId: true, name: true },
+    select: { id: true, role: true, schoolId: true, name: true, leftAt: true },
   })
   if (!u || !STAFF_ELIGIBLE_ROLES.includes(u.role)) return null
+  // Somebody who has left is not an actor. `requirePartner` already refuses
+  // them with a code Desk can read; this is the second lock, so a route
+  // resolving an id by some other route than the middleware cannot let one
+  // through by accident.
+  if (hasLeft(u.leftAt)) return null
   return { id: u.id, role: u.role, schoolId: u.schoolId, name: u.name }
 }
 
@@ -510,7 +532,7 @@ router.post('/attendance/:id/review', requirePartner, async (req, res) => {
       typeof hub_user_id === 'string' ? hub_user_id.trim() : '',
       schoolHintOf(req),
     )
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     if (status !== 'APPROVED' && status !== 'DECLINED') {
       return res.status(400).json({ error: 'status must be APPROVED or DECLINED' })
@@ -704,7 +726,7 @@ router.get('/inbox/threads', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveActor(hubUserId, schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     // --- ILSA: their own ILSA-typed threads only ---------------------------
     if (actor.kind === 'ILSA') {
@@ -838,7 +860,7 @@ async function resolveReactionTarget(req: Request, res: Response, emoji: unknown
       : ''
   const actor = await resolveActor(hubUserId, schoolHintOf(req))
   if (!actor) {
-    res.status(403).json({ error: 'forbidden' })
+    res.status(403).json({ error: 'actor_not_known' })
     return null
   }
 
@@ -940,7 +962,7 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveActor(hubUserId, schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
     const aId = actorUserId(actor)
 
     const { id } = req.params
@@ -1096,7 +1118,7 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
   try {
     const { hub_user_id, content, attachments } = req.body ?? {}
     const actor = await resolveActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
     const aId = actorUserId(actor)
 
     const { id } = req.params
@@ -1240,7 +1262,7 @@ router.post('/inbox/threads', requirePartner, async (req, res) => {
   try {
     const { hub_user_id, studentId, parentId } = req.body ?? {}
     const actor = await resolveActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     // --- ILSA: pinned to their one pupil, ILSA-typed thread ----------------
     if (actor.kind === 'ILSA') {
@@ -1392,7 +1414,7 @@ router.post('/inbox/threads/:id/staff', requirePartner, async (req, res) => {
     const { id } = req.params
     const { hub_user_id, userId } = req.body ?? {}
     const actor = await resolveActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     // An ILSA thread is private to the one guardian by design (ADR 0006), and
     // an ILSA is engaged by the parent rather than employed by the school.
@@ -1511,7 +1533,7 @@ router.post('/inbox/threads/:id/guardians', requirePartner, async (req, res) => 
     const { id } = req.params
     const { hub_user_id, userId, jointConfirmed } = req.body ?? {}
     const actor = await resolveActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     // An ILSA thread is private to the one guardian by design (ADR 0006), and
     // an ILSA is engaged by that parent rather than employed by the school.
@@ -1650,7 +1672,7 @@ router.get('/inbox/recipients', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveActor(hubUserId, schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     // --- ILSA: exactly the ONE linked pupil, whatever `scope` says ---------
     if (actor.kind === 'ILSA') {
@@ -1773,7 +1795,8 @@ router.get('/oversight/ilsa-threads', requirePartner, async (req, res) => {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
     // Only a school admin / safeguarding lead may retrieve ILSA threads.
-    if (!actor || !isAdminActor(actor)) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (!isAdminActor(actor)) return res.status(403).json({ error: 'forbidden' })
 
     const pupilHubId = typeof req.query.pupil_id === 'string' ? req.query.pupil_id.trim() : ''
     if (!pupilHubId) return res.status(400).json({ error: 'pupil_id required' })
@@ -1912,7 +1935,8 @@ router.get('/oversight/parent-threads', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
-    if (!actor || !isAdminActor(actor)) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (!isAdminActor(actor)) return res.status(403).json({ error: 'forbidden' })
 
     const pupilHubId = typeof req.query.pupil_id === 'string' ? req.query.pupil_id.trim() : ''
     if (!pupilHubId) return res.status(400).json({ error: 'pupil_id required' })
@@ -2483,7 +2507,7 @@ router.post('/messages', requirePartner, async (req, res) => {
       ? department.trim().slice(0, 60)
       : null
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'title required' })
     if (typeof content !== 'string' || !content.trim()) return res.status(400).json({ error: 'content required' })
@@ -2810,7 +2834,7 @@ router.get('/messages/sent', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     const rows = await prisma.message.findMany({
       where: { senderId: actor.id, schoolId: actor.schoolId },
@@ -2964,7 +2988,7 @@ router.post('/groups', requirePartner, async (req, res) => {
   try {
     const { hub_user_id, name, pupilHubIds, categoryId, categoryName, externalRef } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' })
 
@@ -3061,7 +3085,7 @@ router.get('/groups/:id', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     const addressed = await findGroupByIdOrRef(req.params.id, actor.schoolId)
     if (!addressed) return res.status(404).json({ error: 'not_found' })
@@ -3123,7 +3147,7 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
   try {
     const { hub_user_id, name, addPupilHubIds, removePupilHubIds } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     // `:id` is a Connect group id or, for a caller recovering from a lost id,
     // the externalRef it published under.
@@ -3184,7 +3208,7 @@ router.delete('/groups/:id', requirePartner, async (req, res) => {
   try {
     const { hub_user_id } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     const { id } = req.params
     const group = await prisma.group.findFirst({
@@ -3814,7 +3838,7 @@ router.put('/activities/:externalRef', requirePartner, async (req, res) => {
       typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : '',
       schoolHintOf(req),
     )
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     const externalRef = (req.params.externalRef ?? '').trim()
     if (!externalRef) return res.status(400).json({ error: 'externalRef required' })
@@ -4071,7 +4095,7 @@ router.get('/consultations', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     const slots = await consultationSlotsFor(actor, req.query.from, req.query.to)
     res.json({ slots })
@@ -4089,7 +4113,7 @@ router.get('/consultations/summary', requirePartner, async (req, res) => {
   try {
     const hubUserId = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
     const actor = await resolveStaffActor(hubUserId, schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
     const slots = await consultationSlotsFor(actor, req.query.from, req.query.to)
     // Breaks are shown on a teacher's grid but are not appointments, so they
@@ -4131,7 +4155,7 @@ router.delete('/inbox/threads/:id/messages/:messageId', requirePartner, async (r
           ? req.query.hub_user_id.trim()
           : ''
     const actor = await resolveActor(hubUserId, schoolHintOf(req))
-    if (!actor) return res.status(403).json({ error: 'forbidden' })
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
     const aId = actorUserId(actor)
 
     const { id, messageId } = req.params

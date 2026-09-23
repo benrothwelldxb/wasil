@@ -19,6 +19,7 @@
 import { createHash } from 'crypto'
 import type { Request, Response, NextFunction } from 'express'
 import prisma from '../services/prisma.js'
+import { hasLeft } from '../services/currentStaff.js'
 
 export interface PartnerIdentity {
   id: string
@@ -31,6 +32,16 @@ export interface PartnerIdentity {
 function underPrefix(path: string, prefix: string): boolean {
   const p = prefix.replace(/\/+$/, '')
   return path === p || path.startsWith(p + '/')
+}
+
+/** The Hub user this request is acting AS, if it names one. Desk sends it as a
+ *  query param on reads and in the body on writes; routes that name no actor
+ *  (school-scoped lookups) simply have none. */
+function actingHubUserId(req: Request): string {
+  const fromQuery = typeof req.query.hub_user_id === 'string' ? req.query.hub_user_id.trim() : ''
+  if (fromQuery) return fromQuery
+  const body = (req.body ?? {}) as Record<string, unknown>
+  return typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : ''
 }
 
 export async function requirePartner(req: Request, res: Response, next: NextFunction) {
@@ -68,6 +79,44 @@ export async function requirePartner(req: Request, res: Response, next: NextFunc
     // — and a clear refusal is what stops someone debugging the wrong layer for
     // an afternoon. The token is still valid; it just isn't for this.
     return res.status(403).json({ error: 'token_not_permitted' })
+  }
+
+  // Has the person this request acts as left the school?
+  //
+  // CHECKED HERE, ONCE, rather than at each route's own actor resolution —
+  // there are nineteen of those and Desk has to map the refusal in one place.
+  //
+  // It is a real hole rather than a tidy-up. Desk's inbox reads parent
+  // conversations through this surface, and actor resolution authorises on "is
+  // this hubUserId in Hub's staff list". Hub deliberately keeps returning
+  // leavers in that list for ever — an app holding last term's duty roster has
+  // to resolve the id to a name — so a departed teacher still resolved as a
+  // live actor and could read parent correspondence through Desk. The picker
+  // filters shipped in #116/#118 stop a leaver being OFFERED; nothing stopped
+  // one ACTING.
+  //
+  // `actor_has_left` rather than the existing generic 403 because Desk's copy
+  // for an unrecognised actor tells the reader to ask an admin to run a Hub
+  // sync. For a leaver that is untrue in a costly direction: they chase the
+  // office, and the office goes looking for a bug in Hub. A distinguishable
+  // code lets Desk say the true thing — access ended when you left, and no
+  // action restores it.
+  //
+  // A FUTURE leaving date is not a departure: `hasLeft` compares the date, and
+  // somebody serving notice keeps working until their last day.
+  const actingId = actingHubUserId(req)
+  if (actingId) {
+    const acting = await prisma.user.findUnique({
+      where: { hubUserId: actingId },
+      select: { leftAt: true },
+    })
+    // Only an actor we HOLD and know to have left is refused here. An id we
+    // have no row for is not this middleware's business — it may be a
+    // first-time actor the route will provision from Hub, and refusing it here
+    // would break non-teaching staff on their first request.
+    if (acting && hasLeft(acting.leftAt)) {
+      return res.status(403).json({ error: 'actor_has_left' })
+    }
   }
 
   ;(req as Request & { partner?: PartnerIdentity }).partner = { id: partner.id, name: partner.name }

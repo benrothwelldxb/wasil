@@ -280,7 +280,13 @@ describe('GET /api/partner/inbox/threads', () => {
     await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff'))
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
       where: { hubUserId: 'hu-staff' },
-      select: { id: true, role: true, schoolId: true, name: true },
+      select: { id: true, role: true, schoolId: true, name: true, leftAt: true },
+    })
+    // And `requirePartner` asks the leaver question first, before any route
+    // runs — one gate for all nineteen actor call sites.
+    expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+      where: { hubUserId: 'hu-staff' },
+      select: { leftAt: true },
     })
   })
 
@@ -942,11 +948,16 @@ describe('GET /api/partner/inbox/recipients', () => {
   })
 
   it('403 when the hub_user_id is unresolvable or a parent (bad actor — same rule as the thread routes)', async () => {
-    prismaMock.user.findUnique.mockResolvedValueOnce(null)
+    // `mockResolvedValue`, not `…Once`: `requirePartner` now asks the same
+    // question (has this actor left?) before the route resolves them, so a
+    // single queued answer would be consumed by the gate and never reach the
+    // route. Both calls look up the same hubUserId, so one answer is also the
+    // truthful mock.
+    prismaMock.user.findUnique.mockResolvedValue(null)
     const res = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=ghost'))
     expect(res.status).toBe(403)
 
-    prismaMock.user.findUnique.mockResolvedValueOnce({ id: 'p-1', role: 'PARENT', schoolId: 'sch-1', name: 'A Parent' })
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'p-1', role: 'PARENT', schoolId: 'sch-1', name: 'A Parent' })
     const res2 = await auth(request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=parent'))
     expect(res2.status).toBe(403)
   })
@@ -1042,13 +1053,13 @@ describe('POST /api/partner/messages', () => {
   })
 
   it('403 on an unresolvable / parent actor (no rows created)', async () => {
-    prismaMock.user.findUnique.mockResolvedValueOnce(null)
+    prismaMock.user.findUnique.mockResolvedValue(null)
     const res = await auth(request(makeApp()).post('/api/partner/messages'))
       .send({ hub_user_id: 'ghost', title: 'T', content: 'C', audience: { wholeSchool: true } })
     expect(res.status).toBe(403)
     expect(prismaMock.message.create).not.toHaveBeenCalled()
 
-    prismaMock.user.findUnique.mockResolvedValueOnce({ id: 'p-1', role: 'PARENT', schoolId: 'sch-1', name: 'Dad' })
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'p-1', role: 'PARENT', schoolId: 'sch-1', name: 'Dad' })
     const res2 = await auth(request(makeApp()).post('/api/partner/messages'))
       .send({ hub_user_id: 'hu-p', title: 'T', content: 'C', audience: { wholeSchool: true } })
     expect(res2.status).toBe(403)
