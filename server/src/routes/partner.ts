@@ -16,6 +16,7 @@ import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
 import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
+import { currentStaffWhere } from '../services/currentStaff.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { resolveIlsa } from '../services/ilsaResolution.js'
@@ -1437,7 +1438,7 @@ router.post('/inbox/threads/:id/staff', requirePartner, async (req, res) => {
         role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
         isTest: false,
         // A colleague who has left can't be brought onto a live thread.
-        leftAt: null,
+        ...currentStaffWhere(),
       },
       select: { id: true },
     })
@@ -2429,7 +2430,7 @@ router.get('/staff/mentionable', requirePartner, async (req, res) => {
         // somebody, so offering a name that has left is worse than offering
         // none. Existing mentions in already-published posts still resolve:
         // they carry the user id and render from the post, not from this list.
-        leftAt: null,
+        ...currentStaffWhere(),
       },
       select: { id: true, name: true, role: true, position: true },
       orderBy: { name: 'asc' },

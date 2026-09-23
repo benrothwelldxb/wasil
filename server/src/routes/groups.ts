@@ -3,6 +3,7 @@ import prisma from '../services/prisma.js'
 import { refreshServiceGroup, refreshServiceGroupsForSchool } from '../services/serviceGroups.js'
 import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
 import { logAudit, computeChanges } from '../services/audit.js'
+import { currentStaffWhere } from '../services/currentStaff.js'
 
 const router = Router()
 
@@ -453,7 +454,7 @@ router.post('/:id/staff', isAdmin, async (req, res) => {
         schoolId: user.schoolId,
         role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
         // Not somebody who has left — a group grants messaging rights.
-        leftAt: null,
+        ...currentStaffWhere(),
       },
     })
 

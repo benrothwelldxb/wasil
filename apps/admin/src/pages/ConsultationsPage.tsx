@@ -16,7 +16,7 @@ import {
   Pencil,
   AlertTriangle,
 } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant, hasLeft } from '@wasil/shared'
 import type { StaffMember, YearGroup } from '@wasil/shared'
 import type { ConsultationEvent, ConsultationTeacher, ConsultationStatus, ConsultationLocationType } from '@wasil/shared'
 
@@ -379,7 +379,11 @@ export function ConsultationsPage() {
   // Who you can still put in front of a parent. Staff who have left stay in
   // the list the API returns — the Staff page needs them — but picking one
   // for an evening in three weeks' time is never what anyone meant.
-  const currentStaff = useMemo(() => (staffList ?? []).filter(s => !s.leftAt), [staffList])
+  //
+  // `hasLeft` rather than a presence check: a leaving DATE in the future
+  // belongs to somebody still teaching, and dropping them here would empty a
+  // picker of a teacher standing in the building.
+  const currentStaff = useMemo(() => (staffList ?? []).filter(s => !hasLeft(s.leftAt)), [staffList])
 
   const duplicateNames = useMemo(() => {
     const seen = new Map<string, number>()

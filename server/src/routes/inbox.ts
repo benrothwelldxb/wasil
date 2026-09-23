@@ -9,6 +9,7 @@ import { sendPushNotification, removeInvalidTokens } from '../services/firebase.
 import { getInboxUnreadCount, getPushBadgeCount } from '../services/unreadCount.js'
 import { teachingStaffForClasses, timetableLookupPossible } from '../services/classTeachingStaff.js'
 import { todayInTimezone } from '../services/dateTime.js'
+import { currentStaffWhere } from '../services/currentStaff.js'
 
 const router = Router()
 
@@ -1047,7 +1048,7 @@ async function contactableStaff(parentUserId: string, schoolId: string): Promise
       // Same leaver filter as `/contacts/available` above — these two sets
       // must stay identical or a parent sees a contact they cannot CC, or CCs
       // one they were never shown.
-      where: { classId: { in: classIds }, user: { leftAt: null } },
+      where: { classId: { in: classIds }, user: currentStaffWhere() },
       select: { userId: true, user: { select: { name: true } } },
     })
     for (const a of assignments) byId.set(a.userId, a.user.name)
@@ -1524,7 +1525,7 @@ router.get('/contacts/available', isAuthenticated, async (req, res) => {
           // not immediately: a teacher archived mid-term stays on the class
           // until someone in Hub reassigns it. `leftAt` is the fact; the
           // assignment is only a consequence of it.
-          where: { classId: { in: classIds }, user: { leftAt: null } },
+          where: { classId: { in: classIds }, user: currentStaffWhere() },
           include: {
             user: { select: { id: true, name: true, avatarUrl: true } },
             class: { select: { id: true, name: true } },

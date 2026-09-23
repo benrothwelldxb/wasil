@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { X, Search, AtSign } from 'lucide-react'
-import { useApi, api } from '@wasil/shared'
+import { useApi, api, hasLeft } from '@wasil/shared'
 import type { StaffMember } from '@wasil/shared'
 
 /**
@@ -25,7 +25,7 @@ export function StaffMentionPicker({
     // Never offer somebody who has left. A mention is an instruction to a
     // parent to go and message that person, so a stale name here becomes a
     // message nobody will ever read.
-    const all = (staff || []).filter(s => !s.leftAt)
+    const all = (staff || []).filter(s => !hasLeft(s.leftAt))
     const q = query.trim().toLowerCase()
     if (!q) return all
     return all.filter(

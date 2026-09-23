@@ -17,6 +17,7 @@ import prisma from './prisma.js'
 import { getClassDayCached, getCalendarStructureCached } from './timetableCache.js'
 import { computeTermStatus } from './timetableTerms.js'
 import type { HubTimetableBlock } from './hubMis.js'
+import { currentStaffWhere } from './currentStaff.js'
 
 /** Roles a timetable name may resolve to — never a parent or an ILSA. */
 const STAFF_ELIGIBLE_ROLES = ['STAFF', 'ADMIN', 'SUPER_ADMIN'] as const
@@ -81,7 +82,7 @@ async function staffIndex(schoolId: string): Promise<Map<string, { id: string; n
     // Leavers excluded: a timetable can still name a teacher who has gone (the
     // published version predates their leaving), and resolving that name to a
     // messageable contact would put a parent in a thread nobody reads.
-    where: { schoolId, role: { in: [...STAFF_ELIGIBLE_ROLES] }, leftAt: null },
+    where: { schoolId, role: { in: [...STAFF_ELIGIBLE_ROLES] }, ...currentStaffWhere() },
     select: { id: true, name: true, avatarUrl: true },
   })
   const byName = new Map<string, { id: string; name: string; avatarUrl: string | null } | null>()
