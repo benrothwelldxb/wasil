@@ -26,7 +26,7 @@ const prismaMock = {
   yearGroup: { upsert: vi.fn(), create: vi.fn() },
   class: { upsert: vi.fn(), create: vi.fn() },
   student: { upsert: vi.fn(), create: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
-  user: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  user: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), create: vi.fn() },
   refreshToken: { findFirst: vi.fn() },
   parentStudentLink: { upsert: vi.fn(), create: vi.fn() },
   staffClassAssignment: { findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
@@ -101,6 +101,8 @@ beforeEach(() => {
   mStaff.mockResolvedValue([])
 
   prismaMock.student.updateMany.mockResolvedValue({ count: 0 })
+  // The orphan check reads every Hub-linked staff row; no orphans by default.
+  prismaMock.user.findMany.mockResolvedValue([])
   prismaMock.student.count.mockResolvedValue(0)
   prismaMock.staffClassAssignment.findMany.mockResolvedValue([])
   prismaMock.user.update.mockResolvedValue({})

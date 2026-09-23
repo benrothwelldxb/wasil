@@ -10,7 +10,7 @@ const prismaMock = {
   yearGroup: { upsert: vi.fn(), create: vi.fn() },
   class: { upsert: vi.fn(), create: vi.fn() },
   student: { upsert: vi.fn(), create: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
-  user: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  user: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), create: vi.fn() },
   refreshToken: { findFirst: vi.fn() },
   parentStudentLink: { upsert: vi.fn(), create: vi.fn() },
   staffClassAssignment: { findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
@@ -138,6 +138,8 @@ beforeEach(() => {
     id: 'cs-' + where.hubPupilId,
   }))
   prismaMock.student.updateMany.mockResolvedValue({ count: 0 })
+  // The orphan check reads every Hub-linked staff row; no orphans by default.
+  prismaMock.user.findMany.mockResolvedValue([])
   // No Hub-linked pupil is missing from Hub's roster unless a test says so.
   prismaMock.student.count.mockResolvedValue(0)
 
@@ -208,6 +210,7 @@ describe('syncSchoolFromHub — dependency ordering + mapping', () => {
       classes: 1,
       pupils: 1,
       staff: { created: 0, updated: 0, left: 0, returned: 0 },
+      staffOrphans: { total: 0, unmarked: 0, accounts: [] },
       pupilMisIds: { withMisId: 1, missing: 0 },
       attendance: { withFigure: 0, noFigure: 0, scopeGranted: false },
       // The one pupil Hub returned is on roll, and its class counted as

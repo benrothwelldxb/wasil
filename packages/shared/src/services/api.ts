@@ -3115,7 +3115,17 @@ export interface HubSyncSummary {
     sweepRefused?: string
     unplaced?: number
   }
-  staff: { created: number; updated: number }
+  staff: { created: number; updated: number; left?: number; returned?: number }
+  /** Staff accounts holding a Hub id Hub's roster no longer returns. Hub never
+   *  announces a retired or re-issued login, so nothing else in either product
+   *  mentions these. `unmarked` is the actionable count — still offered in
+   *  every picker. Reported only; the sync acts on none of it. */
+  staffOrphans?: {
+    total: number
+    unmarked: number
+    accounts: Array<{ name: string; email: string; lastLoginAt: string | null }>
+    refused?: string
+  }
   guardians: { fetched: number; created: number; linked: number; skippedNoEmail: number }
   parentLinks: { created: number; skippedNoPupil: number }
   teacherAssignments: { created: number; removed: number; unresolved: number }
