@@ -32,6 +32,19 @@ function summarizeSync(summary: HubSyncSummary): string {
   if (lv?.unplaced) parts.push(`${lv.unplaced} pupil${lv.unplaced !== 1 ? 's' : ''} in an unknown class, not synced`)
   if (summary.staff.created) parts.push(`${summary.staff.created} staff added`)
   if (summary.staff.updated) parts.push(`${summary.staff.updated} staff updated`)
+  if (summary.staff.left) parts.push(`${summary.staff.left} staff marked as leaving`)
+  if (summary.staff.returned) parts.push(`${summary.staff.returned} staff back`)
+  // Accounts Hub has stopped returning. Silent when healthy, and the ONLY
+  // place either product would ever mention them — at VHPS one of these was a
+  // published school contact with an unreachable address, live for two months.
+  const orph = summary.staffOrphans
+  if (orph?.refused) parts.push(`orphan check held back — ${orph.refused}`)
+  else if (orph?.unmarked) {
+    parts.push(
+      `${orph.unmarked} staff account${orph.unmarked !== 1 ? 's' : ''} Hub no longer returns` +
+        (orph.accounts.length ? ` (${orph.accounts.map(a => a.name).join(', ')})` : '')
+    )
+  }
 
   // Parents, spelled out — `fetched` is what Hub sent, and the breakdown says
   // where any shortfall went. Without this the Parents page count could sit

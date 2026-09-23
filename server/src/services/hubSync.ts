@@ -101,6 +101,21 @@ export interface SyncSummary {
    *  leaver in the feed rather than dropping them, so these two numbers are the
    *  only place a departure shows up at all. */
   staff: { created: number; updated: number; left: number; returned: number }
+  /** Connect staff accounts holding a `hubUserId` Hub's roster no longer
+   *  returns. Hub does not announce a retired or re-issued login, so nothing
+   *  else in either product would ever mention these.
+   *    `total`    orphaned rows, marked or not.
+   *    `unmarked` the actionable ones — still offered in every picker.
+   *    `accounts` up to 20 of the unmarked, named; `unmarked` is the true count.
+   *    `refused`  why the check declined to report, when it did — an empty or
+   *               short staff fetch must not accuse the whole roster.
+   *  Reported only. Acting on absence is what the sync refuses to do. */
+  staffOrphans: {
+    total: number
+    unmarked: number
+    accounts: Array<{ name: string; email: string; lastLoginAt: string | null }>
+    refused?: string
+  }
   /** Guardians provisioned as Connect PARENT users. `fetched` = how many Hub
    * returned (across all pages) — the number to compare against Hub's own
    * guardian count when parents appear to be missing; `created` = brand-new
@@ -453,6 +468,73 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     else if (r.leftChange === 'returned') staffReturned++
   }
 
+  // --- 5b. Orphans ---------------------------------------------------------
+  // Connect staff rows carrying a `hubUserId` that this roster no longer
+  // contains at all.
+  //
+  // REPORTED, NEVER ACTED ON. An id leaving the feed means "Hub re-issued it"
+  // just as plausibly as "paging bug", "permissions change" or "school
+  // unlinked", and the cost of guessing wrong is moving families' conversations
+  // onto the wrong account. Hub is adding `previousUserId` to its re-link event
+  // — THAT is the signal that can be acted on. This is the one that says
+  // something is wrong, which is the half that was missing.
+  //
+  // Not hypothetical. At VHPS three rows were orphaned, and one was the
+  // assignee of a published school contact whose email domain was misspelled:
+  // parents could tap it, nobody could receive it, for two months, and neither
+  // product mentioned it once. It took a hand-written query to find.
+  const liveHubIds = new Set(
+    hubStaff.map(s => s.hubUserId).filter((id): id is string => !!id),
+  )
+  const linkedRows = await prisma.user.findMany({
+    where: {
+      schoolId,
+      hubUserId: { not: null },
+      role: { in: STAFF_ELIGIBLE_ROLES },
+      isTest: false,
+    },
+    select: { name: true, email: true, hubUserId: true, leftAt: true, lastLoginAt: true },
+  })
+  const orphanRows = linkedRows.filter(u => u.hubUserId && !liveHubIds.has(u.hubUserId))
+
+  // The same floor as the pupil sweep, for the same reason. A short or failed
+  // staff fetch would otherwise report the WHOLE staff list as orphaned — which
+  // is alarming, wrong, and exactly the sort of thing someone acts on at 6pm.
+  const orphansRefused =
+    // Nothing linked yet — nothing to be wrong about, and no reason to say
+    // anything alarming to a school mid-onboarding.
+    linkedRows.length === 0
+      ? null
+      : hubStaff.length === 0
+        ? 'Hub returned no staff at all — not reporting orphans from an empty roster'
+        : orphanRows.length * 2 > linkedRows.length
+          ? `${orphanRows.length} of ${linkedRows.length} linked staff missing from Hub's roster — refusing to call that orphaned`
+          : null
+  if (orphansRefused) console.error(`[hubSync] ${orphansRefused}`)
+
+  // Already marked as leaving? Then somebody has dealt with it, and repeating
+  // it for ever turns the number into wallpaper. The actionable count is the
+  // ones still being offered in pickers.
+  const unmarkedOrphans = orphansRefused ? [] : orphanRows.filter(u => !u.leftAt)
+  if (unmarkedOrphans.length > 0) {
+    console.warn(
+      `[hubSync] ${unmarkedOrphans.length} staff account(s) carry a Hub id Hub no longer returns: ` +
+        unmarkedOrphans.map(u => u.email).join(', '),
+    )
+  }
+  const staffOrphans = {
+    total: orphansRefused ? 0 : orphanRows.length,
+    unmarked: unmarkedOrphans.length,
+    // Capped so one bad day can't produce a summary nobody reads. `unmarked` is
+    // the count that is always true.
+    accounts: unmarkedOrphans.slice(0, 20).map(u => ({
+      name: u.name,
+      email: u.email,
+      lastLoginAt: u.lastLoginAt ? u.lastLoginAt.toISOString() : null,
+    })),
+    ...(orphansRefused ? { refused: orphansRefused } : {}),
+  }
+
   // --- 6. Class-teacher assignments ----------------------------------------
   // Reconcile StaffClassAssignment from each Hub class's `teachers[]`. Runs
   // AFTER the staff pass so the Connect users to resolve against already exist.
@@ -584,6 +666,7 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
       unplaced,
     },
     staff: { created, updated, left: staffLeft, returned: staffReturned },
+    staffOrphans,
     guardians: guardianSummary,
     parentLinks: parentLinkSummary,
     teacherAssignments,
