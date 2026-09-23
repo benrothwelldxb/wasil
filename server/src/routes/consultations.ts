@@ -5,7 +5,7 @@ import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, deleteGoog
 import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, sendCancellationToParent, sendCancellationToTeacher } from '../services/consultationEmails.js'
 import { sendConsultationBookingNotification, sendConsultationCancellationNotification } from '../services/consultationNotify.js'
 import { serializeBookingForParent } from '../services/consultationSerializers.js'
-import { parseWallClockForSchool } from '../services/dateTime.js'
+import { parseWallClockForSchool, describeWhenForSchool } from '../services/dateTime.js'
 import { currentStaffWhere } from '../services/currentStaff.js'
 
 const router = Router()
@@ -365,10 +365,18 @@ router.post('/parent/book', isAuthenticated, async (req, res) => {
       user.id,
     )
     if (notYet) {
-      const when = notYet.opensAt.toISOString()
+      // Say WHEN. "Shortly" was the same sentence whether the wave opened in
+      // ten minutes or on Thursday, and the parent app shows only this string —
+      // `opensAt` below is dropped by the client's error handling, so the time
+      // has to be in the words or it reaches nobody.
+      const school = await prisma.school.findUnique({
+        where: { id: user.schoolId },
+        select: { timezone: true },
+      })
+      const when = describeWhenForSchool(notYet.opensAt, school?.timezone || 'UTC')
       return res.status(403).json({
-        error: `Booking opens for ${notYet.yearGroupName} shortly. Please come back then.`,
-        opensAt: when,
+        error: `Booking opens for ${notYet.yearGroupName} ${when}. Please come back then.`,
+        opensAt: notYet.opensAt.toISOString(),
       })
     }
 

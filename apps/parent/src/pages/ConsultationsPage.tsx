@@ -36,6 +36,27 @@ function formatDate(dateStr: string) {
   return date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+/**
+ * When a wave opens, in words: "today at 18:00", "tomorrow at 18:00",
+ * "on Thursday 25 September at 18:00".
+ *
+ * This said only the time. Read at breakfast, "Booking opens at 18:00" means
+ * this evening to everybody — so a parent whose wave is on Thursday came back
+ * that night, found the same grid they could not book from, and had no reason
+ * to think anything but that it was broken. Today and tomorrow keep the short
+ * form; anything further off gets the weekday and the date.
+ */
+function formatOpensAt(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const midnight = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.round((midnight(d) - midnight(new Date())) / 86400000)
+  if (days === 0) return `today at ${time}`
+  if (days === 1) return `tomorrow at ${time}`
+  return `on ${d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} at ${time}`
+}
+
 export function ConsultationsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -294,10 +315,7 @@ export function ConsultationsPage() {
             }}
           >
             <strong style={{ fontWeight: 700 }}>
-              Booking opens at{' '}
-              {new Date(selectedConsultation.bookingOpensAt).toLocaleTimeString('en-GB', {
-                hour: '2-digit', minute: '2-digit', hour12: false,
-              })}
+              Booking opens {formatOpensAt(selectedConsultation.bookingOpensAt)}
               {selectedConsultation.bookingOpensForYearGroup
                 ? ` for ${selectedConsultation.bookingOpensForYearGroup}`
                 : ''}.
