@@ -1646,6 +1646,12 @@ export interface ConsultationEvent {
   bookingOpensAt?: string | null
   /** The year group whose wave they are waiting on, for the message. */
   bookingOpensForYearGroup?: string | null
+  /** The school's IANA timezone, so an opening time can be shown in the clock
+   *  the SCHOOL meant. A parent abroad rendering it in their own zone has been
+   *  told something true and useless: "14:00" matches nothing the school has
+   *  said to them, and they cannot check it against the letter or the app.
+   *  Parent detail only. */
+  schoolTimezone?: string | null
   /** Whether a Google Meet link can actually be created — i.e. whether the
    *  school has connected a Google Calendar. False means do not offer Meet:
    *  the booking would succeed with no way to attend it. Parent detail only. */

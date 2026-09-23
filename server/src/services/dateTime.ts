@@ -193,3 +193,38 @@ export async function parseWallClockForSchool(value: string, schoolId: string): 
   })
   return parseSchoolWallClock(value, school?.timezone || 'UTC')
 }
+
+/**
+ * A human "when" for something a school is telling a parent: "today at 18:00",
+ * "tomorrow at 18:00", "on Thursday 25 September at 18:00".
+ *
+ * Computed in the SCHOOL's timezone on purpose. A message the school sends
+ * means the school's clock, and a parent reading it from another country wants
+ * to know when the school means, not when their own phone says.
+ *
+ * Today and tomorrow keep the short form because a full date reads as fussy for
+ * those; anything further off gets the weekday AND the date, because a bare
+ * time is the failure this exists to fix. "Booking opens at 18:00", read at
+ * breakfast, means this evening to everybody — and a parent whose wave is on
+ * Thursday comes back tonight, finds an empty grid, and concludes it is broken.
+ */
+export function describeWhenForSchool(when: Date, timezone: string, now: Date = new Date()): string {
+  const tz = timezone || 'UTC'
+  // en-CA gives YYYY-MM-DD, which is the only locale format safe to compare.
+  const dayOf = (d: Date) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+  const time = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(when)
+
+  const target = dayOf(when)
+  const today = dayOf(now)
+  if (target === today) return `today at ${time}`
+
+  // Tomorrow, by string arithmetic on the school's own calendar date — never by
+  // adding 86,400,000ms to an instant, which is a different question.
+  const [y, m, d] = today.split('-').map(Number)
+  const tomorrow = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
+  if (target === tomorrow) return `tomorrow at ${time}`
+
+  const date = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long' }).format(when)
+  return `on ${date} at ${time}`
+}

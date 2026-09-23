@@ -36,6 +36,79 @@ function formatDate(dateStr: string) {
   return date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+/**
+ * When a wave opens, in words: "today at 18:00", "tomorrow at 18:00",
+ * "on Thursday 25 September at 18:00".
+ *
+ * TWO FAULTS, and the second is only visible from abroad.
+ *
+ * It said only the TIME. Read at breakfast, "Booking opens at 18:00" means this
+ * evening to everybody — so a parent whose wave is on Thursday came back that
+ * night, found the same grid they could not book from, and had no reason to
+ * think anything but that it was broken. Today and tomorrow keep the short
+ * form; anything further off gets the weekday and the date.
+ *
+ * And it rendered in the DEVICE's zone. For a parent in London that turned an
+ * 18:00 opening into "14:00" — true, and useless: it matches nothing the school
+ * has said to them, in the letter, the app or at the gate, and they cannot
+ * check it against anything. So the school's clock is what we show, and their
+ * own is offered alongside it only when the two differ.
+ *
+ * Today and tomorrow are judged on the SCHOOL's calendar day for the same
+ * reason — a parent eight hours ahead should not be told "tomorrow" about an
+ * evening the school considers today.
+ */
+function formatOpensAt(iso: string, schoolTz?: string | null): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const tz = schoolTz || undefined
+  const time = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(d)
+  // en-CA is YYYY-MM-DD, the only locale format safe to compare as a string.
+  const dayIn = (x: Date) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(x)
+  const target = dayIn(d)
+  const today = dayIn(new Date())
+  if (target === today) return `today at ${time}`
+  const [y, m, day] = today.split('-').map(Number)
+  const tomorrow = new Date(Date.UTC(y, m - 1, day + 1)).toISOString().slice(0, 10)
+  if (target === tomorrow) return `tomorrow at ${time}`
+  const date = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, weekday: 'long', day: 'numeric', month: 'long',
+  }).format(d)
+  return `on ${date} at ${time}`
+}
+
+/**
+ * The same moment on the reader's own clock — but only when that is a different
+ * answer, and only when we can be sure it is.
+ *
+ * Returns null for a parent in the school's own timezone, which is almost all
+ * of them: "18:00 school time, which is 18:00 your time" is noise that makes
+ * the sentence harder to read for everybody, to serve nobody.
+ */
+function localEquivalent(iso: string, schoolTz?: string | null): string | null {
+  if (!schoolTz) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  let deviceTz: string | undefined
+  try {
+    deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    return null
+  }
+  if (!deviceTz || deviceTz === schoolTz) return null
+  const fmt = (zone: string) =>
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone, weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(d)
+  const here = fmt(deviceTz)
+  // Different zone NAME, same wall clock (Europe/London and Europe/Lisbon in
+  // winter). Saying it twice would imply a difference that is not there.
+  return here === fmt(schoolTz) ? null : here
+}
+
 export function ConsultationsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -294,14 +367,24 @@ export function ConsultationsPage() {
             }}
           >
             <strong style={{ fontWeight: 700 }}>
-              Booking opens at{' '}
-              {new Date(selectedConsultation.bookingOpensAt).toLocaleTimeString('en-GB', {
-                hour: '2-digit', minute: '2-digit', hour12: false,
-              })}
+              Booking opens{' '}
+              {formatOpensAt(selectedConsultation.bookingOpensAt, selectedConsultation.schoolTimezone)}
+              {localEquivalent(selectedConsultation.bookingOpensAt, selectedConsultation.schoolTimezone)
+                ? ' school time'
+                : ''}
               {selectedConsultation.bookingOpensForYearGroup
                 ? ` for ${selectedConsultation.bookingOpensForYearGroup}`
                 : ''}.
             </strong>{' '}
+            {/* Only for a parent whose device is somewhere else — see
+                `localEquivalent`. Everyone else never sees this clause. */}
+            {localEquivalent(selectedConsultation.bookingOpensAt, selectedConsultation.schoolTimezone) && (
+              <>
+                That is{' '}
+                {localEquivalent(selectedConsultation.bookingOpensAt, selectedConsultation.schoolTimezone)}{' '}
+                where you are.{' '}
+              </>
+            )}
             You can look now and book then. If you have children in more than one year group,
             you book for all of them from your earliest time.
           </div>
