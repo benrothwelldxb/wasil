@@ -16,7 +16,7 @@ import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
 import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
-import { currentStaffWhere } from '../services/currentStaff.js'
+import { currentStaffWhere, hasLeft } from '../services/currentStaff.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { resolveIlsa } from '../services/ilsaResolution.js'
@@ -77,9 +77,14 @@ async function resolveLocalStaffActor(hubUserId: string): Promise<StaffActor | n
   if (!hubUserId) return null
   const u = await prisma.user.findUnique({
     where: { hubUserId },
-    select: { id: true, role: true, schoolId: true, name: true },
+    select: { id: true, role: true, schoolId: true, name: true, leftAt: true },
   })
   if (!u || !STAFF_ELIGIBLE_ROLES.includes(u.role)) return null
+  // Somebody who has left is not an actor. `requirePartner` already refuses
+  // them with a code Desk can read; this is the second lock, so a route
+  // resolving an id by some other route than the middleware cannot let one
+  // through by accident.
+  if (hasLeft(u.leftAt)) return null
   return { id: u.id, role: u.role, schoolId: u.schoolId, name: u.name }
 }
 
