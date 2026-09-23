@@ -127,10 +127,32 @@ describe('who is NOT refused', () => {
 
     const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-new'))
 
-    // Falls through to the route's own resolution, which 403s generically —
-    // the SAME body as before this change, so Desk's existing copy is intact.
+    // Falls through to the route's own resolution, which refuses with the
+    // OTHER code: Connect has no row and Hub does not list them as staff here.
     expect(res.status).toBe(403)
-    expect(res.body).not.toEqual({ error: 'actor_has_left' })
+    expect(res.body).toEqual({ error: 'actor_not_known' })
+  })
+
+  it('tells the two refusals apart, which is the whole point of the codes', async () => {
+    // Desk writes prose against these. "Ask an admin to run a Hub sync" is the
+    // right advice for one and actively misleading for the other — it sends a
+    // departed teacher to the office, and the office hunting a Hub bug that
+    // does not exist. Previously Desk had to infer the difference from the
+    // ABSENCE of a code, which was already wrong for any 403 raised by a proxy
+    // ahead of us.
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'u-1', role: 'STAFF', schoolId: 'sch-1', name: 'Gone', leftAt: PAST,
+    })
+    const left = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-gone'))
+
+    prismaMock.user.findUnique.mockResolvedValue(null)
+    const unknown = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-ghost'))
+
+    expect(left.status).toBe(403)
+    expect(unknown.status).toBe(403)
+    expect(left.body.error).toBe('actor_has_left')
+    expect(unknown.body.error).toBe('actor_not_known')
+    expect(left.body.error).not.toBe(unknown.body.error)
   })
 
   it('a request that names no actor at all', async () => {
