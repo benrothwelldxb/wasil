@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useAuth, useApi, useToast } from '@wasil/shared'
+import { useAuth, useApi, useToast, hasLeft } from '@wasil/shared'
 import * as api from '@wasil/shared'
 import type { ConversationListItem, ConversationDetail, ConversationMessageItem, SchoolContactInfo, MessageSearchResult } from '@wasil/shared'
 import type { Class } from '@wasil/shared'
@@ -1311,7 +1311,11 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400"
               >
                 <option value="">Select staff member...</option>
-                {staffList?.map((s: any) => (
+                {/* An EXISTING contact keeps its assignee even after they
+                    leave — dropping "Head of Pastoral Care" from parents is
+                    worse than showing it — but nobody should newly point one
+                    at somebody who has gone. */}
+                {staffList?.filter((s: any) => !hasLeft(s.leftAt)).map((s: any) => (
                   <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
                 ))}
               </select>

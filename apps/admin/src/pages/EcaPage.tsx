@@ -18,7 +18,7 @@ import {
   FileText,
   Eye,
 } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast, hasLeft } from '@wasil/shared'
 import type {
   EcaSettings,
   EcaTerm,
@@ -1627,7 +1627,7 @@ export function EcaPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 >
                   <option value="">No staff assigned</option>
-                  {(staffList || []).map(s => (
+                  {(staffList || []).filter(s => !hasLeft(s.leftAt)).map(s => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
