@@ -224,7 +224,7 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
     // is told, and does not offer what will not work.
     const schoolGoogle = await prisma.school.findUnique({
       where: { id: user.schoolId },
-      select: { googleCalendarRefreshToken: true },
+      select: { googleCalendarRefreshToken: true, timezone: true },
     })
     const googleMeetAvailable = !!schoolGoogle?.googleCalendarRefreshToken
 
@@ -241,6 +241,12 @@ router.get('/parent/:id', isAuthenticated, async (req, res) => {
       // Null means "you may book now" — including every event with no waves.
       bookingOpensAt: notYet ? notYet.opensAt.toISOString() : null,
       bookingOpensForYearGroup: notYet ? notYet.yearGroupName : null,
+      // The school's own zone, so the app can render an opening time in the
+      // clock the school meant rather than the clock the reader's phone is on.
+      // A parent abroad seeing "14:00" for an 18:00 opening has been told
+      // something true and useless — they cannot check it against anything the
+      // school has said to them.
+      schoolTimezone: schoolGoogle?.timezone || 'UTC',
       teachers: consultation.teachers.map(t => ({
         id: t.id,
         consultationId: t.consultationId,

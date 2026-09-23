@@ -131,6 +131,49 @@ function formatDate(dateStr: string) {
 
 type ViewMode = 'list' | 'create' | 'detail'
 
+/**
+ * What a typed wave time actually MEANS, on the school's clock.
+ *
+ * The box is a `datetime-local`: it has no timezone, and the browser reads it
+ * on the machine's own clock before we send an instant. That is correct for an
+ * admin sitting in the school and silently wrong for one who is not — and the
+ * box redisplays what was typed either way, so the screen agrees with you even
+ * when the stored moment does not.
+ *
+ * This line is the check. Type 18:00 in Dubai and it says 18:00; type 18:00
+ * from London and it says 22:00, which is the moment that would actually be
+ * saved.
+ */
+function inSchoolClock(localValue: string, tz: string): string | null {
+  const iso = toIsoInstant(localValue)
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, weekday: 'short', day: 'numeric', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'shortOffset',
+    })
+      .format(d)
+      // Intl says GMT+4; every school letter and every parent says UTC+4.
+      .replace('GMT', 'UTC')
+  } catch {
+    return null
+  }
+}
+
+/** The machine's own zone, when it differs from the school's — the condition
+ *  under which everything above stops being pedantry. */
+function deviceZoneIfDifferent(schoolTz?: string | null): string | null {
+  if (!schoolTz) return null
+  try {
+    const here = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return here && here !== schoolTz ? here : null
+  } catch {
+    return null
+  }
+}
+
 export function ConsultationsPage() {
   const theme = useTheme()
   const toast = useToast()
@@ -384,6 +427,13 @@ export function ConsultationsPage() {
   // belongs to somebody still teaching, and dropping them here would empty a
   // picker of a teacher standing in the building.
   const currentStaff = useMemo(() => (staffList ?? []).filter(s => !hasLeft(s.leftAt)), [staffList])
+
+  // The school's own clock, for the line under each wave box. Falls back to
+  // UTC rather than to the browser: guessing the school's zone from the
+  // machine is exactly the assumption this is here to test.
+  const { data: schoolSettings } = useApi(() => api.schoolSettings.get(), [])
+  const schoolTz = schoolSettings?.timezone || 'UTC'
+  const otherZone = deviceZoneIfDifferent(schoolTz)
 
   const duplicateNames = useMemo(() => {
     const seen = new Map<string, number>()
@@ -729,24 +779,44 @@ export function ConsultationsPage() {
             earliest time — so siblings can be booked together. Worth saying in the email.
           </p>
 
+          {/* Only when the machine and the school disagree — which is the only
+              time any of this can bite, and the time nothing else would say
+              so. The box redisplays what was typed regardless, so the screen
+              agrees with you even when the saved moment does not. */}
+          {otherZone && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+              This computer is on <strong>{otherZone}</strong>, not the school&apos;s {schoolTz}. Times you
+              type are read on this computer&apos;s clock — check the school time under each box before saving.
+            </p>
+          )}
+
           <div className="mt-4 space-y-2 max-w-lg">
             {(yearGroups || []).map(yg => (
-              <div key={yg.id} className="flex items-center gap-3">
-                <span className="text-sm text-gray-700 w-32 shrink-0">{yg.name}</span>
-                <input
-                  type="datetime-local"
-                  value={waveTimes[yg.id] || ''}
-                  onChange={e => setWaveTimes({ ...waveTimes, [yg.id]: e.target.value })}
-                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                />
-                {waveTimes[yg.id] && (
-                  <button
-                    type="button"
-                    onClick={() => setWaveTimes({ ...waveTimes, [yg.id]: '' })}
-                    className="text-xs text-gray-400 hover:text-gray-600"
-                  >
-                    Clear
-                  </button>
+              <div key={yg.id}>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-gray-700 w-32 shrink-0">{yg.name}</span>
+                  <input
+                    type="datetime-local"
+                    value={waveTimes[yg.id] || ''}
+                    onChange={e => setWaveTimes({ ...waveTimes, [yg.id]: e.target.value })}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  />
+                  {waveTimes[yg.id] && (
+                    <button
+                      type="button"
+                      onClick={() => setWaveTimes({ ...waveTimes, [yg.id]: '' })}
+                      className="text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {/* The moment that would actually be saved, on the school's
+                    clock. This is the line to read before saving. */}
+                {waveTimes[yg.id] && inSchoolClock(waveTimes[yg.id], schoolTz) && (
+                  <p className="text-xs text-gray-500 ml-[8.75rem] mt-1">
+                    Opens {inSchoolClock(waveTimes[yg.id], schoolTz)} &middot; {schoolTz}
+                  </p>
                 )}
               </div>
             ))}
