@@ -32,3 +32,17 @@ export function toIsoInstant(localValue: string | null | undefined): string | un
   if (Number.isNaN(d.getTime())) return undefined
   return d.toISOString()
 }
+
+/**
+ * Has this member of staff actually left yet?
+ *
+ * `leftAt` is the date they LEAVE, and Hub sends it as soon as notice is given
+ * — months ahead, routinely. Treating any value as "gone" removes a teacher
+ * from pickers while they are still teaching, which looks exactly like the bug
+ * the field was added to fix and is much harder to spot.
+ */
+export function hasLeft(leftAt: string | null | undefined, now: Date = new Date()): boolean {
+  if (!leftAt) return false
+  const d = new Date(leftAt)
+  return !Number.isNaN(d.getTime()) && d <= now
+}

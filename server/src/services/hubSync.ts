@@ -795,24 +795,49 @@ function parseLeftOn(value: string | null | undefined): Date | null {
 
 /**
  * What `User.leftAt` should become for this Hub staff member, given what it is
- * now. `undefined` means "change nothing", and it is returned in three
- * distinct cases that all genuinely want no write:
+ * now. `undefined` means "change nothing".
  *
- *   • Hub didn't say. `isArchived` absent — an older Hub, or a payload without
- *     the field. Silence is not "still here": clearing a mark because a field
- *     went missing would un-leave every leaver on one bad deploy.
- *   • Not archived, not marked. Nothing to do.
- *   • Archived and already marked. Never re-stamp — an exit date that walks
- *     forward on every sync looks authoritative and isn't (the same reasoning
- *     as the pupil leaver pass above). The cost is that a date we guessed as
- *     `now` is not corrected if Hub later supplies the real one; a wrong-by-days
- *     date is a much smaller lie than a date that changes every night.
+ * `leftOn` IS THE AUTHORITY WHEN HUB SENDS ONE, and the flag is only a
+ * fallback. That ordering is the whole point, because `leftOn` is a calendar
+ * date that can be in the FUTURE: a teacher who gives notice in March for a
+ * July leaving date is flagged from March, and reading the flag alone would
+ * take them out of every picker four months before they stop teaching. That is
+ * the bug this column was added to fix, pointing the other way, and it would be
+ * harder to spot — an empty picker is obvious, a picker missing one teacher who
+ * is standing in the building is not.
+ *
+ * So the mark records WHEN THEY LEAVE, and eligibility is computed from that
+ * date (see `currentStaffWhere`) rather than from the mark existing at all.
+ *
+ * Reinstatement arrives as `leftOn` back to null, which lands in the same
+ * branch as "never left" and clears the mark — a returning teacher must not
+ * stay invisible because the flag lagged.
  */
 function desiredLeftAt(s: HubStaff, current: Date | null): Date | null | undefined {
-  if (s.isArchived === undefined) return undefined
-  if (!s.isArchived) return current === null ? undefined : null
-  if (current !== null) return undefined
-  return parseLeftOn(s.leftOn) ?? new Date()
+  // Hub said nothing about either field: an older payload, or a dropped field.
+  // Silence is not "still here" — clearing marks because a field went missing
+  // would un-leave every leaver in the school on one bad deploy.
+  if (s.isArchived === undefined && s.leftOn === undefined) return undefined
+
+  // A date is the strongest thing Hub can tell us. Follow it, including when it
+  // CHANGES: Hub correcting a leaving date is a fact, not a re-stamp.
+  const stated = parseLeftOn(s.leftOn)
+  if (stated) {
+    return current && current.getTime() === stated.getTime() ? undefined : stated
+  }
+
+  // Hub sent `leftOn: null` explicitly, or a date we could not parse. Fall back
+  // to the flag — archived with no date is common, and a date we noticed is
+  // worth more than no mark at all.
+  if (s.isArchived === true) {
+    // Never re-stamp a guess: a "left on" that walks forward every night looks
+    // authoritative and isn't (the same reasoning as the pupil leaver pass).
+    return current === null ? new Date() : undefined
+  }
+  if (s.isArchived === false || s.leftOn === null) {
+    return current === null ? undefined : null
+  }
+  return undefined
 }
 
 /** What an upsert did to this person's leaving mark, for the sync summary. */

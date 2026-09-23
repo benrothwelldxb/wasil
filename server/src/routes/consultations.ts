@@ -6,6 +6,7 @@ import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, send
 import { sendConsultationBookingNotification, sendConsultationCancellationNotification } from '../services/consultationNotify.js'
 import { serializeBookingForParent } from '../services/consultationSerializers.js'
 import { parseWallClockForSchool } from '../services/dateTime.js'
+import { currentStaffWhere } from '../services/currentStaff.js'
 
 const router = Router()
 
@@ -1112,7 +1113,8 @@ router.post('/:id/teachers', isAdmin, async (req, res) => {
         role: { in: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
         // Somebody who has left cannot be added to an evening. Teachers already
         // on one are untouched — removing them would delete parents' bookings.
-        leftAt: null,
+        // A teacher leaving in July is still addable in March.
+        ...currentStaffWhere(),
       },
       select: { id: true },
     })

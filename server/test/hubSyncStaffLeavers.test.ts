@@ -207,6 +207,72 @@ describe('staff leavers — marking', () => {
   })
 })
 
+describe('staff leavers — notice given, last day still ahead', () => {
+  // THE ONE THAT POINTS THE OTHER WAY. Hub flags a teacher who gives notice in
+  // March for a July leaving date FROM MARCH, and its own access review reads
+  // the date rather than the flag for exactly this reason. Excluding on "has a
+  // leaving date" would take that teacher out of every picker four months
+  // before they stop teaching — the same bug as leavers-in-the-picker, harder
+  // to spot, because an empty picker is obvious and a picker missing one
+  // teacher who is standing in the building is not.
+
+  it('records a future leaving date as given, rather than as the day we heard', async () => {
+    mStaff.mockResolvedValue([hubStaff({ isArchived: true, leftOn: '2027-07-15' })])
+    prismaMock.user.findFirst.mockResolvedValue(connectUser())
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(updateData().leftAt).toEqual(new Date('2027-07-15T00:00:00.000Z'))
+  })
+
+  it('takes leftOn over the flag, so a date always wins', async () => {
+    // Not archived yet, but Hub already holds the leaving date.
+    mStaff.mockResolvedValue([hubStaff({ isArchived: false, leftOn: '2027-07-15' })])
+    prismaMock.user.findFirst.mockResolvedValue(connectUser())
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(updateData().leftAt).toEqual(new Date('2027-07-15T00:00:00.000Z'))
+  })
+
+  it('follows Hub when a leaving date is CORRECTED', async () => {
+    // Not a re-stamp — a re-stamp is us overwriting Hub's fact with our guess.
+    // This is Hub changing its mind, which is the fact changing.
+    mStaff.mockResolvedValue([hubStaff({ isArchived: true, leftOn: '2027-07-15' })])
+    prismaMock.user.findFirst.mockResolvedValue(
+      connectUser({ leftAt: new Date('2027-04-01T00:00:00.000Z') }),
+    )
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(updateData().leftAt).toEqual(new Date('2027-07-15T00:00:00.000Z'))
+  })
+
+  it('writes nothing when Hub repeats the date we already hold', async () => {
+    const held = new Date('2027-07-15T00:00:00.000Z')
+    mStaff.mockResolvedValue([hubStaff({ isArchived: true, leftOn: '2027-07-15' })])
+    prismaMock.user.findFirst.mockResolvedValue(connectUser({ leftAt: held }))
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(updateData()).not.toHaveProperty('leftAt')
+  })
+
+  it('clears the mark when Hub sends leftOn back to null — a reinstatement', async () => {
+    // Hub signals reinstatement by nulling the date. If we only watched the
+    // flag, a returning teacher would stay invisible until somebody noticed.
+    mStaff.mockResolvedValue([hubStaff({ isArchived: false, leftOn: null })])
+    prismaMock.user.findFirst.mockResolvedValue(
+      connectUser({ leftAt: new Date('2026-07-10T00:00:00.000Z') }),
+    )
+
+    const summary = await syncSchoolFromHub('connect-school-1')
+
+    expect(updateData().leftAt).toBeNull()
+    expect(summary.staff.returned).toBe(1)
+  })
+})
+
 describe('staff leavers — clearing and silence', () => {
   it('clears the mark when Hub un-archives someone', async () => {
     // A leaver marked in error and corrected in Hub, or someone who came back.

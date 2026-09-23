@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Plus, Pencil, Trash2, Users, UserPlus, FolderPlus, X, Eye, EyeOff, UserMinus } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast, hasLeft } from '@wasil/shared'
 import type { Group, GroupCategory, GroupMember, GroupStaffAssignment, StudentSearchResult } from '@wasil/shared'
 import { StudentSearchSelect } from '../components/StudentSearchSelect'
 
@@ -740,7 +740,11 @@ export function GroupsPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select staff member...</option>
+                  {/* The API refuses to assign somebody who has left, so an
+                      unfiltered list here would offer a name and then fail
+                      with "Invalid staff user" — the worst of both. */}
                   {(staffList || [])
+                    .filter(s => !hasLeft(s.leftAt))
                     .filter(s => !staffAssignments.find(a => a.userId === s.id))
                     .map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.role})</option>

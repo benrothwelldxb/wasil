@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { X, Pencil, Shield, GraduationCap, UserCog } from 'lucide-react'
-import { useTheme, useApi, api, useToast } from '@wasil/shared'
+import { useTheme, useApi, api, useToast, hasLeft } from '@wasil/shared'
 import type { Class } from '@wasil/shared'
 import type { StaffMember } from '@wasil/shared'
 import { HubSyncBanner } from '../components/HubSyncBanner'
@@ -21,8 +21,8 @@ export function StaffPage() {
   // Staff Hub has archived. They stay on this page — an admin needs to see who
   // has gone, and their posts and parent threads are still there to read — but
   // they are folded away by default and no picker anywhere offers them.
-  const current = (staffList ?? []).filter(m => !m.leftAt)
-  const leavers = (staffList ?? []).filter(m => !!m.leftAt)
+  const current = (staffList ?? []).filter(m => !hasLeft(m.leftAt))
+  const leavers = (staffList ?? []).filter(m => hasLeft(m.leftAt))
   const [showLeavers, setShowLeavers] = useState(false)
 
   // Edit form fields
@@ -85,7 +85,8 @@ export function StaffPage() {
 
   // Hub sends a real leaving date when it holds one; when it doesn't, the sync
   // stamps the moment it noticed, which is close enough to show as a date and
-  // misleading to show as a time.
+  // misleading to show as a time. The same value reads as "Leaving" ahead of
+  // the day and "Left" after it.
   const formatLeftAt = (iso?: string | null) => {
     if (!iso) return ''
     const d = new Date(iso)
@@ -251,6 +252,14 @@ export function StaffPage() {
                         {member.position}
                       </span>
                     )}
+                    {/* Notice given, last day still ahead. They stay in every
+                        picker until that date — this is the only place the
+                        school would otherwise learn it is coming. */}
+                    {member.leftAt && !hasLeft(member.leftAt) && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                        Leaving {formatLeftAt(member.leftAt)}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <span>{member.email}</span>
@@ -291,8 +300,10 @@ export function StaffPage() {
             {showLeavers && (
               <div className="space-y-2 mt-3">
                 <p className="text-xs text-slate-400">
-                  Marked as left in Wasil Hub. Their posts and message threads stay readable, and
-                  they no longer appear when you pick staff for a consultation, a group or a tag.
+                  Their last day has passed, per Wasil Hub. Posts and message threads stay
+                  readable, and they no longer appear when you pick staff for a consultation, a
+                  group or a tag. Anyone leaving on a future date is still in the list above,
+                  marked with the date.
                 </p>
                 {leavers.map(member => (
                   <div key={member.id} className="bg-slate-50 rounded-lg border border-slate-200 p-3 opacity-80">

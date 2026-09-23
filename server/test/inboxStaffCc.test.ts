@@ -189,7 +189,7 @@ describe('POST /conversations/:id/staff', () => {
 
     const where = prismaMock.staffClassAssignment.findMany.mock.calls[0][0].where
     expect(where.classId).toEqual({ in: ['cls-1'] })
-    expect(where.user).toEqual({ leftAt: null })
+    expect(where.user).toEqual({ OR: [{ leftAt: null }, { leftAt: { gt: expect.any(Date) } }] })
   })
 
   it('cannot CC the primary staffId (already on the thread) — 400, no create, no gate lookup', async () => {

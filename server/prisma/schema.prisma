@@ -249,9 +249,15 @@ model User {
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
 
-  // Hub says this staff member has left. Set by the staff sync from Hub's
-  // `isArchived` flag, dated with Hub's `leftOn` when it sends one and with the
-  // sync time when it doesn't. Null = still here.
+  // The date this staff member LEAVES, per Hub. Set by the staff sync from
+  // Hub's `leftOn` when it sends one, falling back to the time we noticed the
+  // `isArchived` flag when it doesn't. Null = no leaving date on file.
+  //
+  // MAY BE IN THE FUTURE, and that is the point. Hub flags a teacher who gives
+  // notice in March for a July leaving date from March onwards, so "has this
+  // column got a value" is not the same question as "have they left". Ask the
+  // second one with `currentStaffWhere()`; filtering on `leftAt: null` takes a
+  // teacher out of every picker months before they stop teaching.
   //
   // A soft mark, exactly as for a pupil (see Student.leftAt) and for the same
   // reason: posts, parent threads, consultation bookings and audit rows all

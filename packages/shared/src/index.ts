@@ -19,7 +19,7 @@ export { TenantProvider, useTenant } from './contexts/TenantContext'
 export { resolveTenantSlug } from './services/tenant'
 
 // Utils
-export { toLocalInputValue, toIsoInstant } from './utils/datetime'
+export { toLocalInputValue, toIsoInstant, hasLeft } from './utils/datetime'
 export { buildMention, parseMentions, mentionStaffId, MENTION_PATH } from './utils/mentions'
 export type { ParsedMention } from './utils/mentions'
 
