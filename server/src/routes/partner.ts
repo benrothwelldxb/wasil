@@ -2142,29 +2142,59 @@ async function parseRunBody(
  * PM and FRI_PM depart. Lateness is stated only where Desk recorded an expected
  * time; with none, the honest sentence simply ends.
  */
+/**
+ * Who, if anyone, a mark on this bus would reach — resolved BEFORE the push.
+ *
+ * Both reasons a mark tells nobody are knowable up front and neither is a
+ * delivery failure: the school has transport switched off, or Connect holds no
+ * riders for that route and leg. Answering them before firing means the office
+ * can be told the truth at 07:30 with a bus in front of them, at no extra cost
+ * — these two queries already ran.
+ *
+ * The likelier of the two, by a distance, is `no_riders`: a route pushed from
+ * Desk whose assignments have not landed here yet. That is the case where a
+ * real mark, correctly made, reaches nobody and nothing says so.
+ */
+type TransportAudience =
+  | { suppressed: 'module_off' | 'no_riders' }
+  | { assignments: Array<{ studentId: string; routeName: string }>; timezone: string }
+
+async function resolveTransportAudience(
+  schoolId: string,
+  routeId: string,
+  leg: 'AM' | 'PM' | 'FRI_PM',
+): Promise<TransportAudience> {
+  const assignments = await prisma.transportAssignment.findMany({
+    where: { schoolId, routeId, leg },
+    select: { studentId: true, routeName: true },
+  })
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { transportEnabled: true, timezone: true },
+  })
+  // A school still testing transport in Desk must not have its parents told
+  // anything. The read is gated the same way; this is the same gate on the
+  // push. Checked before the rider count so a school with the module off is
+  // never told it has no riders — a different and misleading answer.
+  if (!school?.transportEnabled) return { suppressed: 'module_off' }
+  if (assignments.length === 0) return { suppressed: 'no_riders' }
+  return { assignments, timezone: school.timezone ?? 'UTC' }
+}
+
 async function notifyTransportRun(run: {
   schoolId: string
   routeId: string
   leg: 'AM' | 'PM' | 'FRI_PM'
   markedAt: Date
   dueAt: string | null
+  assignments: Array<{ studentId: string; routeName: string }>
+  timezone: string
 }): Promise<void> {
-  const assignments = await prisma.transportAssignment.findMany({
-    where: { schoolId: run.schoolId, routeId: run.routeId, leg: run.leg },
-    select: { studentId: true, routeName: true },
-  })
-  if (assignments.length === 0) return
-
-  const school = await prisma.school.findUnique({
-    where: { id: run.schoolId },
-    select: { transportEnabled: true, timezone: true },
-  })
-  // A school still testing transport in Desk must not have its parents told
-  // anything. The read is gated the same way; this is the same gate on the push.
-  if (!school?.transportEnabled) return
+  const assignments = run.assignments
+  const school = { timezone: run.timezone }
 
   const routeName = assignments[0].routeName
-  const at = formatWallClock(run.markedAt, school.timezone ?? 'UTC')
+  const at = formatWallClock(run.markedAt, school.timezone)
   const verb = run.leg === 'AM' ? 'arrived at school' : 'left school'
   const lateness = run.dueAt ? describeLateness(at, run.dueAt) : null
 
@@ -2226,8 +2256,14 @@ function describeLateness(actual: string, due: string): string | null {
 
 // A bus marked away: "Bus 14 left at 15:42".
 //
-//   POST   /api/partner/transport/runs
-//   DELETE /api/partner/transport/runs     (withdrawal — same body, no marked_at)
+//   POST   /api/partner/transport/runs     (a mark; marked_at REQUIRED)
+//   DELETE /api/partner/transport/runs     (withdrawal — same body, no mark)
+//
+// The POST answers who it reached, not merely that it landed:
+//   { id, marked: true, notified: true,  recipients: 12 }
+//   { id, marked: true, notified: false, recipients: 0, notify_suppressed:
+//     "module_off" | "no_riders" }
+// `notified` is DISPATCHED, not delivered. Nobody can promise the second.
 //
 //   { school_id, route_id, leg: "AM"|"PM"|"FRI_PM", date_local: "2026-09-17",
 //     marked_at: "2026-09-17T11:42:00Z",   // the instant it happened
@@ -2259,12 +2295,22 @@ router.post('/transport/runs', requirePartner, async (req, res) => {
     if ('error' in parsed) return res.status(parsed.status).json({ error: parsed.error })
     const { school, routeId, leg, dateLocal, markedAt, dueAt } = parsed
 
-    // A withdrawal sent as a POST with no mark, which Desk's brief allows.
+    // A POST with no mark used to WITHDRAW, which Desk asked for and which
+    // turned out to be a trap: the undo was spelled as the absence of a field,
+    // so a wrong field name did not fail — it inverted the operation and
+    // reported success. Desk sent `arrived_at` instead of `marked_at` from the
+    // day its push was written; every mark the office made deleted a run that
+    // had never existed, answered 200, and Desk printed "Parents on this route
+    // have been told" over the top of it. Nothing rejected, nothing logged,
+    // nobody told, for as long as the feature has existed.
+    //
+    // DELETE does the same job with the verb that means it, so this spelling
+    // buys nothing and costs that. A mark with no instant is now a 400 that
+    // says where to go.
     if (!markedAt) {
-      const removed = await prisma.transportRun.deleteMany({
-        where: { schoolId: school.id, routeId, leg, dateLocal },
+      return res.status(400).json({
+        error: 'marked_at is required — use DELETE /transport/runs to withdraw a run',
       })
-      return res.json({ withdrawn: removed.count })
     }
 
     const run = await prisma.transportRun.upsert({
@@ -2273,14 +2319,37 @@ router.post('/transport/runs', requirePartner, async (req, res) => {
       update: { markedAt, dueAt },
     })
 
+    // Who this reaches, answered before the push rather than inferred from a
+    // 200. A bare "I have this" left Desk unable to say anything truer than
+    // "sent to Connect", and the useful negative — this route has no riders in
+    // Connect yet — is the likeliest reason a real mark tells nobody.
+    const audience = await resolveTransportAudience(school.id, routeId, leg)
+    if ('suppressed' in audience) {
+      return res.json({
+        id: run.id,
+        marked: true,
+        notified: false,
+        recipients: 0,
+        notify_suppressed: audience.suppressed,
+      })
+    }
+
     // Tell the families on that bus — and only them. Notifying is best-effort:
     // the mark itself is the record, and a push that fails must not fail the
-    // office's action or make Desk retry a mark it already landed.
-    notifyTransportRun({ schoolId: school.id, routeId, leg, markedAt, dueAt }).catch(err =>
-      console.error('Transport run notify failed:', err),
-    )
+    // office's action or make Desk retry a mark it already landed. So
+    // `notified` means dispatched to this many families, not delivered to this
+    // many phones — the difference is a promise no server can keep.
+    notifyTransportRun({
+      schoolId: school.id, routeId, leg, markedAt, dueAt,
+      assignments: audience.assignments, timezone: audience.timezone,
+    }).catch(err => console.error('Transport run notify failed:', err))
 
-    res.json({ id: run.id, marked: true })
+    res.json({
+      id: run.id,
+      marked: true,
+      notified: true,
+      recipients: audience.assignments.length,
+    })
   } catch (error) {
     console.error('Partner transport run error:', error)
     res.status(500).json({ error: 'Failed to record transport run' })
