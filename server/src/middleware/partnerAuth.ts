@@ -104,6 +104,20 @@ export async function requirePartner(req: Request, res: Response, next: NextFunc
   //
   // A FUTURE leaving date is not a departure: `hasLeft` compares the date, and
   // somebody serving notice keeps working until their last day.
+  //
+  // IF YOU MOVE THIS GATE, TELL DESK. Desk wrote its leaver copy against where
+  // this sits: its withdraw-a-message path deliberately has no leaver arm,
+  // because a leaver meets the closed-door page on the thread itself and there
+  // is no route to a withdraw button behind it. That reasoning is true of this
+  // gate's position, not of the API in general — moving it later, or making
+  // withdraw reachable from a list view, silently restores a "try again in a
+  // moment" message to somebody whose access has permanently ended.
+  //
+  // Recorded here rather than in a chat log on purpose. Tonight produced three
+  // separate faults of exactly that shape: Hub's own contract file advising a
+  // filter its code did not use, Hub recording a re-linked login in an audit
+  // log no app can read, and Desk's copy resting on a 403 carrying no code.
+  // Each was a fact kept somewhere its audience would never look.
   const actingId = actingHubUserId(req)
   if (actingId) {
     const acting = await prisma.user.findUnique({

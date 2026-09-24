@@ -163,6 +163,45 @@ describe('who is NOT refused', () => {
   })
 })
 
+describe('every actor-bearing endpoint refuses, not just the one we tested', () => {
+  // THE POINT OF THIS TABLE is not coverage for its own sake. Desk wrote its
+  // leaver copy on the assumption that the refusal is UNIVERSAL — that a
+  // departed teacher meets a closed door on any surface, so paths behind it
+  // (withdraw, react, add a colleague) need no leaver wording of their own.
+  //
+  // That assumption is held today by this gate being middleware. If someone
+  // later moves it into the routes and misses one, nothing in Desk's repo
+  // fails: their page simply starts telling a permanently-refused person to
+  // try again in a moment. This is the half of that coupling Connect CAN
+  // check, so it breaks here instead.
+  const ENDPOINTS: Array<[string, () => request.Test]> = [
+    ['inbox/summary', () => request(makeApp()).get('/api/partner/inbox/summary?hub_user_id=hu-gone')],
+    ['inbox/threads', () => request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-gone')],
+    ['inbox/recipients', () => request(makeApp()).get('/api/partner/inbox/recipients?hub_user_id=hu-gone')],
+    ['messages/sent', () => request(makeApp()).get('/api/partner/messages/sent?hub_user_id=hu-gone')],
+    ['POST messages', () =>
+      request(makeApp()).post('/api/partner/messages')
+        .send({ hub_user_id: 'hu-gone', title: 'T', content: 'C', audience: { wholeSchool: true } }) as request.Test],
+  ]
+
+  for (const [name, call] of ENDPOINTS) {
+    it(`${name} refuses a departed actor`, async () => {
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: 'u-1', role: 'STAFF', schoolId: 'sch-1', name: 'Gone', leftAt: PAST,
+      })
+
+      const res = await auth(call())
+
+      expect(res.status).toBe(403)
+      expect(res.body).toEqual({ error: 'actor_has_left' })
+      // And never reached the handler: no route-level read happened. This is
+      // what "the gate is middleware" means, asserted rather than assumed.
+      expect(prismaMock.conversation.findMany).not.toHaveBeenCalled()
+      expect(prismaMock.user.findMany).not.toHaveBeenCalled()
+    })
+  }
+})
+
 describe('the gate sits before the routes, not inside them', () => {
   it('asks once, by hubUserId, for the leaving date only', async () => {
     prismaMock.user.findUnique.mockResolvedValue({
