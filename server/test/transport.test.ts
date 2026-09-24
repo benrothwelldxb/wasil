@@ -361,13 +361,98 @@ describe('POST /api/partner/transport/runs', () => {
     expect(prismaMock.transportRun.upsert.mock.calls[0][0].create.dueAt).toBeNull()
   })
 
-  it('treats a null mark as a withdrawal, not as a mark', async () => {
-    const res = await post({ ...RUN, marked_at: null })
+  // WAS: a null mark withdrew the run. It was Desk's own request and it was a
+  // trap — the undo spelled as the ABSENCE of a field, so a wrong field name
+  // did not fail, it inverted the operation and reported success.
+  //
+  // Desk sent `arrived_at` instead of `marked_at` from the day its push was
+  // written. Every mark the office made deleted a run that had never existed,
+  // this route answered 200, and Desk printed "Parents on this route have been
+  // told" over the top of it. Nothing rejected, nothing logged, nobody told,
+  // for the whole life of the feature.
+  //
+  // DELETE does the same job with the verb that means it.
+  it.each([
+    ['an explicit null', { marked_at: null }],
+    ['the field left out entirely', {}],
+    ['a neighbouring field name, as Desk actually sent', { arrived_at: '2026-09-17T11:42:00Z' }],
+  ])('refuses a mark with no instant — %s', async (_label, patch) => {
+    const body = { ...RUN, ...patch } as Record<string, unknown>
+    if (!('marked_at' in patch)) delete body.marked_at
 
-    expect(res.status).toBe(200)
+    const res = await post(body)
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/marked_at is required/)
+    // Neither written nor deleted. The old behaviour did the second.
     expect(prismaMock.transportRun.upsert).not.toHaveBeenCalled()
-    expect(prismaMock.transportRun.deleteMany).toHaveBeenCalledWith({
-      where: { schoolId: 'school-1', routeId: 'r1', leg: 'PM', dateLocal: '2026-09-17' },
+    expect(prismaMock.transportRun.deleteMany).not.toHaveBeenCalled()
+  })
+
+  describe('what the answer tells Desk', () => {
+    // A 200 used to mean "I have this", and Desk has a screen at 07:30 with a
+    // bus in front of it that needs to say whether a phone buzzed. It could
+    // only hedge — "sent to Connect, which tells the families on this route" —
+    // or invent. Both reasons a mark reaches nobody are knowable up front, and
+    // the queries that answer them were already running.
+    it('says how many families it went to', async () => {
+      prismaMock.transportAssignment.findMany.mockResolvedValue([
+        { studentId: 'stu-1', routeName: 'Bus 3' },
+        { studentId: 'stu-2', routeName: 'Bus 3' },
+        { studentId: 'stu-3', routeName: 'Bus 3' },
+      ])
+
+      const res = await post(RUN)
+
+      expect(res.status).toBe(200)
+      expect(res.body).toMatchObject({ marked: true, notified: true, recipients: 3 })
+      expect(res.body.notify_suppressed).toBeUndefined()
+    })
+
+    it('says NO RIDERS rather than a bare success — the likeliest silent miss', async () => {
+      // A route pushed from Desk whose assignments have not landed here yet.
+      // The mark is correct, the office is told it worked, and nobody hears.
+      prismaMock.transportAssignment.findMany.mockResolvedValue([])
+
+      const res = await post(RUN)
+
+      expect(res.status).toBe(200)
+      expect(res.body).toMatchObject({
+        marked: true, notified: false, recipients: 0, notify_suppressed: 'no_riders',
+      })
+    })
+
+    it('says MODULE OFF when the school has transport switched off', async () => {
+      prismaMock.school.findUnique.mockResolvedValue({ transportEnabled: false, timezone: 'Asia/Dubai' })
+      prismaMock.transportAssignment.findMany.mockResolvedValue([
+        { studentId: 'stu-1', routeName: 'Bus 3' },
+      ])
+
+      const res = await post(RUN)
+
+      expect(res.body).toMatchObject({ notified: false, notify_suppressed: 'module_off' })
+    })
+
+    it('prefers MODULE OFF over NO RIDERS when both are true', async () => {
+      // A school still testing has neither switch on nor riders loaded. Saying
+      // "no riders" would send them hunting for missing assignments when the
+      // answer is a toggle they have deliberately not flipped.
+      prismaMock.school.findUnique.mockResolvedValue({ transportEnabled: false, timezone: 'Asia/Dubai' })
+      prismaMock.transportAssignment.findMany.mockResolvedValue([])
+
+      const res = await post(RUN)
+
+      expect(res.body.notify_suppressed).toBe('module_off')
+    })
+
+    it('records the mark either way — suppression is about the telling', async () => {
+      prismaMock.transportAssignment.findMany.mockResolvedValue([])
+
+      await post(RUN)
+
+      // The run is the record. Whether anyone was told is a separate fact and
+      // must not decide whether the bus was marked.
+      expect(prismaMock.transportRun.upsert).toHaveBeenCalled()
     })
   })
 
