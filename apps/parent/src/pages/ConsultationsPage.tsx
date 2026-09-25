@@ -31,6 +31,35 @@ const LOCATION_TYPE_LABELS: Record<string, string> = {
   CUSTOM: 'Custom',
 }
 
+/**
+ * Is this appointment inside the two-hour window where it can no longer be
+ * cancelled from the app?
+ *
+ * Measured on the SCHOOL's clock, the same as the server measures it — two
+ * implementations of the same cut-off would eventually disagree, and the
+ * disagreement would be a button that offers something the server refuses.
+ *
+ * Falls open on anything unreadable: showing a button that might be declined
+ * is better than hiding one that would have worked.
+ */
+function tooLateToCancel(dateStr: string, startTime: string, schoolTz?: string | null): boolean {
+  if (!dateStr || !startTime) return false
+  try {
+    // The appointment as a wall clock at the school, turned into an instant by
+    // asking what that zone's offset is at that moment.
+    const naive = new Date(`${dateStr}T${startTime}:00Z`)
+    if (Number.isNaN(naive.getTime())) return false
+    const tz = schoolTz || undefined
+    const asSchoolClock = new Date(naive.toLocaleString('en-US', { timeZone: tz }))
+    const asUtcClock = new Date(naive.toLocaleString('en-US', { timeZone: 'UTC' }))
+    const offset = asSchoolClock.getTime() - asUtcClock.getTime()
+    const appointment = new Date(naive.getTime() - offset)
+    return appointment.getTime() - Date.now() <= 2 * 60 * 60 * 1000
+  } catch {
+    return false
+  }
+}
+
 function formatDate(dateStr: string) {
   const date = new Date(dateStr + 'T00:00:00')
   return date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -113,6 +142,9 @@ export function ConsultationsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
+  // Children whose "everyone else at this evening" list is expanded. Collapsed
+  // by default: the point of the filter is that the common case is short.
+  const [showAllTeachersFor, setShowAllTeachersFor] = useState<Set<string>>(new Set())
   const [selectedConsultation, setSelectedConsultation] = useState<ConsultationEvent | null>(null)
   const [bookingSlot, setBookingSlot] = useState<{ slot: ConsultationSlot; teacher: ConsultationTeacher } | null>(null)
   const [bookingStudentId, setBookingStudentId] = useState('')
@@ -161,6 +193,8 @@ export function ConsultationsPage() {
       consultationDate: string
       consultationId: string
       meetingLink?: string | null
+      slotDate: string
+      schoolTimezone?: string | null
     }> = []
 
     consultations.forEach(c => {
@@ -179,6 +213,10 @@ export function ConsultationsPage() {
               consultationDate: c.date,
               consultationId: c.id,
               meetingLink: slot.booking.meetingLink,
+              // The slot's own date on a multi-day evening, falling back to the
+              // event's — the same resolution the server uses for the cut-off.
+              slotDate: slot.date || c.date,
+              schoolTimezone: c.schoolTimezone,
             })
           }
         })
@@ -449,15 +487,38 @@ export function ConsultationsPage() {
 
         {/* Child-centric booking view */}
         {children.map((child, childIdx) => {
-          // Find teachers assigned to this child's class (class teacher)
-          const classTeachers = selectedConsultation.teachers?.filter(t =>
-            t.assignedClasses && t.assignedClasses.includes(child.className)
+          // WHO ACTUALLY TEACHES THIS CHILD, resolved server-side from class
+          // assignments and the published timetable — the same definition the
+          // parent inbox uses for its contact list.
+          //
+          // This used to match a teacher's `assignedClasses` against the
+          // child's class NAME, and then show every teacher with no class
+          // assignment at all to every child. So a parent of one Year 2 child
+          // was offered the Year 6 teachers, the head of maths, and anyone
+          // whose class link happened to be missing. Booking the wrong one is
+          // not a rare mistake in that list; it is the obvious one, and it
+          // costs two families their slot — the teacher who should have been
+          // booked is now busy, and the one who was booked has nothing to say.
+          const mine = selectedConsultation.teachers?.filter(
+            t => t.forStudentIds?.includes(child.id)
           ) || []
-          // Non-class teachers (specialists + admin) — available to all children
-          const specialistTeachers = selectedConsultation.teachers?.filter(t =>
-            !t.assignedClasses || t.assignedClasses.length === 0
-          ) || []
-          const relevantTeachers = [...classTeachers, ...specialistTeachers]
+
+          // FAILING OPEN, twice over. Class links go missing and timetables go
+          // unpublished; if we cannot tell who teaches this child, showing
+          // everybody is recoverable and showing nobody is not — a parent with
+          // too many names can still book correctly, one with none cannot book
+          // at all.
+          const fallback = [
+            ...(selectedConsultation.teachers?.filter(
+              t => t.assignedClasses && t.assignedClasses.includes(child.className)
+            ) || []),
+            ...(selectedConsultation.teachers?.filter(
+              t => !t.assignedClasses || t.assignedClasses.length === 0
+            ) || []),
+          ]
+          const filtered = selectedConsultation.teachersResolvedForFamily && mine.length > 0
+          const relevantTeachers = filtered ? mine : fallback
+
           // Deduplicate by teacher id
           const seen = new Set<string>()
           const uniqueTeachers = relevantTeachers.filter(t => {
@@ -465,6 +526,14 @@ export function ConsultationsPage() {
             seen.add(t.id)
             return true
           })
+
+          // Everyone else on the evening, behind a toggle. Not hidden outright:
+          // a head of year or a specialist is a legitimate booking a parent may
+          // deliberately want, and a list that silently omits them turns a
+          // considered choice into a phone call to the office.
+          const others = filtered
+            ? (selectedConsultation.teachers || []).filter(t => !seen.has(t.id))
+            : []
 
           if (uniqueTeachers.length === 0) return null
 
@@ -493,8 +562,15 @@ export function ConsultationsPage() {
 
               {/* Teachers for this child */}
               <div className="space-y-4 mb-6">
-                {uniqueTeachers.map(teacher => {
-                  const isClassTeacher = classTeachers.some(ct => ct.id === teacher.id)
+                {(showAllTeachersFor.has(child.id)
+                  ? [...uniqueTeachers, ...others]
+                  : uniqueTeachers
+                ).map(teacher => {
+                  // Their class teacher, as opposed to a specialist who also
+                  // teaches them. Still a name match when the server could not
+                  // resolve the family — the label is cosmetic, so a wrong one
+                  // is worth less than a missing teacher.
+                  const isClassTeacher = !!teacher.assignedClasses?.includes(child.className)
                   const isVideoType = ['GOOGLE_MEET', 'ZOOM', 'TEAMS'].includes(teacher.locationType || '')
                   const locationLabel = LOCATION_TYPE_LABELS[teacher.locationType || 'IN_PERSON'] || 'In Person'
 
@@ -671,6 +747,29 @@ export function ConsultationsPage() {
                   )
                 })}
               </div>
+
+                {/* Everyone else taking part. Behind a tap rather than hidden:
+                    a parent who deliberately wants a head of year or a
+                    specialist should not have to ring the office for it — and
+                    a list that silently omits them turns a considered choice
+                    into a phone call. */}
+                {others.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllTeachersFor(prev => {
+                      const next = new Set(prev)
+                      if (next.has(child.id)) next.delete(child.id)
+                      else next.add(child.id)
+                      return next
+                    })}
+                    className="w-full text-xs font-semibold py-2.5"
+                    style={{ color: '#7A7A7A' }}
+                  >
+                    {showAllTeachersFor.has(child.id)
+                      ? 'Show only ' + child.name + '’s teachers'
+                      : 'Show all ' + (uniqueTeachers.length + others.length) + ' teachers at this evening'}
+                  </button>
+                )}
             </div>
           )
         })}
@@ -937,24 +1036,43 @@ export function ConsultationsPage() {
                       </a>
                     )}
                   </div>
-                  {consultations?.find(c => c.id === b.consultationId)?.status !== 'COMPLETED' && (
-                    <button
-                      onClick={() => {
-                        if (confirm(`Cancel your ${b.startTime} appointment with ${b.teacherName}?`)) {
-                          handleCancel(b.id)
-                        }
-                      }}
-                      className="text-xs font-semibold px-3 py-1"
-                      style={{
-                        borderRadius: '10px',
-                        backgroundColor: '#FFF0F0',
-                        color: '#D14D4D',
-                        minHeight: '32px',
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
+                  {consultations?.find(c => c.id === b.consultationId)?.status !== 'COMPLETED' && (() => {
+                    // The button used to stay live right up to the appointment
+                    // and only fail when tapped, which told a parent the
+                    // position at the worst possible moment. It now shows the
+                    // position instead, and says who to call — because the
+                    // teacher still needs to know, and a refusal that offers
+                    // nothing leaves that message with nobody.
+                    const tooLate = tooLateToCancel(b.slotDate, b.startTime, b.schoolTimezone)
+                    return (
+                      <div className="flex flex-col items-end gap-1">
+                        <button
+                          disabled={tooLate}
+                          onClick={() => {
+                            if (tooLate) return
+                            if (confirm(`Cancel your ${b.startTime} appointment with ${b.teacherName}?`)) {
+                              handleCancel(b.id)
+                            }
+                          }}
+                          className="text-xs font-semibold px-3 py-1"
+                          style={{
+                            borderRadius: '10px',
+                            backgroundColor: tooLate ? '#F2F2F2' : '#FFF0F0',
+                            color: tooLate ? '#9A9A9A' : '#D14D4D',
+                            minHeight: '32px',
+                            cursor: tooLate ? 'default' : 'pointer',
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        {tooLate && (
+                          <span className="text-[11px] text-right" style={{ color: '#9A9A9A', maxWidth: 180 }}>
+                            Less than 2 hours away — please call the school office.
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             )

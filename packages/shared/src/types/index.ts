@@ -1646,11 +1646,17 @@ export interface ConsultationEvent {
   bookingOpensAt?: string | null
   /** The year group whose wave they are waiting on, for the message. */
   bookingOpensForYearGroup?: string | null
+  /** False when Connect could not work out which teachers teach this family's
+   *  children at all — no class links, no published timetable. The app must
+   *  then show EVERY teacher and not claim to have filtered: a parent shown
+   *  too many can still book correctly, one shown none cannot book at all. */
+  teachersResolvedForFamily?: boolean
   /** The school's IANA timezone, so an opening time can be shown in the clock
    *  the SCHOOL meant. A parent abroad rendering it in their own zone has been
    *  told something true and useless: "14:00" matches nothing the school has
    *  said to them, and they cannot check it against the letter or the app.
-   *  Parent detail only. */
+   *  Also the clock the cancellation cut-off is measured on — two hours before
+   *  the appointment AT THE SCHOOL. Parent detail only. */
   schoolTimezone?: string | null
   /** Whether a Google Meet link can actually be created — i.e. whether the
    *  school has connected a Google Calendar. False means do not offer Meet:
@@ -1688,6 +1694,11 @@ export interface ConsultationTeacher {
   endTime: string
   availabilityWindows?: ConsultationAvailabilityWindow[]
   slots?: ConsultationSlot[]
+  /** Which of THIS parent's children this teacher teaches. Empty means "not
+   *  one of yours, as far as we can tell" — shown behind a toggle rather than
+   *  hidden, because a head of year or a specialist is a legitimate booking.
+   *  Parent payload only; absent for admins. */
+  forStudentIds?: string[]
 }
 
 export interface ConsultationSlot {
