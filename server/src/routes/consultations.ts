@@ -6,6 +6,7 @@ import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, send
 import { sendConsultationBookingNotification, sendConsultationCancellationNotification } from '../services/consultationNotify.js'
 import { serializeBookingForParent } from '../services/consultationSerializers.js'
 import { parseWallClockForSchool, describeWhenForSchool } from '../services/dateTime.js'
+import { teachersForFamily } from '../services/consultationTeachersForFamily.js'
 import { currentStaffWhere } from '../services/currentStaff.js'
 
 const router = Router()
@@ -221,8 +222,24 @@ router.get('/parent', isAuthenticated, async (req, res) => {
       orderBy: { date: 'asc' },
     })
 
+    // Which of THIS parent's children each teacher actually teaches. Resolved
+    // once for the whole page rather than per consultation, and best-effort by
+    // design — see the service for why an empty answer must mean "show
+    // everyone" rather than "show nobody".
+    const teaching = await teachersForFamily(user.id, user.schoolId)
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { timezone: true },
+    })
+
     res.json(consultations.map(c => ({
       ...c,
+      // The school's own clock, for the cancellation cut-off the app has to
+      // apply before it offers the button.
+      schoolTimezone: school?.timezone || 'UTC',
+      // False when nothing could be resolved at all. The app shows every
+      // teacher in that case, and does not claim to have filtered.
+      teachersResolvedForFamily: teaching.resolved,
       teachers: c.teachers.map(t => ({
         id: t.id,
         consultationId: t.consultationId,
@@ -232,6 +249,11 @@ router.get('/parent', isAuthenticated, async (req, res) => {
         locationType: t.locationType,
         startTime: t.startTime,
         endTime: t.endTime,
+        // This parent's children that this teacher teaches. Empty means "not
+        // one of yours, as far as we can tell" — which the app shows behind a
+        // toggle rather than hiding outright, because a head of year or a
+        // specialist is a legitimate booking a parent may want.
+        forStudentIds: [...(teaching.studentsByTeacher.get(t.teacherId) ?? [])],
         slots: t.slots.map(s => ({
           id: s.id,
           consultationTeacherId: s.consultationTeacherId,
@@ -775,7 +797,13 @@ router.delete('/parent/bookings/:bookingId', isAuthenticated, async (req, res) =
     )
     const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000)
     if (appointmentTime <= twoHoursFromNow) {
-      return res.status(400).json({ error: 'Cannot cancel booking — appointment is less than 2 hours away' })
+      // Say what to do instead. A parent cancelling ninety minutes beforehand
+      // has a reason, and the teacher still needs to know — a refusal that
+      // offers nothing leaves the message with nobody and the teacher waiting.
+      return res.status(400).json({
+        error: 'This appointment is less than 2 hours away, so it can no longer be cancelled here. Please call the school office and they will let the teacher know.',
+        tooLateToCancel: true,
+      })
     }
 
     await prisma.consultationBooking.delete({ where: { id: bookingId } })
