@@ -33,6 +33,10 @@ export interface OpeningSummary {
   notified: number
   /** Parents who could book and had already been told; the ledger working. */
   alreadyTold: number
+  /** Events skipped because another worker claimed the announcement first.
+   *  Expected to be zero on a single instance, and the number to look at if a
+   *  wave is ever announced twice. */
+  claimLost: number
 }
 
 /**
@@ -46,7 +50,7 @@ export interface OpeningSummary {
  * ticking at once cannot produce a second push about the same evening.
  */
 export async function notifyConsultationOpenings(now: Date = new Date()): Promise<OpeningSummary> {
-  const summary: OpeningSummary = { events: 0, notified: 0, alreadyTold: 0 }
+  const summary: OpeningSummary = { events: 0, notified: 0, alreadyTold: 0, claimLost: 0 }
   const since = new Date(now.getTime() - ANNOUNCE_WITHIN_MS)
 
   const events = await prisma.consultationEvent.findMany({
@@ -122,6 +126,32 @@ export async function notifyConsultationOpenings(now: Date = new Date()): Promis
     summary.alreadyTold += toldIds.size
     if (toTell.length === 0) continue
 
+    // CLAIM BEFORE SENDING, and let the unique constraint arbitrate.
+    //
+    // Reading "not yet told" and then sending leaves a gap: two processes
+    // ticking the same minute both read the same empty answer and both push,
+    // and the ledger — which stops duplicate ROWS — cannot stop duplicate
+    // SENDS that have already left. `skipDuplicates` would make that worse by
+    // swallowing the collision silently, which is why this deliberately does
+    // not use it: a conflict is the signal that somebody else got there first.
+    //
+    // This is the same shape as the scheduled-post sweep's conditional claim,
+    // and it is the only ordering where the failure is a missed tick rather
+    // than a second notification. A missed tick costs a minute.
+    try {
+      await prisma.consultationOpenNotice.createMany({
+        data: toTell.map(userId => ({ consultationId: event.id, userId })),
+      })
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') {
+        // Another worker claimed these between our read and our write. Theirs
+        // is sending; ours must not.
+        summary.claimLost++
+        continue
+      }
+      throw err
+    }
+
     await sendNotification({
       type: 'CONSULTATION',
       title: `${event.title} — booking is open`,
@@ -135,13 +165,6 @@ export async function notifyConsultationOpenings(now: Date = new Date()): Promis
       target: { targetClass: 'Consultations', schoolId: event.schoolId, parentUserIds: toTell },
     })
 
-    // Recorded AFTER the send. A push that failed should be retried on the next
-    // tick; a push that succeeded and was not recorded would be sent twice, and
-    // of the two mistakes only one is visible to a parent.
-    await prisma.consultationOpenNotice.createMany({
-      data: toTell.map(userId => ({ consultationId: event.id, userId })),
-      skipDuplicates: true,
-    })
     summary.notified += toTell.length
   }
 
