@@ -201,6 +201,17 @@ export function ConsultationsPage() {
   const { data: yearGroups } = useApi<YearGroup[]>(() => api.yearGroups.list(), [])
   const [waveTimes, setWaveTimes] = useState<Record<string, string>>({})
   const [savingWaves, setSavingWaves] = useState(false)
+  // Closed by default. This is a "look at this" panel, not a warning banner —
+  // most evenings have nothing in it, and a permanently open empty box teaches
+  // people to stop seeing the box.
+  const [showDuplicates, setShowDuplicates] = useState(false)
+  // The booking being cancelled by the school, and why. Null means the dialog
+  // is shut.
+  const [cancelling, setCancelling] = useState<
+    { bookingId: string; childName: string; teacherName: string; when: string } | null
+  >(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [isCancelling, setIsCancelling] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -265,6 +276,22 @@ export function ConsultationsPage() {
     }
     setWaveTimes(next)
   }, [selectedConsultation?.id, selectedConsultation?.bookingWindows])
+
+  const handleCancelBooking = async () => {
+    if (!cancelling || !cancelReason.trim()) return
+    setIsCancelling(true)
+    try {
+      await api.consultations.cancelBookingAsSchool(cancelling.bookingId, cancelReason.trim())
+      await refetch()
+      toast.success(`Cancelled — ${cancelling.childName}'s parent has been told why`)
+      setCancelling(null)
+      setCancelReason('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to cancel the booking')
+    } finally {
+      setIsCancelling(false)
+    }
+  }
 
   const handleSaveWaves = async () => {
     if (!selectedId) return
@@ -423,6 +450,40 @@ export function ConsultationsPage() {
   // belongs to somebody still teaching, and dropping them here would empty a
   // picker of a teacher standing in the building.
   const currentStaff = useMemo(() => (staffList ?? []).filter(s => !hasLeft(s.leftAt)), [staffList])
+
+  /**
+   * Children with more than one appointment at this evening.
+   *
+   * One parent booked their Year 2 child with five different teachers in two
+   * hours — nothing stops that, because the rule is one booking per child PER
+   * TEACHER. Five slots other families could not have, and no screen said so.
+   *
+   * Grouped by child rather than by parent: a family with two children holding
+   * one appointment each is the normal case and must not appear here.
+   */
+  const duplicateBookings = useMemo(() => {
+    if (!selectedConsultation?.teachers) return []
+    const byChild = new Map<string, Array<{ bookingId: string; childName: string; teacherName: string; when: string }>>()
+    for (const t of selectedConsultation.teachers) {
+      for (const sl of t.slots || []) {
+        if (!sl.booking) continue
+        const key = sl.booking.studentId || sl.booking.studentName
+        if (!key) continue
+        byChild.set(key, [
+          ...(byChild.get(key) || []),
+          {
+            bookingId: sl.booking.id,
+            childName: sl.booking.studentName || 'This child',
+            teacherName: t.teacherName,
+            when: `${sl.date || selectedConsultation.date} at ${sl.startTime}`,
+          },
+        ])
+      }
+    }
+    return [...byChild.values()]
+      .filter(rows => rows.length > 1)
+      .sort((a, b) => b.length - a.length)
+  }, [selectedConsultation])
 
   // The school's own clock, for the line under each wave box. Falls back to
   // UTC rather than to the browser: guessing the school's zone from the
@@ -831,6 +892,59 @@ export function ConsultationsPage() {
           </button>
         </div>
 
+        {/* Children with more than one appointment.
+            Closed by default and absent entirely when there are none: this is a
+            "look at this" panel, not a warning banner, and a permanently open
+            empty box teaches people to stop seeing the box. */}
+        {duplicateBookings.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <button
+              type="button"
+              onClick={() => setShowDuplicates(v => !v)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <span className="text-sm font-bold text-amber-800">
+                {duplicateBookings.length} {duplicateBookings.length === 1 ? 'child has' : 'children have'} more than one appointment
+              </span>
+              <span className="text-xs text-gray-400">{showDuplicates ? 'Hide' : 'Show'}</span>
+            </button>
+
+            {showDuplicates && (
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-gray-500">
+                  A parent can book one appointment per teacher, so a child can end up with several.
+                  Some of these will be deliberate — a specialist as well as a class teacher. Cancelling
+                  tells the parent why and frees the slot.
+                </p>
+                {duplicateBookings.map(rows => (
+                  <div key={rows[0].bookingId} className="border border-gray-100 rounded-lg p-3">
+                    <p className="text-sm font-semibold text-gray-800 mb-2">
+                      {rows[0].childName} — {rows.length} appointments
+                    </p>
+                    <div className="space-y-1.5">
+                      {rows.map(r => (
+                        <div key={r.bookingId} className="flex items-center justify-between gap-3">
+                          <span className="text-sm text-gray-600">
+                            {r.teacherName} · {r.when}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => { setCancelling(r); setCancelReason('') }}
+                            className="text-xs font-semibold px-3 py-1 rounded-lg"
+                            style={{ backgroundColor: '#FFF0F0', color: '#D14D4D' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Teachers Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-4">
@@ -944,6 +1058,28 @@ export function ConsultationsPage() {
                                     {slot.startTime}
                                     {slot.booking && (
                                       <span className="ml-1 font-medium">{slot.booking.studentName}</span>
+                                    )}
+                                    {/* Cancelling is reachable from the slot
+                                        itself as well as the duplicates panel:
+                                        the wrong-teacher case does not show up
+                                        as a duplicate, and the office will be
+                                        looking at the grid. */}
+                                    {slot.booking && (
+                                      <button
+                                        onClick={() => {
+                                          setCancelling({
+                                            bookingId: slot.booking!.id,
+                                            childName: slot.booking!.studentName || 'This child',
+                                            teacherName: teacher.teacherName,
+                                            when: `${slot.date || selectedConsultation.date} at ${slot.startTime}`,
+                                          })
+                                          setCancelReason('')
+                                        }}
+                                        className="hidden group-hover:inline-block ml-1 text-red-400 hover:text-red-600"
+                                        title="Cancel this booking"
+                                      >
+                                        <X className="h-3 w-3 inline" />
+                                      </button>
                                     )}
                                     {!slot.booking && (
                                       <button
@@ -1471,6 +1607,73 @@ export function ConsultationsPage() {
             onConfirm={handleDelete}
             onCancel={() => setDeleteTarget(null)}
           />
+        )}
+
+        {/* Cancelling a booking on a parent's behalf.
+            Not a ConfirmModal, because the reason is the point — a yes/no
+            dialog would let the office cancel without explaining, which is the
+            worse version of the problem this solves. The parent did not do
+            this and cannot see why unless somebody says. */}
+        {cancelling && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl w-full max-w-md p-5">
+              <h3 className="text-lg font-bold text-gray-900">Cancel this appointment</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {cancelling.childName} with {cancelling.teacherName}, {cancelling.when}.
+              </p>
+
+              <label className="block text-sm font-medium text-gray-700 mt-4 mb-1">
+                Why? The parent is told this.
+              </label>
+              <textarea
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                rows={3}
+                maxLength={300}
+                autoFocus
+                placeholder="e.g. This is not your child's teacher — please book with their class teacher."
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+
+              {/* The three reasons this actually gets used for, so the common
+                  case is a tap rather than a paragraph nobody writes. */}
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {[
+                  'This is not your child\u2019s teacher — please book with their class teacher.',
+                  'Your child already has an appointment with this teacher.',
+                  'The teacher is no longer available at this time — please choose another slot.',
+                ].map(preset => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setCancelReason(preset)}
+                    className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-left"
+                  >
+                    {preset.split(' — ')[0].replace(/\.$/, '')}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-2 mt-5">
+                <button
+                  type="button"
+                  onClick={() => { setCancelling(null); setCancelReason('') }}
+                  className="px-4 py-2 text-sm font-semibold text-gray-600"
+                >
+                  Keep it
+                </button>
+                <button
+                  type="button"
+                  disabled={!cancelReason.trim() || isCancelling}
+                  onClick={handleCancelBooking}
+                  className="px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
+                  style={{ backgroundColor: '#D14D4D' }}
+                >
+                  {isCancelling ? 'Cancelling…' : 'Cancel and tell the parent'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Remove teacher confirm */}

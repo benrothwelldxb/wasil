@@ -1144,6 +1144,10 @@ enum AuditResourceType {
   // from Desk, where the accounts team works and has no Connect session to
   // trace back to.
   SCHOOL_SERVICE
+  // The school cancelled a parent's consultation booking on their behalf. The
+  // reason the parent was given is in the metadata — "who cancelled this, and
+  // why" gets asked weeks later, and a verbal explanation leaves no record.
+  CONSULTATION_BOOKING
 }
 
 model AuditLog {

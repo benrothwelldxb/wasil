@@ -104,16 +104,45 @@ export async function sendBookingNotificationToTeacher(
   })
 }
 
+/** The reason is free text a member of staff typed, and it lands in an HTML
+ *  email. Escaped rather than trusted — an apostrophe in "your child's teacher"
+ *  is the common case, and a stray angle bracket should not be able to reshape
+ *  the message a parent reads. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/**
+ * `reason` is present only when the SCHOOL cancelled, and then it is the most
+ * important thing in the email.
+ *
+ * A parent who cancels their own booking needs no explanation. A parent whose
+ * booking is cancelled FOR them, and told only that it happened, has been given
+ * the bad half of the news and will ring the office to get the other half —
+ * which is the phone call this feature exists to prevent.
+ */
 export async function sendCancellationToParent(
   to: string,
-  details: BookingDetails,
+  details: BookingDetails & { reason?: string | null },
 ): Promise<void> {
+  const reason = details.reason?.trim()
   const html = buildEmailHtml(
     details.schoolName,
     'Booking Cancelled',
     `<p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">
-      Your consultation appointment has been cancelled.
-    </p>` + detailsBlock(details),
+      ${reason ? 'The school has cancelled your consultation appointment.' : 'Your consultation appointment has been cancelled.'}
+    </p>` +
+    (reason
+      ? `<p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; padding: 12px 14px; background: #FFF7EC; border: 1px solid #F3E1C7; border-radius: 10px;">
+      <strong>Why:</strong> ${escapeHtml(reason)}
+    </p>`
+      : '') +
+    detailsBlock(details),
   )
 
   await enqueueEmail(details.schoolId, {

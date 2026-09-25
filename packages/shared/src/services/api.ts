@@ -2119,6 +2119,14 @@ export const consultations = {
     }>(`/api/consultations/${id}/bookings`),
   /** Replace the whole set of booking waves for an event. An empty list means
    *  no waves: it opens to everybody when its status says so. */
+  /** Cancel a parent's booking as the school. `reason` is required and is
+   *  shown to the parent — a cancellation they did not make and cannot explain
+   *  is the half of the message that generates a phone call. */
+  cancelBookingAsSchool: (bookingId: string, reason: string) =>
+    fetchApi<{ cancelled: boolean; slotId: string }>(`/api/consultations/bookings/${bookingId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
   setBookingWindows: (id: string, windows: Array<{ yearGroupId: string; opensAt: string }>) =>
     fetchApi<{ windows: Array<{ id: string; yearGroupId: string; yearGroupName: string; opensAt: string }> }>(
       `/api/consultations/${id}/booking-windows`,
