@@ -5,7 +5,7 @@ import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, deleteGoog
 import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, sendCancellationToParent, sendCancellationToTeacher } from '../services/consultationEmails.js'
 import { sendConsultationBookingNotification, sendConsultationCancellationNotification } from '../services/consultationNotify.js'
 import { serializeBookingForParent } from '../services/consultationSerializers.js'
-import { parseWallClockForSchool, describeWhenForSchool } from '../services/dateTime.js'
+import { parseWallClockForSchool, describeWhenForSchool, datesBetween } from '../services/dateTime.js'
 import { teachersForFamily } from '../services/consultationTeachersForFamily.js'
 import { currentStaffWhere } from '../services/currentStaff.js'
 
@@ -51,20 +51,12 @@ function generateSlots(
   return slots
 }
 
-// Helper: calculate all dates between startDate and endDate (inclusive)
+/** All dates in the range, weekends optional. Delegates so the parse, the
+ *  arithmetic and the format are anchored in UTC together — this used to parse
+ *  local and format UTC, which is correct only on a machine already running
+ *  UTC. See `datesBetween`. */
 function getDateRange(startDate: string, endDate?: string | null, skipWeekends = true): string[] {
-  const dates: string[] = []
-  const start = new Date(startDate + 'T00:00:00')
-  const end = endDate ? new Date(endDate + 'T00:00:00') : start
-  const current = new Date(start)
-  while (current <= end) {
-    const day = current.getDay()
-    if (!skipWeekends || (day !== 0 && day !== 6)) {
-      dates.push(current.toISOString().split('T')[0])
-    }
-    current.setDate(current.getDate() + 1)
-  }
-  return dates
+  return datesBetween(startDate, endDate, { weekdaysOnly: skipWeekends })
 }
 
 // Helper: convert HH:MM to minutes for overlap checking

@@ -16,7 +16,7 @@ import {
   Pencil,
   AlertTriangle,
 } from 'lucide-react'
-import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant, hasLeft } from '@wasil/shared'
+import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant, hasLeft, datesBetween } from '@wasil/shared'
 import type { StaffMember, YearGroup } from '@wasil/shared'
 import type { ConsultationEvent, ConsultationTeacher, ConsultationStatus, ConsultationLocationType } from '@wasil/shared'
 
@@ -70,16 +70,12 @@ interface AvailabilityWindow {
   endTime: string
 }
 
+/** Weekdays in the range, as stored strings. See `datesBetween` for why every
+ *  step of this is anchored in UTC — this function used to parse local and
+ *  format UTC, which stored every generated slot a day early in any zone ahead
+ *  of Greenwich. */
 function getWeekdayDates(startDate: string, endDate?: string): string[] {
-  const dates: string[] = []
-  const start = new Date(startDate + 'T00:00:00')
-  const end = endDate ? new Date(endDate + 'T00:00:00') : start
-  const d = new Date(start)
-  while (d <= end) {
-    if (d.getDay() >= 1 && d.getDay() <= 5) dates.push(d.toISOString().split('T')[0])
-    d.setDate(d.getDate() + 1)
-  }
-  return dates
+  return datesBetween(startDate, endDate, { weekdaysOnly: true })
 }
 
 function formatDayHeader(dateStr: string): string {
@@ -1056,14 +1052,14 @@ export function ConsultationsPage() {
                                 style={{ borderRadius: '8px' }}
                               >
                                 {(() => {
-                                  const options: string[] = []
-                                  const start = new Date(selectedConsultation.date + 'T00:00:00')
-                                  const end = new Date(selectedConsultation.endDate + 'T00:00:00')
-                                  const cur = new Date(start)
-                                  while (cur <= end) {
-                                    options.push(cur.toISOString().split('T')[0])
-                                    cur.setDate(cur.getDate() + 1)
-                                  }
+                                  // Same shift, same fix: the value this
+                                  // dropdown SETS is the stored slot date, so
+                                  // parsing local and formatting UTC here put
+                                  // a slot on the day before the one shown.
+                                  const options = datesBetween(
+                                    selectedConsultation.date,
+                                    selectedConsultation.endDate,
+                                  )
                                   return options.map(d => (
                                     <option key={d} value={d}>
                                       {new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
