@@ -193,22 +193,53 @@ describe('the ledger', () => {
       { consultationId: 'ce-1', userId: 'p-1' },
       { consultationId: 'ce-1', userId: 'p-2' },
     ])
-    // Two replicas ticking at once must not collide into a 500.
-    expect(arg.skipDuplicates).toBe(true)
+    // Deliberately NOT skipDuplicates. A collision is the signal that another
+    // worker got there first, and swallowing it silently is what would let two
+    // pushes about the same evening go out.
+    expect(arg.skipDuplicates).toBeUndefined()
   })
 
-  it('records AFTER sending, so a failed push is retried rather than lost', async () => {
+  it('CLAIMS BEFORE SENDING — the ordering that makes a race a missed tick', async () => {
+    // Reading "not yet told" and then sending leaves a gap: two workers on the
+    // same minute both read the same empty answer and both push. The ledger
+    // stops duplicate ROWS; it cannot recall a notification already sent.
     const order: string[] = []
     sendNotification.mockImplementation(async () => { order.push('send') })
     prismaMock.consultationOpenNotice.createMany.mockImplementation(async () => {
-      order.push('record'); return { count: 1 }
+      order.push('claim'); return { count: 1 }
     })
     prismaMock.consultationEvent.findMany.mockResolvedValue([event()])
     prismaMock.parentStudentLink.findMany.mockResolvedValue([link('p-1', 'yg-2')])
 
     await notifyConsultationOpenings(NOW)
 
-    expect(order).toEqual(['send', 'record'])
+    expect(order).toEqual(['claim', 'send'])
+  })
+
+  it('stays silent when another worker claimed first', async () => {
+    // The whole point of losing the claim: theirs is sending, ours must not.
+    prismaMock.consultationEvent.findMany.mockResolvedValue([event()])
+    prismaMock.parentStudentLink.findMany.mockResolvedValue([link('p-1', 'yg-2')])
+    prismaMock.consultationOpenNotice.createMany.mockRejectedValue(
+      Object.assign(new Error('unique'), { code: 'P2002' }),
+    )
+
+    const s = await notifyConsultationOpenings(NOW)
+
+    expect(sendNotification).not.toHaveBeenCalled()
+    expect(s.claimLost).toBe(1)
+    expect(s.notified).toBe(0)
+  })
+
+  it('still throws on a real database failure rather than swallowing it', async () => {
+    // Only P2002 means "somebody beat us". Anything else is a fault and must
+    // not be quietly reinterpreted as one.
+    prismaMock.consultationEvent.findMany.mockResolvedValue([event()])
+    prismaMock.parentStudentLink.findMany.mockResolvedValue([link('p-1', 'yg-2')])
+    prismaMock.consultationOpenNotice.createMany.mockRejectedValue(new Error('connection lost'))
+
+    await expect(notifyConsultationOpenings(NOW)).rejects.toThrow('connection lost')
+    expect(sendNotification).not.toHaveBeenCalled()
   })
 
   it('reaches parents as a resolved audience, never a whole-school blast', async () => {
