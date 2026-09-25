@@ -228,3 +228,45 @@ export function describeWhenForSchool(when: Date, timezone: string, now: Date = 
   const date = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long' }).format(when)
   return `on ${date} at ${time}`
 }
+
+/**
+ * Every date from `startDate` to `endDate` inclusive, as `YYYY-MM-DD` strings.
+ *
+ * ANCHORED IN UTC FROM END TO END. The version this replaces parsed local and
+ * formatted UTC — `new Date(s + 'T00:00:00')` then `.toISOString()` — which is
+ * correct only on a machine already running UTC, and silently off by a day
+ * everywhere else. Railway runs UTC, so the server copy of that bug was latent
+ * rather than live; the identical code in the admin app, running in a Dubai
+ * browser, generated every consultation slot a day early.
+ *
+ * Latent is the more dangerous of the two. It is correct until somebody moves a
+ * region, runs a job locally, or starts a second instance somewhere else, and
+ * then it is wrong in a way nothing reports.
+ *
+ * A date somebody typed as a wall-clock day carries no zone. Giving it one that
+ * cannot vary — UTC for the parse, `getUTCDay`/`setUTCDate` for the arithmetic,
+ * UTC for the format — is what makes the string that comes out the string that
+ * went in, on any machine.
+ */
+export function datesBetween(
+  startDate: string,
+  endDate?: string | null,
+  opts: { weekdaysOnly?: boolean } = {},
+): string[] {
+  const dates: string[] = []
+  if (!startDate) return dates
+  const start = new Date(`${startDate}T00:00:00Z`)
+  const end = new Date(`${endDate || startDate}T00:00:00Z`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return dates
+
+  const cur = new Date(start)
+  while (cur <= end) {
+    // Sat=6 / Sun=0 — the UAE weekend since 2022, matching the reminder jobs.
+    const day = cur.getUTCDay()
+    if (!opts.weekdaysOnly || (day !== 0 && day !== 6)) {
+      dates.push(cur.toISOString().slice(0, 10))
+    }
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  }
+  return dates
+}

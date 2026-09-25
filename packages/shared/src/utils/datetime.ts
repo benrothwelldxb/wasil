@@ -46,3 +46,51 @@ export function hasLeft(leftAt: string | null | undefined, now: Date = new Date(
   const d = new Date(leftAt)
   return !Number.isNaN(d.getTime()) && d <= now
 }
+
+/**
+ * Every date from `startDate` to `endDate` inclusive, as `YYYY-MM-DD` strings.
+ *
+ * ANCHORED IN UTC FROM END TO END, and that is the entire point.
+ *
+ * The version this replaces parsed local and formatted UTC:
+ *
+ *     const d = new Date(startDate + 'T00:00:00')   // the BROWSER's midnight
+ *     dates.push(d.toISOString().split('T')[0])     // ...printed in UTC
+ *
+ * In Dubai that turns 9 October into 2026-10-08T20:00:00Z, which prints as
+ * "2026-10-08". Every consultation slot generated from it was stored a DAY
+ * EARLY — and no Connect screen could show you, because they all read it back
+ * the same way round (`new Date(s + 'T00:00:00')` then `toLocaleDateString`),
+ * which is the exact inverse of the shift that created it. The stored value was
+ * wrong and every screen agreed it was right. It took Desk, which renders dates
+ * zone-proof on purpose, to see a day that Connect could not.
+ *
+ * Adding a timezone to the parse would have fixed Dubai and broken the next
+ * school. A date somebody typed as a wall-clock day carries no zone, so it is
+ * given one that cannot vary: UTC for the parse, UTC for the arithmetic
+ * (`getUTCDay`, `setUTCDate`), UTC for the format. The string that comes out is
+ * the string that went in, on any machine, in any zone.
+ */
+export function datesBetween(
+  startDate: string,
+  endDate?: string | null,
+  opts: { weekdaysOnly?: boolean } = {},
+): string[] {
+  const dates: string[] = []
+  if (!startDate) return dates
+  const start = new Date(`${startDate}T00:00:00Z`)
+  const end = new Date(`${endDate || startDate}T00:00:00Z`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return dates
+
+  const cur = new Date(start)
+  while (cur <= end) {
+    // Sat=6 / Sun=0 — the UAE weekend since 2022, and the same rule the server
+    // and the reminder jobs already apply.
+    const day = cur.getUTCDay()
+    if (!opts.weekdaysOnly || (day !== 0 && day !== 6)) {
+      dates.push(cur.toISOString().slice(0, 10))
+    }
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  }
+  return dates
+}
