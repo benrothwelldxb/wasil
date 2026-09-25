@@ -85,6 +85,103 @@ function slotsOverlap(a: { startTime: string; endTime: string }, b: { startTime:
 // Parent endpoints (must be before /:id to avoid route conflicts)
 // ==========================================
 
+/**
+ * The one line the dashboard needs, and nothing else.
+ *
+ *   GET /api/consultations/parent/summary
+ *   → { consultation: null | { id, title, date, state, opensAt,
+ *                              opensForYearGroup, children, booked,
+ *                              nextAppointment } }
+ *
+ * The full parent list carries every teacher, every slot and every booking —
+ * hundreds of rows for a school of this size, to answer a question the home
+ * screen asks on every load. This answers it in one row.
+ *
+ * `state` is what the card renders from, rather than the card deriving it:
+ *   waiting  their wave has not opened; `opensAt` says when
+ *   open     they can book now and have children left to book for
+ *   booked   every child has a slot; `nextAppointment` is the soonest
+ *
+ * Deliberately ONE consultation — the soonest that is open or opening. A school
+ * running two at once is not a thing to design a dashboard card around, and the
+ * Consultations page shows them all.
+ */
+router.get('/parent/summary', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') return res.json({ consultation: null })
+
+    const consultation = await prisma.consultationEvent.findFirst({
+      where: { schoolId: user.schoolId, status: 'BOOKING_OPEN' },
+      orderBy: { date: 'asc' },
+      select: { id: true, title: true, date: true, endDate: true },
+    })
+    if (!consultation) return res.json({ consultation: null })
+
+    // The same resolver the booking gate uses. Two implementations of "when may
+    // this family book" would eventually disagree, and the disagreement would
+    // be a parent invited by the dashboard and refused by the route.
+    const notYet = await bookingOpensAtForFamily(consultation.id, user.id)
+
+    const links = await prisma.parentStudentLink.findMany({
+      where: { userId: user.id, student: { leftAt: null } },
+      select: { studentId: true, student: { select: { firstName: true } } },
+    })
+    const children = links.length
+
+    const bookings = await prisma.consultationBooking.findMany({
+      where: {
+        parentId: user.id,
+        slot: { consultationTeacher: { consultationId: consultation.id } },
+      },
+      select: {
+        studentId: true,
+        slot: { select: { date: true, startTime: true } },
+      },
+      orderBy: { slot: { startTime: 'asc' } },
+    })
+    const bookedStudentIds = new Set(bookings.map(b => b.studentId).filter(Boolean))
+
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { timezone: true },
+    })
+
+    const state = notYet
+      ? 'waiting'
+      : children > 0 && bookedStudentIds.size >= children
+        ? 'booked'
+        : 'open'
+
+    const soonest = bookings
+      .map(b => ({ date: b.slot.date || consultation.date, startTime: b.slot.startTime }))
+      .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime))[0]
+
+    res.json({
+      consultation: {
+        id: consultation.id,
+        title: consultation.title,
+        date: consultation.date,
+        endDate: consultation.endDate,
+        state,
+        // Both present only when waiting; null otherwise, so the card never has
+        // to decide whether a time it holds is still relevant.
+        opensAt: notYet ? notYet.opensAt.toISOString() : null,
+        opensForYearGroup: notYet ? notYet.yearGroupName : null,
+        schoolTimezone: school?.timezone || 'UTC',
+        children,
+        booked: bookedStudentIds.size,
+        nextAppointment: soonest ? { date: soonest.date, startTime: soonest.startTime } : null,
+      },
+    })
+  } catch (error) {
+    console.error('Error building consultation summary:', error)
+    // The dashboard must render. A summary that cannot be built is one absent
+    // card, never a broken home screen.
+    res.json({ consultation: null })
+  }
+})
+
 // List published/open consultations visible to parent
 router.get('/parent', isAuthenticated, async (req, res) => {
   try {
@@ -984,6 +1081,13 @@ router.put('/:id', isAdmin, async (req, res) => {
         ...(defaultStartTime !== undefined && { defaultStartTime: asTime(defaultStartTime) }),
         ...(defaultEndTime !== undefined && { defaultEndTime: asTime(defaultEndTime) }),
         ...(status !== undefined && { status }),
+        // Stamp the moment it opens, so the announcement job knows an opening
+        // is RECENT. Only on the transition in, so re-saving an already-open
+        // event does not make it look newly opened and re-announce it to
+        // everyone who has not yet been told.
+        ...(status === 'BOOKING_OPEN' && existing.status !== 'BOOKING_OPEN'
+          ? { bookingOpenedAt: new Date() }
+          : {}),
         ...(slotDuration !== undefined && { slotDuration }),
         ...(breakDuration !== undefined && { breakDuration }),
         ...(targetClass !== undefined && { targetClass: targetClass || null }),

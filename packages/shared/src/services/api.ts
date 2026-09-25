@@ -1993,6 +1993,30 @@ export const eca = {
 }
 
 // Consultations (Parents' Evening)
+/** What the dashboard card renders from. `state` is resolved by the server
+ *  using the same rule as the booking gate — two implementations of "when may
+ *  this family book" would eventually disagree, and the disagreement would be a
+ *  parent invited by the card and refused by the route. */
+export interface ConsultationSummary {
+  id: string
+  title: string
+  date: string
+  endDate?: string | null
+  /** waiting = their wave is still to come; open = they can book and have
+   *  children left to book for; booked = every child has a slot. */
+  state: 'waiting' | 'open' | 'booked'
+  /** Only when waiting. Null otherwise, so the card never has to decide whether
+   *  a time it is holding is still relevant. */
+  opensAt: string | null
+  opensForYearGroup: string | null
+  /** The school's own zone — an opening time means the school's clock, not the
+   *  reader's phone. */
+  schoolTimezone: string
+  children: number
+  booked: number
+  nextAppointment: { date: string; startTime: string } | null
+}
+
 export const consultations = {
   // Admin endpoints
   list: () => fetchApi<ConsultationEvent[]>('/api/consultations'),
@@ -2118,6 +2142,10 @@ export const consultations = {
   // Parent endpoints
   parent: {
     list: () => fetchApi<ConsultationEvent[]>('/api/consultations/parent'),
+    /** The one line the dashboard needs. The full list carries every teacher,
+     *  slot and booking — hundreds of rows to answer a question the home screen
+     *  asks on every load. */
+    summary: () => fetchApi<{ consultation: ConsultationSummary | null }>('/api/consultations/parent/summary'),
     get: (id: string) => fetchApi<ConsultationEvent>(`/api/consultations/parent/${id}`),
     book: (data: {
       slotId: string
