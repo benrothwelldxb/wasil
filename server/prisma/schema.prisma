@@ -342,6 +342,7 @@ model User {
   // Consultation relations
   consultationTeachers ConsultationTeacher[]
   consultationBookings ConsultationBooking[]
+  consultationOpenNotices ConsultationOpenNotice[] @relation("ConsultationOpenNotices")
 
   // Emergency Alert relations
   createdAlerts        EmergencyAlert[]      @relation("AlertCreator")
@@ -409,6 +410,28 @@ model Child {
 }
 
 // Students exist independently, managed by school admins
+/// Who has already been told that booking is open for them.
+///
+/// Waves make "has this parent been told" a per-FAMILY question rather than a
+/// per-event one: a family in Year 2 and Year 5 becomes able to book when the
+/// Year 2 wave opens, and must not be told again when Year 5 opens — they could
+/// already book, and a second push about the same evening reads as a mistake.
+///
+/// A ledger rather than a flag on the window, because the question is about the
+/// person, and because it makes the job idempotent: it can run every five
+/// minutes, crash halfway, or be deployed twice, and nobody is told twice.
+model ConsultationOpenNotice {
+  id             String            @id @default(cuid())
+  consultationId String
+  consultation   ConsultationEvent @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User              @relation("ConsultationOpenNotices", fields: [userId], references: [id], onDelete: Cascade)
+  notifiedAt     DateTime          @default(now())
+
+  @@unique([consultationId, userId])
+  @@index([consultationId])
+}
+
 model Student {
   id           String  @id @default(cuid())
   firstName    String
@@ -1735,10 +1758,17 @@ model ConsultationEvent {
   defaultStartTime String? // "15:30"
   defaultEndTime   String? // "18:30"
   targetClass      String? // null = whole school, or specific class name
+  /// When this event most recently BECAME open for booking. Null on every
+  /// event that predates this column, and that is load-bearing: the job that
+  /// announces an opening only looks at recent ones, so deploying it cannot
+  /// send a notification about an evening that opened weeks ago.
+  bookingOpenedAt DateTime?
+
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   teachers         ConsultationTeacher[]
   bookingWindows   ConsultationBookingWindow[]
+  openNotices      ConsultationOpenNotice[]
 }
 
 /// When booking opens for one year group, so an evening does not open to four

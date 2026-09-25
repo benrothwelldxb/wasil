@@ -65,6 +65,7 @@ import testAccountsRoutes from './routes/testAccounts.js'
 import prisma from './services/prisma.js'
 import { initFirebase } from './services/firebase.js'
 import { cleanupExpiredTokens, sendConsultationReminders, sendScheduleReminders } from './services/cleanup.js'
+import { notifyConsultationOpenings } from './services/consultationOpening.js'
 import { cleanupOldAuditLogs } from './services/audit.js'
 import { sendDueAttendanceDigests } from './services/attendanceDigest.js'
 import { drainOutbox } from './services/outbox.js'
@@ -360,6 +361,13 @@ app.listen(PORT, () => {
   // from the conditional notifiedAt claim in the sweep itself, which is also
   // what keeps two replicas from both announcing it.
   const scheduledMessages = runJob('publishDueScheduledMessages', publishDueScheduledMessages)
+  // Also every tick, and NOT hour-bucketed. Booking waves can be thirty minutes
+  // apart, so an hourly bucket would announce a wave up to an hour after it
+  // opened — an announcement about a race already run, which is worse than
+  // none. Idempotency comes from the ConsultationOpenNotice ledger instead,
+  // which is per family per event and survives a crash, a double deploy or two
+  // replicas ticking at once.
+  const consultationOpenings = runJob('notifyConsultationOpenings', () => notifyConsultationOpenings())
 
   tokenCleanup()
   setInterval(tokenCleanup, SIX_HOURS)
@@ -388,4 +396,9 @@ app.listen(PORT, () => {
   const ONE_MINUTE = 60 * 1000
   scheduledMessages()
   setInterval(scheduledMessages, ONE_MINUTE)
+
+  // The same resolution, for the same reason: a parent whose wave opens at
+  // 18:00 should hear at 18:00, not at 18:45.
+  consultationOpenings()
+  setInterval(consultationOpenings, ONE_MINUTE)
 })

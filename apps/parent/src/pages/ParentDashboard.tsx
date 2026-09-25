@@ -9,7 +9,7 @@ import { useTheme } from '@wasil/shared'
 import { useApi, useMutation, stripMarkdown } from '@wasil/shared'
 import { RichBody } from '../components/RichBody'
 import * as api from '@wasil/shared'
-import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild, SchoolSettings, DashboardFeature } from '@wasil/shared'
+import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEcaAllocations, EcaTerm, EmergencyAlert, Event, TimetableTodayChild, SchoolSettings, DashboardFeature, ConsultationSummary } from '@wasil/shared'
 import { Clock, Sparkles, MapPin, ChevronRight, Calendar, Shield, Cloud, AlertTriangle, Heart, Siren, X, Check, ClipboardList } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { Link, useNavigate } from 'react-router-dom'
@@ -36,6 +36,119 @@ function SkeletonCard() {
       <div className="skeleton-pulse h-8 w-28 rounded-lg" />
     </div>
   )
+}
+
+/**
+ * Parents' evening, on the home screen.
+ *
+ * Three states, and each one is a different sentence because each is a
+ * different situation for the reader:
+ *
+ *   waiting  their wave has not opened. This is the state that did not exist
+ *            anywhere before — a parent with a later wave had no way to learn
+ *            when their turn came except by opening the page and checking.
+ *   open     they can book and have children left to book for. Says how many,
+ *            because "2 of 3 booked" is the difference between finished and
+ *            nearly finished, and a parent who thinks they are finished stops.
+ *   booked   everyone has a slot. Kept rather than hidden: the card vanishing
+ *            the moment you finish reads as something going wrong, and the
+ *            time is worth carrying anyway.
+ *
+ * Times are the SCHOOL's clock, with the reader's own added only when they
+ * differ — the same rule as the consultations page, for the same reason: a
+ * parent abroad seeing "14:00" has been told something true and useless.
+ */
+function ConsultationCard({ summary }: { summary: ConsultationSummary }) {
+  const opensAt = summary.opensAt
+  const when = opensAt ? formatOpensAtIn(opensAt, summary.schoolTimezone) : null
+  const elsewhere = opensAt ? localEquivalentOf(opensAt, summary.schoolTimezone) : null
+
+  const remaining = Math.max(0, summary.children - summary.booked)
+
+  return (
+    <Link
+      to="/consultations"
+      className="block rounded-[22px] p-5 relative overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #C4885B, #C45B7C)' }}
+    >
+      <h3 className="text-[19px] font-extrabold text-white relative z-10">{summary.title}</h3>
+
+      {summary.state === 'waiting' && (
+        <p className="text-sm font-medium text-white/90 relative z-10 mt-0.5">
+          Booking opens {when}
+          {elsewhere ? ' school time' : ''}
+          {summary.opensForYearGroup ? ` for ${summary.opensForYearGroup}` : ''}.
+          {elsewhere ? ` That is ${elsewhere} where you are.` : ''}
+        </p>
+      )}
+
+      {summary.state === 'open' && (
+        <p className="text-sm font-medium text-white/90 relative z-10 mt-0.5">
+          {summary.booked > 0
+            ? `${summary.booked} of ${summary.children} booked — ${remaining} still to choose.`
+            : 'Booking is open. Choose a time with your child’s teacher.'}
+        </p>
+      )}
+
+      {summary.state === 'booked' && (
+        <p className="text-sm font-medium text-white/90 relative z-10 mt-0.5">
+          {summary.nextAppointment
+            ? `Booked — ${summary.nextAppointment.startTime} on ${summary.nextAppointment.date}.`
+            : 'Booked.'}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2 mt-[10px] relative z-10 flex-wrap">
+        <span
+          className="inline-flex items-center px-[14px] py-1.5 rounded-xl text-[13px] font-bold text-white"
+          style={{ backgroundColor: 'rgba(255,255,255,0.22)' }}
+        >
+          {summary.state === 'waiting'
+            ? 'See the times'
+            : summary.state === 'booked'
+              ? 'View your booking'
+              : 'Book a time'}
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+/** "today at 18:00" / "tomorrow at 18:00" / "on Friday 25 September at 18:00",
+ *  on the SCHOOL's clock and its calendar day. Same rule as the consultations
+ *  page; a parent eight hours ahead should not be told "tomorrow" about an
+ *  evening the school considers today. */
+function formatOpensAtIn(iso: string, tz: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const time = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
+  const dayIn = (x: Date) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(x)
+  const target = dayIn(d)
+  const today = dayIn(new Date())
+  if (target === today) return `today at ${time}`
+  const [y, m, day] = today.split('-').map(Number)
+  const tomorrow = new Date(Date.UTC(y, m - 1, day + 1)).toISOString().slice(0, 10)
+  if (target === tomorrow) return `tomorrow at ${time}`
+  const date = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long' }).format(d)
+  return `on ${date} at ${time}`
+}
+
+/** The reader's own clock, only when it is a different answer. */
+function localEquivalentOf(iso: string, schoolTz: string): string | null {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  let deviceTz: string | undefined
+  try {
+    deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    return null
+  }
+  if (!deviceTz || deviceTz === schoolTz) return null
+  const fmt = (zone: string) =>
+    new Intl.DateTimeFormat('en-GB', { timeZone: zone, weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
+  const here = fmt(deviceTz)
+  return here === fmt(schoolTz) ? null : here
 }
 
 export function ParentDashboard() {
@@ -113,6 +226,14 @@ export function ParentDashboard() {
   )
   // What the school has chosen to promote. Empty is the normal state, so this
   // never occupies space it hasn't earned.
+  // One row, not the full consultation list — see the summary endpoint. The
+  // dashboard is the only place a parent who never opens the side menu will
+  // learn that booking has opened at all.
+  const { data: consultationSummary } = useApi<{ consultation: ConsultationSummary | null }>(
+    () => api.consultations.parent.summary(),
+    []
+  )
+
   const { data: featureData } = useApi<{ features: DashboardFeature[] }>(
     () => api.dashboard.features(),
     []
@@ -919,6 +1040,17 @@ export function ParentDashboard() {
         </>
         )
       })()}
+
+      {/* Parents' evening. Above the promoted features because it is time-bound
+          and they are not: a wave that opens at 18:00 is the one thing on this
+          screen that stops being actionable.
+
+          Nothing announced any of this before. A staggered opening rewarded
+          whoever happened to have the app open at the right minute, and the
+          parents who most need a fair shot at a slot were told nothing at all. */}
+      {consultationSummary?.consultation && (
+        <ConsultationCard summary={consultationSummary.consultation} />
+      )}
 
       {/* What the school is promoting. Deliberately a list of neutral cards
           rather than another hardcoded banner: services, and later activities
