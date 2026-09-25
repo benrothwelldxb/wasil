@@ -870,6 +870,205 @@ router.delete('/parent/bookings/:bookingId', isAuthenticated, async (req, res) =
 // ==========================================
 
 /**
+ * Book a slot for a family, as the school.
+ *
+ *   POST /api/consultations/slots/:slotId/book   { studentId, parentId?, notes? }
+ *
+ * The office takes these by phone and at the gate. Until now the only way to
+ * honour one was to tell the parent to do it themselves in the app — which is
+ * the request they had just declined to make.
+ *
+ * THE PARENT IS TOLD, always. A booking made for somebody who does not know it
+ * exists is an empty chair: the teacher waits, the slot is spent, and the
+ * family finds out afterwards. So this notifies and emails exactly as a
+ * parent's own booking does, and there is no quiet mode.
+ *
+ * WHICH RULES STILL APPLY, and why the two that do not are different in kind:
+ *   • slot free, not a break, this school — unchanged. These are facts about
+ *     the slot and the office cannot wish them away.
+ *   • one appointment per child per teacher — ENFORCED. This is the rule that
+ *     produced five bookings for one child, and the office is as capable of
+ *     double-booking as a parent, more so when working from a list.
+ *   • booking waves — SKIPPED. A wave staggers demand between families; the
+ *     school is not a family waiting its turn.
+ *   • a teacher who does not teach this child — ALLOWED, with the mismatch
+ *     reported back rather than refused. The office books the SENCO and the
+ *     head of year on purpose, and a rule that cannot tell that from a mistake
+ *     should not be the one holding the pen.
+ */
+router.post('/slots/:slotId/book', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { slotId } = req.params
+    const studentId = typeof req.body?.studentId === 'string' ? req.body.studentId.trim() : ''
+    const wantedParentId = typeof req.body?.parentId === 'string' ? req.body.parentId.trim() : ''
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : ''
+
+    if (!studentId) return res.status(400).json({ error: 'Choose which child this appointment is for' })
+
+    const slot = await prisma.consultationSlot.findUnique({
+      where: { id: slotId },
+      include: {
+        booking: { select: { id: true } },
+        consultationTeacher: {
+          include: {
+            teacher: { select: { id: true, name: true, email: true } },
+            consultation: { include: { school: { select: { name: true } } } },
+          },
+        },
+      },
+    })
+    if (!slot) return res.status(404).json({ error: 'Slot not found' })
+
+    const consultation = slot.consultationTeacher.consultation
+    if (consultation.schoolId !== user.schoolId) {
+      return res.status(404).json({ error: 'Slot not found' })
+    }
+    if (slot.isBreak) return res.status(400).json({ error: 'That is a break, not an appointment' })
+    if (slot.booking) return res.status(400).json({ error: 'That slot is already booked' })
+
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, schoolId: user.schoolId, leftAt: null },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        classId: true,
+        class: { select: { name: true } },
+        parentLinks: { select: { userId: true, user: { select: { id: true, name: true, email: true } } } },
+      },
+    })
+    if (!student) return res.status(404).json({ error: 'Child not found at this school' })
+
+    // Whose booking is it? A child may have two linked guardians and the app
+    // shows a booking to the parent who made it, so the choice matters — the
+    // other guardian would not see it at all. Named explicitly where the office
+    // knows, first link otherwise, and the answer is reported back so whoever
+    // pressed the button can see who was told.
+    const candidates = student.parentLinks.map(l => l.user).filter(Boolean)
+    const parent = wantedParentId
+      ? candidates.find(c => c.id === wantedParentId)
+      : candidates[0]
+    if (!parent) {
+      return res.status(400).json({
+        error: candidates.length === 0
+          ? 'That child has no linked parent account, so there is nobody to tell about the appointment.'
+          : 'That parent is not linked to this child.',
+      })
+    }
+
+    // The rule that produced five bookings for one child. The office is as
+    // capable of it as a parent, more so when working from a list.
+    const existing = await prisma.consultationBooking.findFirst({
+      where: {
+        studentId: student.id,
+        slot: { consultationTeacherId: slot.consultationTeacherId },
+      },
+      select: { id: true },
+    })
+    if (existing) {
+      return res.status(400).json({
+        error: `${student.firstName} already has an appointment with ${slot.consultationTeacher.teacher.name}. Cancel that one first to move it.`,
+      })
+    }
+
+    const studentName = `${student.firstName} ${student.lastName}`.trim()
+
+    let booking
+    try {
+      booking = await prisma.consultationBooking.create({
+        data: {
+          slotId,
+          parentId: parent.id,
+          studentId: student.id,
+          studentName,
+          notes: notes || null,
+          locationType: null,
+          meetingLink: null,
+        },
+      })
+    } catch (err) {
+      // Someone took it between the check and the claim. The unique on slotId
+      // is what decides, here exactly as for a parent.
+      if ((err as { code?: string }).code === 'P2002') {
+        return res.status(409).json({ error: 'That slot has just been taken. Please choose another.' })
+      }
+      throw err
+    }
+
+    const teacher = slot.consultationTeacher.teacher
+    const slotDate = slot.date || consultation.date
+    const slotTime = `${slot.startTime} - ${slot.endTime}`
+    const location =
+      slot.consultationTeacher.location ||
+      (slot.consultationTeacher.locationType === 'IN_PERSON' ? 'In Person' : slot.consultationTeacher.locationType)
+
+    const emailDetails = {
+      schoolId: user.schoolId,
+      teacherName: teacher.name,
+      childName: studentName,
+      date: slotDate,
+      time: slotTime,
+      location,
+      schoolName: consultation.school?.name || '',
+    }
+
+    // Fire-and-forget. The appointment exists; it must not fail because an
+    // inbox is unreachable.
+    if (parent.email) {
+      sendBookingConfirmationToParent(parent.email, emailDetails)
+        .catch(e => console.error('[Consultation] Confirmation email failed:', e))
+    }
+    if (teacher.email) {
+      sendBookingNotificationToTeacher(teacher.email, { ...emailDetails, parentName: parent.name || 'Parent' })
+        .catch(e => console.error('[Consultation] Teacher email failed:', e))
+    }
+    sendConsultationBookingNotification({
+      parentId: parent.id,
+      teacherId: teacher.id,
+      schoolId: user.schoolId,
+      teacherName: teacher.name,
+      parentName: parent.name || 'Parent',
+      childName: studentName,
+      date: slotDate,
+      time: slotTime,
+    }).catch(e => console.error('[Consultation] Booking push failed:', e))
+
+    await logAudit({
+      req,
+      action: 'CREATE',
+      resourceType: 'CONSULTATION_BOOKING',
+      resourceId: booking.id,
+      metadata: {
+        bookedBySchool: true,
+        childName: studentName,
+        teacherName: teacher.name,
+        parentId: parent.id,
+        slot: `${slotDate} ${slotTime}`,
+      },
+    })
+
+    // Reported, not refused. The office books a specialist on purpose, and a
+    // rule that cannot tell that from a mistake should not hold the pen — but
+    // the person who just pressed the button should see it.
+    const teaches = await prisma.staffClassAssignment.findFirst({
+      where: { userId: teacher.id, classId: student.classId },
+      select: { id: true },
+    })
+
+    res.status(201).json({
+      booking: { id: booking.id, slotId, studentName },
+      parent: { id: parent.id, name: parent.name, email: parent.email },
+      notTheirClassTeacher: !teaches,
+      className: student.class?.name || null,
+    })
+  } catch (error) {
+    console.error('Error booking slot as school:', error)
+    res.status(500).json({ error: 'Failed to book the slot' })
+  }
+})
+
+/**
  * Cancel a parent's booking, as the school.
  *
  *   POST /api/consultations/bookings/:bookingId/cancel   { reason }

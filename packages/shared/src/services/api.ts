@@ -2119,6 +2119,20 @@ export const consultations = {
     }>(`/api/consultations/${id}/bookings`),
   /** Replace the whole set of booking waves for an event. An empty list means
    *  no waves: it opens to everybody when its status says so. */
+  /** Book a slot for a family, as the school — the phone call and the
+   *  conversation at the gate. The parent is always told; `notTheirClassTeacher`
+   *  comes back so the office can see a mismatch it may not have intended,
+   *  without the server refusing a deliberate one. */
+  bookSlotAsSchool: (slotId: string, data: { studentId: string; parentId?: string; notes?: string }) =>
+    fetchApi<{
+      booking: { id: string; slotId: string; studentName: string }
+      parent: { id: string; name: string; email: string | null }
+      notTheirClassTeacher: boolean
+      className: string | null
+    }>(`/api/consultations/slots/${slotId}/book`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   /** Cancel a parent's booking as the school. `reason` is required and is
    *  shown to the parent — a cancellation they did not make and cannot explain
    *  is the half of the message that generates a phone call. */

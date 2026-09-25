@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant, hasLeft, datesBetween } from '@wasil/shared'
 import type { StaffMember, YearGroup } from '@wasil/shared'
+import { StudentSearchSelect } from '../components/StudentSearchSelect'
 import type { ConsultationEvent, ConsultationTeacher, ConsultationStatus, ConsultationLocationType } from '@wasil/shared'
 
 interface ConsultationForm {
@@ -212,6 +213,14 @@ export function ConsultationsPage() {
   >(null)
   const [cancelReason, setCancelReason] = useState('')
   const [isCancelling, setIsCancelling] = useState(false)
+  // Booking a family in by hand — the phone call and the conversation at the
+  // gate. Null means the dialog is shut.
+  const [bookingSlot, setBookingSlot] = useState<
+    { slotId: string; teacherName: string; when: string } | null
+  >(null)
+  const [bookingStudents, setBookingStudents] = useState<Array<{ id: string; fullName: string; className: string }>>([])
+  const [bookingNotes, setBookingNotes] = useState('')
+  const [isBookingForFamily, setIsBookingForFamily] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -276,6 +285,34 @@ export function ConsultationsPage() {
     }
     setWaveTimes(next)
   }, [selectedConsultation?.id, selectedConsultation?.bookingWindows])
+
+  const handleBookForFamily = async () => {
+    const child = bookingStudents[0]
+    if (!bookingSlot || !child) return
+    setIsBookingForFamily(true)
+    try {
+      const r = await api.consultations.bookSlotAsSchool(bookingSlot.slotId, {
+        studentId: child.id,
+        notes: bookingNotes.trim() || undefined,
+      })
+      await refetch()
+      // The mismatch is reported, not refused — but it is said out loud, because
+      // the office booking the SENCO on purpose and the office picking the
+      // wrong row look identical until someone mentions it.
+      toast.success(
+        r.notTheirClassTeacher
+          ? `Booked ${r.booking.studentName} with ${bookingSlot.teacherName} — note this is not their class teacher. ${r.parent.name} has been told.`
+          : `Booked ${r.booking.studentName} with ${bookingSlot.teacherName}. ${r.parent.name} has been told.`,
+      )
+      setBookingSlot(null)
+      setBookingStudents([])
+      setBookingNotes('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to book the slot')
+    } finally {
+      setIsBookingForFamily(false)
+    }
+  }
 
   const handleCancelBooking = async () => {
     if (!cancelling || !cancelReason.trim()) return
@@ -1081,6 +1118,23 @@ export function ConsultationsPage() {
                                         <X className="h-3 w-3 inline" />
                                       </button>
                                     )}
+                                    {!slot.booking && !slot.isBreak && (
+                                      <button
+                                        onClick={() => {
+                                          setBookingSlot({
+                                            slotId: slot.id,
+                                            teacherName: teacher.teacherName,
+                                            when: `${slot.date || selectedConsultation.date} at ${slot.startTime}`,
+                                          })
+                                          setBookingStudents([])
+                                          setBookingNotes('')
+                                        }}
+                                        className="hidden group-hover:inline-block ml-1 text-green-600 hover:text-green-800"
+                                        title="Book a family into this slot"
+                                      >
+                                        <Plus className="h-3 w-3 inline" />
+                                      </button>
+                                    )}
                                     {!slot.booking && (
                                       <button
                                         onClick={() => handleDeleteSlot(teacher.id, slot.id)}
@@ -1607,6 +1661,63 @@ export function ConsultationsPage() {
             onConfirm={handleDelete}
             onCancel={() => setDeleteTarget(null)}
           />
+        )}
+
+        {/* Booking a family in by hand.
+            The office takes these by phone and at the gate, and the only way to
+            honour one used to be telling the parent to do it in the app — which
+            is the request they had just declined to make. */}
+        {bookingSlot && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl w-full max-w-md p-5">
+              <h3 className="text-lg font-bold text-gray-900">Book a family in</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {bookingSlot.teacherName}, {bookingSlot.when}.
+              </p>
+
+              <label className="block text-sm font-medium text-gray-700 mt-4 mb-1">Which child?</label>
+              <StudentSearchSelect
+                selectedStudents={bookingStudents}
+                onChange={list => setBookingStudents(list.slice(-1))}
+                placeholder="Search by name..."
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                The appointment goes to their linked parent, and they are told — by email and in the app.
+                A booking nobody knows about is an empty chair.
+              </p>
+
+              <label className="block text-sm font-medium text-gray-700 mt-4 mb-1">
+                Note for the teacher (optional)
+              </label>
+              <input
+                type="text"
+                value={bookingNotes}
+                onChange={e => setBookingNotes(e.target.value)}
+                maxLength={200}
+                placeholder="e.g. booked at the gate, parent asked for the early slot"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+
+              <div className="flex justify-end gap-2 mt-5">
+                <button
+                  type="button"
+                  onClick={() => { setBookingSlot(null); setBookingStudents([]); setBookingNotes('') }}
+                  className="px-4 py-2 text-sm font-semibold text-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={bookingStudents.length === 0 || isBookingForFamily}
+                  onClick={handleBookForFamily}
+                  className="px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
+                  style={{ backgroundColor: theme.colors.brandColor }}
+                >
+                  {isBookingForFamily ? 'Booking…' : 'Book and tell the parent'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Cancelling a booking on a parent's behalf.
