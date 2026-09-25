@@ -827,6 +827,15 @@ router.get('/', isAdmin, async (req, res) => {
     const consultations = await prisma.consultationEvent.findMany({
       where: { schoolId: user.schoolId },
       include: {
+        // The admin page reads the selected consultation out of THIS list,
+        // not out of GET /:id — so a field only the detail route returns is a
+        // field that page can never see. Booking windows were exactly that:
+        // saved correctly every time, invisible on reload, and blanked again
+        // by the refetch that follows a save, which reads as "it didn't save".
+        bookingWindows: {
+          select: { id: true, yearGroupId: true, opensAt: true, yearGroup: { select: { name: true } } },
+          orderBy: { opensAt: 'asc' },
+        },
         teachers: {
           include: {
             teacher: { select: { id: true, name: true } },
@@ -846,6 +855,12 @@ router.get('/', isAdmin, async (req, res) => {
 
     res.json(consultations.map(c => ({
       ...c,
+      bookingWindows: c.bookingWindows.map(w => ({
+        id: w.id,
+        yearGroupId: w.yearGroupId,
+        yearGroupName: w.yearGroup.name,
+        opensAt: w.opensAt.toISOString(),
+      })),
       teachers: c.teachers.map(t => ({
         id: t.id,
         consultationId: t.consultationId,
