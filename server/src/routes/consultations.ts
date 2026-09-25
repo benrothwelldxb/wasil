@@ -3,11 +3,12 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, deleteGoogleMeetEvent, isGoogleCalendarConfigured, GOOGLE_CALENDAR_REDIRECT_URI } from '../services/googleMeet.js'
 import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, sendCancellationToParent, sendCancellationToTeacher } from '../services/consultationEmails.js'
-import { sendConsultationBookingNotification, sendConsultationCancellationNotification } from '../services/consultationNotify.js'
+import { sendConsultationBookingNotification, sendConsultationCancellationNotification, sendSchoolCancellationNotification } from '../services/consultationNotify.js'
 import { serializeBookingForParent } from '../services/consultationSerializers.js'
 import { parseWallClockForSchool, describeWhenForSchool, datesBetween } from '../services/dateTime.js'
 import { teachersForFamily } from '../services/consultationTeachersForFamily.js'
 import { currentStaffWhere } from '../services/currentStaff.js'
+import { logAudit } from '../services/audit.js'
 
 const router = Router()
 
@@ -867,6 +868,143 @@ router.delete('/parent/bookings/:bookingId', isAuthenticated, async (req, res) =
 // ==========================================
 // Admin endpoints
 // ==========================================
+
+/**
+ * Cancel a parent's booking, as the school.
+ *
+ *   POST /api/consultations/bookings/:bookingId/cancel   { reason }
+ *
+ * Until now only the parent could cancel their own. So when a family booked a
+ * teacher who does not teach their child — five of them did, on one evening —
+ * the school had no way to free the slot, and the only remedy was emailing the
+ * parent and asking them to do it themselves.
+ *
+ * THE REASON IS REQUIRED, and that is a deliberate constraint rather than
+ * validation for its own sake. A parent who did not do this and is told only
+ * that it happened has been given the bad half of the news; they will ring the
+ * office for the other half, which is the call this exists to prevent. There is
+ * no "cancel silently", because a silent cancellation is a worse version of the
+ * problem it solves.
+ *
+ * NO TWO-HOUR RULE HERE. That guard stops a parent leaving a teacher waiting.
+ * The school cancelling an hour before is the school deciding, and it is the
+ * party that would have been kept waiting.
+ */
+router.post('/bookings/:bookingId/cancel', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { bookingId } = req.params
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : ''
+
+    if (!reason) {
+      return res.status(400).json({ error: 'Please say why this booking is being cancelled — the parent is told.' })
+    }
+    if (reason.length > 300) {
+      return res.status(400).json({ error: 'Please keep the reason under 300 characters.' })
+    }
+
+    const booking = await prisma.consultationBooking.findUnique({
+      where: { id: bookingId },
+      include: {
+        parent: { select: { id: true, name: true, email: true } },
+        slot: {
+          include: {
+            consultationTeacher: {
+              include: {
+                teacher: { select: { id: true, name: true, email: true } },
+                consultation: { include: { school: { select: { name: true } } } },
+              },
+            },
+          },
+        },
+      },
+    })
+
+    if (!booking) return res.status(404).json({ error: 'Booking not found' })
+
+    const consultation = booking.slot.consultationTeacher.consultation
+    // Scoped to this admin's school, not merely to a valid id.
+    if (consultation.schoolId !== user.schoolId) {
+      return res.status(404).json({ error: 'Booking not found' })
+    }
+
+    await prisma.consultationBooking.delete({ where: { id: bookingId } })
+
+    // The same Google clean-up as a parent cancellation: a deleted booking that
+    // leaves a live joining link in two calendars is how a teacher ends up
+    // waiting for a family that is not coming.
+    if (booking.meetingEventId) {
+      prisma.school
+        .findUnique({ where: { id: user.schoolId }, select: { googleCalendarRefreshToken: true } })
+        .then(school => {
+          if (!school?.googleCalendarRefreshToken) return
+          return deleteGoogleMeetEvent({
+            refreshToken: school.googleCalendarRefreshToken,
+            eventId: booking.meetingEventId as string,
+          })
+        })
+        .catch(e => console.error('[Consultation] Could not remove the calendar event:', e))
+    }
+
+    const teacher = booking.slot.consultationTeacher.teacher
+    const slotDate = booking.slot.date || consultation.date
+    const slotTime = `${booking.slot.startTime} - ${booking.slot.endTime}`
+    const location =
+      booking.slot.consultationTeacher.location ||
+      (booking.slot.consultationTeacher.locationType === 'IN_PERSON' ? 'In Person' : booking.slot.consultationTeacher.locationType)
+
+    const emailDetails = {
+      schoolId: user.schoolId,
+      teacherName: teacher.name,
+      childName: booking.studentName,
+      date: slotDate,
+      time: slotTime,
+      location: booking.meetingLink || location,
+      schoolName: consultation.school?.name || '',
+    }
+
+    // Fire-and-forget: the cancellation has happened and must not fail because
+    // an inbox is unreachable.
+    if (booking.parent?.email) {
+      sendCancellationToParent(booking.parent.email, { ...emailDetails, reason })
+        .catch(e => console.error('[Consultation] Cancellation email to parent failed:', e))
+    }
+    if (teacher.email) {
+      sendCancellationToTeacher(teacher.email, { ...emailDetails, parentName: booking.parent?.name || 'Parent' })
+        .catch(e => console.error('[Consultation] Cancellation email to teacher failed:', e))
+    }
+    sendSchoolCancellationNotification({
+      parentId: booking.parentId,
+      teacherId: teacher.id,
+      schoolId: user.schoolId,
+      teacherName: teacher.name,
+      childName: booking.studentName,
+      time: slotTime,
+      reason,
+    }).catch(e => console.error('[Consultation] Cancellation push failed:', e))
+
+    // Logged WITH the reason. "Who cancelled this, and why" gets asked weeks
+    // later, by which time a verbal explanation has left no record at all.
+    await logAudit({
+      req,
+      action: 'DELETE',
+      resourceType: 'CONSULTATION_BOOKING',
+      resourceId: bookingId,
+      metadata: {
+        reason,
+        childName: booking.studentName,
+        teacherName: teacher.name,
+        parentId: booking.parentId,
+        slot: `${slotDate} ${slotTime}`,
+      },
+    })
+
+    res.json({ cancelled: true, slotId: booking.slotId })
+  } catch (error) {
+    console.error('Error cancelling booking as school:', error)
+    res.status(500).json({ error: 'Failed to cancel booking' })
+  }
+})
 
 // Google Calendar auth URL (admin)
 router.get('/google-auth-url', isAdmin, async (req, res) => {

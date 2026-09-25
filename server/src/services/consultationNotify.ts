@@ -148,3 +148,40 @@ export async function sendConsultationReminderNotification(params: {
     `Reminder: Your ${time} appointment with ${teacherName} for ${childName} is tomorrow.`,
   )
 }
+
+/**
+ * The SCHOOL cancelled a parent's appointment — a different event from a parent
+ * cancelling their own, and it needs different words in every direction.
+ *
+ * The parent did not do this and may not know why, so the reason travels with
+ * the notification. Telling someone their appointment is gone without telling
+ * them why is the half of the message that generates a phone call.
+ *
+ * The teacher is told too: their diary changed without them asking, and the
+ * slot is free again. Admins are not notified — one of them just did it.
+ */
+export async function sendSchoolCancellationNotification(params: {
+  parentId: string
+  teacherId: string
+  schoolId: string
+  teacherName: string
+  childName: string
+  time: string
+  reason: string
+}): Promise<void> {
+  const { parentId, teacherId, schoolId, teacherName, childName, time, reason } = params
+
+  sendToUsers(
+    [parentId],
+    schoolId,
+    'Consultation Cancelled by School',
+    `Your ${time} appointment with ${teacherName} for ${childName} has been cancelled: ${reason}`,
+  )
+
+  sendToUsers(
+    [teacherId],
+    schoolId,
+    'Consultation Cancelled by School',
+    `The school cancelled the ${time} appointment for ${childName}. The slot is now available.`,
+  )
+}
