@@ -2,13 +2,15 @@ import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { getGoogleAuthUrl, exchangeGoogleCode, createGoogleMeetEvent, deleteGoogleMeetEvent, isGoogleCalendarConfigured, GOOGLE_CALENDAR_REDIRECT_URI } from '../services/googleMeet.js'
-import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, sendCancellationToParent, sendCancellationToTeacher } from '../services/consultationEmails.js'
+import { sendBookingConfirmationToParent, sendBookingNotificationToTeacher, sendCancellationToParent, sendCancellationToTeacher, sendConsultationNudgeToParent } from '../services/consultationEmails.js'
 import { sendConsultationBookingNotification, sendConsultationCancellationNotification, sendSchoolCancellationNotification } from '../services/consultationNotify.js'
 import { serializeBookingForParent } from '../services/consultationSerializers.js'
 import { parseWallClockForSchool, describeWhenForSchool, datesBetween } from '../services/dateTime.js'
 import { teachersForFamily } from '../services/consultationTeachersForFamily.js'
 import { currentStaffWhere } from '../services/currentStaff.js'
 import { logAudit } from '../services/audit.js'
+import { unbookedFamilies } from '../services/consultationUnbooked.js'
+import { sendNotification } from '../services/notify.js'
 
 const router = Router()
 
@@ -868,6 +870,138 @@ router.delete('/parent/bookings/:bookingId', isAuthenticated, async (req, res) =
 // ==========================================
 // Admin endpoints
 // ==========================================
+
+/** Do not chase the same family twice in a day. A school pressing the button
+ *  again because the number did not move is chasing the SLOW, not the deaf,
+ *  and two pushes in an hour is how a parent turns notifications off. */
+const NUDGE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Who has not booked, and could.
+ *
+ *   GET /api/consultations/:id/unbooked
+ *
+ * Read-only, and the count the button is pressed on. Families waiting for
+ * their own wave are counted separately and never listed here — they are
+ * early, not late, and chasing them asks for something the app will refuse.
+ */
+router.get('/:id/unbooked', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const summary = await unbookedFamilies(req.params.id, user.schoolId)
+    const now = Date.now()
+    res.json({
+      eligible: summary.eligible,
+      waitingForTheirWave: summary.waitingForTheirWave,
+      families: summary.families.map(f => ({
+        parentId: f.parentId,
+        parentName: f.parentName,
+        childrenWithout: f.childrenWithout,
+        bookedCount: f.bookedCount,
+        lastNudgedAt: f.lastNudgedAt ? f.lastNudgedAt.toISOString() : null,
+        nudgeCount: f.nudgeCount,
+        // So the page can grey out a row rather than the send silently
+        // skipping it and the count not moving.
+        onCooldown: !!f.lastNudgedAt && now - f.lastNudgedAt.getTime() < NUDGE_COOLDOWN_MS,
+      })),
+    })
+  } catch (error) {
+    console.error('Error listing unbooked families:', error)
+    res.status(500).json({ error: 'Failed to work out who has not booked' })
+  }
+})
+
+/**
+ * Chase the families who have not booked.
+ *
+ *   POST /api/consultations/:id/nudge
+ *
+ * Push and in-app for everyone, email as well — the families who have not
+ * booked are disproportionately the ones without the app installed, so a
+ * push-only nudge would miss precisely the people being chased.
+ *
+ * Skips anyone chased in the last day and SAYS SO, rather than quietly sending
+ * nothing and leaving the count unmoved. A button that appears to do nothing
+ * gets pressed again.
+ */
+router.post('/:id/nudge', isAdmin, async (req, res) => {
+  try {
+    const user = req.user!
+    const { id } = req.params
+
+    const consultation = await prisma.consultationEvent.findFirst({
+      where: { id, schoolId: user.schoolId },
+      select: { id: true, title: true, date: true, status: true, school: { select: { name: true } } },
+    })
+    if (!consultation) return res.status(404).json({ error: 'Consultation not found' })
+    if (consultation.status !== 'BOOKING_OPEN') {
+      return res.status(400).json({ error: 'Booking is not open, so there is nothing for a parent to do yet.' })
+    }
+
+    const summary = await unbookedFamilies(id, user.schoolId)
+    const now = Date.now()
+    const due = summary.families.filter(
+      f => !f.lastNudgedAt || now - f.lastNudgedAt.getTime() >= NUDGE_COOLDOWN_MS,
+    )
+    const skipped = summary.families.length - due.length
+
+    if (due.length === 0) {
+      return res.json({ nudged: 0, skipped, eligible: summary.eligible })
+    }
+
+    // In-app and push, as one resolved audience.
+    await sendNotification({
+      type: 'CONSULTATION',
+      title: `${consultation.title} — please book`,
+      body: 'You have not booked an appointment yet. Slots are limited.',
+      resourceType: 'CONSULTATION',
+      resourceId: consultation.id,
+      target: {
+        targetClass: 'Consultations',
+        schoolId: user.schoolId,
+        parentUserIds: due.map(f => f.parentId),
+      },
+    })
+
+    // Email, one per family and named to their child. Fire-and-forget: a
+    // bounced address must not fail the whole chase.
+    for (const f of due) {
+      if (!f.parentEmail) continue
+      sendConsultationNudgeToParent(f.parentEmail, {
+        schoolId: user.schoolId,
+        schoolName: consultation.school?.name || '',
+        consultationTitle: consultation.title,
+        date: consultation.date,
+        childrenWithout: f.childrenWithout,
+        bookedCount: f.bookedCount,
+      }).catch(e => console.error('[Consultation] Nudge email failed:', e))
+    }
+
+    // Recorded after sending, and incremented rather than overwritten: "we
+    // have asked this family three times" is a different conversation from
+    // "we have asked once".
+    for (const f of due) {
+      await prisma.consultationNudge.upsert({
+        where: { consultationId_userId: { consultationId: id, userId: f.parentId } },
+        create: { consultationId: id, userId: f.parentId },
+        update: { lastNudgedAt: new Date(), count: { increment: 1 } },
+      })
+    }
+
+    await logAudit({
+      req,
+      action: 'CREATE',
+      resourceType: 'CONSULTATION_BOOKING',
+      resourceId: consultation.id,
+      metadata: { event: 'NUDGE_UNBOOKED', nudged: due.length, skipped, eligible: summary.eligible },
+    })
+
+    res.json({ nudged: due.length, skipped, eligible: summary.eligible })
+  } catch (error) {
+    console.error('Error nudging unbooked families:', error)
+    res.status(500).json({ error: 'Failed to send the nudge' })
+  }
+})
 
 /**
  * Book a slot for a family, as the school.

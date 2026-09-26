@@ -343,6 +343,7 @@ model User {
   consultationTeachers ConsultationTeacher[]
   consultationBookings ConsultationBooking[]
   consultationOpenNotices ConsultationOpenNotice[] @relation("ConsultationOpenNotices")
+  consultationNudges      ConsultationNudge[]      @relation("ConsultationNudges")
 
   // Emergency Alert relations
   createdAlerts        EmergencyAlert[]      @relation("AlertCreator")
@@ -410,6 +411,29 @@ model Child {
 }
 
 // Students exist independently, managed by school admins
+/// When the school last chased this family about this consultation.
+///
+/// Separate from ConsultationOpenNotice, which records the one-off "booking is
+/// open for you now". A nudge is REPEATABLE — a school chases, waits, chases
+/// again — so this holds a moving timestamp and a count rather than being a
+/// one-way ledger.
+///
+/// The count is worth keeping: "we have asked this family three times" is a
+/// different conversation from "we have asked once", and by the week of the
+/// evening somebody will want to know which.
+model ConsultationNudge {
+  id             String            @id @default(cuid())
+  consultationId String
+  consultation   ConsultationEvent @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User              @relation("ConsultationNudges", fields: [userId], references: [id], onDelete: Cascade)
+  lastNudgedAt   DateTime          @default(now())
+  count          Int               @default(1)
+
+  @@unique([consultationId, userId])
+  @@index([consultationId])
+}
+
 /// Who has already been told that booking is open for them.
 ///
 /// Waves make "has this parent been told" a per-FAMILY question rather than a
@@ -1773,6 +1797,7 @@ model ConsultationEvent {
   teachers         ConsultationTeacher[]
   bookingWindows   ConsultationBookingWindow[]
   openNotices      ConsultationOpenNotice[]
+  nudges           ConsultationNudge[]
 }
 
 /// When booking opens for one year group, so an evening does not open to four
