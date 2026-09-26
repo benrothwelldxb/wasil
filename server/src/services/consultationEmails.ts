@@ -226,3 +226,54 @@ export async function sendReminderToTeacher(
     text: `Consultation Reminder\n\nYou have a consultation tomorrow.\nStudent: ${details.childName}\nDate: ${formattedDate}\nTime: ${details.time}\nLocation: ${details.location}`,
   })
 }
+
+/**
+ * "You have not booked yet" — the chase.
+ *
+ * Email as well as push because the families who have not booked are
+ * disproportionately the ones without the app installed, so a push-only nudge
+ * would miss exactly the people being chased.
+ *
+ * Names the child. A parent with two children who has booked one is not
+ * ignoring the school, and a message telling them they have not booked reads as
+ * a system that is not paying attention — which is how a school loses the
+ * benefit of the doubt on everything else it sends.
+ */
+export async function sendConsultationNudgeToParent(
+  to: string,
+  details: {
+    schoolId: string
+    schoolName: string
+    consultationTitle: string
+    date: string
+    childrenWithout: string[]
+    bookedCount: number
+    bookingUrl?: string | null
+  },
+): Promise<void> {
+  const kids = details.childrenWithout
+  const who =
+    kids.length === 1
+      ? kids[0]
+      : `${kids.slice(0, -1).join(', ')} and ${kids[kids.length - 1]}`
+  const opener =
+    details.bookedCount > 0
+      ? `You have booked one appointment for ${escapeHtml(details.consultationTitle)} — thank you. You have not yet booked for ${escapeHtml(who)}.`
+      : `You have not yet booked an appointment for ${escapeHtml(who)} at ${escapeHtml(details.consultationTitle)}.`
+
+  const html = buildEmailHtml(
+    details.schoolName,
+    'Please book your appointment',
+    `<p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">${opener}</p>
+     <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">
+       Appointments are on ${escapeHtml(details.date)}. Slots are limited, and the best times go first.
+     </p>`,
+  )
+
+  await enqueueEmail(details.schoolId, {
+    to,
+    subject: `Please book: ${details.consultationTitle}`,
+    html,
+    text: `${opener}\n\nAppointments are on ${details.date}. Please book in the Wasil Connect app.`,
+  })
+}

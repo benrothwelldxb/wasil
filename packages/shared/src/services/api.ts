@@ -2119,6 +2119,30 @@ export const consultations = {
     }>(`/api/consultations/${id}/bookings`),
   /** Replace the whole set of booking waves for an event. An empty list means
    *  no waves: it opens to everybody when its status says so. */
+  /** Who can book and has not. Read-only; the count the nudge button sits on.
+   *  Families still waiting for their own wave are counted separately and
+   *  never listed — they are early, not late. */
+  unbooked: (consultationId: string) =>
+    fetchApi<{
+      eligible: number
+      waitingForTheirWave: number
+      families: Array<{
+        parentId: string
+        parentName: string
+        childrenWithout: string[]
+        bookedCount: number
+        lastNudgedAt: string | null
+        nudgeCount: number
+        onCooldown: boolean
+      }>
+    }>(`/api/consultations/${consultationId}/unbooked`),
+  /** Chase them. Skips anyone nudged in the last day and reports how many,
+   *  rather than sending nothing and leaving the count unmoved. */
+  nudgeUnbooked: (consultationId: string) =>
+    fetchApi<{ nudged: number; skipped: number; eligible: number }>(
+      `/api/consultations/${consultationId}/nudge`,
+      { method: 'POST' },
+    ),
   /** Book a slot for a family, as the school — the phone call and the
    *  conversation at the gate. The parent is always told; `notTheirClassTeacher`
    *  comes back so the office can see a mismatch it may not have intended,

@@ -221,6 +221,10 @@ export function ConsultationsPage() {
   const [bookingStudents, setBookingStudents] = useState<Array<{ id: string; fullName: string; className: string }>>([])
   const [bookingNotes, setBookingNotes] = useState('')
   const [isBookingForFamily, setIsBookingForFamily] = useState(false)
+  // Chasing the families who have not booked. Closed by default, like the
+  // duplicates panel and for the same reason.
+  const [showUnbooked, setShowUnbooked] = useState(false)
+  const [isNudging, setIsNudging] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -285,6 +289,29 @@ export function ConsultationsPage() {
     }
     setWaveTimes(next)
   }, [selectedConsultation?.id, selectedConsultation?.bookingWindows])
+
+  const handleNudge = async () => {
+    if (!selectedId) return
+    setIsNudging(true)
+    try {
+      const r = await api.consultations.nudgeUnbooked(selectedId)
+      await refetchUnbooked()
+      // The skipped count is said out loud. A button that appears to do
+      // nothing gets pressed again, and the second press is the one that
+      // sends a family two notifications in a minute.
+      toast.success(
+        r.skipped > 0
+          ? `Nudged ${r.nudged} families. ${r.skipped} were already chased in the last day and were left alone.`
+          : r.nudged > 0
+            ? `Nudged ${r.nudged} ${r.nudged === 1 ? 'family' : 'families'}.`
+            : 'Nobody to nudge — everyone eligible has booked, or has been chased today.',
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send the nudge')
+    } finally {
+      setIsNudging(false)
+    }
+  }
 
   const handleBookForFamily = async () => {
     const child = bookingStudents[0]
@@ -526,6 +553,16 @@ export function ConsultationsPage() {
   // UTC rather than to the browser: guessing the school's zone from the
   // machine is exactly the assumption this is here to test.
   const { data: schoolSettings } = useApi(() => api.schoolSettings.get(), [])
+
+  // Only asked for once a consultation is selected and open — there is nobody
+  // to chase before that, and the answer is a scan of every family.
+  const { data: unbooked, refetch: refetchUnbooked } = useApi(
+    () =>
+      selectedId && selectedConsultation?.status === 'BOOKING_OPEN'
+        ? api.consultations.unbooked(selectedId)
+        : Promise.resolve(null),
+    [selectedId, selectedConsultation?.status],
+  )
   const schoolTz = schoolSettings?.timezone || 'UTC'
   const otherZone = deviceZoneIfDifferent(schoolTz)
 
@@ -928,6 +965,74 @@ export function ConsultationsPage() {
             {savingWaves ? 'Saving…' : 'Save opening times'}
           </button>
         </div>
+
+        {/* Who has not booked.
+            The parents who do not book are the ones a school most wants to
+            see, and they were invisible: chasing meant reading a grid of 448
+            slots and working out who was missing from it. */}
+        {unbooked && unbooked.families.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold">
+                  {unbooked.families.length} {unbooked.families.length === 1 ? 'family has' : 'families have'} not booked
+                </h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  of {unbooked.eligible} who can book now
+                  {unbooked.waitingForTheirWave > 0 && (
+                    <>
+                      {' · '}
+                      {unbooked.waitingForTheirWave} still waiting for their wave, not chased
+                    </>
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleNudge}
+                disabled={isNudging}
+                className="px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50 shrink-0"
+                style={{ backgroundColor: theme.colors.brandColor }}
+              >
+                {isNudging ? 'Sending…' : 'Nudge them'}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowUnbooked(v => !v)}
+              className="text-xs font-semibold text-gray-500 hover:text-gray-700 mt-3"
+            >
+              {showUnbooked ? 'Hide the list' : 'Show who'}
+            </button>
+
+            {showUnbooked && (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-xs text-gray-400">
+                  A nudge goes by app notification and email — the families who have not booked are
+                  often the ones without the app. Anyone chased in the last day is skipped.
+                </p>
+                {unbooked.families.map(f => (
+                  <div key={f.parentId} className="flex items-center justify-between gap-3 text-sm">
+                    <span className={f.onCooldown ? 'text-gray-400' : 'text-gray-700'}>
+                      {f.parentName}
+                      <span className="text-gray-400">
+                        {' — '}
+                        {f.childrenWithout.join(', ')}
+                        {f.bookedCount > 0 && ` (${f.bookedCount} already booked)`}
+                      </span>
+                    </span>
+                    <span className="text-xs text-gray-400 shrink-0">
+                      {f.nudgeCount === 0
+                        ? 'not chased'
+                        : `chased ${f.nudgeCount}×${f.onCooldown ? ', today' : ''}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Children with more than one appointment.
             Closed by default and absent entirely when there are none: this is a
