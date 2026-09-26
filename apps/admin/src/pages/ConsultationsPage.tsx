@@ -970,21 +970,33 @@ export function ConsultationsPage() {
             The parents who do not book are the ones a school most wants to
             see, and they were invisible: chasing meant reading a grid of 448
             slots and working out who was missing from it. */}
-        {unbooked && unbooked.families.length > 0 && (
+        {unbooked && unbooked.childrenWithout > 0 && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
+                {/* CHILDREN, not parent accounts. This said "399 families" at a
+                    school with 276 children, because 259 of those children have
+                    two linked guardians and each was counted separately. A
+                    number nobody can check against their own roll is not a
+                    number they can act on. */}
                 <h2 className="text-lg font-bold">
-                  {unbooked.families.length} {unbooked.families.length === 1 ? 'family has' : 'families have'} not booked
+                  {unbooked.childrenWithout} {unbooked.childrenWithout === 1 ? 'child has' : 'children have'} no appointment
                 </h2>
                 <p className="text-sm text-gray-500 mt-0.5">
-                  of {unbooked.eligible} who can book now
-                  {unbooked.waitingForTheirWave > 0 && (
+                  of {unbooked.childrenEligible} who can book now
+                  {unbooked.childrenWaiting > 0 && (
                     <>
                       {' · '}
-                      {unbooked.waitingForTheirWave} still waiting for their wave, not chased
+                      {unbooked.childrenWaiting} still waiting for their wave, not chased
                     </>
                   )}
+                </p>
+                {/* Said out loud rather than buried: most of these children
+                    have two guardians, so the number of people who get an
+                    email is half again the number of children. */}
+                <p className="text-xs text-gray-400 mt-1">
+                  A nudge would reach {unbooked.adultsToTell} {unbooked.adultsToTell === 1 ? 'adult' : 'adults'} —
+                  both guardians are told where a child has two.
                 </p>
               </div>
               <button

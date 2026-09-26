@@ -2124,8 +2124,17 @@ export const consultations = {
    *  never listed — they are early, not late. */
   unbooked: (consultationId: string) =>
     fetchApi<{
-      eligible: number
-      waitingForTheirWave: number
+      /** CHILDREN without an appointment — the number a school can check
+       *  against its own roll. Counting parent accounts and calling them
+       *  families gave 399 at a school with 276 children. */
+      childrenWithout: number
+      childrenEligible: number
+      childrenWaiting: number
+      /** How many adults a nudge would actually reach. Said alongside the
+       *  child count, not instead of it: where most children have two linked
+       *  guardians the two differ by half again. */
+      adultsToTell: number
+      children: Array<{ studentId: string; childName: string; guardianNames: string[] }>
       families: Array<{
         parentId: string
         parentName: string
@@ -2139,7 +2148,7 @@ export const consultations = {
   /** Chase them. Skips anyone nudged in the last day and reports how many,
    *  rather than sending nothing and leaving the count unmoved. */
   nudgeUnbooked: (consultationId: string) =>
-    fetchApi<{ nudged: number; skipped: number; eligible: number }>(
+    fetchApi<{ nudged: number; skipped: number; childrenWithout: number }>(
       `/api/consultations/${consultationId}/nudge`,
       { method: 'POST' },
     ),
