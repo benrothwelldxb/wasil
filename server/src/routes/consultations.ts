@@ -891,8 +891,16 @@ router.get('/:id/unbooked', isAdmin, async (req, res) => {
     const summary = await unbookedFamilies(req.params.id, user.schoolId)
     const now = Date.now()
     res.json({
-      eligible: summary.eligible,
-      waitingForTheirWave: summary.waitingForTheirWave,
+      // Children, because that is the number a school can check against its
+      // own roll. `adultsToTell` is said alongside it rather than instead of
+      // it: at a school where most children have two linked guardians the two
+      // differ by half again, and a school pressing send deserves to know how
+      // many people that actually reaches.
+      childrenWithout: summary.childrenWithout.length,
+      childrenEligible: summary.childrenEligible,
+      childrenWaiting: summary.childrenWaiting,
+      adultsToTell: summary.families.length,
+      children: summary.childrenWithout,
       families: summary.families.map(f => ({
         parentId: f.parentId,
         parentName: f.parentName,
@@ -946,7 +954,7 @@ router.post('/:id/nudge', isAdmin, async (req, res) => {
     const skipped = summary.families.length - due.length
 
     if (due.length === 0) {
-      return res.json({ nudged: 0, skipped, eligible: summary.eligible })
+      return res.json({ nudged: 0, skipped, childrenWithout: summary.childrenWithout.length })
     }
 
     // In-app and push, as one resolved audience.
@@ -993,10 +1001,10 @@ router.post('/:id/nudge', isAdmin, async (req, res) => {
       action: 'CREATE',
       resourceType: 'CONSULTATION_BOOKING',
       resourceId: consultation.id,
-      metadata: { event: 'NUDGE_UNBOOKED', nudged: due.length, skipped, eligible: summary.eligible },
+      metadata: { event: 'NUDGE_UNBOOKED', nudged: due.length, skipped, childrenWithout: summary.childrenWithout.length },
     })
 
-    res.json({ nudged: due.length, skipped, eligible: summary.eligible })
+    res.json({ nudged: due.length, skipped, childrenWithout: summary.childrenWithout.length })
   } catch (error) {
     console.error('Error nudging unbooked families:', error)
     res.status(500).json({ error: 'Failed to send the nudge' })

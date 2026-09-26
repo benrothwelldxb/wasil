@@ -30,13 +30,31 @@ export interface UnbookedFamily {
   nudgeCount: number
 }
 
+/** A child with no appointment, and who would be told about it. */
+export interface UnbookedChild {
+  studentId: string
+  childName: string
+  guardianNames: string[]
+}
+
 export interface UnbookedSummary {
-  /** Families who can book and have at least one child without an appointment. */
+  /** THE HEADLINE, and the only number a school can check.
+   *
+   *  This used to count PARENT ACCOUNTS and call them families: a child with
+   *  two linked guardians counted twice, so a school of 276 children was told
+   *  "399 families", which is not a number anybody can verify or act on. The
+   *  first person to read it spotted it immediately, which is the tell that a
+   *  count is measuring the wrong noun. */
+  childrenWithout: UnbookedChild[]
+  /** Children who can book at all — the denominator, and never more than the
+   *  roll. */
+  childrenEligible: number
+  /** Children whose family's wave has not opened. Early, not late. */
+  childrenWaiting: number
+  /** Who to actually notify, deduplicated by parent. A parent with two
+   *  unbooked children is told ONCE, naming both — two emails an hour apart
+   *  about the same evening reads as a system that has lost track. */
   families: UnbookedFamily[]
-  /** Families eligible to book at all — the denominator. */
-  eligible: number
-  /** Families whose wave has not opened yet. Not chased, and not a failure. */
-  waitingForTheirWave: number
 }
 
 export async function unbookedFamilies(
@@ -44,7 +62,9 @@ export async function unbookedFamilies(
   schoolId: string,
   now: Date = new Date(),
 ): Promise<UnbookedSummary> {
-  const empty: UnbookedSummary = { families: [], eligible: 0, waitingForTheirWave: 0 }
+  const empty: UnbookedSummary = {
+    childrenWithout: [], childrenEligible: 0, childrenWaiting: 0, families: [],
+  }
 
   const consultation = await prisma.consultationEvent.findFirst({
     where: { id: consultationId, schoolId },
@@ -82,54 +102,77 @@ export async function unbookedFamilies(
 
   type Acc = {
     parent: { id: string; name: string; email: string | null }
-    yearGroups: Array<string | null>
-    without: string[]
-    booked: number
+    children: Array<{ studentId: string; firstName: string; yearGroupId: string | null }>
   }
   const byParent = new Map<string, Acc>()
   for (const l of links) {
     if (!l.user || l.user.isTest) continue
     const acc = byParent.get(l.userId) ?? {
       parent: { id: l.user.id, name: l.user.name, email: l.user.email },
-      yearGroups: [],
-      without: [],
-      booked: 0,
+      children: [],
     }
-    acc.yearGroups.push(l.student?.class?.yearGroupId ?? null)
-    if (bookedStudents.has(l.studentId)) acc.booked++
-    else acc.without.push(l.student?.firstName || 'your child')
+    acc.children.push({
+      studentId: l.studentId,
+      firstName: l.student?.firstName || 'your child',
+      yearGroupId: l.student?.class?.yearGroupId ?? null,
+    })
     byParent.set(l.userId, acc)
   }
 
   const out: UnbookedFamily[] = []
-  let eligible = 0
-  let waiting = 0
+  // COUNTED PER CHILD, because that is the number a school can check against
+  // its own roll. Keyed by studentId so a child with two linked guardians —
+  // 259 of 276 at the first school to use this — is one child, not two. The
+  // previous version counted parent accounts and called them families: 399 of
+  // them at a school with 276 children. The first person to read it saw that
+  // it was wrong in about a second, which is the tell that a count is
+  // measuring the wrong noun.
+  const withoutByChild = new Map<string, { childName: string; guardianNames: string[] }>()
+  const eligibleChildren = new Set<string>()
+  const waitingChildren = new Set<string>()
 
   for (const [parentId, acc] of byParent) {
-    // Their earliest window across all their children — a family in two year
-    // groups books everything from the earlier time, which is the sibling rule
-    // stated from this end. A child whose year group has no window can book as
-    // soon as the event is open.
+    // Their earliest window across ALL their children — a family in two year
+    // groups books everything from the earlier time, the sibling rule stated
+    // from this end. A child whose year group has no window can book as soon
+    // as the event is open.
     let earliest: Date | null = null
     let openNow = false
-    for (const yg of acc.yearGroups.length > 0 ? acc.yearGroups : [null]) {
+    const yearGroups = acc.children.map(c => c.yearGroupId)
+    for (const yg of yearGroups.length > 0 ? yearGroups : [null]) {
       const w = yg ? windowFor.get(yg) : undefined
       if (!w) { openNow = true; break }
       if (!earliest || w < earliest) earliest = w
     }
     const canBook = openNow || (earliest !== null && earliest <= now)
-    if (!canBook) { waiting++; continue }
 
-    eligible++
-    if (acc.without.length === 0) continue
+    if (!canBook) {
+      for (const c of acc.children) waitingChildren.add(c.studentId)
+      continue
+    }
+
+    const without: string[] = []
+    let booked = 0
+    for (const c of acc.children) {
+      eligibleChildren.add(c.studentId)
+      if (bookedStudents.has(c.studentId)) {
+        booked++
+        continue
+      }
+      without.push(c.firstName)
+      const entry = withoutByChild.get(c.studentId) ?? { childName: c.firstName, guardianNames: [] }
+      entry.guardianNames.push(acc.parent.name)
+      withoutByChild.set(c.studentId, entry)
+    }
+    if (without.length === 0) continue
 
     const n = nudgeBy.get(parentId)
     out.push({
       parentId,
       parentName: acc.parent.name,
       parentEmail: acc.parent.email,
-      childrenWithout: acc.without,
-      bookedCount: acc.booked,
+      childrenWithout: without,
+      bookedCount: booked,
       lastNudgedAt: n?.lastNudgedAt ?? null,
       nudgeCount: n?.count ?? 0,
     })
@@ -143,5 +186,15 @@ export async function unbookedFamilies(
     return a.lastNudgedAt!.getTime() - b.lastNudgedAt!.getTime()
   })
 
-  return { families: out, eligible, waitingForTheirWave: waiting }
+  return {
+    childrenWithout: [...withoutByChild.entries()]
+      .map(([studentId, v]) => ({ studentId, childName: v.childName, guardianNames: v.guardianNames }))
+      .sort((a, b) => a.childName.localeCompare(b.childName)),
+    childrenEligible: eligibleChildren.size,
+    // A child whose family cannot book yet but who ALSO has a sibling opening
+    // the family earlier is not waiting — the family rule already let them in,
+    // so they must not be counted in both.
+    childrenWaiting: [...waitingChildren].filter(id => !eligibleChildren.has(id)).length,
+    families: out,
+  }
 }

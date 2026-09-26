@@ -59,7 +59,12 @@ describe('who counts as not booked', () => {
 
     expect(r.families).toHaveLength(1)
     expect(r.families[0]).toMatchObject({ parentId: 'p-1', childrenWithout: ['Amina'], bookedCount: 0 })
-    expect(r.eligible).toBe(1)
+    // The headline counts CHILDREN, which is what a school can check against
+    // its roll. One child, one guardian, one of each here.
+    expect(r.childrenWithout).toEqual([
+      { studentId: 'stu-1', childName: 'Amina', guardianNames: ['Parent p-1'] },
+    ])
+    expect(r.childrenEligible).toBe(1)
   })
 
   it('omits a family whose only child is booked', async () => {
@@ -69,7 +74,8 @@ describe('who counts as not booked', () => {
     const r = await unbookedFamilies('ce-1', 'sch-1', NOW)
 
     expect(r.families).toEqual([])
-    expect(r.eligible).toBe(1)
+    expect(r.childrenWithout).toEqual([])
+    expect(r.childrenEligible).toBe(1)
   })
 
   it('lists a PARTLY booked family, naming only the child still without', async () => {
@@ -107,10 +113,11 @@ describe('waves — early is not late', () => {
     const r = await unbookedFamilies('ce-1', 'sch-1', NOW)
 
     expect(r.families).toEqual([])
-    expect(r.waitingForTheirWave).toBe(1)
-    // And is not in the denominator either — they cannot be late for something
+    expect(r.childrenWithout).toEqual([])
+    expect(r.childrenWaiting).toBe(1)
+    // And not in the denominator either — you cannot be late for something
     // that has not started.
-    expect(r.eligible).toBe(0)
+    expect(r.childrenEligible).toBe(0)
   })
 
   it('lists them once their wave has opened', async () => {
@@ -122,7 +129,8 @@ describe('waves — early is not late', () => {
     const r = await unbookedFamilies('ce-1', 'sch-1', NOW)
 
     expect(r.families).toHaveLength(1)
-    expect(r.waitingForTheirWave).toBe(0)
+    expect(r.childrenWithout).toHaveLength(1)
+    expect(r.childrenWaiting).toBe(0)
   })
 
   it('uses a sibling family EARLIEST wave, matching the booking gate', async () => {
@@ -155,6 +163,45 @@ describe('waves — early is not late', () => {
     const r = await unbookedFamilies('ce-1', 'sch-1', NOW)
 
     expect(r.families).toHaveLength(1)
+  })
+})
+
+describe('a child with two guardians is ONE child', () => {
+  // THE BUG THE FIRST SCHOOL SAW IN A SECOND. 259 of their 276 children have
+  // two linked guardians, so counting parent accounts and calling them
+  // families reported 399 unbooked at a school with 276 children — a number
+  // nobody can check against their own roll, and therefore cannot act on.
+  it('counts the child once and names both guardians', async () => {
+    prismaMock.parentStudentLink.findMany.mockResolvedValue([
+      link('mum', 'stu-1', 'yg-2', 'Idris'),
+      link('dad', 'stu-1', 'yg-2', 'Idris'),
+    ])
+
+    const r = await unbookedFamilies('ce-1', 'sch-1', NOW)
+
+    expect(r.childrenWithout).toHaveLength(1)
+    expect(r.childrenWithout[0].guardianNames.sort()).toEqual(['Parent dad', 'Parent mum'])
+    expect(r.childrenEligible).toBe(1)
+    // Both adults are still told — either can book, and reach is the point.
+    // The number simply no longer pretends they are two families.
+    expect(r.families).toHaveLength(2)
+  })
+
+  it('clears BOTH guardians when either one books', async () => {
+    // The thing the principal feared: the wife books and the husband is still
+    // chased. The booked set is keyed by child, so it cannot happen — asserted
+    // rather than argued, because "I read the code and it looks fine" is what
+    // was said about three other bugs this week.
+    prismaMock.parentStudentLink.findMany.mockResolvedValue([
+      link('mum', 'stu-1', 'yg-2', 'Idris'),
+      link('dad', 'stu-1', 'yg-2', 'Idris'),
+    ])
+    prismaMock.consultationBooking.findMany.mockResolvedValue([{ studentId: 'stu-1' }])
+
+    const r = await unbookedFamilies('ce-1', 'sch-1', NOW)
+
+    expect(r.childrenWithout).toEqual([])
+    expect(r.families).toEqual([])
   })
 })
 
@@ -195,7 +242,7 @@ describe('refusing to guess', () => {
 
     const r = await unbookedFamilies('ce-1', 'other-school', NOW)
 
-    expect(r).toEqual({ families: [], eligible: 0, waitingForTheirWave: 0 })
+    expect(r).toEqual({ childrenWithout: [], childrenEligible: 0, childrenWaiting: 0, families: [] })
     expect(prismaMock.parentStudentLink.findMany).not.toHaveBeenCalled()
   })
 
