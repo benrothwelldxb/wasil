@@ -10,6 +10,7 @@ import { getInboxUnreadCount, getPushBadgeCount } from '../services/unreadCount.
 import { teachingStaffForClasses, timetableLookupPossible } from '../services/classTeachingStaff.js'
 import { todayInTimezone } from '../services/dateTime.js'
 import { currentStaffWhere } from '../services/currentStaff.js'
+import { describeAttachments } from '../services/attachmentSummary.js'
 
 const router = Router()
 
@@ -479,20 +480,6 @@ router.post('/conversations', isAuthenticated, async (req, res) => {
  * or Scan_20260920, which tells the reader less than "a photo" does, and can
  * carry a child's name into a lock-screen notification.
  */
-function describeAttachments(files: Array<{ fileType?: string }>): string {
-  if (files.length === 0) return ''
-  const allImages = files.every(f => (f.fileType || '').startsWith('image/'))
-  const allVideos = files.every(f => (f.fileType || '').startsWith('video/'))
-  if (files.length === 1) {
-    if (allImages) return 'Sent a photo'
-    if (allVideos) return 'Sent a video'
-    return 'Sent a file'
-  }
-  if (allImages) return `Sent ${files.length} photos`
-  if (allVideos) return `Sent ${files.length} videos`
-  return `Sent ${files.length} files`
-}
-
 function participantWhere(id: string, user: Express.User) {
   return {
     id,
