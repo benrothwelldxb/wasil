@@ -296,15 +296,21 @@ export function ConsultationsPage() {
     try {
       const r = await api.consultations.nudgeUnbooked(selectedId)
       await refetchUnbooked()
+      // PARENTS, not families. `nudged` counts recipients — parent accounts —
+      // and most children here have two linked guardians, so calling that
+      // number families overstates it by half again. The same error the panel
+      // headline had, one level down, in a sentence written after fixing it:
+      // the convenient noun is the one that slips back in.
+      //
       // The skipped count is said out loud. A button that appears to do
-      // nothing gets pressed again, and the second press is the one that
-      // sends a family two notifications in a minute.
+      // nothing gets pressed again, and the second press is the one that sends
+      // a parent two notifications in a minute.
       toast.success(
         r.skipped > 0
-          ? `Nudged ${r.nudged} families. ${r.skipped} were already chased in the last day and were left alone.`
+          ? `Nudged ${r.nudged} ${r.nudged === 1 ? 'parent' : 'parents'} about ${r.childrenWithout} ${r.childrenWithout === 1 ? 'child' : 'children'}. ${r.skipped} were already chased in the last day and were left alone.`
           : r.nudged > 0
-            ? `Nudged ${r.nudged} ${r.nudged === 1 ? 'family' : 'families'}.`
-            : 'Nobody to nudge — everyone eligible has booked, or has been chased today.',
+            ? `Nudged ${r.nudged} ${r.nudged === 1 ? 'parent' : 'parents'} about ${r.childrenWithout} ${r.childrenWithout === 1 ? 'child' : 'children'}.`
+            : 'Nobody to nudge — everyone who can book has, or has been chased today.',
       )
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send the nudge')
@@ -995,7 +1001,7 @@ export function ConsultationsPage() {
                     have two guardians, so the number of people who get an
                     email is half again the number of children. */}
                 <p className="text-xs text-gray-400 mt-1">
-                  A nudge would reach {unbooked.adultsToTell} {unbooked.adultsToTell === 1 ? 'adult' : 'adults'} —
+                  A nudge would reach {unbooked.adultsToTell} {unbooked.adultsToTell === 1 ? 'parent' : 'parents'} —
                   both guardians are told where a child has two.
                 </p>
               </div>
