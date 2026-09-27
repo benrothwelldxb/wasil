@@ -17,6 +17,7 @@ import { requirePartner } from '../middleware/partnerAuth.js'
 import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
 import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
 import { currentStaffWhere, hasLeft } from '../services/currentStaff.js'
+import { describeAttachments } from '../services/attachmentSummary.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { resolveIlsa } from '../services/ilsaResolution.js'
@@ -1122,8 +1123,24 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
     const aId = actorUserId(actor)
 
     const { id } = req.params
-    if (!content || !content.trim()) {
-      return res.status(400).json({ error: 'content required' })
+
+    // AN ATTACHMENT ON ITS OWN IS A MESSAGE. A member of staff photographing a
+    // reading record, a signed form or a lost jumper often has nothing to add
+    // to it — the file IS the message.
+    //
+    // This rule ran before attachments were even looked at, so a reply that was
+    // purely a file was refused. Desk reported the 400 as "Connect may be busy,
+    // try again in a moment", so staff re-sent a file that was never going to
+    // go, and nobody connected the failure to the rule. It has been quietly
+    // costing sends for as long as attachments have existed.
+    //
+    // The parent side already allowed this. Staff could not send a bare file to
+    // a parent while a parent could send one back — an asymmetry in a two-way
+    // inbox, which is worse than a limit applied consistently.
+    const bodyText = typeof content === 'string' ? content.trim() : ''
+    const files = Array.isArray(attachments) ? attachments : []
+    if (!bodyText && files.length === 0) {
+      return res.status(400).json({ error: 'Write a message or attach a file' })
     }
 
     const conversation = await prisma.conversation.findFirst({
@@ -1141,7 +1158,11 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
     }
 
     const message = await prisma.conversationMessage.create({
-      data: { conversationId: id, senderId: aId, content: content.trim() },
+      // `bodyText`, not `content.trim()` — an attachment-only reply has no
+      // `content` at all, and calling .trim() on undefined threw a 500 where
+      // the old code had returned an honest 400. Caught by the test rather
+      // than by reading, which is the argument for writing it first.
+      data: { conversationId: id, senderId: aId, content: bodyText },
     })
 
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {
@@ -1160,7 +1181,11 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
       where: { id },
       data: {
         lastMessageAt: message.createdAt,
-        lastMessageText: content.trim().substring(0, 200),
+        // A message with no words still needs a line in a list. Blank previews
+        // read as a bug; "Sent a photo" reads as what happened. Decided here
+        // rather than in each client, so the parent's thread list, the push
+        // body and Desk's inbox row all say the same thing.
+        lastMessageText: (bodyText || describeAttachments(files)).substring(0, 200),
       },
     })
 
@@ -1199,7 +1224,11 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
           userId: r.userId,
           type: 'DIRECT_MESSAGE',
           title: `Message from ${senderDisplayName}`,
-          body: content.trim().substring(0, 200),
+          // The notification body is the THIRD place a wordless message
+          // would have gone blank — a push that says nothing is worse than
+          // the blank row, because a parent cannot open it to find out what
+          // it was.
+          body: (bodyText || describeAttachments(files)).substring(0, 200),
           resourceType: 'CONVERSATION',
           resourceId: id,
           // `messageId` so a withdrawal in Connect can find and rewrite this
@@ -1226,7 +1255,11 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
         const badge = await getPushBadgeCount(r.userId)
         const result = await sendPushNotification(tokens, {
           title: `Message from ${senderDisplayName}`,
-          body: content.trim().substring(0, 200),
+          // The notification body is the THIRD place a wordless message
+          // would have gone blank — a push that says nothing is worse than
+          // the blank row, because a parent cannot open it to find out what
+          // it was.
+          body: (bodyText || describeAttachments(files)).substring(0, 200),
           data: {
             type: 'DIRECT_MESSAGE',
             resourceType: 'CONVERSATION',
