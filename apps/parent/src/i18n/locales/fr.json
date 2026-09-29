@@ -27,7 +27,8 @@
     "activities": "Activités",
     "superAdmin": "Super Administrateur",
     "logout": "Déconnexion",
-    "transport": "Bus scolaire"
+    "transport": "Bus scolaire",
+    "suggestions": "Boîte à idées"
   },
   "auth": {
     "login": "Se connecter",

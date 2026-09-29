@@ -27,7 +27,8 @@ import {
   CalendarDays,
   Download,
   Share, Newspaper,
-  Bus } from 'lucide-react'
+  Bus,
+  Lightbulb } from 'lucide-react'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import * as api from '@wasil/shared'
@@ -203,6 +204,12 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   }
   if (hasActiveConsultations && isEnabled('consultationsEnabled')) {
     schoolLife.push({ icon: CalendarCheck, labelKey: 'nav.consultations', path: '/consultations' })
+  }
+  // The suggestion box. Gated on the school's own switch, which is OFF by
+  // default — it is a commitment to read and answer things, not a feature to
+  // find already running.
+  if (isEnabled('suggestionsEnabled')) {
+    schoolLife.push({ icon: Lightbulb, labelKey: 'nav.suggestions', path: '/suggestions' })
   }
   if (schoolLife.length > 0) sections.push({ label: 'School Life', items: schoolLife })
 

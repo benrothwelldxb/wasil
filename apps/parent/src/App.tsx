@@ -24,6 +24,7 @@ import { ActivitiesPage } from './pages/ActivitiesPage'
 import { PostsPage } from './pages/PostsPage'
 import { ClubsPage } from './pages/ClubsPage'
 import { TransportPage } from './pages/TransportPage'
+import { SuggestionsPage } from './pages/SuggestionsPage'
 import { AdminNoticesPage } from './pages/AdminNoticesPage'
 import { ConsultationsPage } from './pages/ConsultationsPage'
 import { SchoolServicesPage } from './pages/SchoolServicesPage'
@@ -312,6 +313,10 @@ export default function App() {
       <Route
         path="/transport"
         element={<ProtectedRoute><AppLayout><TransportPage /></AppLayout></ProtectedRoute>}
+      />
+      <Route
+        path="/suggestions"
+        element={<ProtectedRoute><AppLayout><SuggestionsPage /></AppLayout></ProtectedRoute>}
       />
       <Route
         path="/admin-notices"

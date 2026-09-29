@@ -27,7 +27,8 @@
     "activities": "Actividades",
     "superAdmin": "Superadministrador",
     "logout": "Cerrar sesión",
-    "transport": "Autobús escolar"
+    "transport": "Autobús escolar",
+    "suggestions": "Buzón de sugerencias"
   },
   "auth": {
     "login": "Acceso",

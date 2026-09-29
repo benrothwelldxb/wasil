@@ -27,7 +27,8 @@
     "activities": "الأنشطة",
     "superAdmin": "المشرف الرئيسي",
     "logout": "تسجيل الخروج",
-    "transport": "حافلة المدرسة"
+    "transport": "حافلة المدرسة",
+    "suggestions": "صندوق الاقتراحات"
   },
   "auth": {
     "login": "تسجيل الدخول",

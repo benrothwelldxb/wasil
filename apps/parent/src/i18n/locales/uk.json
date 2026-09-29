@@ -27,7 +27,8 @@
     "activities": "Заняття",
     "superAdmin": "Суперадміністратор",
     "logout": "Вийти",
-    "transport": "School Bus"
+    "transport": "School Bus",
+    "suggestions": "Скринька пропозицій"
   },
   "auth": {
     "login": "Вхід",

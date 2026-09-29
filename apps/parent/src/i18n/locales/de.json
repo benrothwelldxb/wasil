@@ -27,7 +27,8 @@
     "activities": "Aktivitäten",
     "superAdmin": "Super-Admin",
     "logout": "Abmelden",
-    "transport": "Schulbus"
+    "transport": "Schulbus",
+    "suggestions": "Ideenbox"
   },
   "auth": {
     "login": "Login",

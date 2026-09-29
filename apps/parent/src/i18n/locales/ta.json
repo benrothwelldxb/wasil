@@ -27,7 +27,8 @@
     "activities": "செயல்பாடுகள்",
     "superAdmin": "சூப்பர் நிர்வாகம்",
     "logout": "வெளியேறு",
-    "transport": "School Bus"
+    "transport": "School Bus",
+    "suggestions": "பரிந்துரைப் பெட்டி"
   },
   "auth": {
     "login": "உள்நுழைய",

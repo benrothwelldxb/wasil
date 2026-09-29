@@ -1753,6 +1753,9 @@ export type SchoolModuleFlag =
   | 'termDatesEnabled'
   | 'scheduleEnabled'
   | 'transportEnabled'
+  // Off by default: a suggestion box is a commitment to read and answer
+  // things, not a feature a school should find already running.
+  | 'suggestionsEnabled'
   | 'policiesEnabled'
   | 'filesEnabled'
   | 'linksEnabled'

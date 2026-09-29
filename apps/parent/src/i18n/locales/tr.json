@@ -27,7 +27,8 @@
     "activities": "Etkinlikler",
     "superAdmin": "Süper Yönetici",
     "logout": "Çıkış yap",
-    "transport": "School Bus"
+    "transport": "School Bus",
+    "suggestions": "Öneri Kutusu"
   },
   "auth": {
     "login": "Giriş yapmak",

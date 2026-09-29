@@ -27,7 +27,8 @@
     "activities": "Hawlaha",
     "superAdmin": "Maamul Sare",
     "logout": "Ka bax",
-    "transport": "School Bus"
+    "transport": "School Bus",
+    "suggestions": "Sanduuqa Talooyinka"
   },
   "auth": {
     "login": "Soo gal",
