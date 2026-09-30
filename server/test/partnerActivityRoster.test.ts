@@ -82,10 +82,16 @@ beforeEach(() => {
   prismaMock.ecaActivityMeeting.createMany.mockResolvedValue({})
   prismaMock.ecaActivityMember.deleteMany.mockResolvedValue({})
   prismaMock.ecaActivityMember.createMany.mockResolvedValue({})
-  prismaMock.student.findMany.mockResolvedValue([
-    { id: 'stu-1', hubPupilId: 'hub-p1' },
-    { id: 'stu-2', hubPupilId: 'hub-p2' },
-  ])
+  // The roll, answered honestly against whatever was asked for. A mock that
+  // returns the same two children regardless of the query cannot tell a
+  // working filter from a missing one.
+  const ROLL: Record<string, string> = { 'hub-p1': 'stu-1', 'hub-p2': 'stu-2' }
+  prismaMock.student.findMany.mockImplementation(async (args: any) => {
+    const asked: string[] = args?.where?.hubPupilId?.in ?? []
+    return asked
+      .filter(hubPupilId => ROLL[hubPupilId])
+      .map(hubPupilId => ({ id: ROLL[hubPupilId], hubPupilId }))
+  })
 })
 
 describe('publishing a roster with the activity', () => {
@@ -121,7 +127,8 @@ describe('publishing a roster with the activity', () => {
   it('accepts the children it knows and names the ones it does not', async () => {
     // A roster of eighty naming one pupil who has left must publish for the
     // other seventy-nine — and say which one missed.
-    prismaMock.student.findMany.mockResolvedValue([{ id: 'stu-1', hubPupilId: 'hub-p1' }])
+    // 'hub-gone' is not on the roll, so the honest mock simply does not
+    // return it — no override needed.
 
     const res = await push({ pupilHubIds: ['hub-p1', 'hub-gone'] })
 
@@ -186,5 +193,133 @@ describe('a stale push', () => {
 
     expect(res.body.ignored).toBe(true)
     expect(prismaMock.ecaActivityMember.deleteMany).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * THE SECOND DOOR, and why it is not a convenience.
+ *
+ * A register changes when a child is assigned, withdrawn, moved, or comes off a
+ * waiting list. None of those are catalogue events. If a roster could only ride
+ * the catalogue push it would inherit the catalogue's triggers, so a register
+ * would refresh when somebody renamed the club and stay stale for the rest of
+ * term — while every sync on both sides reported success.
+ *
+ * That is exactly the failure that hid 42 children in three clubs for a
+ * fortnight: two syncs that never introduce each other, both delivering.
+ * Rebuilding it one layer up would be unforgivable.
+ */
+const rosterPush = (body: Record<string, unknown>) =>
+  request(makeApp())
+    .put('/api/partner/activities/active:activity:91bd411e/roster')
+    .set('Authorization', 'Bearer tok')
+    .send({ hub_user_id: 'hub-staff-1', version: '2026-10-01T09:00:00.000Z', ...body })
+
+describe('a roster pushed on its own', () => {
+  it('updates the register without re-sending the club', async () => {
+    const res = await rosterPush({ pupilHubIds: ['hub-p1'] })
+
+    expect(res.status).toBe(200)
+    expect(res.body.enrolled).toBe(1)
+    expect(prismaMock.ecaActivityMember.createMany).toHaveBeenCalledWith({
+      data: [{ ecaActivityId: 'act-1', studentId: 'stu-1' }],
+      skipDuplicates: true,
+    })
+    // No catalogue write: the club's name, times and venue are untouched.
+    expect(prismaMock.ecaActivityMeeting.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('refuses a club it has never heard of, rather than inventing one', async () => {
+    // A catalogue entry conjured from a list of children would have no name, no
+    // times and no term.
+    prismaMock.ecaActivity.findFirst.mockResolvedValue(null)
+
+    const res = await rosterPush({ pupilHubIds: ['hub-p1'] })
+
+    expect(res.status).toBe(404)
+    expect(res.body.error).toBe('unknown_activity')
+  })
+
+  it('insists the list is stated, even when it is empty', async () => {
+    // Absence is meaningful on the catalogue push — "this call is not about the
+    // roster". Here it is the entire point of the call, so it is malformed
+    // rather than a silent no-op.
+    const res = await rosterPush({})
+
+    expect(res.status).toBe(400)
+    expect(res.body.hint).toContain('[]')
+  })
+
+  it('never reaches a club parents have paid for', async () => {
+    prismaMock.ecaActivity.findFirst.mockResolvedValue({
+      id: 'act-1', rosterVersion: null, providerId: 'prov-1',
+    })
+
+    const res = await rosterPush({ pupilHubIds: ['hub-p1'] })
+
+    expect(res.status).toBe(409)
+    expect(prismaMock.ecaActivityMember.deleteMany).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * TWO DOORS, ONE ARBITER.
+ *
+ * The roster carries its own version rather than sharing the catalogue's,
+ * because the two facts change at different rates: a venue moves once a term, a
+ * child moves out on a Tuesday. Sharing one number would make a roster update
+ * claim a newer catalogue version, and would entitle a catalogue retry to roll
+ * a register back.
+ */
+describe('ordering across both doors', () => {
+  it('a replayed catalogue push cannot undo a newer roster write', async () => {
+    // The club was renamed at 08:00 and a child left at 09:00. The 08:00 push
+    // is retried. The rename may re-apply; the register must not.
+    prismaMock.ecaActivity.findFirst.mockResolvedValue({
+      id: 'act-1',
+      sourceVersion: null,
+      providerId: null,
+      rosterVersion: new Date('2026-10-01T09:00:00.000Z'),
+    })
+
+    const res = await push({ pupilHubIds: ['hub-p1', 'hub-p2'] })
+
+    expect(res.status).toBe(200)
+    expect(res.body.rosterIgnored).toBe('stale_version')
+    expect(prismaMock.ecaActivityMember.deleteMany).not.toHaveBeenCalled()
+    // The catalogue half still applied — the rename is not the roster's
+    // business, and refusing the whole push would strand it.
+    expect(prismaMock.ecaActivity.update).toHaveBeenCalled()
+  })
+
+  it('a replayed roster push cannot undo a newer one', async () => {
+    prismaMock.ecaActivity.findFirst.mockResolvedValue({
+      id: 'act-1', providerId: null, rosterVersion: new Date('2026-10-02T00:00:00.000Z'),
+    })
+
+    const res = await rosterPush({ pupilHubIds: ['hub-p1'] })
+
+    expect(res.body.ignored).toBe(true)
+    expect(prismaMock.ecaActivityMember.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('stamps the roster clock so the next writer can compare', async () => {
+    await rosterPush({ pupilHubIds: ['hub-p1'] })
+
+    expect(prismaMock.ecaActivity.update).toHaveBeenCalledWith({
+      where: { id: 'act-1' },
+      data: { rosterVersion: new Date('2026-10-01T09:00:00.000Z') },
+    })
+  })
+
+  it('a roster arriving with a brand-new club is applied, not deferred', async () => {
+    // A new club must arrive complete rather than appearing empty until a
+    // second call lands.
+    prismaMock.ecaActivity.findFirst.mockResolvedValue(null)
+
+    const res = await push({ pupilHubIds: ['hub-p1'] })
+
+    expect(res.status).toBe(201)
+    expect(res.body.enrolled).toBe(1)
   })
 })

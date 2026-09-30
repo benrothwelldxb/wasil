@@ -1690,6 +1690,18 @@ model EcaActivity {
   // against it would raise the bar and start silently rejecting the publisher's
   // legitimate pushes. A push is applied only when strictly newer than this.
   sourceVersion        DateTime?
+  /// The roster's OWN version, separate from sourceVersion on purpose.
+  ///
+  /// A club's details and a club's register change at different rates and on
+  /// different events: a venue moves once a term, a child moves out on a
+  /// Tuesday. Sharing one version number makes them interfere — a roster
+  /// update would have to claim a newer catalogue version, and a catalogue
+  /// retry would be entitled to roll a register back.
+  ///
+  /// So the roster is versioned independently and BOTH doors compare against
+  /// this one: the catalogue push carrying pupilHubIds, and the roster
+  /// endpoint. Two ways in, one rule about which write wins.
+  rosterVersion        DateTime?
   meetings             EcaActivityMeeting[]
   selections           EcaSelection[]
   allocations          EcaAllocation[]
