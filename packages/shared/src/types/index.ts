@@ -473,6 +473,14 @@ export interface PulseSurvey {
   questions: PulseQuestion[]
   userResponse?: PulseResponse
   responseCount?: number
+  /** Which of the seven core questions this survey asks, by stable key.
+   *  Absent on a survey created before the selection existed — read as all. */
+  coreQuestionKeys?: string[]
+  /** Who it goes to, and therefore what the response rate is measured
+   *  against. SCHOOL is the old behaviour and the default. */
+  audienceType?: 'SCHOOL' | 'GROUP' | 'YEAR_GROUPS'
+  audienceGroupId?: string | null
+  audienceYearGroupIds?: string[]
 }
 
 export interface PulseComparison {

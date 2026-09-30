@@ -3,6 +3,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
+import { audienceOf, pulseAudienceParentIds } from '../services/pulseAudience.js'
 
 const router = Router()
 
@@ -35,9 +36,37 @@ interface CustomQuestion {
   type: 'LIKERT_5' | 'TEXT_OPTIONAL'
 }
 
-// Helper to build questions list for a pulse
-function getQuestionsForPulse(additionalQuestionKey: string | null, customQuestions?: CustomQuestion[] | null) {
-  const questions = [...PULSE_CORE_QUESTIONS]
+/** Every core question's stable key — the default for a new survey, and what
+ *  every existing survey was backfilled to. */
+export const ALL_CORE_KEYS = PULSE_CORE_QUESTIONS.map(q => q.stableKey)
+
+/**
+ * Build the question list for one survey.
+ *
+ * `coreQuestionKeys` decides which of the seven core questions it asks. They
+ * used to be mandatory, so every pulse was eight questions whatever it was for
+ * — a "how has the start of the year felt" survey still asked about homework
+ * feedback and behaviour expectations, and the length is what stops people
+ * answering.
+ *
+ * Selected by STABLE KEY rather than position, so a survey keeps asking the
+ * same question if the wording is revised, and answers stay comparable across
+ * the year. Order is preserved from the core list rather than from the
+ * selection, so two surveys asking the same four questions ask them in the
+ * same order.
+ */
+function getQuestionsForPulse(
+  additionalQuestionKey: string | null,
+  customQuestions?: CustomQuestion[] | null,
+  coreQuestionKeys?: string[] | null,
+) {
+  // Null or undefined means "all" — a survey created before this existed, and
+  // read by a code path that has not been given the column. An EMPTY ARRAY is
+  // a real choice and means none; the migration backfilled every existing row
+  // so the two can be told apart.
+  const wanted = coreQuestionKeys == null ? ALL_CORE_KEYS : coreQuestionKeys
+  const questions = PULSE_CORE_QUESTIONS.filter(q => wanted.includes(q.stableKey))
+    .map((q, i) => ({ ...q, order: i + 1 }))
 
   // Legacy: single optional question from preset list
   if (additionalQuestionKey) {
@@ -92,7 +121,26 @@ router.get('/', isAuthenticated, async (req, res) => {
       orderBy: { opensAt: 'desc' },
     })
 
-    res.json(pulses.map(pulse => ({
+    // Only the surveys this parent is actually part of. Filtered here rather
+    // than refused at submit time: a survey that appears and then declines to
+    // accept an answer wastes the one moment somebody was willing to give.
+    //
+    // Cached per audience shape, so a school running three scoped pulses costs
+    // three lookups rather than one per survey per family.
+    const visible: typeof pulses = []
+    const audienceCache = new Map<string, string[]>()
+    for (const pulse of pulses) {
+      const audience = audienceOf(pulse)
+      if (audience.type === 'SCHOOL') { visible.push(pulse); continue }
+      const key = `${audience.type}:${pulse.audienceGroupId ?? ''}:${(pulse.audienceYearGroupIds || []).join(',')}`
+      let ids = audienceCache.get(key)
+      if (!ids) {
+        ids = await pulseAudienceParentIds(user.schoolId, audience)
+        audienceCache.set(key, ids)
+      }
+      if (ids.includes(user.id)) visible.push(pulse)
+    }
+    res.json(visible.map(pulse => ({
       id: pulse.id,
       halfTermName: pulse.halfTermName,
       status: pulse.status,
@@ -100,7 +148,7 @@ router.get('/', isAuthenticated, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null, pulse.coreQuestionKeys),
       userResponse: pulse.responses[0] ? {
         id: pulse.responses[0].id,
         answers: pulse.responses[0].answers as Record<string, number | string>,
@@ -136,7 +184,15 @@ router.get('/all', isAdmin, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null, pulse.coreQuestionKeys),
+      // The selection and audience as STORED, so the edit form opens showing
+      // what this survey actually is rather than a fresh default — which would
+      // quietly widen a scoped survey the first time somebody fixed a typo.
+      coreQuestionKeys: pulse.coreQuestionKeys,
+      customQuestions: pulse.customQuestions,
+      audienceType: pulse.audienceType,
+      audienceGroupId: pulse.audienceGroupId,
+      audienceYearGroupIds: pulse.audienceYearGroupIds,
       responseCount: pulse._count.responses,
       responses: pulse.responses.map(r => ({
         id: r.id,
@@ -175,7 +231,7 @@ router.get('/:id', isAdmin, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null, pulse.coreQuestionKeys),
       responses: pulse.responses.map(r => ({
         id: r.id,
         answers: r.answers as Record<string, number | string>,
@@ -205,16 +261,20 @@ router.get('/:id/analytics', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Pulse survey not found' })
     }
 
-    // Count total parents in school
-    const totalParents = await prisma.user.count({
-      where: { schoolId: user.schoolId, role: 'PARENT' },
-    })
+    // THE AUDIENCE IS THE DENOMINATOR.
+    //
+    // This counted every parent in the school, which is right only for a
+    // school-wide pulse. A survey sent to 30 new parents that scored its 12
+    // replies against 400 families would report a 3% response to something
+    // nearly half its audience answered — and a school reading 3% concludes
+    // the survey failed and stops sending them.
+    const totalParents = (await pulseAudienceParentIds(user.schoolId, audienceOf(pulse))).length
 
     const responseCount = pulse.responses.length
     const responseRate = totalParents > 0 ? Math.round((responseCount / totalParents) * 100) : 0
 
     // Build questions list for this pulse
-    const questions = getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null)
+    const questions = getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null, pulse.coreQuestionKeys)
 
     // Calculate stats for each question
     const questionStats: Record<string, {
@@ -328,12 +388,13 @@ router.get('/:id/export', isAdmin, async (req, res) => {
     }
 
     // Get total parents count
-    const totalParents = await prisma.user.count({
-      where: { schoolId: user.schoolId, role: 'PARENT' },
-    })
+    // The audience, not the school — the same reasoning as the results view.
+    // A CSV that reports a rate against the wrong denominator is worse than
+    // one that omits it, because it will be pasted into a governors' report.
+    const totalParents = (await pulseAudienceParentIds(user.schoolId, audienceOf(pulse))).length
 
     // Build questions list
-    const questions = getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null)
+    const questions = getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null, pulse.coreQuestionKeys)
 
     // Build CSV header
     const headers = [
@@ -432,10 +493,64 @@ router.get('/:id/export', isAdmin, async (req, res) => {
 })
 
 // Create pulse survey (admin only)
+/**
+ * Read the question selection and audience off a request body.
+ *
+ * Shared by create and update so the two cannot drift — a survey that accepted
+ * an audience on creation and silently dropped it on edit would be the kind of
+ * fault nobody notices until a scoped pulse goes to everybody.
+ *
+ * Returns a string on refusal rather than throwing, so the caller decides the
+ * status code.
+ */
+function readScoping(body: Record<string, unknown>):
+  | { error: string }
+  | {
+      coreQuestionKeys: string[]
+      audienceType: string
+      audienceGroupId: string | null
+      audienceYearGroupIds: string[]
+    } {
+  // Absent means "all seven" — an older admin bundle that does not know about
+  // the selection yet must not quietly create a survey that asks nothing.
+  const rawKeys = body.coreQuestionKeys
+  const coreQuestionKeys = Array.isArray(rawKeys)
+    ? rawKeys.filter((k): k is string => typeof k === 'string' && ALL_CORE_KEYS.includes(k))
+    : ALL_CORE_KEYS
+
+  const audienceType = typeof body.audienceType === 'string' ? body.audienceType : 'SCHOOL'
+  if (!['SCHOOL', 'GROUP', 'YEAR_GROUPS'].includes(audienceType)) {
+    return { error: 'Unknown audience' }
+  }
+
+  const audienceGroupId =
+    audienceType === 'GROUP' && typeof body.audienceGroupId === 'string' && body.audienceGroupId.trim()
+      ? body.audienceGroupId.trim()
+      : null
+  const audienceYearGroupIds =
+    audienceType === 'YEAR_GROUPS' && Array.isArray(body.audienceYearGroupIds)
+      ? (body.audienceYearGroupIds as unknown[]).filter((v): v is string => typeof v === 'string')
+      : []
+
+  // A scoped survey with nothing to scope TO would silently reach nobody, and
+  // the school would read the empty result as apathy.
+  if (audienceType === 'GROUP' && !audienceGroupId) {
+    return { error: 'Choose which group this survey is for' }
+  }
+  if (audienceType === 'YEAR_GROUPS' && audienceYearGroupIds.length === 0) {
+    return { error: 'Choose at least one year group' }
+  }
+
+  return { coreQuestionKeys, audienceType, audienceGroupId, audienceYearGroupIds }
+}
+
 router.post('/', isAdmin, async (req, res) => {
   try {
     const user = req.user!
     const { halfTermName, status, opensAt, closesAt, additionalQuestionKey, customQuestions } = req.body
+
+    const scoping = readScoping(req.body || {})
+    if ('error' in scoping) return res.status(400).json({ error: scoping.error })
 
     const pulse = await prisma.pulseSurvey.create({
       data: {
@@ -445,6 +560,10 @@ router.post('/', isAdmin, async (req, res) => {
         closesAt: new Date(closesAt),
         additionalQuestionKey: additionalQuestionKey || null,
         customQuestions: customQuestions && customQuestions.length > 0 ? JSON.parse(JSON.stringify(customQuestions)) : undefined,
+        coreQuestionKeys: scoping.coreQuestionKeys,
+        audienceType: scoping.audienceType,
+        audienceGroupId: scoping.audienceGroupId,
+        audienceYearGroupIds: scoping.audienceYearGroupIds,
         schoolId: user.schoolId,
       },
     })
@@ -459,7 +578,7 @@ router.post('/', isAdmin, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null, pulse.coreQuestionKeys),
       responseCount: 0,
       createdAt: pulse.createdAt.toISOString(),
     })
@@ -537,7 +656,19 @@ router.post('/:id/send', isAdmin, async (req, res) => {
     })
 
     logAudit({ req, action: 'UPDATE', resourceType: 'PULSE_SURVEY', resourceId: pulse.id, metadata: { action: 'send' } })
-    sendNotification({ req, type: 'PULSE_SURVEY', title: 'Parent Pulse Survey', body: `The ${pulse.halfTermName} pulse survey is now open`, resourceType: 'PULSE_SURVEY', resourceId: pulse.id, target: { targetClass: 'Whole School', schoolId: pulse.schoolId } })
+    // Notified to the AUDIENCE, resolved the same way the parent list resolves
+    // it. Pushing a scoped survey to the whole school would be the loudest
+    // possible way to tell four hundred families about something thirty of
+    // them can answer — and the ones who tapped it would find nothing there.
+    const audience = audienceOf(pulse)
+    if (audience.type === 'SCHOOL') {
+      sendNotification({ req, type: 'PULSE_SURVEY', title: 'Parent Pulse Survey', body: `The ${pulse.halfTermName} pulse survey is now open`, resourceType: 'PULSE_SURVEY', resourceId: pulse.id, target: { targetClass: 'Whole School', schoolId: pulse.schoolId } })
+    } else {
+      const parentUserIds = await pulseAudienceParentIds(pulse.schoolId, audience)
+      if (parentUserIds.length > 0) {
+        sendNotification({ req, type: 'PULSE_SURVEY', title: 'Parent Pulse Survey', body: `The ${pulse.halfTermName} pulse survey is now open`, resourceType: 'PULSE_SURVEY', resourceId: pulse.id, target: { targetClass: 'Pulse', schoolId: pulse.schoolId, parentUserIds } })
+      }
+    }
 
     res.json({
       id: pulse.id,
@@ -557,6 +688,9 @@ router.put('/:id', isAdmin, async (req, res) => {
     const { id } = req.params
     const { halfTermName, opensAt, closesAt, additionalQuestionKey, customQuestions } = req.body
 
+    const scoping = readScoping(req.body || {})
+    if ('error' in scoping) return res.status(400).json({ error: scoping.error })
+
     // Verify pulse belongs to user's school
     const existing = await prisma.pulseSurvey.findFirst({
       where: { id, schoolId: user.schoolId },
@@ -574,6 +708,13 @@ router.put('/:id', isAdmin, async (req, res) => {
         closesAt: new Date(closesAt),
         additionalQuestionKey: additionalQuestionKey !== undefined ? (additionalQuestionKey || null) : existing.additionalQuestionKey,
         ...(customQuestions !== undefined && { customQuestions: customQuestions && customQuestions.length > 0 ? JSON.parse(JSON.stringify(customQuestions)) : null }),
+        // Applied on edit as well as creation. A survey that accepted an
+        // audience when made and silently dropped it when edited is the kind
+        // of fault nobody notices until a scoped pulse goes to everybody.
+        coreQuestionKeys: scoping.coreQuestionKeys,
+        audienceType: scoping.audienceType,
+        audienceGroupId: scoping.audienceGroupId,
+        audienceYearGroupIds: scoping.audienceYearGroupIds,
       },
       include: {
         _count: { select: { responses: true } },
@@ -588,7 +729,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       closesAt: pulse.closesAt.toISOString(),
       schoolId: pulse.schoolId,
       additionalQuestionKey: pulse.additionalQuestionKey,
-      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null),
+      questions: getQuestionsForPulse(pulse.additionalQuestionKey, pulse.customQuestions as CustomQuestion[] | null, pulse.coreQuestionKeys),
       responseCount: pulse._count.responses,
       createdAt: pulse.createdAt.toISOString(),
     })
