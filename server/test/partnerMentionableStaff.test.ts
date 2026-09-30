@@ -79,7 +79,7 @@ describe('GET /api/partner/staff/mentionable', () => {
     const where = prismaMock.user.findMany.mock.calls[0][0].where
     // Not `leftAt: null` — somebody leaving in July is still mentionable in
     // March, and filtering on the mere presence of a date would drop them.
-    expect(where.OR).toEqual([{ leftAt: null }, { leftAt: { gt: expect.any(Date) } }])
+    expect(where.OR).toEqual([{ leftAt: null }, { leftAt: { gte: expect.any(Date) } }])
   })
 
   it('never exposes an ILSA — they are scoped to one pupil, not a broadcast', async () => {
