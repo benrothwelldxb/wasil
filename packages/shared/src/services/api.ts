@@ -2017,6 +2017,41 @@ export interface ConsultationSummary {
   nextAppointment: { date: string; startTime: string } | null
 }
 
+/** A parent's suggestion to the school. `fromName` null IS the anonymity —
+ *  there is no id behind it to look up, because none was stored. */
+export interface SuggestionItem {
+  id: string
+  body: string
+  category: string | null
+  status: 'NEW' | 'READ' | 'ACTIONED' | 'DECLINED'
+  adminNote: string | null
+  createdAt: string
+  handledAt: string | null
+  handledByName: string | null
+  fromName: string | null
+  canReply: boolean
+}
+
+export const suggestions = {
+  /** Whether this school has the box open. Asked before the menu renders, so
+   *  a parent never taps through to a 404. */
+  enabled: () => fetchApi<{ enabled: boolean }>('/api/suggestions/enabled'),
+  /** `anonymous` is required, never defaulted — a default would be a decision
+   *  made for somebody about whether they can be identified. */
+  send: (data: { body: string; category?: string; anonymous: boolean }) =>
+    fetchApi<{ id: string; anonymous: boolean }>('/api/suggestions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  list: (status?: string) =>
+    fetchApi<SuggestionItem[]>(`/api/suggestions${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  update: (id: string, data: { status?: string; adminNote?: string }) =>
+    fetchApi<{ id: string; status: string }>(`/api/suggestions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+}
+
 export const consultations = {
   // Admin endpoints
   list: () => fetchApi<ConsultationEvent[]>('/api/consultations'),
@@ -3283,6 +3318,7 @@ export const hub = {
 export default {
   auth,
   hub,
+  suggestions,
   messages,
   forms,
   providers,

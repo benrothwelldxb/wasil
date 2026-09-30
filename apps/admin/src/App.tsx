@@ -26,6 +26,7 @@ import { LinksPage } from './pages/LinksPage'
 import { GroupsPage } from './pages/GroupsPage'
 import { EcaPage } from './pages/EcaPage'
 import { ConsultationsPage } from './pages/ConsultationsPage'
+import { SuggestionsPage } from './pages/SuggestionsPage'
 import { AnalyticsDashboardPage } from './pages/AnalyticsDashboardPage'
 import { EmergencyAlertsPage } from './pages/EmergencyAlertsPage'
 import { SchoolServicesPage } from './pages/SchoolServicesPage'
@@ -280,6 +281,7 @@ export default function App() {
         <Route path="/groups" element={<GroupsPage />} />
         <Route path="/eca" element={<EcaPage />} />
         <Route path="/consultations" element={<ConsultationsPage />} />
+        <Route path="/suggestions" element={<SuggestionsPage />} />
         <Route path="/emergency-alerts" element={<EmergencyAlertsPage />} />
         <Route path="/school-services" element={<SchoolServicesPage />} />
         <Route path="/inbox" element={<StaffInboxPage />} />

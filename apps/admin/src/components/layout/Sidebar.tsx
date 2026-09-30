@@ -26,6 +26,7 @@ import {
   UsersRound,
   Sparkles,
   CalendarCheck,
+  Lightbulb,
   BarChart3,
   AlertTriangle,
   Inbox,
@@ -85,6 +86,10 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { icon: Sparkles, label: 'Activities (ECA)', path: '/eca', flagKey: 'ecaEnabled' },
       { icon: CalendarCheck, label: 'Consultations', path: '/consultations', flagKey: 'consultationsEnabled' },
+      // adminOnly, not merely flagged: a suggestion may name a member of staff
+      // despite the notice asking that it does not, and a smaller readership
+      // is the only version of this the school can describe honestly.
+      { icon: Lightbulb, label: 'Suggestion Box', path: '/suggestions', adminOnly: true, flagKey: 'suggestionsEnabled' },
       { icon: Clock, label: 'School Services', path: '/school-services', adminOnly: true, flagKey: 'schoolServicesEnabled' },
       { icon: UtensilsCrossed, label: 'Lunch Menu', path: '/cafeteria', adminOnly: true, flagKey: 'lunchMenuEnabled' },
     ],

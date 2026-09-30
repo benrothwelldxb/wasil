@@ -83,6 +83,10 @@ model School {
   /// for transport should not have it appear in its parent app. Desk pushing a
   /// roster must never be what turns this on — the gate is on the READ.
   transportEnabled       Boolean @default(false)
+  // Off by default, like transport: a suggestion box is a commitment to read
+  // and answer things, and a school should turn it on when it has decided who
+  // does that — not find it already running.
+  suggestionsEnabled     Boolean @default(false)
   policiesEnabled        Boolean @default(true)
   filesEnabled           Boolean @default(true)
   linksEnabled           Boolean @default(true)
@@ -195,6 +199,7 @@ model School {
   googleCalendarEmail        String?
   transportAssignments       TransportAssignment[]
   transportRuns              TransportRun[]
+  suggestions                Suggestion[]
 }
 
 // Users (Parents, Staff & Admins)
@@ -366,6 +371,12 @@ model User {
   schoolContactAssignments   SchoolContact[]           @relation("SchoolContactAssignments")
   messageReactions           MessageReaction[]         @relation("MessageReactions")
 
+  // Suggestions. `authored` is only the NAMED ones — an anonymous suggestion
+  // has no link back here by design (see the Suggestion model).
+  suggestionsAuthored Suggestion[]      @relation("SuggestionAuthor")
+  suggestionsHandled  Suggestion[]      @relation("SuggestionHandler")
+  suggestionQuotas    SuggestionQuota[] @relation("SuggestionQuota")
+
   // Report card uploads
   uploadedReports StudentReport[]
 
@@ -454,6 +465,83 @@ model ConsultationOpenNotice {
 
   @@unique([consultationId, userId])
   @@index([consultationId])
+}
+
+/// A parent's suggestion to the school.
+///
+/// ANONYMITY IS THE WHOLE DESIGN, so it is worth being exact about what is and
+/// is not promised.
+///
+/// When a parent chooses anonymous, `authorId` is null and NOTHING derived from
+/// them is stored on this row — no hash, no IP, no device id. There is no key
+/// anywhere that turns this row back into a person. `createdAt` is rounded to
+/// the hour for an anonymous suggestion, because a to-the-second timestamp is
+/// itself an identifier once you hold the rest of the app's logs: "who opened
+/// the app at 14:32" is a short list.
+///
+/// What IS still knowable, and what nobody should be told otherwise: rate
+/// limiting needs to count per parent per day (see SuggestionQuota), so a
+/// person with raw database access could learn THAT a parent submitted
+/// something on a given day. They could not learn WHICH. That is the honest
+/// boundary of the promise, and the parent-facing wording — "we won't know who
+/// sent it" — is true of everyone using the app and of every screen we build.
+///
+/// A named suggestion keeps `authorId` and can be replied to. An anonymous one
+/// cannot, ever, and the form says so BEFORE the choice rather than after.
+model Suggestion {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  /// The suggestion itself. Plain text: this is an idea, not a document.
+  body     String
+  /// Optional, for triage only. Never required — a parent with something to say
+  /// should not have to classify it first.
+  category String?
+
+  /// Null means anonymous, and means it. `SetNull` on delete so removing a
+  /// parent account anonymises their suggestions rather than destroying them —
+  /// the idea outlives the account, and a school acting on one should not have
+  /// it vanish because somebody left.
+  authorId String?
+  author   User?   @relation("SuggestionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  /// NEW | READ | ACTIONED | DECLINED. Not an enum: these are a school's
+  /// workflow words and will change before the schema does.
+  status      String    @default("NEW")
+  /// The school's own note. Never shown to a parent, named or not.
+  adminNote   String?
+  handledById String?
+  handledBy   User?     @relation("SuggestionHandler", fields: [handledById], references: [id], onDelete: SetNull)
+  handledAt   DateTime?
+
+  /// Rounded to the hour when anonymous. Set explicitly rather than defaulted,
+  /// and there is deliberately NO `@updatedAt` — an auto-maintained precise
+  /// timestamp would quietly undo the rounding the moment anything touched the
+  /// row.
+  createdAt DateTime @default(now())
+
+  @@index([schoolId, status, createdAt])
+}
+
+/// How many suggestions a parent has made today. Deliberately NOT related to
+/// Suggestion — there is no foreign key, no shared id, nothing to join on.
+///
+/// Rate limiting and anonymity pull against each other: you cannot cap what you
+/// cannot count, and you cannot count what you cannot attribute. This is the
+/// smallest thing that resolves it — a count per parent per day, holding no
+/// reference to any suggestion and no time more precise than the date.
+model SuggestionQuota {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation("SuggestionQuota", fields: [userId], references: [id], onDelete: Cascade)
+  schoolId String
+  /// YYYY-MM-DD in the SCHOOL's timezone — a parent's "today" is the school's
+  /// day, not UTC's.
+  dayLocal String
+  count    Int    @default(0)
+
+  @@unique([userId, dayLocal])
 }
 
 model Student {

@@ -26,6 +26,7 @@ const MODULE_FLAG_FIELDS = [
   // a stop name is in practice a child's home address (ADR 0001), so this is a
   // school switching on a location disclosure, not just a menu item.
   'transportEnabled',
+  'suggestionsEnabled',
   'policiesEnabled',
   'filesEnabled',
   'linksEnabled',
@@ -59,6 +60,7 @@ const SETTINGS_SELECT = {
   termDatesEnabled: true,
   scheduleEnabled: true,
   transportEnabled: true,
+  suggestionsEnabled: true,
   policiesEnabled: true,
   filesEnabled: true,
   linksEnabled: true,

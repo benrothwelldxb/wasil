@@ -27,7 +27,8 @@
     "activities": "Attività",
     "superAdmin": "Super amministratore",
     "logout": "Esci",
-    "transport": "Scuolabus"
+    "transport": "Scuolabus",
+    "suggestions": "Cassetta dei suggerimenti"
   },
   "auth": {
     "login": "Login",

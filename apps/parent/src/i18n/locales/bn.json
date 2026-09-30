@@ -27,7 +27,8 @@
     "activities": "কার্যক্রম",
     "superAdmin": "সুপার অ্যাডমিন",
     "logout": "লগআউট",
-    "transport": "School Bus"
+    "transport": "School Bus",
+    "suggestions": "পরামর্শ বাক্স"
   },
   "auth": {
     "login": "লগইন",

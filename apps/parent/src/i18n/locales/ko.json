@@ -27,7 +27,8 @@
     "activities": "활동",
     "superAdmin": "슈퍼 관리자",
     "logout": "로그아웃",
-    "transport": "School Bus"
+    "transport": "School Bus",
+    "suggestions": "제안함"
   },
   "auth": {
     "login": "로그인",

@@ -27,7 +27,8 @@
     "activities": "गतिविधियाँ",
     "superAdmin": "सुपर एडमिन",
     "logout": "लॉग आउट",
-    "transport": "स्कूल बस"
+    "transport": "स्कूल बस",
+    "suggestions": "सुझाव पेटी"
   },
   "auth": {
     "login": "लॉग इन करें",
