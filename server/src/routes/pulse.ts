@@ -4,6 +4,7 @@ import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification } from '../services/notify.js'
 import { audienceOf, pulseAudienceParentIds } from '../services/pulseAudience.js'
+import { PULSE_TEMPLATES } from '../services/pulseTemplates.js'
 
 const router = Router()
 
@@ -101,6 +102,21 @@ function getQuestionsForPulse(
 // Get available optional questions (admin)
 router.get('/optional-questions', isAdmin, async (_req, res) => {
   res.json(OPTIONAL_QUESTIONS)
+})
+
+/**
+ * Ready-made surveys for the points in a year a school actually asks
+ * something.
+ *
+ *   GET /api/pulse/templates
+ *
+ * Starting points, not records: applying one fills the create form and the
+ * survey it produces is an ordinary survey with no link back. Served from code
+ * rather than seeded per school — a seeded row is a copy that rots, and a
+ * school that deletes one by accident cannot get it back.
+ */
+router.get('/templates', isAdmin, async (_req, res) => {
+  res.json(PULSE_TEMPLATES)
 })
 
 // Get pulse surveys (for parents)

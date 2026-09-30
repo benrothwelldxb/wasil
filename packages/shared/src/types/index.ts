@@ -461,6 +461,20 @@ export interface KnowledgeArticle {
 // Pulse Survey types
 export type PulseSurveyStatus = 'DRAFT' | 'OPEN' | 'CLOSED'
 
+/** A ready-made survey. Applying one fills the create form; the survey it
+ *  produces is ordinary and carries no link back to the template. */
+export interface PulseTemplate {
+  key: string
+  name: string
+  blurb: string
+  coreQuestionKeys: string[]
+  customQuestions: Array<{ text: string; type: 'LIKERT_5' | 'TEXT_OPTIONAL' }>
+  additionalQuestionKey?: string
+  /** GROUP and YEAR_GROUPS carry no id — the template knows the SHAPE of the
+   *  audience, never which group, so the form asks rather than guessing. */
+  audienceType: 'SCHOOL' | 'GROUP' | 'YEAR_GROUPS'
+}
+
 export interface PulseCustomQuestion {
   id: string
   text: string
