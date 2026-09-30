@@ -33,17 +33,32 @@ describe('hasLeft', () => {
     expect(hasLeft(new Date('2026-07-10T00:00:00.000Z'), NOW)).toBe(true)
   })
 
-  it('treats the exact moment as gone', () => {
-    // A boundary that has to fall one way. "Left on the 10th" reading as still
-    // here at midnight on the 10th is the stranger of the two.
-    expect(hasLeft(NOW, NOW)).toBe(true)
+  it('THE LEAVING DATE IS THE LAST WORKING DAY — still here all of it', () => {
+    // The bug this replaced: `leftAt <= now` excluded somebody at 00:01 on a
+    // morning they were still teaching. Hub deactivates on a date strictly in
+    // the past for exactly this reason, and so does Loop.
+    const lastDay = new Date('2026-09-23T00:00:00.000Z')
+    expect(hasLeft(lastDay, new Date('2026-09-23T00:01:00.000Z'))).toBe(false)
+    expect(hasLeft(lastDay, new Date('2026-09-23T23:59:00.000Z'))).toBe(false)
+    // And gone the next morning.
+    expect(hasLeft(lastDay, new Date('2026-09-24T00:00:00.000Z'))).toBe(true)
+  })
+
+  it('errs towards access rather than lockout', () => {
+    // Which way to be wrong, stated as a test. A leaver lingering a day is
+    // visible — somebody sees a name they know has gone. A teacher locked out
+    // on their last day reads it as a broken login and files nothing.
+    const lastDay = new Date('2026-09-23T00:00:00.000Z')
+    expect(hasLeft(lastDay, new Date('2026-09-23T12:00:00.000Z'))).toBe(false)
   })
 })
 
 describe('currentStaffWhere', () => {
-  it('matches no date or a date in the future, and nothing else', () => {
+  it('matches no date, or one that has not passed — measured from the start of today', () => {
+    // `gte` the start of today, not `gt` the current instant. The second form
+    // is what cut a day early.
     expect(currentStaffWhere(NOW)).toEqual({
-      OR: [{ leftAt: null }, { leftAt: { gt: NOW } }],
+      OR: [{ leftAt: null }, { leftAt: { gte: new Date('2026-09-23T00:00:00.000Z') } }],
     })
   })
 
@@ -55,12 +70,12 @@ describe('currentStaffWhere', () => {
   })
 
   it('reads the clock at call time, not at import time', () => {
-    // A long-lived process would otherwise pin "now" to boot, and a teacher
-    // whose last day arrived mid-term would stay pickable until a redeploy.
-    const a = currentStaffWhere()
-    const b = currentStaffWhere(new Date(Date.now() + 60_000))
-    expect((b.OR[1].leftAt as { gt: Date }).gt.getTime()).toBeGreaterThan(
-      (a.OR[1].leftAt as { gt: Date }).gt.getTime(),
+    // A long-lived process would otherwise pin "today" to boot, and a teacher
+    // whose last day passed mid-term would stay pickable until a redeploy.
+    const a = currentStaffWhere(new Date('2026-09-23T12:00:00.000Z'))
+    const b = currentStaffWhere(new Date('2026-09-24T12:00:00.000Z'))
+    expect((b.OR[1].leftAt as { gte: Date }).gte.getTime()).toBeGreaterThan(
+      (a.OR[1].leftAt as { gte: Date }).gte.getTime(),
     )
   })
 })

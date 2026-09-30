@@ -152,7 +152,7 @@ describe('teachingStaffForClasses', () => {
       // the staff on it, so a name here can belong to someone who went two
       // terms ago — resolving it would put a parent in a thread nobody reads.
       // A FUTURE leaving date is still current: `gt: now`, not `null`.
-      OR: [{ leftAt: null }, { leftAt: { gt: expect.any(Date) } }],
+      OR: [{ leftAt: null }, { leftAt: { gte: expect.any(Date) } }],
     })
   })
 
