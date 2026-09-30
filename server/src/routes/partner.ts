@@ -3922,6 +3922,71 @@ router.put('/transport/assignments', requirePartner, async (req, res) => {
 
 // ─── Catalogue push ─────────────────────────────────────────────────────────
 //
+/**
+ * WHO IS IN A CLUB — applied the same way whichever door it came through.
+ *
+ * WHY THERE ARE TWO DOORS. A club's details and a club's register change at
+ * different rates and on different events: a venue moves once a term, a child
+ * moves out on a Tuesday. If a roster could only ride the catalogue push it
+ * would inherit the catalogue's triggers, so a register would refresh when
+ * somebody renamed the club and stay stale the rest of term — while every sync
+ * on both sides reported success. That is precisely the failure that hid 42
+ * children in three clubs for a fortnight, and it should not be rebuilt one
+ * layer up.
+ *
+ * So a roster can arrive with the activity (a new club arrives complete) or on
+ * its own (a child moves, and the payload is a list of ids rather than an
+ * entire club).
+ *
+ * WHY ONE VERSION RULE. Two writers need one arbiter, and it cannot be the
+ * catalogue's version or the two facts interfere. `rosterVersion` is the
+ * roster's own clock: a write applies only if strictly newer, so an out-of-order
+ * retry through either door cannot roll a register back.
+ *
+ * ABSENT IS NOT EMPTY. No `pupilHubIds` key means "I am not speaking about the
+ * roster" and touches nothing — a rename must not be able to empty a register.
+ * `[]` means "there is nobody", and clears it. The publisher owns that
+ * distinction, which is why it is worth stating in both directions: an empty
+ * array must mean "I looked and found nobody", never "I could not load it".
+ */
+async function applyRoster(opts: {
+  activityId: string
+  currentRosterVersion: Date | null
+  version: Date
+  pupilHubIds: unknown
+  schoolId: string
+}): Promise<{ applied: boolean; enrolled?: number; unknownPupilIds?: string[]; staleRoster?: boolean }> {
+  if (!Array.isArray(opts.pupilHubIds)) return { applied: false }
+
+  if (opts.currentRosterVersion && opts.version <= opts.currentRosterVersion) {
+    // Not an error. A retry recomputing to older state is ordinary; the
+    // publisher should mark it delivered rather than escalate.
+    return { applied: false, staleRoster: true }
+  }
+
+  const { studentIds, unknownPupilIds } = await resolvePupilHubIds(
+    toIdArray(opts.pupilHubIds),
+    opts.schoolId,
+  )
+
+  // Replaced wholesale, for the same reason meetings are: a roster has no
+  // identity worth preserving, and a child who has left a club must actually
+  // leave it. A register that only ever grows is one nobody can trust.
+  await prisma.ecaActivityMember.deleteMany({ where: { ecaActivityId: opts.activityId } })
+  if (studentIds.length > 0) {
+    await prisma.ecaActivityMember.createMany({
+      data: studentIds.map(studentId => ({ ecaActivityId: opts.activityId, studentId })),
+      skipDuplicates: true,
+    })
+  }
+  await prisma.ecaActivity.update({
+    where: { id: opts.activityId },
+    data: { rosterVersion: opts.version },
+  })
+
+  return { applied: true, enrolled: studentIds.length, unknownPupilIds }
+}
+
 // An outside system (Active) publishes its activities into Connect so parents
 // see the school's programme in the app they already use. Connect DISPLAYS
 // these: it does not run the choice, the ranking or the allocation, and it
@@ -3956,7 +4021,7 @@ router.put('/activities/:externalRef', requirePartner, async (req, res) => {
 
     const existing = await prisma.ecaActivity.findFirst({
       where: { schoolId: actor.schoolId, externalRef },
-      select: { id: true, sourceVersion: true, providerId: true },
+      select: { id: true, sourceVersion: true, providerId: true, rosterVersion: true },
     })
 
     // A published ref must never land on a provider-run club. The refs are
@@ -4074,6 +4139,17 @@ router.put('/activities/:externalRef', requirePartner, async (req, res) => {
       })
     }
 
+    // A roster may ride along, so a brand-new club arrives complete rather than
+    // appearing empty until a separate call lands. Guarded on the roster's own
+    // version, not the catalogue's — see applyRoster.
+    const roster = await applyRoster({
+      activityId: activity.id,
+      currentRosterVersion: existing?.rosterVersion ?? null,
+      version,
+      pupilHubIds: body.pupilHubIds,
+      schoolId: actor.schoolId,
+    })
+
     res.status(existing ? 200 : 201).json({
       id: activity.id,
       created: !existing,
@@ -4082,10 +4158,100 @@ router.put('/activities/:externalRef', requirePartner, async (req, res) => {
       ...(unknownYearGroupIds.length > 0 ? { unknownYearGroupIds } : {}),
       ...(unmatchedCategoryName ? { unmatchedCategoryName } : {}),
       ...(ignoredGroupId ? { ignoredGroupId } : {}),
+      ...(roster.applied ? { enrolled: roster.enrolled } : {}),
+      ...(roster.staleRoster ? { rosterIgnored: 'stale_version' } : {}),
+      ...(roster.unknownPupilIds && roster.unknownPupilIds.length > 0
+        ? { unknownPupilIds: roster.unknownPupilIds } : {}),
       ...(meetings.length === 0 ? { warning: 'no valid meetings in payload' } : {}),
     })
   } catch (error) {
     console.error('Error consuming partner activity push:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+/**
+ * A club's register, on its own.
+ *
+ *   PUT /api/partner/activities/:externalRef/roster
+ *   { hub_user_id, version, pupilHubIds: [...] }
+ *
+ * The catalogue push can carry a roster, but it must not be the only way to
+ * send one: a register changes when a child is assigned, withdrawn, moved or
+ * comes off a waiting list, and none of those are catalogue events. A publisher
+ * forced to re-send an entire club because one child moved will either send too
+ * much or — far likelier, and this is what happened — send nothing at all until
+ * something unrelated changes.
+ *
+ * So this is the cheap door: a list of pupil ids and a version. Same rules as
+ * the roster half of the catalogue push, because it is literally the same code.
+ */
+router.put('/activities/:externalRef/roster', requirePartner, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const actor = await resolveStaffActor(
+      typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : '',
+      schoolHintOf(req),
+    )
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+
+    const externalRef = (req.params.externalRef ?? '').trim()
+    if (!externalRef) return res.status(400).json({ error: 'externalRef required' })
+
+    const version = parseVersion(body.version)
+    if (!version) return res.status(400).json({ error: 'version required (ISO-8601)' })
+
+    // Required here, unlike on the catalogue push. There, absence means "this
+    // call is not about the roster" and is ordinary. Here it is the entire
+    // point of the call, so a missing list is a malformed request rather than a
+    // silent no-op — and an empty register must be stated as [], never implied.
+    if (!Array.isArray(body.pupilHubIds)) {
+      return res.status(400).json({
+        error: 'pupilHubIds required',
+        hint: 'send [] to state that the club has nobody in it',
+      })
+    }
+
+    const activity = await prisma.ecaActivity.findFirst({
+      where: { schoolId: actor.schoolId, externalRef },
+      select: { id: true, rosterVersion: true, providerId: true },
+    })
+    if (!activity) {
+      // The club has to exist first. Creating one from a roster would invent a
+      // catalogue entry out of a list of children, with no name, times or term.
+      return res.status(404).json({
+        error: 'unknown_activity',
+        externalRef,
+        hint: 'publish the activity first, then its roster',
+      })
+    }
+
+    // Same guard as the catalogue push, for the same reason: a published ref
+    // must never reach a club parents have paid for.
+    if (activity.providerId) {
+      return res.status(409).json({ error: 'ref belongs to a provider-run club' })
+    }
+
+    const roster = await applyRoster({
+      activityId: activity.id,
+      currentRosterVersion: activity.rosterVersion,
+      version,
+      pupilHubIds: body.pupilHubIds,
+      schoolId: actor.schoolId,
+    })
+
+    if (!roster.applied) {
+      return res.json({ id: activity.id, ignored: true, reason: 'stale_version' })
+    }
+
+    res.json({
+      id: activity.id,
+      enrolled: roster.enrolled,
+      ...(roster.unknownPupilIds && roster.unknownPupilIds.length > 0
+        ? { unknownPupilIds: roster.unknownPupilIds } : {}),
+    })
+  } catch (error) {
+    console.error('Error consuming partner roster push:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })

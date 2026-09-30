@@ -792,7 +792,14 @@ export function EcaPage() {
                           A principal reading the first meaning concludes the
                           integration is broken, which is exactly what
                           happened. */}
-                      {(term.externalActivityCount ?? 0) > 0 && (term.selectionCount || 0) === 0 ? (
+                      {(term.enrolledCount ?? 0) > 0 ? (
+                        /* A real number beats a hedge. These are places on a
+                           register published with the club, so it is what the
+                           school would count if it walked the corridors. */
+                        <div>
+                          <span className="font-medium">{term.enrolledCount}</span> on registers
+                        </div>
+                      ) : (term.externalActivityCount ?? 0) > 0 && (term.selectionCount || 0) === 0 ? (
                         <div className="text-gray-500">signed up outside Connect</div>
                       ) : (
                         <div>

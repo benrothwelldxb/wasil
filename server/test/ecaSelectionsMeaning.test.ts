@@ -21,7 +21,8 @@ import request from 'supertest'
 
 const prismaMock = {
   ecaTerm: { findMany: vi.fn() },
-  ecaActivity: { groupBy: vi.fn() },
+  ecaActivity: { groupBy: vi.fn(), findMany: vi.fn() },
+  ecaActivityMember: { groupBy: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/middleware/auth', () => ({
@@ -73,6 +74,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   prismaMock.ecaTerm.findMany.mockResolvedValue([term()])
   prismaMock.ecaActivity.groupBy.mockResolvedValue([])
+  prismaMock.ecaActivityMember.groupBy.mockResolvedValue([])
+  prismaMock.ecaActivity.findMany.mockResolvedValue([])
 })
 
 describe('where the signing up happens', () => {
@@ -115,5 +118,71 @@ describe('where the signing up happens', () => {
 
     expect(res.status).toBe(200)
     expect(res.body[0].externalActivityCount).toBe(0)
+  })
+})
+
+/**
+ * AND WHERE THE REGISTER COMES FROM.
+ *
+ * "Signed up outside Connect" was true, but it was still a shrug: it told a
+ * principal that their zero was not a failure without telling them anything.
+ * Now that a roster arrives with the club, the honest number exists.
+ */
+describe('places on a published register', () => {
+  const terms = () => request(makeApp()).get('/api/eca/terms')
+
+  it('sums them across the term’s clubs', async () => {
+    prismaMock.ecaActivityMember.groupBy.mockResolvedValue([
+      { ecaActivityId: 'a1', _count: { _all: 12 } },
+      { ecaActivityId: 'a2', _count: { _all: 18 } },
+    ])
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      { id: 'a1', ecaTermId: 'term-1' },
+      { id: 'a2', ecaTermId: 'term-1' },
+    ])
+
+    const res = await terms()
+
+    expect(res.body[0].enrolledCount).toBe(30)
+  })
+
+  it('counts a child once per club, not once per term', async () => {
+    // A child in three clubs is three places. That is what a school counts
+    // when it walks the corridors; deduplicating would answer a question
+    // nobody asked.
+    prismaMock.ecaActivityMember.groupBy.mockResolvedValue([
+      { ecaActivityId: 'a1', _count: { _all: 1 } },
+      { ecaActivityId: 'a2', _count: { _all: 1 } },
+      { ecaActivityId: 'a3', _count: { _all: 1 } },
+    ])
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      { id: 'a1', ecaTermId: 'term-1' },
+      { id: 'a2', ecaTermId: 'term-1' },
+      { id: 'a3', ecaTermId: 'term-1' },
+    ])
+
+    const res = await terms()
+
+    expect(res.body[0].enrolledCount).toBe(3)
+  })
+
+  it('never attributes a register to the wrong term', async () => {
+    prismaMock.ecaActivityMember.groupBy.mockResolvedValue([
+      { ecaActivityId: 'a-other', _count: { _all: 40 } },
+    ])
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      { id: 'a-other', ecaTermId: 'term-99' },
+    ])
+
+    const res = await terms()
+
+    expect(res.body[0].enrolledCount).toBe(0)
+  })
+
+  it('reports zero when no register has been published', async () => {
+    // Zero means "no register exists", never "the clubs are empty" — which is
+    // why the admin page keeps the older wording rather than showing it.
+    const res = await terms()
+    expect(res.body[0].enrolledCount).toBe(0)
   })
 })
