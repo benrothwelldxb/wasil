@@ -78,6 +78,15 @@ router.get('/terms', isAdmin, async (req, res) => {
   try {
     const user = req.user!
 
+    // Activities that came from another product rather than being made here.
+    // `source` is null for anything a human created in Connect.
+    const externalByTerm = await prisma.ecaActivity.groupBy({
+      by: ['ecaTermId'],
+      where: { schoolId: user.schoolId, source: { not: null } },
+      _count: { _all: true },
+    })
+    const externalCounts = new Map(externalByTerm.map(r => [r.ecaTermId, r._count._all]))
+
     const terms = await prisma.ecaTerm.findMany({
       where: { schoolId: user.schoolId },
       include: {
@@ -100,6 +109,17 @@ router.get('/terms', isAdmin, async (req, res) => {
       activityCount: t._count.activities,
       selectionCount: t._count.selections,
       allocationCount: t._count.allocations,
+      // WHERE THE SIGNING UP HAPPENS.
+      //
+      // `selectionCount` counts choices made in Connect's own registration
+      // flow. At a school whose programme is pushed from Active, that flow
+      // does not run and never will — so the number is not "nobody signed up",
+      // it is "signing up does not happen here", and it can only ever be zero.
+      //
+      // Reading it the first way is the natural mistake and the expensive one:
+      // a principal sees "27 activities, 0 selections" and concludes the
+      // integration is broken. That is exactly what happened.
+      externalActivityCount: externalCounts.get(t.id) ?? 0,
       startDate: t.startDate.toISOString(),
       endDate: t.endDate.toISOString(),
       registrationOpens: t.registrationOpens ? t.registrationOpens.toISOString() : null,

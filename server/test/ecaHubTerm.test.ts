@@ -10,6 +10,7 @@ import request from 'supertest'
 // registration. Manual terms (hubTermId null) are unaffected.
 const prismaMock = {
   ecaTerm: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), delete: vi.fn(), create: vi.fn() },
+  ecaActivity: { groupBy: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -71,7 +72,12 @@ function dbTerm(over: Record<string, unknown> = {}) {
   }
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  // No partner-sourced activities unless a test says otherwise, so the terms
+  // list reads as a school that creates its own.
+  prismaMock.ecaActivity.groupBy.mockResolvedValue([])
+})
 
 describe('GET /terms serializes fromHub', () => {
   it('marks Hub terms fromHub:true and manual terms fromHub:false; null registration serializes to null', async () => {
