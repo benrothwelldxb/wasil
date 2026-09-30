@@ -1703,8 +1703,24 @@ router.get('/parent/programme', isAuthenticated, async (req, res) => {
     // Keyed by studentId so a child in both the activity roster and its group
     // is named once — being listed twice in your own child's club list reads as
     // a system that has lost count of your children.
+    //
+    // SECOND GUARD, deliberately redundant with the WHERE clauses above.
+    //
+    // Connect holds the FULL membership of every club — Active publishes each
+    // roster whole, because answering "which clubs is my child in?" requires
+    // it. So the only thing standing between one family and another family's
+    // children is this filter, and a single guard on data of that kind is one
+    // careless refactor from a leak. Widening either query above — adding a
+    // club, relaxing a filter, reusing this block for a staff view — would
+    // silently start returning other people's children, and nothing would look
+    // wrong.
+    //
+    // This cannot. A student who is not this caller's is not renderable here,
+    // whatever the query returned.
+    const mineOnly = new Set(myStudentIds)
     const minesByActivity = new Map<string, Map<string, string>>()
     const noteMember = (activityId: string, student: { id: string; firstName: string }) => {
+      if (!mineOnly.has(student.id)) return
       const byStudent = minesByActivity.get(activityId) ?? new Map<string, string>()
       byStudent.set(student.id, student.firstName)
       minesByActivity.set(activityId, byStudent)

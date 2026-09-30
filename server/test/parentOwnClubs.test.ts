@@ -345,3 +345,81 @@ describe('whether every club has published a register', () => {
     expect(res.body.registersComplete).toBe(false)
   })
 })
+
+/**
+ * WHOSE CHILDREN A PARENT CAN SEE.
+ *
+ * Connect holds the FULL membership of every club, because answering "which
+ * clubs is my child in?" requires the whole roster — Active has no concept of a
+ * parent and cannot filter per family. So every guarantee about what a parent
+ * sees is enforced here and nowhere else.
+ *
+ * TWO INDEPENDENT GUARDS, and these tests fail if EITHER is removed:
+ *
+ *   1. The queries are scoped: `studentId: { in: myStudentIds }`. A query that
+ *      cannot return another family's child is worth more than a page that
+ *      renders carefully.
+ *   2. Rendering re-checks. Widening either query later — adding a club,
+ *      reusing this block for a staff view — would silently start returning
+ *      other people's children, and nothing would look wrong.
+ *
+ * The first is asserted on the query shape, the second on behaviour with a
+ * deliberately over-broad result set.
+ */
+describe('one family cannot see another family’s children', () => {
+  it('drops a child who is not this caller’s, even if the query returns one', async () => {
+    // Simulates a widened or broken WHERE clause: the database hands back the
+    // whole roster. Nothing that is not this parent's may reach the response.
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      { ecaActivityId: 'act-1', student: { id: 'stu-1', firstName: 'Idris' } },
+      { ecaActivityId: 'act-1', student: { id: 'stu-stranger', firstName: 'Amara' } },
+    ])
+
+    const res = await programme()
+
+    expect(res.body.days[0].activities[0].myChildren).toEqual(['Idris'])
+    expect(JSON.stringify(res.body)).not.toContain('Amara')
+    expect(JSON.stringify(res.body)).not.toContain('stu-stranger')
+  })
+
+  it('does the same for a roster that arrived as a group', async () => {
+    prismaMock.studentGroupLink.findMany.mockResolvedValue([
+      { groupId: 'grp-swim', student: { id: 'stu-2', firstName: 'Leyla' } },
+      { groupId: 'grp-swim', student: { id: 'stu-stranger', firstName: 'Amara' } },
+    ])
+
+    const res = await programme()
+
+    expect(res.body.days[0].activities[0].myChildren).toEqual(['Leyla'])
+    expect(JSON.stringify(res.body)).not.toContain('Amara')
+  })
+
+  it('a parent of two sees BOTH of their children, not one', async () => {
+    // The sibling case, where this kind of filter usually goes wrong: the
+    // naive fix for a leak is to narrow to a single child, which quietly
+    // breaks every family with two.
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      { ecaActivityId: 'act-1', student: { id: 'stu-1', firstName: 'Idris' } },
+      { ecaActivityId: 'act-1', student: { id: 'stu-2', firstName: 'Leyla' } },
+      { ecaActivityId: 'act-1', student: { id: 'stu-stranger', firstName: 'Amara' } },
+    ])
+
+    const res = await programme()
+
+    expect(res.body.days[0].activities[0].myChildren.sort()).toEqual(['Idris', 'Leyla'])
+  })
+
+  it('never carries a surname, even for the caller’s own child', async () => {
+    // A first name is what the family calls the child. The roster row is
+    // selected down to id and firstName, so a surname is not available to leak
+    // even by accident.
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      { ecaActivityId: 'act-1', student: { id: 'stu-1', firstName: 'Idris' } },
+    ])
+
+    await programme()
+
+    const select = prismaMock.ecaActivityMember.findMany.mock.calls[0][0].select
+    expect(select.student.select).toEqual({ id: true, firstName: true })
+  })
+})
