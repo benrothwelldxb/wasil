@@ -87,35 +87,35 @@ router.get('/terms', isAdmin, async (req, res) => {
     })
     const externalCounts = new Map(externalByTerm.map(r => [r.ecaTermId, r._count._all]))
 
-    // HOW MANY CHILDREN ARE ACTUALLY IN A CLUB THIS TERM.
+    // HOW MANY CHILDREN ARE IN A CLUB, AND HOW MANY PLACES THAT IS.
     //
-    // "Signed up outside Connect" was true but was still a shrug: it told a
-    // principal the zero was not a failure without telling them anything. Now
-    // that registers arrive with the activity, the honest number exists, so
-    // show it instead.
+    // BOTH, because they are different numbers and only one of them is
+    // checkable. A child in three clubs is three places but one child, so at
+    // the first school to use this the places figure (352) is larger than the
+    // entire roll (276). A principal reading "352 on registers" against a
+    // school of 276 children sees an impossible number, and the first
+    // explanation that comes to mind is that the integration is double-counting
+    // — which is precisely the wrong conclusion, and precisely the one drawn
+    // the last time a count here was reported in the wrong noun.
     //
-    // Counted per CHILD PER CLUB — a child in three clubs is three places, not
-    // three children — because that is the number a school checks a register
-    // against. Deduplicated across the two roster sources would be a different
-    // and less useful figure.
-    const enrolledByTerm = await prisma.ecaActivityMember.groupBy({
-      by: ['ecaActivityId'],
+    // So the headline is CHILDREN, which can be checked against the roll, and
+    // places travel alongside rather than instead. An earlier version of this
+    // comment argued for places on the grounds that it is "the number a school
+    // checks a register against". That was wrong: a school checks a register
+    // against the children in front of it, and checks a total against its roll.
+    const memberRows = await prisma.ecaActivityMember.findMany({
       where: { ecaActivity: { schoolId: user.schoolId } },
-      _count: { _all: true },
+      select: { studentId: true, ecaActivity: { select: { ecaTermId: true } } },
     })
-    const enrolledActivityIds = enrolledByTerm.map(r => r.ecaActivityId)
-    const termOfActivity = enrolledActivityIds.length > 0
-      ? await prisma.ecaActivity.findMany({
-          where: { id: { in: enrolledActivityIds } },
-          select: { id: true, ecaTermId: true },
-        })
-      : []
-    const termFor = new Map(termOfActivity.map(a => [a.id, a.ecaTermId]))
-    const enrolledCounts = new Map<string, number>()
-    for (const row of enrolledByTerm) {
-      const termId = termFor.get(row.ecaActivityId)
+    const placesByTerm = new Map<string, number>()
+    const childrenByTerm = new Map<string, Set<string>>()
+    for (const row of memberRows) {
+      const termId = row.ecaActivity.ecaTermId
       if (!termId) continue
-      enrolledCounts.set(termId, (enrolledCounts.get(termId) ?? 0) + row._count._all)
+      placesByTerm.set(termId, (placesByTerm.get(termId) ?? 0) + 1)
+      const seen = childrenByTerm.get(termId) ?? new Set<string>()
+      seen.add(row.studentId)
+      childrenByTerm.set(termId, seen)
     }
 
     const terms = await prisma.ecaTerm.findMany({
@@ -151,9 +151,14 @@ router.get('/terms', isAdmin, async (req, res) => {
       // a principal sees "27 activities, 0 selections" and concludes the
       // integration is broken. That is exactly what happened.
       externalActivityCount: externalCounts.get(t.id) ?? 0,
-      // Places on a register, from the roster published with the club. Zero
-      // means no register has been published — never that a club is empty.
-      enrolledCount: enrolledCounts.get(t.id) ?? 0,
+      // THE CHECKABLE ONE: distinct children with a club place this term, so a
+      // school can hold it against its roll. Zero means no register has been
+      // published — never that the clubs are empty.
+      enrolledChildren: childrenByTerm.get(t.id)?.size ?? 0,
+      // Places: a child in three clubs counts three times. Always >= children,
+      // and at a busy school comfortably larger than the whole roll, which is
+      // why it must never be the headline on its own.
+      enrolledCount: placesByTerm.get(t.id) ?? 0,
       startDate: t.startDate.toISOString(),
       endDate: t.endDate.toISOString(),
       registrationOpens: t.registrationOpens ? t.registrationOpens.toISOString() : null,
@@ -242,8 +247,14 @@ router.get('/terms/:id', isAdmin, async (req, res) => {
                 allocations: { where: { status: 'CONFIRMED' } },
                 waitlists: true,
                 selections: true,
+                // The register published with the club. Without this every
+                // card read "0/20" while its register was full.
+                members: true,
               },
             },
+            // The older way a register could arrive. Eight of this school's
+            // clubs hold their roster here and are no less full for it.
+            group: { select: { _count: { select: { studentMembers: true } } } },
           },
           orderBy: [{ dayOfWeek: 'asc' }, { timeSlot: 'asc' }, { name: 'asc' }],
         },
@@ -269,7 +280,24 @@ router.get('/terms/:id', isAdmin, async (req, res) => {
         eligibleYearGroupIds: typeof a.eligibleYearGroupIds === 'string'
           ? JSON.parse(a.eligibleYearGroupIds)
           : a.eligibleYearGroupIds,
-        currentEnrollment: a._count.allocations,
+        // WHO IS IN IT, from wherever the answer lives.
+        //
+        // This was the count of CONFIRMED allocations — the output of Connect's
+        // own allocation run. At a school whose programme comes from Active
+        // that run never happens, so all 27 cards read "0/20" while 352 club
+        // places sat in the database, and the number looked like a failed
+        // integration rather than a question being asked of the wrong table.
+        //
+        // The published register wins where there is one; allocations remain
+        // the answer for a school that does use Connect's flow.
+        currentEnrollment:
+          a._count.members > 0
+            ? a._count.members
+            : (a.group?._count.studentMembers ?? 0) > 0
+              ? a.group!._count.studentMembers
+              : a._count.allocations,
+        // Kept separate so the two are never conflated: a club can have both.
+        registerCount: a._count.members + (a.group?._count.studentMembers ?? 0),
         waitlistCount: a._count.waitlists,
         selectionCount: a._count.selections,
         createdAt: a.createdAt.toISOString(),
@@ -742,27 +770,89 @@ router.get('/activities/:id/students', isAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Activity not found' })
     }
 
-    const allocations = await prisma.ecaAllocation.findMany({
-      where: { ecaActivityId: id, status: 'CONFIRMED' },
-      include: {
-        student: {
-          include: {
-            class: { select: { name: true } },
-          },
-        },
-      },
-      orderBy: { student: { lastName: 'asc' } },
-    })
+    // WHO IS IN THIS CLUB, from wherever the answer actually lives.
+    //
+    // This read only ecaAllocation — the result of Connect's own allocation
+    // run. At a school whose programme is published from Active that run never
+    // happens, so this list was empty for every one of 27 clubs while 352 club
+    // places sat in the database. A head of department clicking "Students" saw
+    // nobody and had no way to tell that apart from a club nobody had joined.
+    //
+    // THREE SOURCES, in order of authority:
+    //   1. EcaActivityMember — the register published with the club.
+    //   2. The linked group — how rosters arrived before there was anywhere
+    //      else to put them.
+    //   3. Confirmed allocations — Connect's own flow, for schools that use it.
+    //
+    // Merged rather than picked, and deduplicated by student: a club can have a
+    // published register AND an allocation history, and a child appearing twice
+    // on a register is worse than useless to whoever is taking it.
+    const [allocations, members, groupLinks] = await Promise.all([
+      prisma.ecaAllocation.findMany({
+        where: { ecaActivityId: id, status: 'CONFIRMED' },
+        include: { student: { include: { class: { select: { name: true } } } } },
+      }),
+      prisma.ecaActivityMember.findMany({
+        where: { ecaActivityId: id },
+        include: { student: { include: { class: { select: { name: true } } } } },
+      }),
+      activity.groupId
+        ? prisma.studentGroupLink.findMany({
+            where: { groupId: activity.groupId },
+            include: { student: { include: { class: { select: { name: true } } } } },
+          })
+        : Promise.resolve([]),
+    ])
 
-    res.json(allocations.map(a => ({
-      id: a.id,
-      studentId: a.student.id,
-      studentName: `${a.student.firstName} ${a.student.lastName}`,
-      className: a.student.class.name,
-      allocationType: a.allocationType,
-      status: a.status,
-      createdAt: a.createdAt.toISOString(),
-    })))
+    type Row = {
+      id: string
+      studentId: string
+      studentName: string
+      className: string
+      /** Where this name came from, so a register that looks wrong can be
+       *  traced to the system that published it rather than guessed at. */
+      source: 'register' | 'group' | 'allocation'
+      allocationType: string | null
+      status: string | null
+      createdAt: string
+    }
+    const byStudent = new Map<string, Row>()
+    const add = (
+      student: { id: string; firstName: string; lastName: string; class: { name: string } | null },
+      row: Omit<Row, 'studentId' | 'studentName' | 'className'>,
+    ) => {
+      // First writer wins, and the order below is the order of authority.
+      if (byStudent.has(student.id)) return
+      byStudent.set(student.id, {
+        ...row,
+        studentId: student.id,
+        studentName: `${student.firstName} ${student.lastName}`,
+        className: student.class?.name ?? '',
+      })
+    }
+
+    for (const m of members) {
+      add(m.student, {
+        id: m.id, source: 'register', allocationType: null, status: null,
+        createdAt: m.createdAt.toISOString(),
+      })
+    }
+    for (const g of groupLinks) {
+      add(g.student, {
+        id: g.id, source: 'group', allocationType: null, status: null,
+        createdAt: new Date().toISOString(),
+      })
+    }
+    for (const a of allocations) {
+      add(a.student, {
+        id: a.id, source: 'allocation', allocationType: a.allocationType, status: a.status,
+        createdAt: a.createdAt.toISOString(),
+      })
+    }
+
+    res.json(
+      [...byStudent.values()].sort((x, y) => x.studentName.localeCompare(y.studentName)),
+    )
   } catch (error) {
     console.error('Error fetching activity students:', error)
     res.status(500).json({ error: 'Failed to fetch students' })

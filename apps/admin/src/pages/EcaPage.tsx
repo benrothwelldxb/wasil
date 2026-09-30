@@ -792,12 +792,20 @@ export function EcaPage() {
                           A principal reading the first meaning concludes the
                           integration is broken, which is exactly what
                           happened. */}
-                      {(term.enrolledCount ?? 0) > 0 ? (
-                        /* A real number beats a hedge. These are places on a
-                           register published with the club, so it is what the
-                           school would count if it walked the corridors. */
+                      {(term.enrolledChildren ?? 0) > 0 ? (
+                        /* CHILDREN FIRST, because it is the only figure a
+                           school can hold against its roll. Places came first
+                           in the original version and read as impossible: 352
+                           at a school of 276 children, which invites the
+                           conclusion that the integration is double-counting.
+                           A child in three clubs is three places and one
+                           child, so both are shown and the checkable one
+                           leads. */
                         <div>
-                          <span className="font-medium">{term.enrolledCount}</span> on registers
+                          <span className="font-medium">{term.enrolledChildren}</span> children in clubs
+                          <span className="text-gray-500">
+                            {' · '}{term.enrolledCount} places
+                          </span>
                         </div>
                       ) : (term.externalActivityCount ?? 0) > 0 && (term.selectionCount || 0) === 0 ? (
                         <div className="text-gray-500">signed up outside Connect</div>

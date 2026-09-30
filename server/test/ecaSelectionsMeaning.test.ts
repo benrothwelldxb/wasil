@@ -22,7 +22,7 @@ import request from 'supertest'
 const prismaMock = {
   ecaTerm: { findMany: vi.fn() },
   ecaActivity: { groupBy: vi.fn(), findMany: vi.fn() },
-  ecaActivityMember: { groupBy: vi.fn() },
+  ecaActivityMember: { groupBy: vi.fn(), findMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/middleware/auth', () => ({
@@ -75,6 +75,7 @@ beforeEach(() => {
   prismaMock.ecaTerm.findMany.mockResolvedValue([term()])
   prismaMock.ecaActivity.groupBy.mockResolvedValue([])
   prismaMock.ecaActivityMember.groupBy.mockResolvedValue([])
+  prismaMock.ecaActivityMember.findMany.mockResolvedValue([])
   prismaMock.ecaActivity.findMany.mockResolvedValue([])
 })
 
@@ -122,67 +123,79 @@ describe('where the signing up happens', () => {
 })
 
 /**
- * AND WHERE THE REGISTER COMES FROM.
+ * AND WHERE THE REGISTER COMES FROM — IN TWO NUMBERS.
  *
- * "Signed up outside Connect" was true, but it was still a shrug: it told a
- * principal that their zero was not a failure without telling them anything.
- * Now that a roster arrives with the club, the honest number exists.
+ * CHILDREN and PLACES are different figures and only one of them is checkable.
+ * A child in three clubs is three places but one child, so at the first school
+ * to use this the places total (352) is larger than the entire roll (276).
+ * "352 on registers" at a school of 276 children reads as an impossible number,
+ * and the first explanation that comes to mind is that the integration is
+ * double-counting — the wrong conclusion, and the same one drawn the last time
+ * a count here was reported in the wrong noun.
  */
-describe('places on a published register', () => {
+const memberRow = (studentId: string, ecaTermId: string) => ({
+  studentId,
+  ecaActivity: { ecaTermId },
+})
+
+describe('children in clubs, and places on registers', () => {
   const terms = () => request(makeApp()).get('/api/eca/terms')
 
-  it('sums them across the term’s clubs', async () => {
-    prismaMock.ecaActivityMember.groupBy.mockResolvedValue([
-      { ecaActivityId: 'a1', _count: { _all: 12 } },
-      { ecaActivityId: 'a2', _count: { _all: 18 } },
-    ])
-    prismaMock.ecaActivity.findMany.mockResolvedValue([
-      { id: 'a1', ecaTermId: 'term-1' },
-      { id: 'a2', ecaTermId: 'term-1' },
+  it('counts a child in three clubs as one child and three places', async () => {
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      memberRow('stu-1', 'term-1'),
+      memberRow('stu-1', 'term-1'),
+      memberRow('stu-1', 'term-1'),
     ])
 
     const res = await terms()
 
-    expect(res.body[0].enrolledCount).toBe(30)
-  })
-
-  it('counts a child once per club, not once per term', async () => {
-    // A child in three clubs is three places. That is what a school counts
-    // when it walks the corridors; deduplicating would answer a question
-    // nobody asked.
-    prismaMock.ecaActivityMember.groupBy.mockResolvedValue([
-      { ecaActivityId: 'a1', _count: { _all: 1 } },
-      { ecaActivityId: 'a2', _count: { _all: 1 } },
-      { ecaActivityId: 'a3', _count: { _all: 1 } },
-    ])
-    prismaMock.ecaActivity.findMany.mockResolvedValue([
-      { id: 'a1', ecaTermId: 'term-1' },
-      { id: 'a2', ecaTermId: 'term-1' },
-      { id: 'a3', ecaTermId: 'term-1' },
-    ])
-
-    const res = await terms()
-
+    expect(res.body[0].enrolledChildren).toBe(1)
     expect(res.body[0].enrolledCount).toBe(3)
   })
 
-  it('never attributes a register to the wrong term', async () => {
-    prismaMock.ecaActivityMember.groupBy.mockResolvedValue([
-      { ecaActivityId: 'a-other', _count: { _all: 40 } },
-    ])
-    prismaMock.ecaActivity.findMany.mockResolvedValue([
-      { id: 'a-other', ecaTermId: 'term-99' },
+  it('never reports more children than there are children', async () => {
+    // The property that makes the headline safe to show a principal: the
+    // children figure can be held against the roll and must never exceed it,
+    // however many clubs each child joins.
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      memberRow('stu-1', 'term-1'), memberRow('stu-2', 'term-1'),
+      memberRow('stu-1', 'term-1'), memberRow('stu-2', 'term-1'),
+      memberRow('stu-1', 'term-1'),
     ])
 
     const res = await terms()
 
+    expect(res.body[0].enrolledChildren).toBe(2)
+    expect(res.body[0].enrolledCount).toBe(5)
+  })
+
+  it('never attributes a register to the wrong term', async () => {
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      memberRow('stu-1', 'term-99'),
+    ])
+
+    const res = await terms()
+
+    expect(res.body[0].enrolledChildren).toBe(0)
     expect(res.body[0].enrolledCount).toBe(0)
   })
 
   it('reports zero when no register has been published', async () => {
     // Zero means "no register exists", never "the clubs are empty" — which is
-    // why the admin page keeps the older wording rather than showing it.
+    // why the admin page shows the older wording instead of a zero.
     const res = await terms()
-    expect(res.body[0].enrolledCount).toBe(0)
+    expect(res.body[0].enrolledChildren).toBe(0)
+  })
+
+  it('does not fall over on a club with no term', async () => {
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      { studentId: 'stu-1', ecaActivity: { ecaTermId: null } },
+    ])
+
+    const res = await terms()
+
+    expect(res.status).toBe(200)
+    expect(res.body[0].enrolledChildren).toBe(0)
   })
 })

@@ -76,9 +76,13 @@ export interface EcaTerm {
    *  "0 selections" figure would read as "nobody signed up" when it means
    *  "signing up does not happen here". */
   externalActivityCount?: number
-  /** Places on a published register, summed across the term's clubs. A child in
-   *  three clubs is three places. Zero means no register has been published —
-   *  never that a club is empty. */
+  /** DISTINCT CHILDREN with a club place this term — the figure a school can
+   *  check against its roll, and the one to lead with. */
+  enrolledChildren?: number
+  /** PLACES: a child in three clubs counts three times. Always >= children and
+   *  often larger than the whole roll, so never show it as a headline on its
+   *  own — "352 on registers" at a school of 276 reads as double-counting.
+   *  Zero means no register has been published, never that a club is empty. */
   enrolledCount?: number
   allocationCount?: number
 }
