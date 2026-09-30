@@ -1731,6 +1731,31 @@ router.get('/parent/programme', isAuthenticated, async (req, res) => {
       return ids.includes(yearGroupId)
     })
 
+    // HAS EVERY CLUB PUBLISHED A REGISTER?
+    //
+    // This changes what an empty "your child's clubs" MEANS, which is why the
+    // parent page is told rather than left to guess. While only some clubs keep
+    // a register, silence is ordinary and the page must say so. Once they all
+    // do, silence becomes a fact worth stating — "your children are in no clubs
+    // this term" — and stating it wrongly would be worse than saying nothing.
+    //
+    // MEASURED BY `rosterVersion`, NOT BY MEMBER COUNT, and the distinction is
+    // the whole reliability of the claim. A club can legitimately have nobody
+    // in it; counting members cannot tell that apart from a club whose roster
+    // never arrived. rosterVersion is set the moment a register is published,
+    // empty or not, so "published and empty" and "never published" stay
+    // different facts all the way to the screen.
+    //
+    // A linked group counts too: that was the only way to publish a roster
+    // before there was anywhere else to put one, and those eight clubs are no
+    // less covered for having arrived the old way.
+    //
+    // The effect is that one failed push anywhere in the programme quietly
+    // returns the page to its cautious wording, rather than letting a partial
+    // sync masquerade as a complete answer.
+    const registersComplete =
+      eligible.length > 0 && eligible.every(a => a.rosterVersion != null || a.groupId != null)
+
     // Names for the year groups actually referenced, so the card can say
     // "Year 3, Year 4" instead of showing ids or inferring a label from a
     // number — FS1 is not year -1 to anyone but a database.
@@ -1803,6 +1828,9 @@ router.get('/parent/programme', isAuthenticated, async (req, res) => {
       },
       days,
       signUpUrl,
+      // See above: this licenses the page to say "no clubs" out loud, so it is
+      // true only when EVERY club shown has published a register.
+      registersComplete,
     })
   } catch (error) {
     console.error('Error fetching parent ECA programme:', error)

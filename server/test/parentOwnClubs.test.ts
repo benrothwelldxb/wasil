@@ -257,3 +257,91 @@ describe('a club that has both', () => {
     expect(res.body.days[0].activities[0].myChildren.sort()).toEqual(['Idris', 'Leyla'])
   })
 })
+
+/**
+ * WHAT AN EMPTY LIST MEANS, and why the page has to be told.
+ *
+ * While only some clubs keep a register, an empty "your child's clubs" means
+ * "no register was published" and the page must stay silent — a child could be
+ * in three clubs that simply do not publish one, and "not in any clubs" would
+ * be a flat lie.
+ *
+ * Once every club publishes one, the absence becomes a fact worth stating: a
+ * parent who expected their child to be in something learns there is a problem
+ * instead of staring at a screen that never mentions it.
+ *
+ * MEASURED BY WHETHER A REGISTER WAS PUBLISHED, never by whether anyone is on
+ * it. A club can legitimately be empty, and a member count cannot tell that
+ * apart from a roster that never arrived.
+ */
+describe('whether every club has published a register', () => {
+  it('is false while some clubs have none', async () => {
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      activity({ id: 'a1', rosterVersion: new Date('2026-09-30'), groupId: null }),
+      activity({ id: 'a2', rosterVersion: null, groupId: null }),
+    ])
+
+    const res = await programme()
+
+    expect(res.body.registersComplete).toBe(false)
+  })
+
+  it('is true when every club has one', async () => {
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      activity({ id: 'a1', rosterVersion: new Date('2026-09-30'), groupId: null }),
+      activity({ id: 'a2', rosterVersion: new Date('2026-09-30'), groupId: null }),
+    ])
+
+    const res = await programme()
+
+    expect(res.body.registersComplete).toBe(true)
+  })
+
+  it('counts a club that published an EMPTY register as covered', async () => {
+    // The whole reason this is measured on rosterVersion rather than on member
+    // count. A club nobody joined has still answered the question.
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      activity({ id: 'a1', rosterVersion: new Date('2026-09-30'), groupId: null }),
+    ])
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([])
+
+    const res = await programme()
+
+    expect(res.body.registersComplete).toBe(true)
+  })
+
+  it('counts a club whose roster arrived as a group', async () => {
+    // Eight of twenty-seven arrived the old way and are no less covered for it.
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      activity({ id: 'a1', rosterVersion: null, groupId: 'grp-swim' }),
+    ])
+
+    const res = await programme()
+
+    expect(res.body.registersComplete).toBe(true)
+  })
+
+  it('one failed push anywhere returns the whole page to caution', async () => {
+    // The property that matters: a partial sync must never be able to pass
+    // itself off as a complete answer.
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      ...Array.from({ length: 26 }, (_, i) =>
+        activity({ id: `a${i}`, rosterVersion: new Date('2026-09-30'), groupId: null })),
+      activity({ id: 'a-missed', rosterVersion: null, groupId: null }),
+    ])
+
+    const res = await programme()
+
+    expect(res.body.registersComplete).toBe(false)
+  })
+
+  it('is false for a term with no clubs at all', async () => {
+    // Nothing to be complete about. "Every club has a register" must not be
+    // vacuously true and license a claim about a programme that is empty.
+    prismaMock.ecaActivity.findMany.mockResolvedValue([])
+
+    const res = await programme()
+
+    expect(res.body.registersComplete).toBe(false)
+  })
+})
