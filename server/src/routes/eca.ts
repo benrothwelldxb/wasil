@@ -87,6 +87,37 @@ router.get('/terms', isAdmin, async (req, res) => {
     })
     const externalCounts = new Map(externalByTerm.map(r => [r.ecaTermId, r._count._all]))
 
+    // HOW MANY CHILDREN ARE ACTUALLY IN A CLUB THIS TERM.
+    //
+    // "Signed up outside Connect" was true but was still a shrug: it told a
+    // principal the zero was not a failure without telling them anything. Now
+    // that registers arrive with the activity, the honest number exists, so
+    // show it instead.
+    //
+    // Counted per CHILD PER CLUB — a child in three clubs is three places, not
+    // three children — because that is the number a school checks a register
+    // against. Deduplicated across the two roster sources would be a different
+    // and less useful figure.
+    const enrolledByTerm = await prisma.ecaActivityMember.groupBy({
+      by: ['ecaActivityId'],
+      where: { ecaActivity: { schoolId: user.schoolId } },
+      _count: { _all: true },
+    })
+    const enrolledActivityIds = enrolledByTerm.map(r => r.ecaActivityId)
+    const termOfActivity = enrolledActivityIds.length > 0
+      ? await prisma.ecaActivity.findMany({
+          where: { id: { in: enrolledActivityIds } },
+          select: { id: true, ecaTermId: true },
+        })
+      : []
+    const termFor = new Map(termOfActivity.map(a => [a.id, a.ecaTermId]))
+    const enrolledCounts = new Map<string, number>()
+    for (const row of enrolledByTerm) {
+      const termId = termFor.get(row.ecaActivityId)
+      if (!termId) continue
+      enrolledCounts.set(termId, (enrolledCounts.get(termId) ?? 0) + row._count._all)
+    }
+
     const terms = await prisma.ecaTerm.findMany({
       where: { schoolId: user.schoolId },
       include: {
@@ -120,6 +151,9 @@ router.get('/terms', isAdmin, async (req, res) => {
       // a principal sees "27 activities, 0 selections" and concludes the
       // integration is broken. That is exactly what happened.
       externalActivityCount: externalCounts.get(t.id) ?? 0,
+      // Places on a register, from the roster published with the club. Zero
+      // means no register has been published — never that a club is empty.
+      enrolledCount: enrolledCounts.get(t.id) ?? 0,
       startDate: t.startDate.toISOString(),
       endDate: t.endDate.toISOString(),
       registrationOpens: t.registrationOpens ? t.registrationOpens.toISOString() : null,
@@ -1624,33 +1658,61 @@ router.get('/parent/programme', isAuthenticated, async (req, res) => {
 
     // WHICH OF THESE THIS FAMILY'S CHILDREN ARE ACTUALLY IN.
     //
-    // Active publishes a club's roster as a GROUP and links it to the activity,
-    // so Connect already holds the membership — it simply never looked. The
-    // page listed all twenty-seven clubs to everybody, and a parent scanned a
-    // noticeboard to find the two their child attends.
+    // The page listed all twenty-seven clubs to everybody, and a parent scanned
+    // a noticeboard to find the two their child attends.
     //
-    // PARTIAL BY NATURE, and that shapes how it is used. Only some activities
-    // carry a roster — eight of twenty-seven at the first school — so this can
-    // say which clubs a child IS in and can never say which they are not. It is
-    // shown as an addition above the programme, never as a filter of it: a
-    // parent whose club has no roster pushed sees exactly what they see today,
-    // rather than an empty "your clubs" that reads as having been dropped.
+    // TWO SOURCES, because there are two ways a roster can arrive and a parent
+    // must not care which their school used:
+    //
+    //   1. EcaActivityMember — the roster published with the activity itself.
+    //   2. The activity's linked GROUP — how Active published rosters before
+    //      there was anywhere else to put them, still true for the eight clubs
+    //      that had a group ticked, and still what a school wants when the club
+    //      IS a messaging audience.
+    //
+    // Deduplicated by child, since a club can legitimately have both.
+    //
+    // PARTIAL BY NATURE, and that shapes how it is used: this can say which
+    // clubs a child IS in and can never say which they are not. It is shown as
+    // an addition above the programme, never as a filter of it — a parent whose
+    // club has no roster sees exactly what they see today, rather than an empty
+    // "your clubs" that reads as having been dropped.
     const myStudentIds = (user.studentLinks ?? []).map(l => l.studentId)
+    const activityIds = activities.map(a => a.id)
     const groupIds = activities.map(a => a.groupId).filter((g): g is string => !!g)
-    const memberships = myStudentIds.length > 0 && groupIds.length > 0
-      ? await prisma.studentGroupLink.findMany({
-          where: { groupId: { in: groupIds }, studentId: { in: myStudentIds } },
-          select: {
-            groupId: true,
-            student: { select: { id: true, firstName: true } },
-          },
-        })
-      : []
-    const minesByGroup = new Map<string, string[]>()
-    for (const m of memberships) {
-      const names = minesByGroup.get(m.groupId) ?? []
-      names.push(m.student.firstName)
-      minesByGroup.set(m.groupId, names)
+    const groupToActivity = new Map<string, string>()
+    for (const a of activities) if (a.groupId) groupToActivity.set(a.groupId, a.id)
+
+    const [directMembers, groupMembers] = myStudentIds.length === 0
+      ? [[], []]
+      : await Promise.all([
+          activityIds.length > 0
+            ? prisma.ecaActivityMember.findMany({
+                where: { ecaActivityId: { in: activityIds }, studentId: { in: myStudentIds } },
+                select: { ecaActivityId: true, student: { select: { id: true, firstName: true } } },
+              })
+            : [],
+          groupIds.length > 0
+            ? prisma.studentGroupLink.findMany({
+                where: { groupId: { in: groupIds }, studentId: { in: myStudentIds } },
+                select: { groupId: true, student: { select: { id: true, firstName: true } } },
+              })
+            : [],
+        ])
+
+    // Keyed by studentId so a child in both the activity roster and its group
+    // is named once — being listed twice in your own child's club list reads as
+    // a system that has lost count of your children.
+    const minesByActivity = new Map<string, Map<string, string>>()
+    const noteMember = (activityId: string, student: { id: string; firstName: string }) => {
+      const byStudent = minesByActivity.get(activityId) ?? new Map<string, string>()
+      byStudent.set(student.id, student.firstName)
+      minesByActivity.set(activityId, byStudent)
+    }
+    for (const m of directMembers) noteMember(m.ecaActivityId, m.student)
+    for (const m of groupMembers) {
+      const activityId = groupToActivity.get(m.groupId)
+      if (activityId) noteMember(activityId, m.student)
     }
 
     // Stored either as a JSON array or as a stringified one, depending on which
@@ -1701,7 +1763,7 @@ router.get('/parent/programme', isAuthenticated, async (req, res) => {
       // This parent's children who are on this club's roster. Empty means
       // "not on a roster we hold" — NOT "not in the club", because most
       // activities carry no roster at all.
-      myChildren: a.groupId ? (minesByGroup.get(a.groupId) ?? []) : [],
+      myChildren: [...(minesByActivity.get(a.id)?.values() ?? [])],
     })
 
     // One entry per meeting: a twice-weekly club appears on both its days.

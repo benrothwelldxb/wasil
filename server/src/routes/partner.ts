@@ -4024,6 +4024,25 @@ router.put('/activities/:externalRef', requirePartner, async (req, res) => {
       else ignoredGroupId = wanted
     }
 
+    // WHO IS IN THE CLUB, without making a group of them.
+    //
+    // A roster used to be publishable only as a Connect GROUP, which is why
+    // eleven of this school's twenty-seven clubs had one: a group is a
+    // messaging audience, so carrying enrolment that way means creating a new
+    // way to message a school for every club that wants a register. Schools
+    // ticked it eleven times and stopped, and the other sixteen clubs' children
+    // were invisible in the app.
+    //
+    // ABSENT AND EMPTY ARE DIFFERENT, and the distinction is the publisher's
+    // to use: no `pupilHubIds` key means "I am not speaking about the roster"
+    // and leaves it untouched, so a publisher that doesn't hold rosters cannot
+    // wipe one by pushing a rename. `pupilHubIds: []` means "nobody", and
+    // empties it.
+    const sendsRoster = Array.isArray(body.pupilHubIds)
+    const roster = sendsRoster
+      ? await resolvePupilHubIds(toIdArray(body.pupilHubIds), actor.schoolId)
+      : { studentIds: [], unknownPupilIds: [] }
+
     const meetings = normaliseMeetings(body.meetings)
     const first = meetings[0]
     const { minCapacity, maxCapacity } = capacityFor(body.capacity)
@@ -4074,6 +4093,19 @@ router.put('/activities/:externalRef', requirePartner, async (req, res) => {
       })
     }
 
+    // Replaced wholesale, for the same reason as meetings: a roster has no
+    // identity worth preserving, and a child who has left a club must actually
+    // leave it — a roster that only ever grows is a register nobody can trust.
+    if (sendsRoster) {
+      await prisma.ecaActivityMember.deleteMany({ where: { ecaActivityId: activity.id } })
+      if (roster.studentIds.length > 0) {
+        await prisma.ecaActivityMember.createMany({
+          data: roster.studentIds.map(studentId => ({ ecaActivityId: activity.id, studentId })),
+          skipDuplicates: true,
+        })
+      }
+    }
+
     res.status(existing ? 200 : 201).json({
       id: activity.id,
       created: !existing,
@@ -4082,6 +4114,8 @@ router.put('/activities/:externalRef', requirePartner, async (req, res) => {
       ...(unknownYearGroupIds.length > 0 ? { unknownYearGroupIds } : {}),
       ...(unmatchedCategoryName ? { unmatchedCategoryName } : {}),
       ...(ignoredGroupId ? { ignoredGroupId } : {}),
+      ...(sendsRoster ? { enrolled: roster.studentIds.length } : {}),
+      ...(roster.unknownPupilIds.length > 0 ? { unknownPupilIds: roster.unknownPupilIds } : {}),
       ...(meetings.length === 0 ? { warning: 'no valid meetings in payload' } : {}),
     })
   } catch (error) {

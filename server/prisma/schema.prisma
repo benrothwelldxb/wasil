@@ -631,6 +631,7 @@ model Student {
   @@unique([schoolId, externalId])
   @@index([schoolId, classId])
   @@index([schoolId, leftAt])
+  ecaActivityMembers   EcaActivityMember[]
 }
 
 // Junction table: Parent-Student link
@@ -1703,6 +1704,7 @@ model EcaActivity {
   @@index([schoolId, isActive])
   @@index([providerId])
   @@index([operatorId])
+  members              EcaActivityMember[]
 }
 
 /// When an activity meets. A club can meet twice a week and is still one club,
@@ -1713,6 +1715,33 @@ model EcaActivity {
 /// existing screen keeps working untouched; anything that wants the whole
 /// picture reads this. Replaced wholesale on each publish — a meeting has no
 /// identity of its own worth preserving.
+/// Who is in a club, without making a group of them.
+///
+/// Active already publishes rosters — as Connect GROUPS, which is why only
+/// eleven of twenty-seven clubs ever had one. A group is a messaging audience:
+/// it appears in the broadcast composer and on the Groups page, so creating
+/// twenty-seven of them to carry enrolment data means twenty-seven new ways to
+/// message a school by accident, and a Groups page nobody can read.
+///
+/// This is the same fact with none of that. It says which children are in a
+/// club and grants nothing — no messaging, no picker, no page. A school that
+/// WANTS a club to be a messaging audience can still have one; it is now a
+/// separate decision from wanting parents to see their child's timetable.
+///
+/// Replaced wholesale on each push, like meetings: a roster has no identity
+/// worth preserving, and a child who has left a club must actually leave it.
+model EcaActivityMember {
+  id            String      @id @default(cuid())
+  ecaActivityId String
+  ecaActivity   EcaActivity @relation(fields: [ecaActivityId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@unique([ecaActivityId, studentId])
+  @@index([studentId])
+}
+
 model EcaActivityMeeting {
   id            String      @id @default(cuid())
   ecaActivityId String

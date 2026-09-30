@@ -76,6 +76,10 @@ export interface EcaTerm {
    *  "0 selections" figure would read as "nobody signed up" when it means
    *  "signing up does not happen here". */
   externalActivityCount?: number
+  /** Places on a published register, summed across the term's clubs. A child in
+   *  three clubs is three places. Zero means no register has been published —
+   *  never that a club is empty. */
+  enrolledCount?: number
   allocationCount?: number
 }
 

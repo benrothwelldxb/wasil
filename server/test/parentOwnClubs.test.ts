@@ -26,6 +26,7 @@ const prismaMock = {
   ecaActivity: { findMany: vi.fn() },
   parentStudentLink: { findFirst: vi.fn() },
   studentGroupLink: { findMany: vi.fn() },
+  ecaActivityMember: { findMany: vi.fn() },
   yearGroup: { findMany: vi.fn() },
   school: { findUnique: vi.fn() },
   ecaSettings: { findUnique: vi.fn() },
@@ -98,6 +99,7 @@ beforeEach(() => {
   prismaMock.yearGroup.findMany.mockResolvedValue([])
   prismaMock.ecaActivity.findMany.mockResolvedValue([activity()])
   prismaMock.studentGroupLink.findMany.mockResolvedValue([])
+  prismaMock.ecaActivityMember.findMany.mockResolvedValue([])
 })
 
 describe('a club with a roster', () => {
@@ -160,7 +162,7 @@ describe('a club with NO roster', () => {
     expect(res.body.days[0].activities[0].myChildren).toEqual([])
   })
 
-  it('asks the database nothing when no activity has a roster', async () => {
+  it('does not go looking for groups when no activity has one', async () => {
     prismaMock.ecaActivity.findMany.mockResolvedValue([activity({ groupId: null })])
 
     await programme()
@@ -184,5 +186,74 @@ describe('the whole programme is never filtered by this', () => {
 
     expect(res.body.days[0].activities.map((a: { name: string }) => a.name).sort())
       .toEqual(['Book Club', 'Latin Y4-6', 'Swim Squad'])
+  })
+})
+
+
+/**
+ * THE SECOND SOURCE, and the reason it exists.
+ *
+ * A roster could previously reach Connect only as a GROUP, and a group is a
+ * messaging audience: it appears in the broadcast composer and on the Groups
+ * page. So carrying a register that way means creating a new way to message a
+ * school for every club that wants one. The first school ticked it for eleven
+ * of twenty-seven clubs and stopped — entirely reasonably — and the children in
+ * the other sixteen were invisible in the app as a result.
+ *
+ * A roster published with the activity itself grants nothing. Both paths are
+ * read, because a parent must not have to care which one their school used.
+ */
+describe('a roster published with the activity, with no group at all', () => {
+  it('names the child, though the club has no group', async () => {
+    prismaMock.ecaActivity.findMany.mockResolvedValue([
+      activity({ id: 'act-9', name: 'Makerspace Y2-3', groupId: null }),
+    ])
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      { ecaActivityId: 'act-9', student: { id: 'stu-1', firstName: 'Idris' } },
+    ])
+
+    const res = await programme()
+
+    expect(res.body.days[0].activities[0].myChildren).toEqual(['Idris'])
+  })
+
+  it('asks only about THIS parent’s children', async () => {
+    await programme()
+
+    const where = prismaMock.ecaActivityMember.findMany.mock.calls[0][0].where
+    expect(where.studentId).toEqual({ in: ['stu-1', 'stu-2'] })
+    expect(where.ecaActivityId).toEqual({ in: ['act-1'] })
+  })
+})
+
+describe('a club that has both', () => {
+  it('names the child once, not twice', async () => {
+    // Legitimate overlap: a school that wants the club to be a messaging
+    // audience keeps its group, and Active publishes the roster too. Being
+    // listed twice in your own child's club list reads as a system that has
+    // lost count of your children.
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      { ecaActivityId: 'act-1', student: { id: 'stu-1', firstName: 'Idris' } },
+    ])
+    prismaMock.studentGroupLink.findMany.mockResolvedValue([
+      { groupId: 'grp-swim', student: { id: 'stu-1', firstName: 'Idris' } },
+    ])
+
+    const res = await programme()
+
+    expect(res.body.days[0].activities[0].myChildren).toEqual(['Idris'])
+  })
+
+  it('still names a sibling who is only in one of them', async () => {
+    prismaMock.ecaActivityMember.findMany.mockResolvedValue([
+      { ecaActivityId: 'act-1', student: { id: 'stu-1', firstName: 'Idris' } },
+    ])
+    prismaMock.studentGroupLink.findMany.mockResolvedValue([
+      { groupId: 'grp-swim', student: { id: 'stu-2', firstName: 'Leyla' } },
+    ])
+
+    const res = await programme()
+
+    expect(res.body.days[0].activities[0].myChildren.sort()).toEqual(['Idris', 'Leyla'])
   })
 })
