@@ -275,6 +275,23 @@ model User {
   // real teacher out on a Hub glitch is the more expensive way to be wrong.
   leftAt DateTime?
 
+  // Hub has revoked this person's access outright — a linked login with no
+  // active membership at the school. A SUMMARY DISMISSAL, in other words.
+  //
+  // Separate from `leftAt`, and not a date comparison, because the two are
+  // different events. A leaving date is planned and has a last working day; a
+  // revocation is effective the moment it is made. Storing it as a date and
+  // reusing the leftAt rule would give a dismissed member of staff the rest of
+  // the day — which is precisely the reassurance a summary dismissal exists to
+  // provide.
+  //
+  // Hub sends `accessRevoked: true` with leftOn NULL and isArchived FALSE, so
+  // nothing else here would notice. It must never be inferred from an empty
+  // `globalRoles`: that is also exactly what somebody who has not yet accepted
+  // their invite looks like, and acting on it would lock out every new starter
+  // waiting on one.
+  accessRevokedAt DateTime?
+
   // Tracking
   lastLoginAt DateTime?
 

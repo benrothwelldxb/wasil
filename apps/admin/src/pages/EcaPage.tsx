@@ -1627,7 +1627,7 @@ export function EcaPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 >
                   <option value="">No staff assigned</option>
-                  {(staffList || []).filter(s => !hasLeft(s.leftAt)).map(s => (
+                  {(staffList || []).filter(s => !hasLeft(s)).map(s => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>

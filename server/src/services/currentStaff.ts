@@ -46,12 +46,39 @@ function startOfToday(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 }
 
-/** Staff who have not left — no leaving date, or one that has not passed. */
+/**
+ * Staff who are still here: not revoked, and with no leaving date or one that
+ * has not passed.
+ *
+ * TWO CONDITIONS, AND THEY ARE NOT THE SAME EVENT.
+ *
+ * `leftAt` is a planned departure with a last working day, so it is compared
+ * against the start of today. `accessRevokedAt` is a SUMMARY DISMISSAL — Hub
+ * has deactivated the membership and killed the tokens — and it takes effect
+ * the moment it is set. No date, no grace: giving somebody the rest of the day
+ * is exactly the reassurance a summary dismissal is supposed to provide.
+ *
+ * Returned as a plain field alongside the OR so it still spreads into a
+ * `where` without the caller having to nest anything.
+ */
 export function currentStaffWhere(now: Date = new Date()) {
-  return { OR: [{ leftAt: null }, { leftAt: { gte: startOfToday(now) } }] }
+  return {
+    accessRevokedAt: null,
+    OR: [{ leftAt: null }, { leftAt: { gte: startOfToday(now) } }],
+  }
 }
 
-/** The same question about a row already in hand. */
-export function hasLeft(leftAt: Date | null | undefined, now: Date = new Date()): boolean {
-  return !!leftAt && leftAt < startOfToday(now)
+/**
+ * The same question about a row already in hand.
+ *
+ * Takes the RECORD rather than the date, so adding a second reason to be gone
+ * could not be forgotten at a call site — the compiler asked every one of them
+ * for the whole object, which is what a second field like this needs.
+ */
+export function hasLeft(
+  staff: { leftAt?: Date | null; accessRevokedAt?: Date | null },
+  now: Date = new Date(),
+): boolean {
+  if (staff.accessRevokedAt) return true
+  return !!staff.leftAt && staff.leftAt < startOfToday(now)
 }

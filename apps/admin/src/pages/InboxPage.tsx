@@ -1315,7 +1315,7 @@ function SchoolContactsModal({ onClose }: { onClose: () => void }) {
                     leave — dropping "Head of Pastoral Care" from parents is
                     worse than showing it — but nobody should newly point one
                     at somebody who has gone. */}
-                {staffList?.filter((s: any) => !hasLeft(s.leftAt)).map((s: any) => (
+                {staffList?.filter((s: any) => !hasLeft(s)).map((s: any) => (
                   <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
                 ))}
               </select>

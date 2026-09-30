@@ -122,13 +122,13 @@ export async function requirePartner(req: Request, res: Response, next: NextFunc
   if (actingId) {
     const acting = await prisma.user.findUnique({
       where: { hubUserId: actingId },
-      select: { leftAt: true },
+      select: { leftAt: true, accessRevokedAt: true },
     })
     // Only an actor we HOLD and know to have left is refused here. An id we
     // have no row for is not this middleware's business — it may be a
     // first-time actor the route will provision from Hub, and refusing it here
     // would break non-teaching staff on their first request.
-    if (acting && hasLeft(acting.leftAt)) {
+    if (acting && hasLeft(acting)) {
       return res.status(403).json({ error: 'actor_has_left' })
     }
   }

@@ -1147,6 +1147,10 @@ export interface StaffMember {
    *  They stay in this list on purpose — the Staff page shows them, every
    *  picker filters out the ones whose date has passed. */
   leftAt?: string | null
+  /** Hub has revoked their access outright — a summary dismissal. No date and
+   *  no grace: unlike a leaving date this takes effect the moment it is set,
+   *  which is the whole point of it. */
+  accessRevokedAt?: string | null
   assignedClasses: Array<{ id: string; name: string }>
   createdAt: string
 }
