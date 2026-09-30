@@ -3,12 +3,36 @@ import { Plus, X, Pencil, Trash2, Play, Square, ClipboardList, Activity, Chevron
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
 import type { PulseSurvey, PulseSurveyStatus, PulseAnalytics, PulseOptionalQuestion, PulseCustomQuestion, PulseComparison } from '@wasil/shared'
 
+/**
+ * The seven core questions, by STABLE KEY.
+ *
+ * Mirrored from the server rather than fetched, because this list is only a
+ * set of tick-boxes — the server decides what a survey actually asks, and a
+ * key this page does not recognise is simply not offered rather than silently
+ * dropped. The wording here is a label; the wording parents see comes from the
+ * server, so a revision there does not need a matching edit here.
+ */
+const CORE_QUESTIONS: { key: string; label: string }[] = [
+  { key: 'core_quality', label: 'Confident the school provides a high-quality education' },
+  { key: 'core_belonging', label: 'My child feels happy, safe and a sense of belonging' },
+  { key: 'core_communication', label: 'The school communicates clearly and in good time' },
+  { key: 'core_responsiveness', label: 'I know who to contact and feel listened to' },
+  { key: 'core_expectations', label: 'Expectations for behaviour and learning are clear' },
+  { key: 'core_overall_satisfaction', label: 'Overall satisfaction with our experience' },
+  { key: 'core_improve_now', label: 'One thing the school could do to improve (free text)' },
+]
+const ALL_CORE_KEYS = CORE_QUESTIONS.map(q => q.key)
+
 interface PulseForm {
   halfTermName: string
   opensAt: string
   closesAt: string
   additionalQuestionKey: string
   customQuestions: PulseCustomQuestion[]
+  coreQuestionKeys: string[]
+  audienceType: 'SCHOOL' | 'GROUP' | 'YEAR_GROUPS'
+  audienceGroupId: string
+  audienceYearGroupIds: string[]
 }
 
 const emptyForm: PulseForm = {
@@ -17,6 +41,13 @@ const emptyForm: PulseForm = {
   closesAt: '',
   additionalQuestionKey: '',
   customQuestions: [],
+  // A new survey starts as the full termly pulse to everybody — the thing it
+  // has always been. Narrowing is a decision somebody makes; it should not be
+  // the state you land in by not noticing a control.
+  coreQuestionKeys: ALL_CORE_KEYS,
+  audienceType: 'SCHOOL',
+  audienceGroupId: '',
+  audienceYearGroupIds: [],
 }
 
 const statusBadge: Record<PulseSurveyStatus, { bg: string; text: string; label: string }> = {
@@ -270,6 +301,11 @@ export function PulsePage() {
   const theme = useTheme()
   const { data: surveys, refetch } = useApi<PulseSurvey[]>(() => api.pulse.listAll(), [])
   const { data: optionalQuestions } = useApi<PulseOptionalQuestion[]>(() => api.pulse.optionalQuestions(), [])
+  // For the audience picker. Both are small lists a school already maintains —
+  // a pulse for "new parents" should use the group they already have rather
+  // than a second one built for surveys.
+  const { data: groups } = useApi<Array<{ id: string; name: string }>>(() => api.groups.list(), [])
+  const { data: yearGroups } = useApi<Array<{ id: string; name: string }>>(() => api.yearGroups.list(), [])
 
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<PulseForm>(emptyForm)
@@ -287,6 +323,10 @@ export function PulsePage() {
         closesAt: form.closesAt,
         additionalQuestionKey: form.additionalQuestionKey || null,
         customQuestions: form.customQuestions.filter(q => q.text.trim()),
+        coreQuestionKeys: form.coreQuestionKeys,
+        audienceType: form.audienceType,
+        audienceGroupId: form.audienceType === 'GROUP' ? form.audienceGroupId : null,
+        audienceYearGroupIds: form.audienceType === 'YEAR_GROUPS' ? form.audienceYearGroupIds : [],
       }
       if (editingSurvey) {
         await api.pulse.update(editingSurvey.id, payload)
@@ -312,6 +352,13 @@ export function PulsePage() {
       closesAt: survey.closesAt.split('T')[0],
       additionalQuestionKey: survey.additionalQuestionKey || '',
       customQuestions: (survey as any).customQuestions || [],
+      // What this survey ACTUALLY is, not a fresh default. Opening the edit
+      // form on the full set would quietly widen a scoped survey the first
+      // time somebody fixed a typo in its name.
+      coreQuestionKeys: (survey as any).coreQuestionKeys ?? ALL_CORE_KEYS,
+      audienceType: ((survey as any).audienceType as PulseForm['audienceType']) || 'SCHOOL',
+      audienceGroupId: (survey as any).audienceGroupId || '',
+      audienceYearGroupIds: (survey as any).audienceYearGroupIds || [],
     })
     setShowForm(true)
   }
@@ -412,6 +459,129 @@ export function PulsePage() {
                   required
                 />
               </div>
+            </div>
+
+            {/* WHICH QUESTIONS.
+                The core set used to be mandatory, so every pulse was eight
+                questions whatever it was for — and the length is what stops
+                people answering. Ticked by default: narrowing is a decision
+                somebody makes, not a state you land in by not noticing a
+                control. */}
+            <div>
+              <div className="flex items-baseline justify-between mb-1">
+                <label className="block text-sm font-medium text-slate-700">Core questions</label>
+                <span className="text-xs text-slate-400">
+                  {form.coreQuestionKeys.length} of {CORE_QUESTIONS.length} · asking fewer gets more replies
+                </span>
+              </div>
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {CORE_QUESTIONS.map(q => {
+                  const on = form.coreQuestionKeys.includes(q.key)
+                  return (
+                    <label key={q.key} className="flex items-start gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => setForm(f => ({
+                          ...f,
+                          coreQuestionKeys: on
+                            ? f.coreQuestionKeys.filter(k => k !== q.key)
+                            : [...f.coreQuestionKeys, q.key],
+                        }))}
+                        className="h-4 w-4 mt-0.5"
+                      />
+                      <span className="text-sm text-slate-700">{q.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              <div className="flex gap-3 mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, coreQuestionKeys: ALL_CORE_KEYS }))}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, coreQuestionKeys: [] }))}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  Clear
+                </button>
+              </div>
+              {form.coreQuestionKeys.length === 0 && form.customQuestions.filter(q => q.text.trim()).length === 0 && (
+                <p className="text-xs text-red-600 mt-1.5">
+                  This survey would ask nothing. Tick a core question or add one of your own.
+                </p>
+              )}
+              {form.coreQuestionKeys.length > 0 && form.coreQuestionKeys.length < CORE_QUESTIONS.length && (
+                <p className="text-xs text-slate-400 mt-1.5">
+                  Questions you leave out simply are not asked this time — the ones you keep stay
+                  comparable with previous surveys.
+                </p>
+              )}
+            </div>
+
+            {/* WHO IT GOES TO.
+                A pulse used to go to every parent, always. That is right for a
+                termly check and wrong for most reasons a school wants to ask
+                something. The audience is also the DENOMINATOR — see the
+                results view. */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Send to</label>
+              <select
+                value={form.audienceType}
+                onChange={e => setForm(f => ({ ...f, audienceType: e.target.value as PulseForm['audienceType'] }))}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+              >
+                <option value="SCHOOL">Everyone</option>
+                <option value="GROUP">A group</option>
+                <option value="YEAR_GROUPS">Year groups</option>
+              </select>
+
+              {form.audienceType === 'GROUP' && (
+                <select
+                  value={form.audienceGroupId}
+                  onChange={e => setForm(f => ({ ...f, audienceGroupId: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white mt-2"
+                >
+                  <option value="">Choose a group...</option>
+                  {(groups || []).map(g => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              )}
+
+              {form.audienceType === 'YEAR_GROUPS' && (
+                <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 mt-2">
+                  {(yearGroups || []).map(yg => {
+                    const on = form.audienceYearGroupIds.includes(yg.id)
+                    return (
+                      <label key={yg.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => setForm(f => ({
+                            ...f,
+                            audienceYearGroupIds: on
+                              ? f.audienceYearGroupIds.filter(i => i !== yg.id)
+                              : [...f.audienceYearGroupIds, yg.id],
+                          }))}
+                          className="h-4 w-4"
+                        />
+                        <span className="text-sm text-slate-700">{yg.name}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+
+              <p className="text-xs text-slate-400 mt-1.5">
+                Only these families see it, and the response rate is measured against them — so a
+                scoped survey is not made to look like a failure by the size of the school.
+              </p>
             </div>
 
             {/* Optional Question from presets */}
