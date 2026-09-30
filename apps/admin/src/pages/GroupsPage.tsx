@@ -744,7 +744,7 @@ export function GroupsPage() {
                       unfiltered list here would offer a name and then fail
                       with "Invalid staff user" — the worst of both. */}
                   {(staffList || [])
-                    .filter(s => !hasLeft(s.leftAt))
+                    .filter(s => !hasLeft(s))
                     .filter(s => !staffAssignments.find(a => a.userId === s.id))
                     .map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.role})</option>

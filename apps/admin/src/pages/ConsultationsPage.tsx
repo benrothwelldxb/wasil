@@ -519,7 +519,7 @@ export function ConsultationsPage() {
   // `hasLeft` rather than a presence check: a leaving DATE in the future
   // belongs to somebody still teaching, and dropping them here would empty a
   // picker of a teacher standing in the building.
-  const currentStaff = useMemo(() => (staffList ?? []).filter(s => !hasLeft(s.leftAt)), [staffList])
+  const currentStaff = useMemo(() => (staffList ?? []).filter(s => !hasLeft(s)), [staffList])
 
   /**
    * Children with more than one appointment at this evening.

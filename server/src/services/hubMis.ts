@@ -153,6 +153,19 @@ export interface HubStaff {
    *  `isArchived: true` is normal — plenty of records are archived without a
    *  date — and the sync falls back to the time it noticed. */
   leftOn?: string | null
+  /** Hub has revoked this person's access outright: a linked login with no
+   *  active membership at the school. A SUMMARY DISMISSAL.
+   *
+   *  Arrives with `leftOn: null` and `isArchived: false`, so nothing else in
+   *  this payload reports it — a consumer keying only on the leaving date
+   *  keeps a dismissed member of staff for ever while Hub has already shut its
+   *  own door.
+   *
+   *  NEVER infer it from an empty `globalRoles`. That is also exactly what
+   *  somebody who has not yet accepted their invite looks like, and acting on
+   *  it would lock out every new starter waiting on one. Hub added this field
+   *  rather than a note in the documentation for that reason. */
+  accessRevoked?: boolean
 }
 
 // Mirror of Hub's GuardianDTO (subset). A guardian is a parent/carer linked to

@@ -896,6 +896,30 @@ function parseLeftOn(value: string | null | undefined): Date | null {
  * branch as "never left" and clears the mark — a returning teacher must not
  * stay invisible because the flag lagged.
  */
+/**
+ * What `User.accessRevokedAt` should become. `undefined` means change nothing.
+ *
+ * A SUMMARY DISMISSAL, which Hub reports as `accessRevoked` — a linked login
+ * with no active membership. It arrives with `leftOn: null` and
+ * `isArchived: false`, so every other signal in the payload says the person is
+ * still current; without this field a dismissed member of staff would stay in
+ * Connect for ever while Hub had already ended their access.
+ *
+ * No date and no grace, unlike a leaving date. A dismissal is effective when it
+ * is made, so the stamp is only ever the moment we learned of it and the check
+ * elsewhere is presence, not a comparison.
+ *
+ * Silence changes nothing, the same discipline as `isArchived`: an older Hub,
+ * or a payload without the field, must not un-revoke anybody.
+ */
+function desiredAccessRevokedAt(s: HubStaff, current: Date | null): Date | null | undefined {
+  if (s.accessRevoked === undefined) return undefined
+  if (s.accessRevoked) return current === null ? new Date() : undefined
+  // Reinstated. Clearing it is what makes this recoverable without a
+  // hand-written UPDATE, the same as un-archiving.
+  return current === null ? undefined : null
+}
+
 function desiredLeftAt(s: HubStaff, current: Date | null): Date | null | undefined {
   // Hub said nothing about either field: an older payload, or a dropped field.
   // Silence is not "still here" — clearing marks because a field went missing
@@ -960,6 +984,7 @@ async function upsertStaff(
     })
     if (linked) {
       const leftAt = desiredLeftAt(s, linked.leftAt)
+      const revoked = desiredAccessRevokedAt(s, linked.accessRevokedAt)
       await prisma.user.update({
         where: { id: linked.id },
         // Refresh profile; deliberately DO NOT touch `role`.
@@ -967,6 +992,7 @@ async function upsertStaff(
           name,
           position: s.jobTitle ?? undefined,
           ...(leftAt === undefined ? {} : { leftAt }),
+          ...(revoked === undefined ? {} : { accessRevokedAt: revoked }),
         },
       })
       return { created: false, leftChange: leftChangeOf(linked.leftAt, leftAt) }
@@ -986,6 +1012,7 @@ async function upsertStaff(
           ? s.hubUserId
           : undefined
       const leftAt = desiredLeftAt(s, candidate.leftAt)
+      const revoked = desiredAccessRevokedAt(s, candidate.accessRevokedAt)
       await prisma.user.update({
         where: { id: candidate.id },
         data: {
@@ -993,6 +1020,7 @@ async function upsertStaff(
           position: s.jobTitle ?? undefined,
           ...(linkHubUserId ? { hubUserId: linkHubUserId } : {}),
           ...(leftAt === undefined ? {} : { leftAt }),
+          ...(revoked === undefined ? {} : { accessRevokedAt: revoked }),
         },
       })
       return { created: false, leftChange: leftChangeOf(candidate.leftAt, leftAt) }
@@ -1019,6 +1047,9 @@ async function upsertStaff(
       position: s.jobTitle ?? undefined,
       hubUserId: s.hubUserId ?? undefined,
       leftAt,
+      // A brand-new row for somebody already revoked: the first sync after a
+      // dismissal, where Hub still returns them but with no membership.
+      accessRevokedAt: desiredAccessRevokedAt(s, null) ?? null,
     },
   })
   return { created: true, leftChange: leftAt ? 'marked' : null }

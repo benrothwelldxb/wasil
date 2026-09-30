@@ -21,8 +21,8 @@ export function StaffPage() {
   // Staff Hub has archived. They stay on this page — an admin needs to see who
   // has gone, and their posts and parent threads are still there to read — but
   // they are folded away by default and no picker anywhere offers them.
-  const current = (staffList ?? []).filter(m => !hasLeft(m.leftAt))
-  const leavers = (staffList ?? []).filter(m => hasLeft(m.leftAt))
+  const current = (staffList ?? []).filter(m => !hasLeft(m))
+  const leavers = (staffList ?? []).filter(m => hasLeft(m))
   const [showLeavers, setShowLeavers] = useState(false)
 
   // Edit form fields
@@ -255,7 +255,7 @@ export function StaffPage() {
                     {/* Notice given, last day still ahead. They stay in every
                         picker until that date — this is the only place the
                         school would otherwise learn it is coming. */}
-                    {member.leftAt && !hasLeft(member.leftAt) && (
+                    {member.leftAt && !hasLeft(member) && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
                         Leaving {formatLeftAt(member.leftAt)}
                       </span>
@@ -300,10 +300,10 @@ export function StaffPage() {
             {showLeavers && (
               <div className="space-y-2 mt-3">
                 <p className="text-xs text-slate-400">
-                  Their last day has passed, per Wasil Hub. Posts and message threads stay
-                  readable, and they no longer appear when you pick staff for a consultation, a
-                  group or a tag. Anyone leaving on a future date is still in the list above,
-                  marked with the date.
+                  No longer working here, per Wasil Hub — either their last day has passed or
+                  their access was revoked outright. Posts and message threads stay readable, and
+                  they no longer appear when you pick staff for a consultation, a group or a tag.
+                  Anyone leaving on a future date is still in the list above, marked with the date.
                 </p>
                 {leavers.map(member => (
                   <div key={member.id} className="bg-slate-50 rounded-lg border border-slate-200 p-3 opacity-80">
@@ -315,7 +315,12 @@ export function StaffPage() {
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-slate-600">{member.name}</span>
                           <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">
-                            Left {formatLeftAt(member.leftAt)}
+                            {/* A dismissal and a resignation are different
+                                facts, and a school looking at this list
+                                deserves to see which. */}
+                            {member.accessRevokedAt
+                              ? `Access revoked ${formatLeftAt(member.accessRevokedAt)}`
+                              : `Left ${formatLeftAt(member.leftAt)}`}
                           </span>
                         </div>
                         <span className="text-sm text-slate-400">{member.email}</span>

@@ -131,6 +131,9 @@ router.get('/', isAdmin, async (req, res) => {
       // see who has gone, and every picker in the app filters on this field
       // rather than on the list being pre-trimmed for them.
       leftAt: s.leftAt?.toISOString() || null,
+      // A summary dismissal. Sent alongside the leaving date rather than
+      // folded into it: the two are different events and the page says so.
+      accessRevokedAt: s.accessRevokedAt?.toISOString() || null,
       assignedClasses: s.assignedClasses.map(ac => ({
         id: ac.class.id,
         name: ac.class.name,

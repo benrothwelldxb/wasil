@@ -127,15 +127,15 @@ async function backingUser(
   // NEVER rewrite the role.
   const linked = await prisma.user.findFirst({
     where: { hubUserId },
-    select: { id: true, role: true, schoolId: true, name: true, leftAt: true },
+    select: { id: true, role: true, schoolId: true, name: true, leftAt: true, accessRevokedAt: true },
   })
   if (linked) {
     if (linked.role === 'ILSA') return null
     // Hub keeps returning leavers in its staff list on purpose, so without this
     // the Hub fallback would resurrect somebody the local resolver had just
     // refused — the check in one place undone by the check in the other.
-    if (hasLeft(linked.leftAt)) return null
-    const { leftAt: _leftAt, ...actor } = linked
+    if (hasLeft(linked)) return null
+    const { leftAt: _leftAt, accessRevokedAt: _revoked, ...actor } = linked
     return actor
   }
 
@@ -148,11 +148,11 @@ async function backingUser(
   if (email) {
     const candidate = await prisma.user.findFirst({
       where: { schoolId, email },
-      select: { id: true, role: true, schoolId: true, name: true, hubUserId: true, leftAt: true },
+      select: { id: true, role: true, schoolId: true, name: true, hubUserId: true, leftAt: true, accessRevokedAt: true },
     })
     if (candidate) {
       if (candidate.role === 'ILSA') return null
-      if (hasLeft(candidate.leftAt)) return null
+      if (hasLeft(candidate)) return null
       if (candidate.hubUserId && candidate.hubUserId !== hubUserId) return null
       if (!candidate.hubUserId) {
         await prisma.user.update({
@@ -190,10 +190,10 @@ async function backingUser(
     // partially provision.
     const raced = await prisma.user.findFirst({
       where: { hubUserId },
-      select: { id: true, role: true, schoolId: true, name: true, leftAt: true },
+      select: { id: true, role: true, schoolId: true, name: true, leftAt: true, accessRevokedAt: true },
     })
-    if (!raced || raced.role === 'ILSA' || hasLeft(raced.leftAt)) return null
-    const { leftAt: _leftAt, ...actor } = raced
+    if (!raced || raced.role === 'ILSA' || hasLeft(raced)) return null
+    const { leftAt: _leftAt, accessRevokedAt: _revoked, ...actor } = raced
     return actor
   }
 }

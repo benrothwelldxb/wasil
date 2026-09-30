@@ -95,14 +95,14 @@ async function resolveLocalStaffActor(hubUserId: string): Promise<StaffActor | n
   if (!hubUserId) return null
   const u = await prisma.user.findUnique({
     where: { hubUserId },
-    select: { id: true, role: true, schoolId: true, name: true, leftAt: true },
+    select: { id: true, role: true, schoolId: true, name: true, leftAt: true, accessRevokedAt: true },
   })
   if (!u || !STAFF_ELIGIBLE_ROLES.includes(u.role)) return null
   // Somebody who has left is not an actor. `requirePartner` already refuses
   // them with a code Desk can read; this is the second lock, so a route
   // resolving an id by some other route than the middleware cannot let one
   // through by accident.
-  if (hasLeft(u.leftAt)) return null
+  if (hasLeft(u)) return null
   return { id: u.id, role: u.role, schoolId: u.schoolId, name: u.name }
 }
 

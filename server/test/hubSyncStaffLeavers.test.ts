@@ -80,6 +80,7 @@ function connectUser(over: Record<string, unknown> = {}) {
     email: 'mmuller@school.ae',
     hubUserId: 'hub-user-1',
     leftAt: null,
+    accessRevokedAt: null,
     ...over,
   }
 }
@@ -272,6 +273,79 @@ describe('staff leavers — notice given, last day still ahead', () => {
 
     expect(updateData().leftAt).toBeNull()
     expect(summary.staff.returned).toBe(1)
+  })
+})
+
+describe('a summary dismissal', () => {
+  // Hub reports this as `accessRevoked`: a linked login with no active
+  // membership. It arrives with leftOn NULL and isArchived FALSE, so every
+  // other signal in the payload says the person is still current — a consumer
+  // keying only on the leaving date keeps a dismissed member of staff for ever
+  // while Hub has already ended their access.
+  //
+  // Ben asked for exactly this when he chose immediate revocation: "if there
+  // was a reason to dismiss someone summarily, you'd want reassurance their
+  // access was immediately revoked."
+
+  it('stamps the revocation even though nothing else in the payload has changed', async () => {
+    mStaff.mockResolvedValue([hubStaff({ accessRevoked: true, isArchived: false, leftOn: null })])
+    prismaMock.user.findFirst.mockResolvedValue(connectUser())
+
+    await syncSchoolFromHub('connect-school-1')
+
+    const data = updateData()
+    expect(data.accessRevokedAt).toBeInstanceOf(Date)
+    // And does NOT invent a leaving date. The two are different events and a
+    // dismissal has none.
+    expect(data).not.toHaveProperty('leftAt')
+  })
+
+  it('does not re-stamp somebody already revoked', async () => {
+    mStaff.mockResolvedValue([hubStaff({ accessRevoked: true })])
+    prismaMock.user.findFirst.mockResolvedValue(
+      connectUser({ accessRevokedAt: new Date('2026-09-01T10:00:00.000Z') }),
+    )
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(updateData()).not.toHaveProperty('accessRevokedAt')
+  })
+
+  it('clears it when Hub reinstates them', async () => {
+    mStaff.mockResolvedValue([hubStaff({ accessRevoked: false })])
+    prismaMock.user.findFirst.mockResolvedValue(
+      connectUser({ accessRevokedAt: new Date('2026-09-01T10:00:00.000Z') }),
+    )
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(updateData().accessRevokedAt).toBeNull()
+  })
+
+  it('changes nothing when Hub omits the field', async () => {
+    // Silence is not "reinstated", the same discipline as isArchived. An older
+    // Hub, or a dropped field, must not un-revoke anybody.
+    mStaff.mockResolvedValue([hubStaff()])
+    prismaMock.user.findFirst.mockResolvedValue(
+      connectUser({ accessRevokedAt: new Date('2026-09-01T10:00:00.000Z') }),
+    )
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(updateData()).not.toHaveProperty('accessRevokedAt')
+  })
+
+  it('NEVER infers it from an empty globalRoles', async () => {
+    // THE TRAP HUB WARNED ABOUT, and the reason the field exists rather than a
+    // note in the documentation. An empty roles array is also exactly what
+    // somebody who has not yet accepted their invite looks like — acting on it
+    // would lock out every new starter waiting on one.
+    mStaff.mockResolvedValue([hubStaff({ globalRoles: [], isInviteAccepted: false })])
+    prismaMock.user.findFirst.mockResolvedValue(connectUser())
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(updateData()).not.toHaveProperty('accessRevokedAt')
   })
 })
 

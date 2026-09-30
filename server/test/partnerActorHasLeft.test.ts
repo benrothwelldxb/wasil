@@ -97,6 +97,35 @@ describe('a departed actor is refused, with a code Desk can read', () => {
   })
 })
 
+describe('a summary dismissal', () => {
+  it('refuses immediately — no date, no grace', async () => {
+    // The reassurance the feature exists to provide. Hub reports a revoked
+    // login with NO leaving date at all, so a gate keying only on leftAt would
+    // let a dismissed teacher keep reading parent conversations indefinitely.
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'u-1', role: 'STAFF', schoolId: 'sch-1', name: 'Dismissed',
+      leftAt: null, accessRevokedAt: new Date(),
+    })
+
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-x'))
+
+    expect(res.status).toBe(403)
+    expect(res.body).toEqual({ error: 'actor_has_left' })
+    expect(prismaMock.conversation.findMany).not.toHaveBeenCalled()
+  })
+
+  it('outranks a leaving date still in the future', async () => {
+    // Somebody serving notice who is then dismissed. The notice period does
+    // not survive the dismissal.
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'u-1', role: 'STAFF', schoolId: 'sch-1', name: 'Dismissed',
+      leftAt: FUTURE, accessRevokedAt: new Date(),
+    })
+
+    expect((await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-x'))).status).toBe(403)
+  })
+})
+
 describe('who is NOT refused', () => {
   it('somebody serving notice, whose last day is still ahead', async () => {
     // The expensive mistake in the other direction. A teacher who resigns in
@@ -213,7 +242,9 @@ describe('the gate sits before the routes, not inside them', () => {
     expect(prismaMock.user.findUnique).toHaveBeenCalledTimes(1)
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
       where: { hubUserId: 'hu-gone' },
-      select: { leftAt: true },
+      // Both reasons to be gone, asked in one query. A dismissal reports no
+      // leaving date at all, so asking for that alone would miss it.
+      select: { leftAt: true, accessRevokedAt: true },
     })
   })
 

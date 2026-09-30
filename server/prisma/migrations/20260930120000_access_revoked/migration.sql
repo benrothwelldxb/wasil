@@ -1,0 +1,11 @@
+-- Hub has revoked this person's access outright — a summary dismissal.
+--
+-- Separate from "leftAt" and deliberately not a date comparison. A leaving date
+-- is planned and has a last working day; a revocation is effective the moment
+-- it is made. Reusing the leftAt rule would give a dismissed member of staff
+-- the rest of the day, which is exactly the reassurance a summary dismissal is
+-- supposed to provide.
+--
+-- Null for everyone on deploy, which is correct: Hub only started reporting
+-- this today, and nobody is revoked until a sync says so.
+ALTER TABLE "User" ADD COLUMN "accessRevokedAt" TIMESTAMP(3);

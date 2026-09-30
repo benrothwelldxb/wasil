@@ -34,17 +34,30 @@ export function toIsoInstant(localValue: string | null | undefined): string | un
 }
 
 /**
- * Has this member of staff actually left yet?
+ * Has this member of staff actually left?
  *
- * `leftAt` is the date they LEAVE, and Hub sends it as soon as notice is given
- * — months ahead, routinely. Treating any value as "gone" removes a teacher
- * from pickers while they are still teaching, which looks exactly like the bug
- * the field was added to fix and is much harder to spot.
+ * TAKES THE RECORD, not a date, because there are two reasons and forgetting
+ * one is silent. `accessRevokedAt` is a summary dismissal — effective the
+ * moment Hub sets it. `leftAt` is a planned departure whose date is the LAST
+ * WORKING DAY, so they are here for all of it; Hub sends it as soon as notice
+ * is given, routinely months ahead, and treating any value as "gone" would
+ * remove a teacher while they are still teaching.
  */
-export function hasLeft(leftAt: string | null | undefined, now: Date = new Date()): boolean {
-  if (!leftAt) return false
-  const d = new Date(leftAt)
-  return !Number.isNaN(d.getTime()) && d <= now
+export function hasLeft(
+  staff: { leftAt?: string | null; accessRevokedAt?: string | null },
+  now: Date = new Date(),
+): boolean {
+  // A SUMMARY DISMISSAL. No date and no grace: Hub has already ended their
+  // access, and giving somebody the rest of the day is exactly the reassurance
+  // a summary dismissal exists to provide.
+  if (staff.accessRevokedAt) return true
+
+  if (!staff.leftAt) return false
+  const d = new Date(staff.leftAt)
+  if (Number.isNaN(d.getTime())) return false
+  // The leaving date is the LAST WORKING DAY, so they are here for all of it.
+  const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  return d < startOfToday
 }
 
 /**

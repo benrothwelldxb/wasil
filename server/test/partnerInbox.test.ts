@@ -280,13 +280,13 @@ describe('GET /api/partner/inbox/threads', () => {
     await auth(request(makeApp()).get('/api/partner/inbox/threads?hub_user_id=hu-staff'))
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
       where: { hubUserId: 'hu-staff' },
-      select: { id: true, role: true, schoolId: true, name: true, leftAt: true },
+      select: { id: true, role: true, schoolId: true, name: true, leftAt: true, accessRevokedAt: true },
     })
     // And `requirePartner` asks the leaver question first, before any route
     // runs — one gate for all nineteen actor call sites.
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
       where: { hubUserId: 'hu-staff' },
-      select: { leftAt: true },
+      select: { leftAt: true, accessRevokedAt: true },
     })
   })
 
