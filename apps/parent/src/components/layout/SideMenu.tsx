@@ -80,12 +80,23 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   // Check if there are active ECAs or consultations to show in menu
   useEffect(() => {
     if (open && user) {
-      api.eca.parent.listTerms()
-        .then(terms => {
-          const active = terms?.some((t: any) =>
-            ['REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'ALLOCATION_COMPLETE', 'ACTIVE'].includes(t.status)
-          )
-          setHasActiveEca(!!active)
+      // IS THERE A PROGRAMME TO SHOW? That is the question this menu item is
+      // actually asking, and it used to answer a different one.
+      //
+      // It tested the term's status against four values — REGISTRATION_OPEN,
+      // REGISTRATION_CLOSED, ALLOCATION_COMPLETE, ACTIVE — which are stages of
+      // a sign-up workflow that no longer runs in Connect. A school whose
+      // families signed up internally leaves its term in DRAFT for ever, so
+      // the menu item never appeared and the page was unreachable. At VHPS
+      // that hid twenty-seven published activities, all correctly scoped, all
+      // sitting on the right term, from every parent in the school.
+      //
+      // The programme route already decides by DATES rather than by that
+      // workflow, for the same reason. Asking it directly means the menu and
+      // the page can no longer disagree about whether there is anything there.
+      api.eca.parentProgramme()
+        .then(programme => {
+          setHasActiveEca(!!programme?.term && (programme.days?.length ?? 0) > 0)
         })
         .catch(() => setHasActiveEca(false))
 
