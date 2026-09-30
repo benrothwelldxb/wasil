@@ -139,7 +139,34 @@ export function ActivitiesPage() {
                 .filter(a => (a.myChildren?.length ?? 0) > 0)
                 .map(a => ({ ...a, dayOfWeek: day.dayOfWeek })),
             )
-            if (mine.length === 0) return null
+            // NOTHING TO SHOW SPLITS IN TWO, and which one it is depends on
+            // whether every club has published a register.
+            //
+            // While coverage is partial, silence is the only honest response:
+            // a child could be in three clubs that simply do not keep a
+            // register here, and "you are in no clubs" would be a flat lie.
+            //
+            // Once every club publishes one, the absence becomes a fact and is
+            // worth saying — a parent who expected their child to be in
+            // something learns there is a problem, rather than staring at a
+            // screen that never mentions it. One failed push anywhere returns
+            // this to silence, because registersComplete goes false.
+            if (mine.length === 0) {
+              if (!data.registersComplete) return null
+              return (
+                <div
+                  className="rounded-[22px] p-4"
+                  style={{ background: '#F2F7F3', border: '1px solid #CFE3D4' }}
+                >
+                  <h3 className="text-sm font-extrabold mb-1" style={{ color: '#2D5136' }}>
+                    Your child&rsquo;s clubs
+                  </h3>
+                  <p className="text-sm" style={{ color: '#2D3A31' }}>
+                    Not in any clubs this term. The full programme is below.
+                  </p>
+                </div>
+              )
+            }
             return (
               <div
                 className="rounded-[22px] p-4"
@@ -166,8 +193,16 @@ export function ActivitiesPage() {
                 {/* Said out loud. Without it a parent whose other child's club
                     is missing reads this as a complete list and concludes the
                     school has lost them. */}
+                {/* Said out loud while coverage is partial. Without it a
+                    parent whose other child's club is missing reads this as a
+                    complete list and concludes the school has lost them.
+                    Once every club keeps a register the caveat is no longer
+                    true, and repeating it would undersell a list that IS
+                    complete — so the claim strengthens with the data. */}
                 <p className="text-xs mt-2.5" style={{ color: '#5F7266' }}>
-                  Only clubs that keep a register here appear in this list. The full programme is below.
+                  {data.registersComplete
+                    ? 'The full programme is below.'
+                    : 'Only clubs that keep a register here appear in this list. The full programme is below.'}
                 </p>
               </div>
             )

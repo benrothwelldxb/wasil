@@ -1742,6 +1742,18 @@ export interface ParentProgramme {
   term: { id: string; name: string; academicYear: string; startDate: string; endDate: string } | null
   days: ParentProgrammeDay[]
   signUpUrl: string | null
+  /** Whether EVERY club shown has published a register.
+   *
+   *  This is what licenses a page to say "not in any clubs" out loud. While it
+   *  is false, an empty `myChildren` everywhere means "no register was
+   *  published", not "your child is in nothing" — so the page must stay silent
+   *  rather than assert an absence it cannot see.
+   *
+   *  Measured by whether a register was PUBLISHED, not by whether anyone is on
+   *  it: a club can legitimately be empty, and a count cannot tell that apart
+   *  from a roster that never arrived. One failed push anywhere in the
+   *  programme turns this false. */
+  registersComplete?: boolean
 }
 
 export const eca = {
