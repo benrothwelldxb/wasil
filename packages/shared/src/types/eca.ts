@@ -67,7 +67,15 @@ export interface EcaTerm {
   updatedAt: string
   // Counts for admin view
   activityCount?: number
+  /** Sign-ups made through CONNECT's own registration flow. At a school whose
+   *  programme is pushed from another product that flow does not run, so this
+   *  can only ever be zero — see `externalActivityCount` before showing it. */
   selectionCount?: number
+  /** Activities in this term that came from another product rather than being
+   *  made here. Above zero means the signing up happens elsewhere, and a
+   *  "0 selections" figure would read as "nobody signed up" when it means
+   *  "signing up does not happen here". */
+  externalActivityCount?: number
   allocationCount?: number
 }
 

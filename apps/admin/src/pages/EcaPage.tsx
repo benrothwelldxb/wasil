@@ -784,9 +784,21 @@ export function EcaPage() {
                       <div>
                         <span className="font-medium">{term.activityCount || 0}</span> activities
                       </div>
-                      <div>
-                        <span className="font-medium">{term.selectionCount || 0}</span> selections
-                      </div>
+                      {/* "0 selections" counts sign-ups made in CONNECT. At a
+                          school whose programme is pushed from Active that
+                          flow does not run and never will, so the number is
+                          not "nobody signed up" — it is "signing up does not
+                          happen here", and it can only ever be zero.
+                          A principal reading the first meaning concludes the
+                          integration is broken, which is exactly what
+                          happened. */}
+                      {(term.externalActivityCount ?? 0) > 0 && (term.selectionCount || 0) === 0 ? (
+                        <div className="text-gray-500">signed up outside Connect</div>
+                      ) : (
+                        <div>
+                          <span className="font-medium">{term.selectionCount || 0}</span> selections
+                        </div>
+                      )}
                       <ChevronRight className="w-5 h-5 text-gray-400" />
                     </div>
                   </div>
