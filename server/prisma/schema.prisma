@@ -1058,6 +1058,33 @@ model PulseSurvey {
   closesAt              DateTime
   additionalQuestionKey String? // Key from OPTIONAL_QUESTIONS list (legacy)
   customQuestions       Json? // Array of custom questions [{id, text, type}]
+
+  /// Which of the seven core questions this survey asks.
+  ///
+  /// The core set used to be mandatory, so every pulse was eight questions
+  /// whatever it was for — a "how has the start of the year felt" survey still
+  /// asked about homework feedback and behaviour expectations, and the length
+  /// is what stops people answering.
+  ///
+  /// Stored as the stable keys rather than positions, so a survey keeps asking
+  /// the same question if the wording is ever revised, and answers stay
+  /// comparable across the year. Backfilled to all seven for every existing
+  /// survey, so an empty list genuinely means "no core questions" — which is a
+  /// legitimate choice for a one-question check-in.
+  coreQuestionKeys      String[]
+
+  /// Who it goes to. "SCHOOL" (every parent, the old behaviour), "GROUP" (one
+  /// group the school has built, e.g. new parents), or "YEAR_GROUPS".
+  ///
+  /// This matters beyond delivery: the response RATE is measured against the
+  /// audience, and a survey sent to 30 new parents that scored its 12 replies
+  /// against 400 families would read as a 3% response to something that was
+  /// actually answered by nearly half of them.
+  audienceType          String   @default("SCHOOL")
+  audienceGroupId       String?
+  audienceGroup         Group?   @relation("PulseAudience", fields: [audienceGroupId], references: [id], onDelete: SetNull)
+  audienceYearGroupIds  String[]
+
   schoolId              String
   school                School   @relation(fields: [schoolId], references: [id])
 
@@ -1442,6 +1469,8 @@ model Group {
   // Term)" — purely to get past the constraint, which put a workaround in front
   // of parents. Published groups are identified by externalRef instead.
   @@index([schoolId, isActive])
+  /// Pulse surveys aimed at this group.
+  pulseSurveys PulseSurvey[] @relation("PulseAudience")
 }
 
 // Student membership in groups
