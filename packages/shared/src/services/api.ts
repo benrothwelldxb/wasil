@@ -1718,6 +1718,14 @@ export interface ParentProgrammeActivity {
   inviteOnly: boolean
   eligibleGender: 'MIXED' | 'BOYS_ONLY' | 'GIRLS_ONLY'
   yearGroupNames: string[]
+  /** This parent's children who are on this club's roster.
+   *
+   *  PARTIAL BY NATURE. Only some activities carry a roster — eight of
+   *  twenty-seven at the first school — so an empty array means "not on a
+   *  roster we hold", never "not in the club". Use it to ADD a personal
+   *  section above the programme, never to filter the programme: a parent
+   *  whose club has no roster must keep seeing what they see today. */
+  myChildren?: string[]
 }
 
 export interface ParentProgrammeDay {

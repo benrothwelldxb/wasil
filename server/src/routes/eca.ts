@@ -1622,6 +1622,37 @@ router.get('/parent/programme', isAuthenticated, async (req, res) => {
       orderBy: { name: 'asc' },
     })
 
+    // WHICH OF THESE THIS FAMILY'S CHILDREN ARE ACTUALLY IN.
+    //
+    // Active publishes a club's roster as a GROUP and links it to the activity,
+    // so Connect already holds the membership — it simply never looked. The
+    // page listed all twenty-seven clubs to everybody, and a parent scanned a
+    // noticeboard to find the two their child attends.
+    //
+    // PARTIAL BY NATURE, and that shapes how it is used. Only some activities
+    // carry a roster — eight of twenty-seven at the first school — so this can
+    // say which clubs a child IS in and can never say which they are not. It is
+    // shown as an addition above the programme, never as a filter of it: a
+    // parent whose club has no roster pushed sees exactly what they see today,
+    // rather than an empty "your clubs" that reads as having been dropped.
+    const myStudentIds = (user.studentLinks ?? []).map(l => l.studentId)
+    const groupIds = activities.map(a => a.groupId).filter((g): g is string => !!g)
+    const memberships = myStudentIds.length > 0 && groupIds.length > 0
+      ? await prisma.studentGroupLink.findMany({
+          where: { groupId: { in: groupIds }, studentId: { in: myStudentIds } },
+          select: {
+            groupId: true,
+            student: { select: { id: true, firstName: true } },
+          },
+        })
+      : []
+    const minesByGroup = new Map<string, string[]>()
+    for (const m of memberships) {
+      const names = minesByGroup.get(m.groupId) ?? []
+      names.push(m.student.firstName)
+      minesByGroup.set(m.groupId, names)
+    }
+
     // Stored either as a JSON array or as a stringified one, depending on which
     // path wrote it.
     const yearGroupIdsOf = (raw: unknown): string[] => {
@@ -1667,6 +1698,10 @@ router.get('/parent/programme', isAuthenticated, async (req, res) => {
       yearGroupNames: yearGroupIdsOf(a.eligibleYearGroupIds)
         .map(id => nameOf.get(id))
         .filter((n): n is string => !!n),
+      // This parent's children who are on this club's roster. Empty means
+      // "not on a roster we hold" — NOT "not in the club", because most
+      // activities carry no roster at all.
+      myChildren: a.groupId ? (minesByGroup.get(a.groupId) ?? []) : [],
     })
 
     // One entry per meeting: a twice-weekly club appears on both its days.
