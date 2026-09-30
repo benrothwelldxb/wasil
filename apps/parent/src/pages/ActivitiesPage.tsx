@@ -122,6 +122,57 @@ export function ActivitiesPage() {
         <EmptyState t={t} />
       ) : (
         <div className="space-y-5">
+          {/* WHAT THIS FAMILY IS ACTUALLY IN, above the noticeboard.
+              Active publishes a club's roster and Connect already held it;
+              this page simply never looked, so a parent scanned twenty-seven
+              clubs to find the two their child attends.
+
+              ADDED, NEVER SUBTRACTED. Only some activities carry a roster, so
+              this can say which clubs a child IS in and can never say which
+              they are not. The full programme stays below exactly as it was —
+              a parent whose club has no roster sees what they saw yesterday,
+              rather than an empty "your clubs" that reads as their child
+              having been dropped. */}
+          {(() => {
+            const mine = data.days.flatMap(day =>
+              (day.activities || [])
+                .filter(a => (a.myChildren?.length ?? 0) > 0)
+                .map(a => ({ ...a, dayOfWeek: day.dayOfWeek })),
+            )
+            if (mine.length === 0) return null
+            return (
+              <div
+                className="rounded-[22px] p-4"
+                style={{ background: '#F2F7F3', border: '1px solid #CFE3D4' }}
+              >
+                <h3 className="text-sm font-extrabold mb-2" style={{ color: '#2D5136' }}>
+                  Your child&rsquo;s clubs
+                </h3>
+                <div className="space-y-2">
+                  {mine.map(a => (
+                    <div key={`${a.id}-${a.dayOfWeek}`} className="text-sm" style={{ color: '#2D3A31' }}>
+                      <span className="font-bold">{a.myChildren!.join(' and ')}</span>
+                      {' — '}
+                      {a.name}
+                      <span style={{ color: '#5F7266' }}>
+                        {', '}
+                        {t(`days.${a.dayOfWeek}`, DAY_NAMES[a.dayOfWeek] ?? '')}
+                        {a.startTime ? ` ${a.startTime}` : ''}
+                        {a.location ? ` · ${a.location}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {/* Said out loud. Without it a parent whose other child's club
+                    is missing reads this as a complete list and concludes the
+                    school has lost them. */}
+                <p className="text-xs mt-2.5" style={{ color: '#5F7266' }}>
+                  Only clubs that keep a register here appear in this list. The full programme is below.
+                </p>
+              </div>
+            )
+          })()}
+
           {data.days.map((day) => (
             <div key={day.dayOfWeek}>
               <div className="flex items-center gap-2 mb-2">
