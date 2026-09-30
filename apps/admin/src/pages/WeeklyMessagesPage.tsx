@@ -12,6 +12,7 @@ interface WeeklyForm {
   isCurrent: boolean
   imageUrl: string
   scheduledAt: string
+  emailToParents: boolean
 }
 
 const emptyForm: WeeklyForm = {
@@ -20,7 +21,11 @@ const emptyForm: WeeklyForm = {
   weekOf: '',
   isCurrent: false,
   imageUrl: '',
+  // Off by default and chosen per update. A weekly round-up and a "the boiler
+  // is fixed" note are not the same thing, and emailing every family about the
+  // second is how a school teaches people to filter the first.
   scheduledAt: '',
+  emailToParents: false,
 }
 
 export function WeeklyMessagesPage() {
@@ -85,6 +90,7 @@ export function WeeklyMessagesPage() {
         // Wall clock → instant: "11:30" means 11:30 where the composer is
         // sitting, not 11:30 UTC (which published four hours late in Dubai).
         scheduledAt: toIsoInstant(form.scheduledAt),
+        emailToParents: form.emailToParents,
       }
       if (editingMessage) {
         await api.weeklyMessage.update(editingMessage.id, data)
@@ -112,6 +118,7 @@ export function WeeklyMessagesPage() {
       imageUrl: msg.imageUrl || '',
       // Back through the viewer's zone — slicing the ISO showed UTC.
       scheduledAt: toLocalInputValue(msg.scheduledAt),
+      emailToParents: !!msg.emailToParents,
     })
     setShowForm(true)
     requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
@@ -282,6 +289,29 @@ export function WeeklyMessagesPage() {
                 <p className="text-xs text-slate-500 mt-1">Leave empty to publish immediately</p>
               </div>
             </div>
+
+            {/* EMAIL AS WELL AS NOTIFY.
+                Push reaches only the families who installed the app and left
+                notifications on — and the parents who miss the weekly update
+                are disproportionately the ones already hardest to reach.
+                Per update rather than per school, so the choice is made about
+                THIS piece of writing. */}
+            <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
+              <input
+                type="checkbox"
+                checked={form.emailToParents}
+                onChange={(e) => setForm((f) => ({ ...f, emailToParents: e.target.checked }))}
+                className="h-4 w-4 mt-0.5"
+              />
+              <span className="text-sm">
+                <span className="font-semibold text-slate-800">Email this to parents as well</span>
+                <span className="block text-slate-500 mt-0.5">
+                  Sends the full update by email on top of the app notification. Worth it when
+                  the update matters; not for every week, or people stop opening them. Parents
+                  who have turned weekly updates off in their settings are not emailed.
+                </span>
+              </span>
+            </label>
 
             <div className="flex items-center gap-2">
               <input

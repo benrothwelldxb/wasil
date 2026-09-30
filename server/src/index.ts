@@ -70,7 +70,7 @@ import { notifyConsultationOpenings } from './services/consultationOpening.js'
 import { cleanupOldAuditLogs } from './services/audit.js'
 import { sendDueAttendanceDigests } from './services/attendanceDigest.js'
 import { drainOutbox } from './services/outbox.js'
-import { publishDueScheduledMessages } from './services/scheduledMessages.js'
+import { publishDueScheduledMessages, publishDueWeeklyMessages } from './services/scheduledMessages.js'
 import { withJobLock } from './services/jobLock.js'
 import { sendEventRsvpReminders } from './services/eventReminders.js'
 
@@ -363,6 +363,9 @@ app.listen(PORT, () => {
   // from the conditional notifiedAt claim in the sweep itself, which is also
   // what keeps two replicas from both announcing it.
   const scheduledMessages = runJob('publishDueScheduledMessages', publishDueScheduledMessages)
+  // The same sweep for the principal's weekly update, which until now became
+  // visible on its scheduled morning with nobody told at all.
+  const scheduledWeekly = runJob('publishDueWeeklyMessages', publishDueWeeklyMessages)
   // Also every tick, and NOT hour-bucketed. Booking waves can be thirty minutes
   // apart, so an hourly bucket would announce a wave up to an hour after it
   // opened — an announcement about a race already run, which is worse than
@@ -398,6 +401,9 @@ app.listen(PORT, () => {
   const ONE_MINUTE = 60 * 1000
   scheduledMessages()
   setInterval(scheduledMessages, ONE_MINUTE)
+
+  scheduledWeekly()
+  setInterval(scheduledWeekly, ONE_MINUTE)
 
   // The same resolution, for the same reason: a parent whose wave opens at
   // 18:00 should hear at 18:00, not at 18:45.
