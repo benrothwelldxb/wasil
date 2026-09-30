@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, X, Pencil, Trash2, Play, Square, ClipboardList, Activity, ChevronDown, ChevronUp, MessageSquare, Download } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal } from '@wasil/shared'
-import type { PulseSurvey, PulseSurveyStatus, PulseAnalytics, PulseOptionalQuestion, PulseCustomQuestion, PulseComparison } from '@wasil/shared'
+import type { PulseSurvey, PulseSurveyStatus, PulseAnalytics, PulseOptionalQuestion, PulseCustomQuestion, PulseComparison, PulseTemplate } from '@wasil/shared'
 
 /**
  * The seven core questions, by STABLE KEY.
@@ -306,6 +306,36 @@ export function PulsePage() {
   // than a second one built for surveys.
   const { data: groups } = useApi<Array<{ id: string; name: string }>>(() => api.groups.list(), [])
   const { data: yearGroups } = useApi<Array<{ id: string; name: string }>>(() => api.yearGroups.list(), [])
+  const { data: templates } = useApi<PulseTemplate[]>(() => api.pulse.templates(), [])
+
+  /**
+   * Fill the form from a ready-made survey.
+   *
+   * Everything it sets is then editable — a template that could not be changed
+   * would be a form, not a starting point. The name and the dates are left
+   * alone: those are the two things nobody would want guessed, and a survey
+   * called "Start of the year" three terms running is how a comparison chart
+   * becomes unreadable.
+   *
+   * The audience TYPE is applied but never the id. A template knows it is for
+   * a group; it cannot know which, and defaulting to the first one is how a
+   * new-families survey goes to the PTA.
+   */
+  const applyTemplate = (t: PulseTemplate) => {
+    setForm(f => ({
+      ...f,
+      coreQuestionKeys: t.coreQuestionKeys,
+      additionalQuestionKey: t.additionalQuestionKey || '',
+      customQuestions: t.customQuestions.map((q, i) => ({
+        id: `cq_${Date.now()}_${i}`,
+        text: q.text,
+        type: q.type,
+      })),
+      audienceType: t.audienceType,
+      audienceGroupId: '',
+      audienceYearGroupIds: [],
+    }))
+  }
 
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<PulseForm>(emptyForm)
@@ -460,6 +490,41 @@ export function PulsePage() {
                 />
               </div>
             </div>
+
+            {/* START FROM A READY-MADE SURVEY.
+                Choosing questions is the mechanism; this is the shortcut.
+                Only offered when creating — applying one to a survey being
+                edited would silently rewrite a question list somebody has
+                already answered against. */}
+            {!editingSurvey && (templates || []).length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Start from
+                  <span className="ml-1 text-xs font-normal text-slate-400">
+                    optional — everything it fills in stays editable
+                  </span>
+                </label>
+                <div className="grid gap-1.5 sm:grid-cols-2">
+                  {(templates || []).map(t => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => applyTemplate(t)}
+                      className="text-left px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-400 hover:bg-slate-50"
+                    >
+                      <span className="block text-sm font-semibold text-slate-800">{t.name}</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">{t.blurb}</span>
+                      <span className="block text-xs text-slate-400 mt-1">
+                        {t.coreQuestionKeys.length + t.customQuestions.length + (t.additionalQuestionKey ? 1 : 0)}
+                        {' questions'}
+                        {t.audienceType === 'GROUP' && ' · you choose the group'}
+                        {t.audienceType === 'YEAR_GROUPS' && ' · you choose the year groups'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* WHICH QUESTIONS.
                 The core set used to be mandatory, so every pulse was eight

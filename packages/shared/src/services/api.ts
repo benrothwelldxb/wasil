@@ -20,6 +20,7 @@ import type {
   PulseSurvey,
   PulseAnalytics,
   PulseOptionalQuestion,
+  PulseTemplate,
   Class,
   EventRsvpStatus,
   School,
@@ -928,6 +929,10 @@ export const pulse = {
   get: (id: string) => fetchApi<PulseSurvey>(`/api/pulse/${id}`),
   analytics: (id: string) => fetchApi<PulseAnalytics>(`/api/pulse/${id}/analytics`),
   optionalQuestions: () => fetchApi<PulseOptionalQuestion[]>('/api/pulse/optional-questions'),
+  /** Ready-made surveys for the points in a year a school asks something.
+   *  Starting points, not records — applying one fills the form and the survey
+   *  it creates has no link back. */
+  templates: () => fetchApi<PulseTemplate[]>('/api/pulse/templates'),
   exportCSV: (id: string, halfTermName: string) =>
     downloadCSV(`/api/pulse/${id}/export`, `pulse_${halfTermName.replace(/[^a-zA-Z0-9]/g, '_')}.csv`),
   comparison: () =>
