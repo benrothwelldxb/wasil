@@ -1024,6 +1024,25 @@ model WeeklyMessage {
   isCurrent   Boolean   @default(false)
   imageUrl    String? // Header image/photo URL
   scheduledAt DateTime? // If set, hidden from parents until this time
+
+  /// Send this one by email as well as by notification.
+  ///
+  /// Off by default and chosen per update, not per school: a principal's
+  /// weekly round-up and a "the boiler is fixed" note are not the same thing,
+  /// and emailing every family about the second is how a school teaches people
+  /// to filter the first.
+  ///
+  /// Separate from the existing email FALLBACK, which reaches only parents who
+  /// have not opened the app in a week. This is a deliberate send to everyone
+  /// who wants these — which is the point when an update actually matters.
+  emailToParents Boolean @default(false)
+
+  /// When it actually reached parents. Null while scheduled or unsent.
+  ///
+  /// Needed because "new" cannot be derived from `createdAt` once updates can
+  /// be scheduled: one written on Thursday for Monday is new on MONDAY, and
+  /// the dashboard promotes it from then.
+  publishedAt DateTime?
   schoolId    String
   school      School    @relation(fields: [schoolId], references: [id])
 

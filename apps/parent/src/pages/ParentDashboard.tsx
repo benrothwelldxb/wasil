@@ -298,6 +298,112 @@ export function ParentDashboard() {
   const { mutate: acknowledgeMessage } = useMutation(api.messages.acknowledge)
   const { mutate: toggleHeart } = useMutation(api.weeklyMessage.toggleHeart)
 
+  /**
+   * WHERE the weekly update sits, and for how long.
+   *
+   * It lived at the bottom, below every message — which is where a school's
+   * most considered piece of writing was least likely to be read. A parent
+   * opening the app on Monday morning saw today's timetable, three posts and a
+   * promoted service before the thing the principal spent an hour on.
+   *
+   * So a NEW one goes near the top, and after a few days it returns to its
+   * usual place rather than competing with today for ever. Three days covers
+   * the weekend either side of a Friday update, which is when most of them go
+   * out; beyond that it is no longer news and the dashboard should be about
+   * today again.
+   *
+   * Measured from when parents could first SEE it, not when it was written —
+   * one scheduled on Thursday for Monday is new on Monday.
+   */
+  const WEEKLY_UPDATE_PROMINENT_DAYS = 3
+  const weeklyUpdateSlot: 'top' | 'bottom' = (() => {
+    const when = weeklyMessageData?.publishedAt ?? weeklyMessageData?.createdAt
+    if (!when) return 'bottom'
+    const published = new Date(when)
+    if (Number.isNaN(published.getTime())) return 'bottom'
+    const ageMs = Date.now() - published.getTime()
+    // A future date (a scheduled update a parent cannot see yet) is not new —
+    // it is not there at all, and negative arithmetic would read as brand new.
+    if (ageMs < 0) return 'bottom'
+    return ageMs <= WEEKLY_UPDATE_PROMINENT_DAYS * 24 * 60 * 60 * 1000 ? 'top' : 'bottom'
+  })()
+
+  const weeklyUpdate = (isEnabled('weeklyUpdatesEnabled') && weeklyMessageData) ? (
+        <div
+          className="rounded-[22px] overflow-hidden"
+          style={{
+            background: 'linear-gradient(145deg, #FFF7F9, #FFF0F3)',
+            border: '1.5px solid rgba(196,80,110,0.12)',
+            position: 'relative',
+          }}
+        >
+          {/* Decorative accent */}
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '3px',
+            background: 'linear-gradient(90deg, #C4506E, #E8785B)',
+            borderRadius: '22px 22px 0 0',
+          }} />
+          <div className="p-5 pt-6">
+            <p className="text-[11px] font-bold uppercase tracking-widest mb-3" style={{ color: '#C4506E' }}>
+              From the Principal
+            </p>
+            <div className="flex items-center gap-3 mb-3">
+              <div
+                className="w-[44px] h-[44px] rounded-full flex items-center justify-center text-white text-sm font-extrabold flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #C4506E, #D97A93)' }}
+              >
+                {weeklyMessageData.title
+                  ? weeklyMessageData.title.split(' ').map((n: string) => n[0]).join('').slice(0, 2)
+                  : 'P'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-[16px] font-bold truncate" style={{ color: '#2D2225' }}>
+                  {weeklyMessageData.title || "Weekly Update"}
+                </h3>
+                <p className="text-[12px] font-semibold" style={{ color: '#A8929A' }}>
+                  {t('principal.weekOf', { date: new Date(weeklyMessageData.weekOf).toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'long',
+                  }) })}
+                </p>
+              </div>
+            </div>
+            <p className="text-[14px] leading-relaxed font-medium" style={{ color: '#7A6469' }}>
+              {stripMarkdown(weeklyMessageData.content || '').substring(0, 160)}...
+            </p>
+            <div className="flex items-center justify-between mt-4 pt-3" style={{ borderTop: '1px solid rgba(196,80,110,0.08)' }}>
+              <button
+                onClick={() => handleToggleHeart(weeklyMessageData.id)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
+                style={{
+                  background: weeklyMessageData.hasHearted ? 'rgba(224,85,119,0.1)' : 'transparent',
+                  color: weeklyMessageData.hasHearted ? '#E05577' : '#A8929A',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  border: 'none',
+                }}
+              >
+                <span className="text-[20px]">{weeklyMessageData.hasHearted ? '\u2764\uFE0F' : '\u{1FA77}'}</span>
+                <span>{weeklyMessageData.heartCount}</span>
+              </button>
+              <button
+                onClick={() => setShowWeeklyMessageModal(true)}
+                className="flex items-center gap-1 text-[13px] font-bold"
+                style={{ color: '#C4506E', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                Read full update
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+  ) : null
+
+
   // Get user's children's classes
   const userClasses = useMemo(() => {
     const classes = user?.children?.map((c) => c.className) || []
@@ -748,6 +854,11 @@ export function ParentDashboard() {
         <p className="text-[15px] font-medium mt-1" style={{ color: '#7A6469' }}>{todayFormatted}</p>
       </div>
 
+      {/* A new weekly update, above everything the school did not write. It
+          drops back to its usual place at the bottom after a few days — see
+          `weeklyUpdateSlot`. */}
+      {weeklyUpdateSlot === 'top' && weeklyUpdate}
+
       {/* Urgency Summary Banner */}
       {isEnabled('formsEnabled') && urgencySummary && (
         <div
@@ -1160,81 +1271,9 @@ export function ParentDashboard() {
         </>
       )}
 
-      {/* Weekly Principal Update — below messages, styled as a distinct section */}
-      {isEnabled('weeklyUpdatesEnabled') && weeklyMessageData && (
-        <div
-          className="rounded-[22px] overflow-hidden"
-          style={{
-            background: 'linear-gradient(145deg, #FFF7F9, #FFF0F3)',
-            border: '1.5px solid rgba(196,80,110,0.12)',
-            position: 'relative',
-          }}
-        >
-          {/* Decorative accent */}
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '3px',
-            background: 'linear-gradient(90deg, #C4506E, #E8785B)',
-            borderRadius: '22px 22px 0 0',
-          }} />
-          <div className="p-5 pt-6">
-            <p className="text-[11px] font-bold uppercase tracking-widest mb-3" style={{ color: '#C4506E' }}>
-              From the Principal
-            </p>
-            <div className="flex items-center gap-3 mb-3">
-              <div
-                className="w-[44px] h-[44px] rounded-full flex items-center justify-center text-white text-sm font-extrabold flex-shrink-0"
-                style={{ background: 'linear-gradient(135deg, #C4506E, #D97A93)' }}
-              >
-                {weeklyMessageData.title
-                  ? weeklyMessageData.title.split(' ').map((n: string) => n[0]).join('').slice(0, 2)
-                  : 'P'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-[16px] font-bold truncate" style={{ color: '#2D2225' }}>
-                  {weeklyMessageData.title || "Weekly Update"}
-                </h3>
-                <p className="text-[12px] font-semibold" style={{ color: '#A8929A' }}>
-                  {t('principal.weekOf', { date: new Date(weeklyMessageData.weekOf).toLocaleDateString('en-GB', {
-                    day: 'numeric',
-                    month: 'long',
-                  }) })}
-                </p>
-              </div>
-            </div>
-            <p className="text-[14px] leading-relaxed font-medium" style={{ color: '#7A6469' }}>
-              {stripMarkdown(weeklyMessageData.content || '').substring(0, 160)}...
-            </p>
-            <div className="flex items-center justify-between mt-4 pt-3" style={{ borderTop: '1px solid rgba(196,80,110,0.08)' }}>
-              <button
-                onClick={() => handleToggleHeart(weeklyMessageData.id)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
-                style={{
-                  background: weeklyMessageData.hasHearted ? 'rgba(224,85,119,0.1)' : 'transparent',
-                  color: weeklyMessageData.hasHearted ? '#E05577' : '#A8929A',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  border: 'none',
-                }}
-              >
-                <span className="text-[20px]">{weeklyMessageData.hasHearted ? '\u2764\uFE0F' : '\u{1FA77}'}</span>
-                <span>{weeklyMessageData.heartCount}</span>
-              </button>
-              <button
-                onClick={() => setShowWeeklyMessageModal(true)}
-                className="flex items-center gap-1 text-[13px] font-bold"
-                style={{ color: '#C4506E', background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                Read full update
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* The weekly update, rendered in ONE of two places — see `weeklyUpdate`
+          below for which and why. */}
+      {weeklyUpdateSlot === 'bottom' && weeklyUpdate}
 
       {/* Weekly Message Modal */}
       {showWeeklyMessageModal && weeklyMessageData && (

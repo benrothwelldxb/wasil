@@ -423,6 +423,12 @@ export interface WeeklyMessage {
   heartCount: number
   hasHearted?: boolean
   createdAt: string
+  /** When parents could first SEE it — not when it was written. An update
+   *  typed on Thursday and scheduled for Monday is new on Monday. Resolved
+   *  server-side so the app has one answer to compare against. */
+  publishedAt?: string
+  /** The school chose to email this one as well as notify. Admin payload. */
+  emailToParents?: boolean
 }
 
 export interface WeeklyMessageHeart {

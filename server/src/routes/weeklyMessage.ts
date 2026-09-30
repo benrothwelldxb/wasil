@@ -5,6 +5,7 @@ import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification, sendStaffNotification } from '../services/notify.js'
+import { emailWeeklyMessage } from '../services/weeklyMessageEmail.js'
 import { translateTexts } from '../services/translation.js'
 import { parseWallClockForSchool } from '../services/dateTime.js'
 import { stripMarkdown, repairTranslatedMarkdown, parseMentions } from '../services/markdownText.js'
@@ -111,6 +112,13 @@ router.get('/current', isAuthenticated, async (req, res) => {
       heartCount: message._count.hearts,
       hasHearted: message.hearts.length > 0,
       createdAt: message.createdAt.toISOString(),
+      // WHEN PARENTS COULD FIRST SEE IT, which is not when it was written.
+      //
+      // Resolved here rather than in the app so there is one answer. An update
+      // typed on Thursday and scheduled for Monday is new on MONDAY, and
+      // `createdAt` would have the dashboard promote it over the weekend to
+      // nobody, then treat it as old on the morning it actually arrives.
+      publishedAt: (message.publishedAt ?? message.scheduledAt ?? message.createdAt).toISOString(),
     })
   } catch (error) {
     console.error('Error fetching current weekly message:', error)
@@ -216,6 +224,11 @@ router.post('/', isAdmin, validate(createWeeklyMessageSchema), async (req, res) 
         isCurrent: isCurrent || false,
         imageUrl: imageUrl || null,
         scheduledAt: scheduledDate,
+        emailToParents: req.body?.emailToParents === true,
+        // Stamped when it actually reaches parents, which for a scheduled
+        // update is not now. The dashboard promotes a NEW update, and one
+        // written on Thursday for Monday is new on Monday.
+        publishedAt: scheduledDate && scheduledDate > new Date() ? null : new Date(),
         schoolId: user.schoolId,
       },
     })
@@ -226,6 +239,17 @@ router.post('/', isAdmin, validate(createWeeklyMessageSchema), async (req, res) 
     if (!message.scheduledAt || message.scheduledAt <= new Date()) {
       sendNotification({ req, type: 'WEEKLY_MESSAGE', title: message.title, body: stripMarkdown(message.content).substring(0, 200), resourceType: 'WEEKLY_MESSAGE', resourceId: message.id, target: { targetClass: 'Whole School', schoolId: user.schoolId } })
       notifyMentionedStaff({ schoolId: user.schoolId, messageId: message.id, title: message.title, content: message.content })
+      // Only when the school asked for it on THIS update. Fire-and-forget: an
+      // update that reached the app and failed to email is still published,
+      // and failing the publish would be the worse outcome.
+      if (message.emailToParents) {
+        emailWeeklyMessage({
+          schoolId: user.schoolId,
+          messageId: message.id,
+          title: message.title,
+          content: message.content,
+        }).catch(e => console.error('[WeeklyMessage] Email send failed:', e))
+      }
     }
 
     res.status(201).json({

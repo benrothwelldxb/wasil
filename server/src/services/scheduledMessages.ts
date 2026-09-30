@@ -1,6 +1,7 @@
 import prisma from './prisma.js'
 import { sendNotification } from './notify.js'
 import logger from './logger.js'
+import { emailWeeklyMessage } from './weeklyMessageEmail.js'
 
 /**
  * Announce scheduled messages when their time arrives.
@@ -77,4 +78,75 @@ export async function publishDueScheduledMessages(): Promise<void> {
       logger.error({ err, messageId: message.id }, 'scheduled message claimed but not announced')
     }
   }
+}
+
+/**
+ * The same, for the principal's weekly update.
+ *
+ * A scheduled weekly update had no publish EVENT at all: it simply became
+ * visible when its time passed, because the parent list filters on
+ * `scheduledAt`. Nobody was notified, and — once updates could be emailed —
+ * nobody would have been emailed either. An update written on Thursday for
+ * Monday appeared on Monday in silence.
+ *
+ * `publishedAt` is both the record and the claim, the same trick `notifiedAt`
+ * plays above: a conditional updateMany that only matches a row still unclaimed,
+ * so two replicas ticking together cannot both announce it. A duplicate weekly
+ * update to every family is the failure worth designing against.
+ */
+export async function publishDueWeeklyMessages(): Promise<void> {
+  const now = new Date()
+
+  const due = await prisma.weeklyMessage.findMany({
+    where: {
+      publishedAt: null,
+      scheduledAt: { not: null, lte: now },
+    },
+    select: { id: true, title: true, content: true, schoolId: true, emailToParents: true },
+    orderBy: { scheduledAt: 'asc' },
+    take: BATCH,
+  })
+  if (due.length === 0) return
+
+  for (const message of due) {
+    const claim = await prisma.weeklyMessage.updateMany({
+      where: { id: message.id, publishedAt: null },
+      data: { publishedAt: new Date() },
+    })
+    if (claim.count === 0) continue
+
+    try {
+      await sendNotification({
+        type: 'WEEKLY_MESSAGE',
+        title: message.title,
+        body: stripMarkdownish(message.content).substring(0, 200),
+        resourceType: 'WEEKLY_MESSAGE',
+        resourceId: message.id,
+        target: { targetClass: 'Whole School', schoolId: message.schoolId },
+      })
+      if (message.emailToParents) {
+        await emailWeeklyMessage({
+          schoolId: message.schoolId,
+          messageId: message.id,
+          title: message.title,
+          content: message.content,
+        })
+      }
+    } catch (error) {
+      logger.error({ err: error, messageId: message.id }, 'scheduled weekly update announce failed')
+    }
+  }
+}
+
+/** Enough markdown stripping for a 200-character notification preview. The
+ *  full renderer lives in the shared package, which the server does not
+ *  import; a preview does not justify the dependency. */
+function stripMarkdownish(input: string): string {
+  return (input || '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__)(.*?)\1/g, '$2')
+    .replace(/(\*|_)(.*?)\1/g, '$2')
+    .replace(/^[ \t]*([-*+]|\d+\.)[ \t]+/gm, '')
+    .replace(/^[ \t]*[>#]+[ \t]*/gm, '')
+    .trim()
 }
