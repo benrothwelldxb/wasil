@@ -3,7 +3,7 @@ import multer from 'multer'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
-import { uploadFile, deleteFile as deleteR2File, generateKey } from '../services/storage.js'
+import { uploadFile, deleteFile as deleteR2File, generateKey, extractKeyFromUrl } from '../services/storage.js'
 import { checkUpload } from '../services/uploadValidation.js'
 
 const fileUpload = multer({
@@ -299,8 +299,9 @@ router.delete('/file/:id', isAdmin, async (req, res) => {
     }
 
     try {
-      const key = new URL(file.fileUrl).pathname.replace(/^\//, '')
-      await deleteR2File(key)
+      // Legacy rows hold a local path, which has no object to remove.
+      const key = extractKeyFromUrl(file.fileUrl)
+      if (key) await deleteR2File(key)
     } catch {
       // Ignore R2 deletion errors (legacy local files)
     }
