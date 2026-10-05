@@ -3,22 +3,10 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { policyUpload } from '../upload.js'
-import { uploadFile, deleteFile, generateKey } from '../services/storage.js'
+import { uploadFile, deleteFile, generateKey, extractKeyFromUrl } from '../services/storage.js'
 import { checkUpload } from '../services/uploadValidation.js'
 
 const router = Router()
-
-function extractKeyFromUrl(fileUrl: string): string | null {
-  // Extract the R2 object key from a full URL
-  // e.g. "https://....r2.cloudflarestorage.com/policies/abc.pdf" → "policies/abc.pdf"
-  try {
-    const url = new URL(fileUrl)
-    return url.pathname.replace(/^\//, '')
-  } catch {
-    // Legacy local path like "/uploads/policies/abc.pdf" — no R2 key
-    return null
-  }
-}
 
 // Get all policies (alphabetized)
 router.get('/', isAuthenticated, async (req, res) => {

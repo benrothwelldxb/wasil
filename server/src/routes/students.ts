@@ -3,7 +3,7 @@ import multer from 'multer'
 import prisma from '../services/prisma.js'
 import { isAdmin, isAuthenticated } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
-import { uploadFile, generateKey } from '../services/storage.js'
+import { uploadFile, generateKey, deleteFile, extractKeyFromUrl } from '../services/storage.js'
 
 const router = Router()
 
@@ -402,6 +402,28 @@ router.delete('/reports/:reportId', isAdmin, async (req: Request, res: Response)
     if (!report) {
       return res.status(404).json({ error: 'Report not found' })
     }
+
+    // THE FILE GOES FIRST, THEN THE ROW. The order is the whole fix.
+    //
+    // This deleted the row and left the object. The key is a random uuid behind
+    // a public URL, so it is not enumerable — but it stays fetchable forever by
+    // anyone who ever held the link, and the case that matters is not tidiness.
+    // It is a report uploaded against the WRONG CHILD: an admin deletes it, and
+    // the wrong parent who already opened it keeps a working link to another
+    // family's child indefinitely. Deleting the row removes the only record
+    // that the file exists while leaving the file.
+    //
+    // NOT SWALLOWED. If the object cannot be removed, this fails and the row
+    // survives, so the report is still listed and the delete can be retried.
+    // Catching the error and carrying on would reproduce the original bug with
+    // more steps: the pointer gone, the file live, and nobody any the wiser.
+    // S3 DeleteObject succeeds on a key that is already absent, so a genuine
+    // throw here is a real failure and not an idempotent re-delete.
+    //
+    // A null key is a legacy local path with no object to remove, which is a
+    // completed deletion rather than a failed one.
+    const key = extractKeyFromUrl(report.fileUrl)
+    if (key) await deleteFile(key)
 
     await prisma.studentReport.delete({ where: { id: reportId } })
 

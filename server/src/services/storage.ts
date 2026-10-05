@@ -51,6 +51,28 @@ export async function deleteFile(key: string): Promise<void> {
   }))
 }
 
+/**
+ * The R2 object key behind a stored file URL.
+ *
+ *   https://<account>.r2.cloudflarestorage.com/reports/abc.pdf -> reports/abc.pdf
+ *
+ * Returns null for anything that is not a URL — legacy rows hold local paths
+ * like "/uploads/policies/abc.pdf", which have no object to delete. Null means
+ * "nothing to remove here", never "failed".
+ *
+ * Lived as a private copy in policies.ts and as an UNGUARDED one-liner in
+ * files.ts, where `new URL()` on a legacy path throws and takes the delete down
+ * with it. One copy, here, because every caller is deleting a file and the cost
+ * of getting it wrong is an object that outlives its row.
+ */
+export function extractKeyFromUrl(fileUrl: string): string | null {
+  try {
+    return new URL(fileUrl).pathname.replace(/^\//, '')
+  } catch {
+    return null
+  }
+}
+
 export function generateKey(prefix: string, originalName: string): string {
   const ext = originalName.split('.').pop() || 'bin'
   return `${prefix}/${crypto.randomUUID()}.${ext}`
