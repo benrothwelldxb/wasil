@@ -1,4 +1,5 @@
 import prisma from './prisma.js'
+import { describeAttachments } from './attachmentSummary.js'
 
 /**
  * Withdrawing a message, in one place.
@@ -59,11 +60,24 @@ export async function withdrawMessage(params: {
   const newest = await prisma.conversationMessage.findFirst({
     where: { conversationId, deletedAt: null },
     orderBy: { createdAt: 'desc' },
-    select: { content: true },
+    select: { content: true, attachments: { select: { fileType: true } } },
   })
+  // DESCRIBED THE SAME WAY THE SEND PATH DESCRIBES IT. A message with only a
+  // photo on it stores an empty `content` — the "Sent a photo" wording is
+  // composed at send time and never persisted. So recomputing from content
+  // alone blanked the row whenever the surviving message was attachment-only,
+  // and an empty preview reads as a thread with nothing in it rather than as a
+  // thread whose last word was a picture.
+  //
+  // Both halves now go through describeAttachments, so the preview after a
+  // withdrawal is the preview that message would have had if it had been the
+  // last one all along.
+  const preview = newest
+    ? (newest.content.trim() || describeAttachments(newest.attachments)).substring(0, 200)
+    : ''
   await prisma.conversation.update({
     where: { id: conversationId },
-    data: { lastMessageText: newest?.content.trim().substring(0, 200) ?? null },
+    data: { lastMessageText: preview || null },
   })
 
   // And out of the NOTIFICATION, which carried the first 200 characters of the

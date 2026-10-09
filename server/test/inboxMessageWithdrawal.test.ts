@@ -62,7 +62,7 @@ describe('DELETE /conversations/:id/messages/:messageId', () => {
   it('soft-deletes and falls the preview back to the last message still standing', async () => {
     prismaMock.conversationMessage.findFirst
       .mockResolvedValueOnce(ownRecentMessage())
-      .mockResolvedValueOnce({ content: 'Thanks, see you then' })
+      .mockResolvedValueOnce({ content: 'Thanks, see you then', attachments: [] })
 
     const res = await del()
     expect(res.status).toBe(200)
@@ -80,6 +80,75 @@ describe('DELETE /conversations/:id/messages/:messageId', () => {
     expect(prismaMock.conversationMessage.findFirst.mock.calls[1][0]).toMatchObject({
       where: { conversationId: 'c-1', deletedAt: null },
       orderBy: { createdAt: 'desc' },
+    })
+  })
+
+  /**
+   * A MESSAGE WITH ONLY A PHOTO ON IT STORES AN EMPTY `content`.
+   *
+   * The "Sent a photo" wording is composed at SEND time and never persisted,
+   * so recomputing the preview from content alone blanked the inbox row
+   * whenever the surviving message was attachment-only. An empty row reads as
+   * a thread with nothing in it, rather than as a thread whose last word was a
+   * picture — and it appears at exactly the moment someone has withdrawn
+   * something, which is when a teacher is already unsure what the parent can
+   * see.
+   */
+  it('describes an attachment-only fallback instead of blanking the row', async () => {
+    prismaMock.conversationMessage.findFirst
+      .mockResolvedValueOnce(ownRecentMessage())
+      .mockResolvedValueOnce({ content: '', attachments: [{ fileType: 'image/jpeg' }] })
+
+    expect((await del()).status).toBe(200)
+    expect(prismaMock.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'c-1' },
+      data: { lastMessageText: 'Sent a photo' },
+    })
+  })
+
+  it('counts them, the way the send path does', async () => {
+    prismaMock.conversationMessage.findFirst
+      .mockResolvedValueOnce(ownRecentMessage())
+      .mockResolvedValueOnce({
+        content: '   ',
+        attachments: [{ fileType: 'image/jpeg' }, { fileType: 'image/png' }],
+      })
+
+    expect((await del()).status).toBe(200)
+    expect(prismaMock.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'c-1' },
+      data: { lastMessageText: 'Sent 2 photos' },
+    })
+  })
+
+  it('prefers what the person actually wrote over the attachment wording', async () => {
+    // A message with both is described by its words. "Sent a photo" would be
+    // a worse preview than the sentence the parent typed next to it.
+    prismaMock.conversationMessage.findFirst
+      .mockResolvedValueOnce(ownRecentMessage())
+      .mockResolvedValueOnce({
+        content: 'Here is the kit list',
+        attachments: [{ fileType: 'application/pdf' }],
+      })
+
+    expect((await del()).status).toBe(200)
+    expect(prismaMock.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'c-1' },
+      data: { lastMessageText: 'Here is the kit list' },
+    })
+  })
+
+  it('still empties the row for a message with neither text nor attachment', async () => {
+    // Should not exist, but an empty string is not a preview and must not be
+    // stored as one — null is what the inbox renders as "no messages".
+    prismaMock.conversationMessage.findFirst
+      .mockResolvedValueOnce(ownRecentMessage())
+      .mockResolvedValueOnce({ content: '', attachments: [] })
+
+    expect((await del()).status).toBe(200)
+    expect(prismaMock.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'c-1' },
+      data: { lastMessageText: null },
     })
   })
 
@@ -138,7 +207,7 @@ describe('the notification is withdrawn too', () => {
   beforeEach(() => {
     prismaMock.conversationMessage.findFirst
       .mockResolvedValueOnce(ownRecentMessage())
-      .mockResolvedValueOnce({ content: 'Thanks, see you then' })
+      .mockResolvedValueOnce({ content: 'Thanks, see you then', attachments: [] })
   })
 
   it('rewrites the body of the notification for THIS message', async () => {
