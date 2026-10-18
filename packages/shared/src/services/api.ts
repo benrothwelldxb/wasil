@@ -2712,23 +2712,30 @@ export interface InclusionPlan {
   targets?: InclusionTarget[]
 }
 
-export interface InclusionDoc {
+export interface InclusionFileCard {
   id: string
   title: string
-  file_name?: string | null
-  uploaded_at?: string | null
-  category?: string | null
-  /** A Connect path, never Inclusion's own — the service token must not reach
-   *  a browser. Null when the document has no file yet. */
+  fileName: string | null
+  typeLabel: string | null
+  createdAt: string | null
+  sizeBytes: number | null
+  /** Past retention: the RECORD survives, the file does not. Show it, say so,
+   *  and do not offer a link that fails when tapped. */
+  unavailable: boolean
+  /** A CONNECT path, keyed by document id — never Inclusion's own URL. Theirs
+   *  carries a short-lived token shared by every link in one response, so a
+   *  link captured at page load is dead by the time an interrupted parent
+   *  comes back to it. Connect's mints a fresh one on each open. */
   url: string | null
+  downloadUrl: string | null
 }
 
 export interface InclusionTherapySession {
   id: string
-  session_date?: string | null
-  therapy_type?: string | null
-  summary?: string | null
-  documents?: InclusionDoc[]
+  session_date: string | null
+  provider_name: string | null
+  provider_note: string | null
+  files: InclusionFileCard[]
 }
 
 export interface InclusionChildResponse {
@@ -2744,7 +2751,7 @@ export interface InclusionChildResponse {
    *  nothing is said about why — Inclusion knows whether that is a rollover,
    *  a redraft or an error being undone, and Connect does not. */
   plan?: InclusionPlan | null
-  documents?: InclusionDoc[]
+  documents?: InclusionFileCard[]
   therapySessions?: InclusionTherapySession[]
 }
 

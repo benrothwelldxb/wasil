@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { HeartHandshake, AlertCircle, FileText, Paperclip } from 'lucide-react'
 import { useApi, api, useAuth } from '@wasil/shared'
-import type { InclusionChildResponse, InclusionPlan, InclusionTarget, InclusionDoc } from '@wasil/shared'
+import type { InclusionChildResponse, InclusionPlan, InclusionTarget, InclusionFileCard } from '@wasil/shared'
 
 /**
  * A child's SEND plan, read from Wasil Inclusion.
@@ -136,20 +136,42 @@ function PlanCard({ plan }: { plan: InclusionPlan }) {
   )
 }
 
-function DocRow({ doc }: { doc: InclusionDoc }) {
-  const when = dateLabel(doc.uploaded_at)
-  const body = (
-    <>
+function FileRow({ file }: { file: InclusionFileCard }) {
+  const when = dateLabel(file.createdAt)
+
+  // PAST RETENTION. The session and the therapist's note still matter, so the
+  // file is listed and plainly marked rather than quietly dropped — a parent
+  // who remembers a report and cannot find it will ring the office. And never
+  // a link that fails when tapped.
+  if (file.unavailable || !file.url) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <Paperclip className="h-4 w-4 flex-shrink-0" style={{ color: '#A8929A' }} />
+        <span className="text-sm" style={{ color: '#7A6469' }}>{file.title}</span>
+        <span className="text-xs" style={{ color: '#A8929A' }}>no longer available</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 py-2">
       <Paperclip className="h-4 w-4 flex-shrink-0" style={{ color: '#C4506E' }} />
-      <span className="text-sm" style={{ color: doc.url ? '#C4506E' : '#7A6469' }}>{doc.title}</span>
+      <a href={file.url} target="_blank" rel="noreferrer" className="text-sm" style={{ color: '#C4506E' }}>
+        {file.title}
+      </a>
+      {file.typeLabel && <span className="text-xs" style={{ color: '#A8929A' }}>{file.typeLabel}</span>}
       {when && <span className="text-xs" style={{ color: '#A8929A' }}>{when}</span>}
-    </>
+      {file.downloadUrl && (
+        <a
+          href={file.downloadUrl}
+          className="text-xs font-bold ml-auto"
+          style={{ color: '#C4506E' }}
+        >
+          Save
+        </a>
+      )}
+    </div>
   )
-  // A document with no file yet is listed and not linked, rather than given a
-  // link that fails when tapped.
-  return doc.url
-    ? <a href={doc.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2">{body}</a>
-    : <div className="flex items-center gap-2 py-2">{body}</div>
 }
 
 export function InclusionPage() {
@@ -249,7 +271,7 @@ export function InclusionPage() {
 
           {docs.length > 0 && (
             <Card title="Documents">
-              {docs.map(d => <DocRow key={d.id} doc={d} />)}
+              {docs.map(f => <FileRow key={f.id} file={f} />)}
             </Card>
           )}
 
@@ -260,14 +282,17 @@ export function InclusionPage() {
                   <div className="flex items-center gap-2 mb-1">
                     <FileText className="h-4 w-4" style={{ color: '#C4506E' }} />
                     <p className="text-sm font-bold" style={{ color: '#4A3B3F' }}>
-                      {s.therapy_type || 'Session'}
+                      {s.provider_name || 'Session'}
                     </p>
                     {dateLabel(s.session_date) && (
                       <span className="text-xs" style={{ color: '#A8929A' }}>{dateLabel(s.session_date)}</span>
                     )}
                   </div>
-                  {s.summary && <p className="text-sm mb-1" style={{ color: '#7A6469' }}>{s.summary}</p>}
-                  {(s.documents ?? []).map(d => <DocRow key={d.id} doc={d} />)}
+                  {/* The therapist's own words, shown as written. */}
+                  {s.provider_note && (
+                    <p className="text-sm mb-1 whitespace-pre-wrap" style={{ color: '#7A6469' }}>{s.provider_note}</p>
+                  )}
+                  {(s.files ?? []).map(f => <FileRow key={f.id} file={f} />)}
                 </div>
               ))}
             </Card>

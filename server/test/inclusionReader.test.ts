@@ -25,8 +25,10 @@ const sendMock = {
   fetchChildren: vi.fn(),
   fetchPlan: vi.fn(),
   fetchDocuments: vi.fn(),
+  findFile: (docs: any, id: string) =>
+    docs.documents.find((d: any) => d.id === id) ??
+    docs.sessions.flatMap((x: any) => x.files ?? []).find((f: any) => f.id === id),
   inclusionConfigured: vi.fn(() => true),
-  fileUrl: (t: string) => `https://inclusion.example/api/v1/guardian/files/${t}`,
   InclusionError: class InclusionError extends Error {
     constructor(public status: number, message: string) { super(message); this.name = 'InclusionError' }
   },
@@ -71,7 +73,7 @@ beforeEach(() => {
     { student: { id: 'stu-1', firstName: 'Maya', lastName: 'Khan', hubPupilId: 'hub-p-1' } },
   ])
   sendMock.fetchPlan.mockResolvedValue({ plan: null })
-  sendMock.fetchDocuments.mockResolvedValue({ documents: [], therapy_sessions: [] })
+  sendMock.fetchDocuments.mockResolvedValue({ documents: [], sessions: [], links_expire_at: null })
   sendMock.fetchChildren.mockResolvedValue({ children: [] })
 })
 
@@ -158,40 +160,67 @@ describe('the four ways there is nothing to show', () => {
 })
 
 describe('documents', () => {
-  it('never hands a browser the service token — links go through Connect', async () => {
-    sendMock.fetchDocuments.mockResolvedValue({
-      documents: [{ id: 'd1', title: 'Speech report', file_token: 'tok-abc' }],
-      therapy_sessions: [],
-    })
+  const FILE = {
+    id: 'f1',
+    title: 'Speech report',
+    file_name: 'speech.pdf',
+    document_type_label: 'Therapy report',
+    created_at: '2026-10-01T09:00:00.000Z',
+    view_url: 'https://wasilinclusion.com/api/v1/guardian/files/tok-abc',
+    download_url: 'https://wasilinclusion.com/api/v1/guardian/files/tok-abc?save=1',
+  }
+
+  it('never hands a browser Inclusion’s own link', async () => {
+    // Their URL carries a short-lived token shared by every link in the
+    // response, and it works for anyone holding it. A page a parent might
+    // screenshot, or a browser might sync, is no place for one.
+    sendMock.fetchDocuments.mockResolvedValue({ documents: [FILE], sessions: [] })
 
     const res = await child()
 
-    expect(res.body.documents[0].url).toBe('/api/inclusion/file/tok-abc')
-    // The upstream token must not travel to the client under its own name.
-    expect(res.body.documents[0].file_token).toBeUndefined()
-    expect(JSON.stringify(res.body)).not.toContain('inclusion.example')
+    expect(res.body.documents[0].url).toBe('/api/inclusion/child/stu-1/file/f1')
+    expect(res.body.documents[0].downloadUrl).toBe('/api/inclusion/child/stu-1/file/f1?save=1')
+    expect(JSON.stringify(res.body)).not.toContain('wasilinclusion.com')
+    expect(JSON.stringify(res.body)).not.toContain('tok-abc')
   })
 
-  it('rewrites links inside therapy sessions too', async () => {
+  it('links files inside a therapy session the same way', async () => {
     sendMock.fetchDocuments.mockResolvedValue({
       documents: [],
-      therapy_sessions: [{ id: 's1', documents: [{ id: 'd2', title: 'OT notes', file_token: 'tok-xyz' }] }],
+      sessions: [{ id: 's1', provider_name: 'Speech & Language', provider_note: 'Good session', files: [FILE] }],
     })
 
     const res = await child()
 
-    expect(res.body.therapySessions[0].documents[0].url).toBe('/api/inclusion/file/tok-xyz')
+    expect(res.body.therapySessions[0].provider_name).toBe('Speech & Language')
+    expect(res.body.therapySessions[0].files[0].url).toBe('/api/inclusion/child/stu-1/file/f1')
   })
 
-  it('leaves a document with no file as having no link, rather than a broken one', async () => {
+  it('marks a file past retention as unavailable rather than linking it', async () => {
+    // The record survives and the file does not. The session and the note
+    // still matter, so it is listed and plainly marked — never given a link
+    // that fails when tapped.
     sendMock.fetchDocuments.mockResolvedValue({
-      documents: [{ id: 'd3', title: 'Pending upload', file_token: null }],
-      therapy_sessions: [],
+      documents: [{ ...FILE, file_deleted: true, view_url: null, download_url: null }],
+      sessions: [],
     })
 
     const res = await child()
 
+    expect(res.body.documents[0].unavailable).toBe(true)
     expect(res.body.documents[0].url).toBeNull()
+    expect(res.body.documents[0].downloadUrl).toBeNull()
+  })
+
+  it('treats a file with no link at all as unavailable too', async () => {
+    sendMock.fetchDocuments.mockResolvedValue({
+      documents: [{ ...FILE, view_url: null, download_url: null }],
+      sessions: [],
+    })
+
+    const res = await child()
+
+    expect(res.body.documents[0].unavailable).toBe(true)
   })
 })
 
@@ -289,19 +318,31 @@ describe('the withdrawn-plan notice', () => {
 
 
 /**
- * THE FILE PROXY, and the header that must not be there.
+ * THE FILE PROXY.
  *
- * It looks like a fetch that needs a credential and it is the opposite. The
- * file URL IS the credential — one document, one child, one guardian, five
- * minutes — and Inclusion answers a file on R2 with a 302 to a PRESIGNED R2
- * URL. An Authorization header would ride that redirect: at best S3 rejects
- * the request for carrying two auth mechanisms, at worst Connect's service
- * token is presented to Cloudflare.
+ * TWO THINGS IT MUST NOT DO, and I got both wrong first time.
  *
- * `fetch` is specified to strip it cross-origin. This does not rely on that.
+ * NO AUTHORIZATION HEADER. It looks like a fetch that needs a credential and
+ * it is the opposite: the file URL IS the credential, and Inclusion answers a
+ * file on R2 with a 302 to a PRESIGNED R2 URL. A header would ride that
+ * redirect — at best S3 rejects two auth mechanisms, at worst Connect's
+ * service token is presented to Cloudflare. `fetch` is specified to strip it
+ * cross-origin; this does not rely on that.
+ *
+ * NO STORED LINK. Every URL in a /documents response shares one short expiry,
+ * so a link captured when the page was drawn is dead by the time a parent who
+ * was interrupted comes back to it. The route is keyed by DOCUMENT ID and
+ * mints a fresh one on each open — which also means a file withdrawn since
+ * page load is simply no longer found.
  */
 describe('fetching a document', () => {
   const realFetch = globalThis.fetch
+  const FILE = {
+    id: 'f1',
+    title: 'Speech report',
+    view_url: 'https://wasilinclusion.com/api/v1/guardian/files/tok-fresh',
+    download_url: 'https://wasilinclusion.com/api/v1/guardian/files/tok-fresh?save=1',
+  }
 
   afterEach(() => { globalThis.fetch = realFetch })
 
@@ -319,47 +360,104 @@ describe('fetching a document', () => {
     return calls
   }
 
+  const open = (q = '') => request(makeApp()).get(`/api/inclusion/child/stu-1/file/f1${q}`)
+
+  beforeEach(() => {
+    sendMock.fetchDocuments.mockResolvedValue({ documents: [FILE], sessions: [] })
+  })
+
   it('sends NO Authorization header', async () => {
     process.env.SEND_SERVICE_TOKEN = 'wsk_secret'
     const calls = captureFetch()
 
-    await request(makeApp()).get('/api/inclusion/file/tok-abc')
+    await open()
 
     expect(calls).toHaveLength(1)
     const headers = (calls[0].init?.headers ?? {}) as Record<string, string>
     expect(Object.keys(headers).map(k => k.toLowerCase())).not.toContain('authorization')
-    // And the token appears nowhere in what was sent.
     expect(JSON.stringify(calls[0].init ?? {})).not.toContain('wsk_secret')
+  })
+
+  it('mints the link at the moment of opening, never reusing a stored one', async () => {
+    const calls = captureFetch()
+    await open()
+    // The URL fetched is the one just returned by /documents, not anything
+    // captured when the page was drawn.
+    expect(sendMock.fetchDocuments).toHaveBeenCalled()
+    expect(calls[0].url).toBe(FILE.view_url)
+  })
+
+  it('uses the download link when asked to save', async () => {
+    const calls = captureFetch()
+    await open('?save=1')
+    expect(calls[0].url).toBe(FILE.download_url)
+  })
+
+  it('refuses a file belonging to another family, without fetching it', async () => {
+    // The old token-keyed route could not do this: any signed-in parent
+    // holding a link could follow it. This resolves the pupil from the
+    // caller's own links first.
+    prismaMock.parentStudentLink.findFirst.mockResolvedValue(null)
+    const calls = captureFetch()
+
+    const res = await open()
+
+    expect(res.status).toBe(404)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('404s a file id that is not among this child’s shared files', async () => {
+    // Which also covers a file that WAS shared when the page was drawn and
+    // has been withdrawn since.
+    sendMock.fetchDocuments.mockResolvedValue({ documents: [], sessions: [] })
+    const calls = captureFetch()
+
+    const res = await open()
+
+    expect(res.status).toBe(404)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('reports a file past retention as gone, not as an error', async () => {
+    sendMock.fetchDocuments.mockResolvedValue({
+      documents: [{ ...FILE, file_deleted: true, view_url: null, download_url: null }],
+      sessions: [],
+    })
+
+    const res = await open()
+
+    expect(res.status).toBe(410)
+  })
+
+  it('finds a file that lives inside a therapy session', async () => {
+    sendMock.fetchDocuments.mockResolvedValue({
+      documents: [],
+      sessions: [{ id: 's1', files: [FILE] }],
+    })
+    const calls = captureFetch()
+
+    const res = await open()
+
+    expect(res.status).toBe(200)
+    expect(calls[0].url).toBe(FILE.view_url)
   })
 
   it('passes the content type through so a PDF opens as a PDF', async () => {
     captureFetch()
-    const res = await request(makeApp()).get('/api/inclusion/file/tok-abc')
+    const res = await open()
     expect(res.headers['content-type']).toContain('application/pdf')
   })
 
   it('never lets a document be cached', async () => {
-    // A child's SEND record must not sit in a shared proxy or survive a
-    // sign-out in the browser's store.
     captureFetch()
-    const res = await request(makeApp()).get('/api/inclusion/file/tok-abc')
+    const res = await open()
     expect(res.headers['cache-control']).toBe('private, no-store')
-  })
-
-  it('reports an expired link as not found rather than as an error', async () => {
-    captureFetch(404)
-    const res = await request(makeApp()).get('/api/inclusion/file/tok-gone')
-    expect(res.status).toBe(404)
   })
 
   it('fetches nothing until a parent actually opens a file', async () => {
     // Inclusion writes an audit row on EVERY fetch and a SENCO reads it, so a
     // prefetch would put views in a child's access record that nobody made.
     const calls = captureFetch()
-    sendMock.fetchDocuments.mockResolvedValue({
-      documents: [{ id: 'd1', title: 'Speech report', file_token: 'tok-abc' }],
-      therapy_sessions: [],
-    })
 
     await child()
 
