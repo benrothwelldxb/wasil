@@ -2669,6 +2669,102 @@ export interface ThisWeekResponse {
   clubsPublished?: boolean
 }
 
+/**
+ * Wasil Inclusion — a child's SEND plan, documents and therapy sessions.
+ *
+ * FOUR STATES, and only one of them means the child has no plan. The other
+ * three are a missing Hub link, a family Inclusion has never mirrored, and a
+ * missing credential — and a page that renders any of those as "no plan" is
+ * telling a parent something about their child's support that nobody checked.
+ */
+export type InclusionState = 'ok' | 'no_hub_link' | 'not_known' | 'unavailable'
+
+export interface InclusionLabel { label: string; tone: string }
+
+export interface InclusionTarget {
+  id: string
+  target_number: number
+  needs_category: string
+  needs_category_label: string
+  target_statement: string
+  progress: InclusionLabel | null
+  progress_notes: string | null
+  outcome_at_review: InclusionLabel | null
+}
+
+export interface InclusionPlan {
+  id: string
+  version: number
+  status: string
+  status_label: string
+  stage: string
+  stage_label: string
+  start_date: string | null
+  review_date: string | null
+  completed_review_date: string | null
+  current_strengths: string | null
+  barriers_to_learning: string | null
+  shared_at: string | null
+  parent_acknowledged: boolean
+  parent_acknowledged_at: string | null
+  /** OMITTED, not empty, when the token lacks the targets grant. Undefined is
+   *  "not told", which must not render as "this plan has no targets". */
+  targets?: InclusionTarget[]
+}
+
+export interface InclusionDoc {
+  id: string
+  title: string
+  file_name?: string | null
+  uploaded_at?: string | null
+  category?: string | null
+  /** A Connect path, never Inclusion's own — the service token must not reach
+   *  a browser. Null when the document has no file yet. */
+  url: string | null
+}
+
+export interface InclusionTherapySession {
+  id: string
+  session_date?: string | null
+  therapy_type?: string | null
+  summary?: string | null
+  documents?: InclusionDoc[]
+}
+
+export interface InclusionChildResponse {
+  state: InclusionState
+  childName?: string
+  /** Inclusion's own sentence for a plan that has gone away, e.g. "Your
+   *  child's plan is being updated." Present only when Inclusion chooses to
+   *  say something — never for an explicit stop-sharing, and never invented
+   *  by Connect. RENDER IT VERBATIM: it is composed by the app that knows why
+   *  the plan went, and re-wording it would be Connect speaking for them. */
+  notice?: string
+  /** Null is a real answer: no plan is currently shared. The card hides, and
+   *  nothing is said about why — Inclusion knows whether that is a rollover,
+   *  a redraft or an error being undone, and Connect does not. */
+  plan?: InclusionPlan | null
+  documents?: InclusionDoc[]
+  therapySessions?: InclusionTherapySession[]
+}
+
+export interface InclusionChildrenResponse {
+  state: InclusionState
+  children: Array<{
+    id: string
+    firstName: string
+    /** true/false from Inclusion; null when it has not been asked or does not
+     *  know this child. Three answers, because "no plan" and "no record" are
+     *  different things to say to a parent. */
+    hasPlan: boolean | null
+  }>
+}
+
+export const inclusion = {
+  children: () => fetchApi<InclusionChildrenResponse>('/api/inclusion/children'),
+  child: (studentId: string) => fetchApi<InclusionChildResponse>(`/api/inclusion/child/${studentId}`),
+}
+
 export const thisWeek = {
   child: (studentId: string, weekOf?: string) =>
     fetchApi<ThisWeekResponse>(
@@ -3389,4 +3485,5 @@ export default {
   attendance,
   schoolSettings,
   thisWeek,
+  inclusion,
 }

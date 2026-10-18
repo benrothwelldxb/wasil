@@ -28,7 +28,7 @@ import {
   Download,
   Share, Newspaper,
   Bus,
-  Lightbulb } from 'lucide-react'
+  Lightbulb, HeartHandshake } from 'lucide-react'
 import { useAuth } from '@wasil/shared'
 import { useTheme } from '@wasil/shared'
 import * as api from '@wasil/shared'
@@ -245,6 +245,14 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   // way in to see that it is.
   if (isEnabled('activeScheduleEnabled')) {
     myChild.push({ icon: CalendarDays, labelKey: 'nav.thisWeek', path: '/this-week' })
+  }
+  // Same rule as This Week: the school's module flag is the switch, and the
+  // route 404s without it either way. NOT gated on whether this child has a
+  // plan — a parent whose child has nothing shared still needs a way in, and
+  // hiding the entry would make "no plan" and "no page" indistinguishable
+  // from the outside.
+  if (isEnabled('sendInclusionEnabled')) {
+    myChild.push({ icon: HeartHandshake, labelKey: 'nav.inclusion', path: '/inclusion' })
   }
   if (hasReports) {
     myChild.push({ icon: FileText, labelKey: 'nav.reportCards', path: '/report-cards' })
