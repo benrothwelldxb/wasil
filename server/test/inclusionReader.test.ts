@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { Readable } from 'node:stream'
 import express from 'express'
 import request from 'supertest'
 
@@ -283,5 +284,85 @@ describe('the withdrawn-plan notice', () => {
 
     expect(res.body.state).toBe('not_known')
     expect(res.body.notice).toBeUndefined()
+  })
+})
+
+
+/**
+ * THE FILE PROXY, and the header that must not be there.
+ *
+ * It looks like a fetch that needs a credential and it is the opposite. The
+ * file URL IS the credential — one document, one child, one guardian, five
+ * minutes — and Inclusion answers a file on R2 with a 302 to a PRESIGNED R2
+ * URL. An Authorization header would ride that redirect: at best S3 rejects
+ * the request for carrying two auth mechanisms, at worst Connect's service
+ * token is presented to Cloudflare.
+ *
+ * `fetch` is specified to strip it cross-origin. This does not rely on that.
+ */
+describe('fetching a document', () => {
+  const realFetch = globalThis.fetch
+
+  afterEach(() => { globalThis.fetch = realFetch })
+
+  function captureFetch(status = 200) {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    globalThis.fetch = vi.fn(async (url: any, init?: any) => {
+      calls.push({ url: String(url), init })
+      return {
+        ok: status < 400,
+        status,
+        headers: new Map([['content-type', 'application/pdf']]) as any,
+        body: status < 400 ? Readable.toWeb(Readable.from([Buffer.from('%PDF-1.4')])) : null,
+      } as any
+    }) as any
+    return calls
+  }
+
+  it('sends NO Authorization header', async () => {
+    process.env.SEND_SERVICE_TOKEN = 'wsk_secret'
+    const calls = captureFetch()
+
+    await request(makeApp()).get('/api/inclusion/file/tok-abc')
+
+    expect(calls).toHaveLength(1)
+    const headers = (calls[0].init?.headers ?? {}) as Record<string, string>
+    expect(Object.keys(headers).map(k => k.toLowerCase())).not.toContain('authorization')
+    // And the token appears nowhere in what was sent.
+    expect(JSON.stringify(calls[0].init ?? {})).not.toContain('wsk_secret')
+  })
+
+  it('passes the content type through so a PDF opens as a PDF', async () => {
+    captureFetch()
+    const res = await request(makeApp()).get('/api/inclusion/file/tok-abc')
+    expect(res.headers['content-type']).toContain('application/pdf')
+  })
+
+  it('never lets a document be cached', async () => {
+    // A child's SEND record must not sit in a shared proxy or survive a
+    // sign-out in the browser's store.
+    captureFetch()
+    const res = await request(makeApp()).get('/api/inclusion/file/tok-abc')
+    expect(res.headers['cache-control']).toBe('private, no-store')
+  })
+
+  it('reports an expired link as not found rather than as an error', async () => {
+    captureFetch(404)
+    const res = await request(makeApp()).get('/api/inclusion/file/tok-gone')
+    expect(res.status).toBe(404)
+  })
+
+  it('fetches nothing until a parent actually opens a file', async () => {
+    // Inclusion writes an audit row on EVERY fetch and a SENCO reads it, so a
+    // prefetch would put views in a child's access record that nobody made.
+    const calls = captureFetch()
+    sendMock.fetchDocuments.mockResolvedValue({
+      documents: [{ id: 'd1', title: 'Speech report', file_token: 'tok-abc' }],
+      therapy_sessions: [],
+    })
+
+    await child()
+
+    expect(calls).toHaveLength(0)
   })
 })

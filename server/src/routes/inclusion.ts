@@ -17,6 +17,9 @@
 // where one guard is not enough, and Connect is the app that actually owns the
 // household. So a pupil the caller is not linked to never reaches Inclusion.
 import { Router } from 'express'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import prisma from '../services/prisma.js'
 import { isAuthenticated } from '../middleware/auth.js'
 import { requireModule } from '../middleware/moduleFlag.js'
@@ -211,9 +214,32 @@ router.get('/child/:studentId', isAuthenticated, requireModule('sendInclusionEna
 
 // GET /api/inclusion/file/:token — fetch a document through Connect.
 //
-// PROXIED RATHER THAN REDIRECTED, for one reason: the service token must never
-// reach a browser. Inclusion's link is short-lived and re-checked on every
-// fetch, so this adds no authority — it only carries the credential.
+// NO AUTHORIZATION HEADER ON THIS FETCH, and that is the opposite of what it
+// looks like it should be. The file URL IS the credential: one document, one
+// child, one guardian, five minutes, re-checked by Inclusion on every fetch.
+// It takes no bearer.
+//
+// Sending one is actively dangerous rather than merely useless. Inclusion
+// answers a file on R2 with a 302 to a PRESIGNED R2 URL, so an Authorization
+// header would ride the redirect — at best S3 rejects the request for
+// carrying two auth mechanisms, at worst Connect's service token is presented
+// to Cloudflare. `fetch` is specified to strip it cross-origin; the fix is to
+// never attach it rather than to depend on that.
+//
+// WHY PROXY AT ALL, since the original reason was wrong. It was built to keep
+// the service token out of the browser, and the token was never involved. The
+// reason that survives is smaller but real: a Connect URL is useless without a
+// Connect session, whereas a raw Inclusion URL is self-authorising to anyone
+// holding it for five minutes — a forwarded screenshot, a shared tablet, a
+// synced browser history. Five minutes is a short window and this is a modest
+// gain, but it is a gain, and the cost is bytes.
+//
+// STREAMED, NOT BUFFERED. Therapy records include video, and reading one into
+// memory to hand it on is how a server falls over on the one file that matters.
+//
+// FETCHED ONLY WHEN A PARENT OPENS IT. Inclusion writes an audit row on every
+// fetch and a SENCO reads it, so a prefetch or a thumbnail pass would record
+// views that nobody made — a false entry in a child's access record.
 //
 // Connect does not check whose document this is, and cannot: the token is
 // opaque. Inclusion re-checks sharing, confidentiality and retention on the
@@ -224,10 +250,8 @@ router.get('/file/:token', isAuthenticated, requireModule('sendInclusionEnabled'
   try {
     if (!inclusionConfigured()) return res.status(503).json({ error: 'unavailable' })
 
-    const upstream = await fetch(fileUrl(req.params.token), {
-      headers: { authorization: `Bearer ${process.env.SEND_SERVICE_TOKEN || ''}` },
-      cache: 'no-store',
-    })
+    // Deliberately no headers: see above. The URL is the credential.
+    const upstream = await fetch(fileUrl(req.params.token), { cache: 'no-store' })
     if (!upstream.ok || !upstream.body) {
       // Expired or withdrawn reads the same as never-existed, by Inclusion's
       // design and ours.
@@ -242,8 +266,10 @@ router.get('/file/:token', isAuthenticated, requireModule('sendInclusionEnabled'
     // proxy or survive a sign-out in the browser's store.
     res.setHeader('cache-control', 'private, no-store')
 
-    const buf = Buffer.from(await upstream.arrayBuffer())
-    res.end(buf)
+    const length = upstream.headers.get('content-length')
+    if (length) res.setHeader('content-length', length)
+
+    await pipeline(Readable.fromWeb(upstream.body as WebReadableStream), res)
   } catch (error) {
     console.error('Error fetching Inclusion file:', error)
     res.status(502).json({ error: 'unavailable' })
