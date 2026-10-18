@@ -17,15 +17,19 @@
 // where one guard is not enough, and Connect is the app that actually owns the
 // household. So a pupil the caller is not linked to never reaches Inclusion.
 import { Router } from 'express'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import prisma from '../services/prisma.js'
 import { isAuthenticated } from '../middleware/auth.js'
 import { requireModule } from '../middleware/moduleFlag.js'
+import type { InclusionFile } from '../services/sendInclusion.js'
 import {
   fetchChildren,
   fetchPlan,
   fetchDocuments,
+  findFile,
   inclusionConfigured,
-  fileUrl,
   InclusionError,
   InclusionNotConfiguredError,
 } from '../services/sendInclusion.js'
@@ -55,6 +59,34 @@ type State = 'ok' | 'no_hub_link' | 'not_known' | 'unavailable'
  *  children belong to whom. Connect must therefore never read a 404 as "no
  *  plan" — it is "I cannot tell you", which is a different sentence. */
 const isNotFound = (e: unknown) => e instanceof InclusionError && e.status === 404
+
+/**
+ * One file, as the page needs it.
+ *
+ * Inclusion's own `view_url` and `download_url` are dropped rather than
+ * forwarded: they carry a five-minute token, and a URL that works for anyone
+ * holding it has no business in a page a parent might screenshot or a browser
+ * might sync. Connect's link needs a Connect session instead.
+ *
+ * `unavailable` is a file past retention. The RECORD survives — the session
+ * and the therapist's note still matter — so it is listed and plainly marked,
+ * never given a link that fails when tapped.
+ */
+function fileCard(f: InclusionFile, studentId: string) {
+  const gone = f.file_deleted === true || (!f.view_url && !f.download_url)
+  const base = `/api/inclusion/child/${encodeURIComponent(studentId)}/file/${encodeURIComponent(f.id)}`
+  return {
+    id: f.id,
+    title: f.title,
+    fileName: f.file_name ?? null,
+    typeLabel: f.document_type_label ?? null,
+    createdAt: f.created_at ?? null,
+    sizeBytes: f.size_bytes ?? null,
+    unavailable: gone,
+    url: gone ? null : base,
+    downloadUrl: gone ? null : `${base}?save=1`,
+  }
+}
 
 async function context(userId: string, schoolId: string) {
   const [user, school] = await Promise.all([
@@ -183,21 +215,17 @@ router.get('/child/:studentId', isAuthenticated, requireModule('sendInclusionEna
       // Rendered verbatim where present, absent otherwise. Connect does not
       // compose, map or default this sentence.
       ...(planResult?.notice ? { notice: planResult.notice } : {}),
-      documents: (docs?.documents ?? []).map(d => ({
-        ...d,
-        // Swapped for a Connect URL so the service token never reaches a
-        // browser. Inclusion re-checks the sharing rule on every fetch, so a
-        // link minted before a document was made confidential will not serve.
-        url: d.file_token ? `/api/inclusion/file/${encodeURIComponent(d.file_token)}` : null,
-        file_token: undefined,
-      })),
-      therapySessions: (docs?.therapy_sessions ?? []).map(s => ({
-        ...s,
-        documents: (s.documents ?? []).map(d => ({
-          ...d,
-          url: d.file_token ? `/api/inclusion/file/${encodeURIComponent(d.file_token)}` : null,
-          file_token: undefined,
-        })),
+      // LINKED BY DOCUMENT ID, never by Inclusion's URL. Every link in a
+      // /documents response shares one expiry, so a parent who opens the page
+      // and taps a file six minutes later would be following a dead link.
+      // Connect's URL has no expiry because it mints a fresh one on each open.
+      documents: (docs?.documents ?? []).map(f => fileCard(f, studentId)),
+      therapySessions: (docs?.sessions ?? []).map(sess => ({
+        id: sess.id,
+        session_date: sess.session_date ?? null,
+        provider_name: sess.provider_name ?? null,
+        provider_note: sess.provider_note ?? null,
+        files: (sess.files ?? []).map(f => fileCard(f, studentId)),
       })),
     })
   } catch (error) {
@@ -209,45 +237,95 @@ router.get('/child/:studentId', isAuthenticated, requireModule('sendInclusionEna
   }
 })
 
-// GET /api/inclusion/file/:token — fetch a document through Connect.
+// GET /api/inclusion/child/:studentId/file/:fileId[?save=1]
 //
-// PROXIED RATHER THAN REDIRECTED, for one reason: the service token must never
-// reach a browser. Inclusion's link is short-lived and re-checked on every
-// fetch, so this adds no authority — it only carries the credential.
+// KEYED BY DOCUMENT ID, NOT BY INCLUSION'S URL, and the expiry is why. Every
+// link in a /documents response shares one short expiry, so a URL captured at
+// page load is dead by the time a parent who was interrupted comes back to it.
+// This looks the file up and mints a fresh link at the moment of opening, so
+// Connect's own URL never goes stale — and if the file stopped being shared
+// in the meantime, Inclusion's answer now reflects that rather than the answer
+// it gave when the page was drawn.
 //
-// Connect does not check whose document this is, and cannot: the token is
-// opaque. Inclusion re-checks sharing, confidentiality and retention on the
-// fetch, which is the check that counts. Connect's contribution is that you
-// must be a signed-in parent at a school with the module on to use this route
-// at all.
-router.get('/file/:token', isAuthenticated, requireModule('sendInclusionEnabled'), async (req, res) => {
-  try {
-    if (!inclusionConfigured()) return res.status(503).json({ error: 'unavailable' })
+// IT ALSO RE-CHECKS WHOSE CHILD THIS IS. The old route took an opaque token
+// and could not: any signed-in parent with a link could follow it. This one
+// resolves the pupil from the caller's own ParentStudentLink first, so a file
+// belonging to another family is not fetchable even with its id.
+//
+// NO AUTHORIZATION HEADER ON THE FILE FETCH, and that is the opposite of what
+// it looks like it needs. The link IS the credential — one file, one child,
+// one guardian, minutes — and it takes no bearer. Sending one is actively
+// dangerous rather than merely useless: Inclusion answers a file on R2 with a
+// 302 to a PRESIGNED R2 URL, so the header would ride the redirect. At best S3
+// rejects the request for carrying two auth mechanisms; at worst Connect's
+// service token is presented to Cloudflare. `fetch` is specified to strip it
+// cross-origin; the fix is to never attach it rather than to depend on that.
+//
+// STREAMED, NOT BUFFERED — therapy records include video.
+//
+// FETCHED ONLY WHEN A PARENT OPENS A FILE. Inclusion writes an audit row on
+// every fetch and a SENCO reads it, so a prefetch would put views in a child's
+// access record that nobody made.
+router.get(
+  '/child/:studentId/file/:fileId',
+  isAuthenticated,
+  requireModule('sendInclusionEnabled'),
+  async (req, res) => {
+    try {
+      const user = req.user!
+      const { studentId, fileId } = req.params
+      const save = req.query.save === '1'
 
-    const upstream = await fetch(fileUrl(req.params.token), {
-      headers: { authorization: `Bearer ${process.env.SEND_SERVICE_TOKEN || ''}` },
-      cache: 'no-store',
-    })
-    if (!upstream.ok || !upstream.body) {
-      // Expired or withdrawn reads the same as never-existed, by Inclusion's
-      // design and ours.
-      return res.status(upstream.status === 404 ? 404 : 502).json({ error: 'not_found' })
+      const link = await prisma.parentStudentLink.findFirst({
+        where: { userId: user.id, studentId },
+        select: { student: { select: { hubPupilId: true } } },
+      })
+      if (!link?.student?.hubPupilId) return res.status(404).json({ error: 'not_found' })
+
+      const { guardianId, hubSchoolId } = await context(user.id, user.schoolId)
+      if (!inclusionConfigured() || !hubSchoolId || !guardianId) {
+        return res.status(503).json({ error: 'unavailable' })
+      }
+
+      let docs
+      try {
+        docs = await fetchDocuments({ hubSchoolId, guardianId, hubPupilId: link.student.hubPupilId })
+      } catch (e) {
+        if (isNotFound(e)) return res.status(404).json({ error: 'not_found' })
+        throw e
+      }
+
+      const file = findFile(docs, fileId)
+      // Not among this child's shared files — which also covers a file that
+      // was shared when the page was drawn and has since been withdrawn.
+      if (!file) return res.status(404).json({ error: 'not_found' })
+
+      const href = save ? file.download_url ?? file.view_url : file.view_url ?? file.download_url
+      // Past retention: the record survives, the file does not.
+      if (file.file_deleted === true || !href) return res.status(410).json({ error: 'no_longer_available' })
+
+      // Deliberately no headers: the link is the credential. See above.
+      const upstream = await fetch(href, { cache: 'no-store' })
+      if (!upstream.ok || !upstream.body) {
+        return res.status(upstream.status === 404 ? 404 : 502).json({ error: 'not_found' })
+      }
+
+      const type = upstream.headers.get('content-type')
+      if (type) res.setHeader('content-type', type)
+      const disposition = upstream.headers.get('content-disposition')
+      if (disposition) res.setHeader('content-disposition', disposition)
+      const length = upstream.headers.get('content-length')
+      if (length) res.setHeader('content-length', length)
+      // Never cached anywhere: a child's SEND record must not sit in a shared
+      // proxy or survive a sign-out in the browser's store.
+      res.setHeader('cache-control', 'private, no-store')
+
+      await pipeline(Readable.fromWeb(upstream.body as WebReadableStream), res)
+    } catch (error) {
+      console.error('Error fetching Inclusion file:', error)
+      if (!res.headersSent) res.status(502).json({ error: 'unavailable' })
     }
-
-    const type = upstream.headers.get('content-type')
-    if (type) res.setHeader('content-type', type)
-    const disposition = upstream.headers.get('content-disposition')
-    if (disposition) res.setHeader('content-disposition', disposition)
-    // Never cached anywhere: a child's SEND document must not sit in a shared
-    // proxy or survive a sign-out in the browser's store.
-    res.setHeader('cache-control', 'private, no-store')
-
-    const buf = Buffer.from(await upstream.arrayBuffer())
-    res.end(buf)
-  } catch (error) {
-    console.error('Error fetching Inclusion file:', error)
-    res.status(502).json({ error: 'unavailable' })
-  }
-})
+  },
+)
 
 export default router

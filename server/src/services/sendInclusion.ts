@@ -82,28 +82,49 @@ export interface InclusionChild {
   has_active_iep: boolean
 }
 
-export interface InclusionDocument {
+/**
+ * One file Inclusion is sharing, in Inclusion's own shape.
+ *
+ * THE URLS ARE COMPLETE AND ABSOLUTE, each carrying its own freshly minted
+ * token, and `download_url` is the view one plus the save flag. Connect takes
+ * both as given and builds neither — an earlier version of this file invented
+ * a `file_token` that does not exist and composed URLs from it.
+ */
+export interface InclusionFile {
   id: string
   title: string
-  /** Inclusion mints a short-lived link per fetch. Connect never stores one
-   *  and never rewrites one — a storage URL has never crossed this boundary. */
-  file_token?: string | null
+  document_type?: string | null
+  document_type_label?: string | null
   file_name?: string | null
-  uploaded_at?: string | null
-  category?: string | null
+  mime_type?: string | null
+  size_bytes?: number | null
+  created_at?: string | null
+  available_until?: string | null
+  /** Past retention, the RECORD survives and the file does not. Both urls are
+   *  null. A parent is told it is no longer available rather than handed a
+   *  link that fails — the session and the therapist's note still matter. */
+  file_deleted?: boolean
+  view_url?: string | null
+  download_url?: string | null
 }
 
-export interface InclusionTherapySession {
+/** A therapy session: the note, and any media attached to it. Therapy media
+ *  ONLY — every other shared file is in `documents`. */
+export interface InclusionSession {
   id: string
   session_date?: string | null
-  therapy_type?: string | null
-  summary?: string | null
-  documents?: InclusionDocument[]
+  provider_name?: string | null
+  provider_note?: string | null
+  files: InclusionFile[]
 }
 
 export interface InclusionDocuments {
-  documents: InclusionDocument[]
-  therapy_sessions: InclusionTherapySession[]
+  sessions: InclusionSession[]
+  documents: InclusionFile[]
+  /** ONE expiry for every link in the response. Which is why Connect never
+   *  stores these URLs: a parent who opens the page and taps a file six
+   *  minutes later would be following a dead link. */
+  links_expire_at?: string | null
 }
 
 const baseUrl = () => process.env.SEND_API_URL?.replace(/\/+$/, '') || ''
@@ -192,13 +213,15 @@ export async function fetchDocuments(opts: {
   )
   return {
     documents: data.documents ?? [],
-    therapy_sessions: data.therapy_sessions ?? [],
+    sessions: data.sessions ?? [],
+    links_expire_at: data.links_expire_at ?? null,
   }
 }
 
-/** The short-lived link Inclusion minted, as an absolute URL. Five minutes,
- *  re-checked by Inclusion on every fetch — a link minted before a document
- *  was marked confidential will not serve it. */
-export function fileUrl(token: string): string {
-  return `${baseUrl()}/api/v1/guardian/files/${encodeURIComponent(token)}`
+/** Find one file across both places Inclusion puts them. */
+export function findFile(docs: InclusionDocuments, fileId: string): InclusionFile | undefined {
+  return (
+    docs.documents.find(d => d.id === fileId) ??
+    docs.sessions.flatMap(s => s.files ?? []).find(f => f.id === fileId)
+  )
 }
