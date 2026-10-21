@@ -632,6 +632,8 @@ model Student {
   @@index([schoolId, classId])
   @@index([schoolId, leftAt])
   ecaActivityMembers   EcaActivityMember[]
+  /// Posts addressed to this pupil's family by name, not by class or group.
+  messageTargets       MessageStudentTarget[]
 }
 
 // Junction table: Parent-Student link
@@ -775,6 +777,10 @@ model Message {
 
   acknowledgments MessageAcknowledgment[]
   attachments     MessageAttachment[]
+  /// Set only on a post addressed to named pupils' families (a waiting-list
+  /// offer, a consent chaser). Such a row has no class, year group or group,
+  /// and these rows are the whole of its audience.
+  studentTargets  MessageStudentTarget[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -803,6 +809,24 @@ model MessageAttachment {
 enum MessageChannel {
   FEED
   ADMIN_NOTICE
+}
+
+/// A post addressed to the families of particular pupils.
+///
+/// Message is single-target per row (class, year group, group or whole school),
+/// and none of those can say "these four families". A waiting-list offer goes
+/// to one family; a consent chaser to the families who have not answered. The
+/// row carries no other target, and the parent feed shows it to a parent only
+/// through one of these links to their own child.
+model MessageStudentTarget {
+  id        String  @id @default(cuid())
+  messageId String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, studentId])
+  @@index([studentId])
 }
 
 model MessageAcknowledgment {

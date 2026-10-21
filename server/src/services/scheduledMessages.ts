@@ -41,6 +41,7 @@ export async function publishDueScheduledMessages(): Promise<void> {
       yearGroupId: true,
       groupId: true,
       schoolId: true,
+      studentTargets: { select: { studentId: true } },
     },
     orderBy: { scheduledAt: 'asc' },
     take: BATCH,
@@ -68,6 +69,11 @@ export async function publishDueScheduledMessages(): Promise<void> {
           classId: message.classId || undefined,
           yearGroupId: message.yearGroupId || undefined,
           groupId: message.groupId || undefined,
+          // A post addressed to named pupils has no other target; without this
+          // its audience resolves to nobody and the reminder goes out silent.
+          ...(message.studentTargets && message.studentTargets.length > 0
+            ? { studentIds: message.studentTargets.map(t => t.studentId) }
+            : {}),
           schoolId: message.schoolId,
         },
       })

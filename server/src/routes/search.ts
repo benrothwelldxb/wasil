@@ -56,6 +56,7 @@ router.get('/', isAuthenticated, async (req, res) => {
           { classId: { in: classIds } },
           ...(yearGroupIds.length ? [{ yearGroupId: { in: yearGroupIds } }] : []),
           ...(groupIds.length ? [{ groupId: { in: groupIds } }] : []),
+          ...(studentIds.length ? [{ studentTargets: { some: { studentId: { in: studentIds } } } }] : []),
         ],
       }
       parentFormAudience = {

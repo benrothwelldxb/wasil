@@ -141,15 +141,23 @@ async function resolveParentAudience(user: {
     : []
   const childGroupIds = [...new Set(childGroupLinks.map(l => l.groupId))]
 
-  return { childClassIds, childYearGroupIds, childGroupIds }
+  return { childClassIds, childYearGroupIds, childGroupIds, childStudentIds: studentIds }
 }
 
-function audienceOR(a: { childClassIds: string[]; childYearGroupIds: string[]; childGroupIds: string[] }) {
+function audienceOR(a: {
+  childClassIds: string[]; childYearGroupIds: string[]; childGroupIds: string[]; childStudentIds?: string[]
+}) {
   return [
     { targetClass: 'Whole School' },
     { classId: { in: a.childClassIds } },
     ...(a.childYearGroupIds.length > 0 ? [{ yearGroupId: { in: a.childYearGroupIds } }] : []),
     ...(a.childGroupIds.length > 0 ? [{ groupId: { in: a.childGroupIds } }] : []),
+    // A post addressed to named pupils' families (a waiting-list offer) has no
+    // other target, so this is the only way it reaches the feed — and only the
+    // feed of a parent of one of those pupils.
+    ...(a.childStudentIds && a.childStudentIds.length > 0
+      ? [{ studentTargets: { some: { studentId: { in: a.childStudentIds } } } }]
+      : []),
   ]
 }
 
@@ -386,6 +394,7 @@ router.get('/notices', isAuthenticated, async (req, res) => {
           { classId: { in: childClassIds } },
           ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
           ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
+          ...(studentIds.length > 0 ? [{ studentTargets: { some: { studentId: { in: studentIds } } } }] : []),
         ],
         AND: [
           { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },

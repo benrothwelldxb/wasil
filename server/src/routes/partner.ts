@@ -2590,8 +2590,15 @@ router.get('/staff/mentionable', requirePartner, async (req, res) => {
 //
 //   POST /api/partner/messages
 //   { hub_user_id, title, content, audience: { classHubIds?, wholeSchool?,
-//     yearGroupId?, groupIds? }, isUrgent?, scheduledAt?, expiresAt?,
-//     attachments?: [{ fileName, fileUrl, fileType, fileSize }] }
+//     yearGroupId?, groupIds?, pupilHubIds?, label? }, isUrgent?, scheduledAt?,
+//     expiresAt?, attachments?: [{ fileName, fileUrl, fileType, fileSize }] }
+//
+// `pupilHubIds` addresses the families of named pupils (a waiting-list offer,
+// a consent chaser). It becomes ONE row with no class, year or group, whose
+// audience is its MessageStudentTarget links; `label` is what parents see as
+// the post's audience on that row (default "Selected pupils"). Unknown pupils
+// are named in `unknownPupilIds` and the rest still sent, unless none resolve
+// and nothing else was asked for, which is a 400 rather than a post to nobody.
 //
 // `Message` is single-target per row, so we FAN OUT: one row per class, one per
 // group, one per year-group, plus one for whole-school. Every target is
@@ -2626,9 +2633,18 @@ router.post('/messages', requirePartner, async (req, res) => {
     const groupIds = toIdArray(aud.groupIds)
     const yearGroupId = typeof aud.yearGroupId === 'string' && aud.yearGroupId.trim() ? aud.yearGroupId.trim() : null
     const wholeSchool = aud.wholeSchool === true
+    const pupilHubIds = toIdArray(aud.pupilHubIds)
+    const pupilLabel = typeof aud.label === 'string' && aud.label.trim()
+      ? aud.label.trim().slice(0, 120)
+      : 'Selected pupils'
 
-    if (classHubIds.length === 0 && groupIds.length === 0 && !yearGroupId && !wholeSchool) {
+    if (classHubIds.length === 0 && groupIds.length === 0 && !yearGroupId && !wholeSchool && pupilHubIds.length === 0) {
       return res.status(400).json({ error: 'audience required' })
+    }
+    // targetClass "Whole School" is what the parent feed matches every parent
+    // on, so a pupil row carrying it as a label would reach the whole school.
+    if (pupilLabel.toLowerCase() === 'whole school') {
+      return res.status(400).json({ error: 'audience.label may not be "Whole School"' })
     }
 
     // Validate EVERY target belongs to the actor's school before creating rows.
@@ -2674,8 +2690,17 @@ router.post('/messages', requirePartner, async (req, res) => {
       }
     }
 
-    // Build one fan-out target per resolved audience (class → group → year → school).
-    const targets: { targetClass: string; classId?: string; yearGroupId?: string; groupId?: string }[] = []
+    // Pupils resolved to this school. A pupil who has left still resolves here
+    // and is then dropped by the audience resolve (leftAt), the same as for a
+    // class, so their family is neither told nor shown the post.
+    const pupils = await resolvePupilHubIds(pupilHubIds, actor.schoolId)
+    if (pupilHubIds.length > 0 && pupils.studentIds.length === 0
+      && classHubIds.length === 0 && groupIds.length === 0 && !yearGroupId && !wholeSchool) {
+      return res.status(400).json({ error: 'no known pupils in audience', unknownPupilIds: pupils.unknownPupilIds })
+    }
+
+    // Build one fan-out target per resolved audience (class → group → year → school → pupils).
+    const targets: { targetClass: string; classId?: string; yearGroupId?: string; groupId?: string; studentIds?: string[] }[] = []
     // Distinct parent users across the whole send — see the resolve below.
     const audienceParentIds = new Set<string>()
     // The row a tapped notification opens. With several rows there is no single
@@ -2686,6 +2711,7 @@ router.post('/messages', requirePartner, async (req, res) => {
     for (const g of resolvedGroups) targets.push({ targetClass: g.name, groupId: g.id })
     if (resolvedYearGroup) targets.push({ targetClass: resolvedYearGroup.name, yearGroupId: resolvedYearGroup.id })
     if (wholeSchool) targets.push({ targetClass: 'Whole School' })
+    if (pupils.studentIds.length > 0) targets.push({ targetClass: pupilLabel, studentIds: pupils.studentIds })
 
     // Desk sends markdown; convert → sanitized HTML so parents see formatting
     // (the broadcast render path is HTML, shared with the admin composer).
@@ -2735,6 +2761,13 @@ router.post('/messages', requirePartner, async (req, res) => {
         },
       })
 
+      if (t.studentIds) {
+        await prisma.messageStudentTarget.createMany({
+          data: t.studentIds.map(studentId => ({ messageId: message.id, studentId })),
+          skipDuplicates: true,
+        })
+      }
+
       if (attachmentRows.length > 0) {
         await prisma.messageAttachment.createMany({
           data: attachmentRows.map((a: { fileName: string; fileUrl: string; fileType: string; fileSize: number }) => ({
@@ -2752,6 +2785,7 @@ router.post('/messages', requirePartner, async (req, res) => {
         classId: t.classId,
         yearGroupId: t.yearGroupId,
         groupId: t.groupId,
+        studentIds: t.studentIds,
         schoolId: actor.schoolId,
       }
 
@@ -2826,7 +2860,11 @@ router.post('/messages', requirePartner, async (req, res) => {
 
     // `created` = fan-out rows, unchanged. `parents` = distinct people. Zero is
     // a real answer and says so: an empty class is a thing a sender needs told.
-    res.status(201).json({ created: targets.length, parents: audienceParentIds.size })
+    res.status(201).json({
+      created: targets.length,
+      parents: audienceParentIds.size,
+      ...(pupils.unknownPupilIds.length > 0 ? { unknownPupilIds: pupils.unknownPupilIds } : {}),
+    })
   } catch (error) {
     console.error('Error creating partner broadcast:', error)
     res.status(500).json({ error: 'internal_error' })
