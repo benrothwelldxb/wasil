@@ -4,6 +4,7 @@ import { refreshServiceGroup, refreshServiceGroupsForSchool } from '../services/
 import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/auth.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { currentStaffWhere } from '../services/currentStaff.js'
+import { managedElsewhereAdminBody } from '../services/groupOwnership.js'
 
 const router = Router()
 
@@ -42,6 +43,10 @@ router.get('/', isAdmin, async (req, res) => {
       category: g.category,
       schoolId: g.schoolId,
       isActive: g.isActive,
+      // Set when a partner app (Beyond, Active) keeps this group in step. The
+      // admin screen should show it instead of Edit and Remove; the routes
+      // below refuse those changes either way.
+      managedBy: g.managedBy ?? null,
       memberCount: g._count.studentMembers,
       staffCount: g._count.staffManagers,
       createdAt: g.createdAt.toISOString(),
@@ -113,6 +118,7 @@ router.get('/:id', isAdmin, async (req, res) => {
       category: group.category,
       schoolId: group.schoolId,
       isActive: group.isActive,
+      managedBy: group.managedBy ?? null,
       memberCount: group._count.studentMembers,
       staffCount: group._count.staffManagers,
       createdAt: group.createdAt.toISOString(),
@@ -405,6 +411,12 @@ router.post('/:id/members', isAdmin, async (req, res) => {
     if (!group) {
       return res.status(404).json({ error: 'Group not found' })
     }
+    // Membership of a managed group is the owning app's to keep (see
+    // services/groupOwnership). An admin has no partner identity, so any
+    // managed group is someone else's.
+    if (group.managedBy) {
+      return res.status(409).json(managedElsewhereAdminBody(group.managedBy))
+    }
 
     // Verify students exist and belong to same school
     const students = await prisma.student.findMany({
@@ -509,6 +521,9 @@ router.put('/:id', isAdmin, async (req, res) => {
     if (!existing) {
       return res.status(404).json({ error: 'Group not found' })
     }
+    if (existing.managedBy) {
+      return res.status(409).json(managedElsewhereAdminBody(existing.managedBy))
+    }
 
     const group = await prisma.group.update({
       where: { id },
@@ -540,6 +555,7 @@ router.put('/:id', isAdmin, async (req, res) => {
       category: group.category,
       schoolId: group.schoolId,
       isActive: group.isActive,
+      managedBy: group.managedBy ?? null,
       memberCount: group._count.studentMembers,
       staffCount: group._count.staffManagers,
       createdAt: group.createdAt.toISOString(),
@@ -619,6 +635,12 @@ router.delete('/:id', isAdmin, async (req, res) => {
     if (!existing) {
       return res.status(404).json({ error: 'Group not found' })
     }
+    // Hard delete, which also clears groupId on every post sent to the group.
+    // For a managed group that is the trip's message history losing its link,
+    // so it is never an admin's call. The owning app archives instead.
+    if (existing.managedBy) {
+      return res.status(409).json(managedElsewhereAdminBody(existing.managedBy))
+    }
 
     await prisma.group.delete({
       where: { id },
@@ -675,6 +697,9 @@ router.delete('/:id/members/:studentId', isAdmin, async (req, res) => {
 
     if (!group) {
       return res.status(404).json({ error: 'Group not found' })
+    }
+    if (group.managedBy) {
+      return res.status(409).json(managedElsewhereAdminBody(group.managedBy))
     }
 
     await prisma.studentGroupLink.deleteMany({

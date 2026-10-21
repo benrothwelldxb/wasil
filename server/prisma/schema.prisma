@@ -1491,6 +1491,14 @@ model Group {
   /// by hand in Connect, which is most of them.
   externalRef String?
 
+  /// Which partner app OWNS this group, by its partner token's name ("beyond",
+  /// "active"). Stamped when a partner publishes a group under an externalRef.
+  /// A managed group's membership is kept in step by that app, so nobody else
+  /// may edit, archive or delete it: not another partner token (Desk), and not
+  /// a Connect admin. It stays an ordinary audience for broadcasts. Null for a
+  /// group made by hand, which anyone with the right role may change.
+  managedBy String?
+
   @@unique([schoolId, externalRef])
   // NOTE: (schoolId, name) is still unique, but only for groups a school made
   // by hand — enforced by a PARTIAL index (`WHERE "externalRef" IS NULL`) that

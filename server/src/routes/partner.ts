@@ -36,6 +36,8 @@ import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { ALLOWED_REACTION_EMOJIS } from './inbox.js'
 import { refreshServiceGroup, refreshServiceGroupsForSchool } from '../services/serviceGroups.js'
+import { ownerNameOf, isManagedElsewhere, managedElsewhereBody } from '../services/groupOwnership.js'
+import type { PartnerIdentity } from '../middleware/partnerAuth.js'
 
 const router = Router()
 
@@ -2111,6 +2113,11 @@ router.get('/oversight/parent-threads', requirePartner, async (req, res) => {
 // Responses carry only counts / display names — never pupil or parent PII.
 // ============================================================================
 
+/** The owner name of the partner token on this request (see groupOwnership). */
+function callerOwner(req: Request): string | null {
+  return ownerNameOf((req as Request & { partner?: PartnerIdentity }).partner)
+}
+
 // Coerce a request-body value into a clean, de-duplicated string-id array.
 function toIdArray(v: unknown): string[] {
   if (!Array.isArray(v)) return []
@@ -2638,13 +2645,22 @@ router.post('/messages', requirePartner, async (req, res) => {
 
     let resolvedGroups: { id: string; name: string }[] = []
     if (groupIds.length > 0) {
-      resolvedGroups = await prisma.group.findMany({
+      const found = await prisma.group.findMany({
         where: { id: { in: groupIds }, schoolId: actor.schoolId },
-        select: { id: true, name: true },
+        select: { id: true, name: true, isActive: true },
       })
-      if (resolvedGroups.length !== groupIds.length) {
+      if (found.length !== groupIds.length) {
         return res.status(400).json({ error: 'unknown or cross-school group in audience' })
       }
+      // An archived group is a closed trip or a finished club. Its members are
+      // whoever was in it when it closed, and nobody has kept that list true
+      // since, so a post to it reaches families it is no longer about. Refused
+      // as a whole, like an unknown target: no rows, nobody told.
+      const archived = found.filter(g => g.isActive === false).map(g => g.id)
+      if (archived.length > 0) {
+        return res.status(409).json({ error: 'group_archived', groupIds: archived })
+      }
+      resolvedGroups = found.map(g => ({ id: g.id, name: g.name }))
     }
 
     let resolvedYearGroup: { id: string; name: string } | null = null
@@ -2997,11 +3013,25 @@ router.get('/groups', requirePartner, async (req, res) => {
 
     const groups = await prisma.group.findMany({
       where: { schoolId: school.id, isActive: true },
-      select: { id: true, name: true, _count: { select: { studentMembers: true } } },
+      select: {
+        id: true, name: true, externalRef: true, managedBy: true,
+        _count: { select: { studentMembers: true } },
+      },
       orderBy: { name: 'asc' },
     })
 
-    res.json({ groups: groups.map(g => ({ id: g.id, name: g.name, memberCount: g._count.studentMembers })) })
+    // `managedBy` is what lets Desk show "Managed by Wasil Beyond" in place of
+    // Edit and Remove. Null for a hand-made group. Edits to a managed group are
+    // refused here regardless; this is so Desk need not offer them.
+    res.json({
+      groups: groups.map(g => ({
+        id: g.id,
+        name: g.name,
+        memberCount: g._count.studentMembers,
+        externalRef: g.externalRef ?? null,
+        managedBy: g.managedBy ?? null,
+      })),
+    })
   } catch (error) {
     console.error('Error building partner groups list:', error)
     res.status(500).json({ error: 'internal_error' })
@@ -3052,13 +3082,17 @@ async function resolvePupilHubIds(
  * Id wins when both could match, so an id never silently resolves to some other
  * school's idea of a ref. Both lookups are school-scoped.
  */
+const ADDRESSED_GROUP_SELECT = {
+  id: true, isActive: true, managedBy: true, externalRef: true, sourceServiceId: true,
+} as const
+
 async function findGroupByIdOrRef(idOrRef: string, schoolId: string) {
-  const byId = await prisma.group.findFirst({ where: { id: idOrRef, schoolId }, select: { id: true } })
+  const byId = await prisma.group.findFirst({ where: { id: idOrRef, schoolId }, select: ADDRESSED_GROUP_SELECT })
   if (byId) return byId
   // Guarded on non-empty: `where: { externalRef: '' }` is a real query, but an
   // empty path segment can't reach here anyway — Express won't route it.
   if (!idOrRef) return null
-  return prisma.group.findFirst({ where: { externalRef: idOrRef, schoolId }, select: { id: true } })
+  return prisma.group.findFirst({ where: { externalRef: idOrRef, schoolId }, select: ADDRESSED_GROUP_SELECT })
 }
 
 /**
@@ -3085,10 +3119,17 @@ async function resolveCategoryName(categoryName: string, schoolId: string) {
 // Hub pupil ids (`pupilHubIds`); we map them to internal Student ids at the
 // boundary and store StudentGroupLink rows on the internal ids.
 //
-//   POST /api/partner/groups  { hub_user_id, name, pupilHubIds: string[] }
+//   POST /api/partner/groups  { hub_user_id, name, pupilHubIds: string[],
+//     externalRef?, categoryId?, categoryName?, reopen? }
+//
+// With an externalRef the group is OWNED by the calling token (`managedBy`),
+// and only that token may change it afterwards — see services/groupOwnership.
+// An upsert onto an archived group answers 409 group_archived unless the body
+// says `reopen: true`: a trip closed and then reopened would otherwise be
+// renamed and refilled while staying invisible in every audience picker.
 router.post('/groups', requirePartner, async (req, res) => {
   try {
-    const { hub_user_id, name, pupilHubIds, categoryId, categoryName, externalRef } = req.body ?? {}
+    const { hub_user_id, name, pupilHubIds, categoryId, categoryName, externalRef, reopen } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
@@ -3130,13 +3171,39 @@ router.post('/groups', requirePartner, async (req, res) => {
     // to stay unique.
     let group: { id: string }
     const existing = ref
-      ? await prisma.group.findFirst({ where: { externalRef: ref, schoolId: actor.schoolId }, select: { id: true } })
+      ? await prisma.group.findFirst({
+          where: { externalRef: ref, schoolId: actor.schoolId },
+          select: { id: true, isActive: true, managedBy: true },
+        })
       : null
+
+    // Only a group published under a ref has an owner. A plain create (Desk's
+    // own groups) stays unmanaged, so a teacher can still edit what they made.
+    const owner = ref ? callerOwner(req) : null
+    if (existing && isManagedElsewhere(existing.managedBy, owner)) {
+      return res.status(409).json(managedElsewhereBody(existing.managedBy!))
+    }
+    const reopening = !!existing && existing.isActive === false
+    if (reopening && reopen !== true) {
+      return res.status(409).json({
+        error: 'group_archived',
+        id: existing!.id,
+        hint: 'send reopen: true to make the archived group live again',
+      })
+    }
+
     try {
       group = existing
         ? await prisma.group.update({
             where: { id: existing.id },
-            data: { name: name.trim(), ...(resolvedCategory ? { categoryId: resolvedCategory.id } : {}) },
+            data: {
+              name: name.trim(),
+              ...(resolvedCategory ? { categoryId: resolvedCategory.id } : {}),
+              ...(reopening ? { isActive: true } : {}),
+              // Claims a group published before ownership existed. Safe because
+              // only the holder of the ref reaches this branch.
+              ...(!existing.managedBy && owner ? { managedBy: owner } : {}),
+            },
             select: { id: true },
           })
         : await prisma.group.create({
@@ -3145,6 +3212,7 @@ router.post('/groups', requirePartner, async (req, res) => {
               schoolId: actor.schoolId,
               ...(resolvedCategory ? { categoryId: resolvedCategory.id } : {}),
               ...(ref ? { externalRef: ref } : {}),
+              ...(owner ? { managedBy: owner } : {}),
             },
             select: { id: true },
           })
@@ -3170,6 +3238,7 @@ router.post('/groups', requirePartner, async (req, res) => {
     res.status(201).json({
       id: group.id,
       added: studentIds.length,
+      ...(reopening ? { reopened: true } : {}),
       // Present only when something didn't resolve, so a clean call stays clean.
       ...(unknownPupilIds.length > 0 ? { unknownPupilIds } : {}),
       ...(unmatchedCategoryName ? { unmatchedCategoryName } : {}),
@@ -3227,6 +3296,9 @@ router.get('/groups/:id', requirePartner, async (req, res) => {
     res.json({
       id: group.id,
       name: group.name,
+      externalRef: group.externalRef ?? null,
+      managedBy: group.managedBy ?? null,
+      isActive: group.isActive,
       members: group.studentMembers.map(m => ({
         pupilHubId: m.student.hubPupilId,
         studentName: `${m.student.firstName} ${m.student.lastName}`.trim(),
@@ -3255,6 +3327,9 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
     // the externalRef it published under.
     const group = await findGroupByIdOrRef(req.params.id, actor.schoolId)
     if (!group) return res.status(404).json({ error: 'not_found' })
+    if (isManagedElsewhere(group.managedBy, callerOwner(req))) {
+      return res.status(409).json(managedElsewhereBody(group.managedBy!))
+    }
     const id = group.id
 
     // Both sets resolved up front (read-only). Unknown ids are reported rather
@@ -3303,25 +3378,31 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
 })
 
 // Archive a group (isActive:false) rather than hard-delete — a group may be
-// referenced by messages/events. Archived groups drop out of GET /groups.
+// referenced by messages/events. Archived groups drop out of GET /groups, and
+// their message history stays visible to their members.
 //
-//   DELETE /api/partner/groups/:id  { hub_user_id }
+//   DELETE /api/partner/groups/:idOrRef  { hub_user_id }
+//
+// Addressed by Connect id or by the externalRef it was published under, so a
+// publisher that lost the id can still close what it opened. Archiving an
+// archived group is a no-op that answers ok, so a retried close is harmless.
 router.delete('/groups/:id', requirePartner, async (req, res) => {
   try {
     const { hub_user_id } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
 
-    const { id } = req.params
-    const group = await prisma.group.findFirst({
-      where: { id, schoolId: actor.schoolId },
-      select: { id: true },
-    })
+    const group = await findGroupByIdOrRef(req.params.id, actor.schoolId)
     if (!group) return res.status(404).json({ error: 'not_found' })
+    if (isManagedElsewhere(group.managedBy, callerOwner(req))) {
+      return res.status(409).json(managedElsewhereBody(group.managedBy!))
+    }
 
-    await prisma.group.update({ where: { id }, data: { isActive: false } })
+    if (group.isActive !== false) {
+      await prisma.group.update({ where: { id: group.id }, data: { isActive: false } })
+    }
 
-    res.json({ ok: true })
+    res.json({ ok: true, id: group.id })
   } catch (error) {
     console.error('Error archiving partner group:', error)
     res.status(500).json({ error: 'internal_error' })
