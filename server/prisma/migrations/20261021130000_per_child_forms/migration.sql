@@ -10,12 +10,12 @@
 -- PARTIAL unique index, because Prisma cannot express one and a plain unique on
 -- (formId, userId) would stop a parent answering for a second child. The
 -- schema carries a note warning not to let `migrate dev` recreate it.
+ALTER TABLE "FormResponse" ADD COLUMN "studentId" TEXT;
+
 DROP INDEX "FormResponse_formId_userId_key";
 CREATE UNIQUE INDEX "FormResponse_formId_userId_parent_key"
   ON "FormResponse"("formId", "userId")
   WHERE "studentId" IS NULL;
-
-ALTER TABLE "FormResponse" ADD COLUMN "studentId" TEXT;
 -- When the current answer was given. Existing answers were never changed, so
 -- their answer time is their creation time.
 ALTER TABLE "FormResponse" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
