@@ -2601,6 +2601,12 @@ router.get('/staff/mentionable', requirePartner, async (req, res) => {
 // are named in `unknownPupilIds` and the rest still sent, unless none resolve
 // and nothing else was asked for, which is a 400 rather than a post to nobody.
 //
+// `formRef` attaches a form the caller published with PUT /forms/:externalRef
+// (every row of the fan-out carries it). Unknown is a 400, another app's is
+// 409 form_managed_elsewhere, and a closed or past-deadline form is
+// 409 form_closed: a reminder to answer something that no longer takes
+// answers only produces an error for the parent.
+//
 // `Message` is single-target per row, so we FAN OUT: one row per class, one per
 // group, one per year-group, plus one for whole-school. Every target is
 // validated to the actor's school UP FRONT — a single unknown/cross-school
@@ -2721,6 +2727,23 @@ router.post('/messages', requirePartner, async (req, res) => {
       }
     }
 
+    const formRef = typeof (req.body ?? {}).formRef === 'string' ? req.body.formRef.trim() : ''
+    let attachedFormId: string | null = null
+    if (formRef) {
+      const form = await prisma.form.findFirst({
+        where: { schoolId: actor.schoolId, externalRef: formRef },
+        select: { id: true, status: true, managedBy: true, expiresAt: true },
+      })
+      if (!form) return res.status(400).json({ error: 'unknown_form', formRef })
+      if (form.managedBy !== callerOwner(req)) {
+        return res.status(409).json({ error: 'form_managed_elsewhere', managedBy: form.managedBy })
+      }
+      if (form.status !== 'ACTIVE' || (form.expiresAt && form.expiresAt <= new Date())) {
+        return res.status(409).json({ error: 'form_closed', formRef })
+      }
+      attachedFormId = form.id
+    }
+
     // Pupils resolved to this school. A pupil who has left still resolves here
     // and is then dropped by the audience resolve (leftAt), the same as for a
     // class, so their family is neither told nor shown the post.
@@ -2807,6 +2830,7 @@ router.post('/messages', requirePartner, async (req, res) => {
           channel: isNotice ? 'ADMIN_NOTICE' : 'FEED',
           department: noticeDepartment,
           expiresAt: expiresDate,
+          ...(attachedFormId ? { formId: attachedFormId } : {}),
         },
       })
       // Recorded the moment the row exists, so a failure anywhere after this
@@ -3715,6 +3739,304 @@ router.put('/groups/:externalRef/roster', requirePartner, async (req, res) => {
     })
   } catch (error) {
     console.error('Error replacing partner group roster:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// --- Forms (per-child, partner-owned) -----------------------------------------
+//
+// A partner app publishes a form that parents answer once per CHILD (a trip
+// consent form), attaches it to a post with `formRef` on POST /messages, and
+// reads the answers back with a cursor. Connect stores and shows the form; the
+// partner owns its wording, which must never ask for medical information (the
+// clinic owns that, not a parent form copied into another app).
+//
+// A partner form has no audience of its own, like every Connect form: it is
+// announced by the posts carrying it, and asks about each of a parent's
+// children who is in the audience of one of those posts.
+
+/** The field types a partner may publish, and what each becomes in Connect's
+ *  own form vocabulary — so the parent app renders them with no new control. */
+const PARTNER_FIELD_TYPES = ['yesno', 'text', 'textarea', 'choice', 'signature', 'name'] as const
+type PartnerFieldType = typeof PARTNER_FIELD_TYPES[number]
+const FIELD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+
+type StoredFormField = {
+  id: string
+  type: 'select' | 'text' | 'textarea' | 'signature'
+  label: string
+  required: boolean
+  removable: false
+  options?: string[]
+  placeholder?: string
+  partnerType: PartnerFieldType
+}
+
+/** Validate and translate a partner's field list. Returns an error string on
+ *  the first fault, naming the field, or the fields as Connect stores them. */
+function normalisePartnerFields(raw: unknown): { error: string } | { fields: StoredFormField[] } {
+  if (!Array.isArray(raw) || raw.length === 0) return { error: 'fields required' }
+  if (raw.length > 50) return { error: 'at most 50 fields' }
+  const seen = new Set<string>()
+  const fields: StoredFormField[] = []
+  for (const f of raw as Array<Record<string, unknown>>) {
+    const id = typeof f?.id === 'string' ? f.id.trim() : ''
+    if (!FIELD_ID_RE.test(id)) return { error: `field id "${String(f?.id)}" must be 1 to 64 letters, digits, _ or -` }
+    if (seen.has(id)) return { error: `field id "${id}" is used twice` }
+    seen.add(id)
+    const type = f.type as PartnerFieldType
+    if (!PARTNER_FIELD_TYPES.includes(type)) {
+      return { error: `field "${id}" has unknown type; use one of ${PARTNER_FIELD_TYPES.join(', ')}` }
+    }
+    const label = typeof f.label === 'string' ? f.label.trim() : ''
+    if (!label || label.length > 500) return { error: `field "${id}" needs a label of at most 500 characters` }
+    // Required unless the partner says otherwise: a consent form's questions
+    // are its point, and an optional one should be a decision, not a default.
+    const required = f.required !== false
+    const base = { id, label, required, removable: false as const, partnerType: type }
+    if (type === 'yesno') {
+      fields.push({ ...base, type: 'select', options: ['Yes', 'No'] })
+    } else if (type === 'choice') {
+      const options = Array.isArray(f.options)
+        ? f.options.filter((o): o is string => typeof o === 'string').map(o => o.trim()).filter(Boolean)
+        : []
+      if (options.length < 2 || options.length > 20 || new Set(options).size !== options.length) {
+        return { error: `field "${id}" needs 2 to 20 distinct options` }
+      }
+      fields.push({ ...base, type: 'select', options })
+    } else if (type === 'name') {
+      // The typed alternative to a drawn signature: the guardian's full name.
+      fields.push({ ...base, type: 'text', placeholder: 'Your full name' })
+    } else {
+      fields.push({ ...base, type })
+    }
+  }
+  return { fields }
+}
+
+/** An answer as the partner reads it back: a yes/no question is a boolean,
+ *  everything else exactly as given (a drawn signature is a PNG data URL). */
+function partnerAnswers(answers: unknown, fields: StoredFormField[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const given = (answers && typeof answers === 'object' ? answers : {}) as Record<string, unknown>
+  for (const f of fields) {
+    if (!(f.id in given)) continue
+    const v = given[f.id]
+    out[f.id] = f.partnerType === 'yesno' ? (v === 'Yes' ? true : v === 'No' ? false : null) : v
+  }
+  return out
+}
+
+function serializePartnerForm(form: {
+  id: string; externalRef: string | null; title: string; description: string | null; status: string
+  expiresAt: Date | null; fields: unknown; perChild: boolean
+}) {
+  return {
+    id: form.id,
+    externalRef: form.externalRef,
+    title: form.title,
+    description: form.description,
+    status: form.status,
+    deadline: form.expiresAt ? form.expiresAt.toISOString() : null,
+    perChild: form.perChild,
+    fields: (form.fields as StoredFormField[]).map(f => ({
+      id: f.id, type: f.partnerType, label: f.label, required: f.required,
+      ...(f.partnerType === 'choice' ? { options: f.options } : {}),
+    })),
+  }
+}
+
+/**
+ * Publish or update a per-child form.
+ *
+ *   PUT /api/partner/forms/:externalRef
+ *   { hub_user_id, title, description?, deadline?, status?: 'ACTIVE' | 'CLOSED',
+ *     fields: [{ id, type: yesno|text|textarea|choice|signature|name, label,
+ *                required?, options? }] }
+ *   → 201 (created) or 200 (updated) with the form as stored
+ *
+ * Idempotent on the ref, so a retry or a re-publish edits the same form. The
+ * form belongs to the publishing token (409 form_managed_elsewhere to anyone
+ * else). Once any answer exists its FIELDS are fixed — 409 form_has_answers —
+ * because an answer is only meaningful against the question it answered;
+ * wording around it, the deadline and the status may still change. Publish a
+ * new ref for a new question.
+ *
+ * `deadline` is an ISO time, or a bare date meaning the end of that day in the
+ * school's zone; `null` clears it. Answers are refused after it.
+ */
+router.put('/forms/:externalRef', requirePartner, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const actor = await resolveStaffActor(
+      typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : '',
+      schoolHintOf(req),
+    )
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+
+    const externalRef = (req.params.externalRef ?? '').trim()
+    if (!externalRef || externalRef.length > 200) return res.status(400).json({ error: 'externalRef required' })
+
+    const title = typeof body.title === 'string' ? body.title.trim() : ''
+    if (!title || title.length > 500) return res.status(400).json({ error: 'title required (at most 500 characters)' })
+    const description = typeof body.description === 'string' && body.description.trim() ? body.description.trim() : null
+
+    const normalised = normalisePartnerFields(body.fields)
+    if ('error' in normalised) return res.status(400).json({ error: normalised.error })
+
+    if (body.status !== undefined && body.status !== 'ACTIVE' && body.status !== 'CLOSED') {
+      return res.status(400).json({ error: 'status must be ACTIVE or CLOSED' })
+    }
+
+    let deadline: Date | null | undefined
+    if (body.deadline === null) deadline = null
+    else if (typeof body.deadline === 'string' && body.deadline.trim()) {
+      deadline = await parseExpiryForSchool(body.deadline.trim(), actor.schoolId)
+      if (!deadline || Number.isNaN(deadline.getTime())) return res.status(400).json({ error: 'deadline must be an ISO-8601 time or date' })
+    } else if (body.deadline !== undefined) {
+      return res.status(400).json({ error: 'deadline must be an ISO-8601 time or date, or null' })
+    }
+
+    const owner = callerOwner(req)
+    const existing = await prisma.form.findFirst({
+      where: { schoolId: actor.schoolId, externalRef },
+      select: { id: true, managedBy: true, fields: true, _count: { select: { responses: true } } },
+    })
+    if (existing && existing.managedBy !== owner) {
+      return res.status(409).json({ error: 'form_managed_elsewhere', managedBy: existing.managedBy })
+    }
+    if (existing && existing._count.responses > 0
+      && stableStringify(existing.fields) !== stableStringify(normalised.fields)) {
+      return res.status(409).json({
+        error: 'form_has_answers',
+        hint: 'fields cannot change once answered; publish a new externalRef for a new question',
+      })
+    }
+
+    const data = {
+      title,
+      description,
+      fields: normalised.fields,
+      ...(deadline !== undefined ? { expiresAt: deadline } : {}),
+      ...(body.status ? { status: body.status as string } : {}),
+    }
+    const form = existing
+      ? await prisma.form.update({ where: { id: existing.id }, data })
+      : await prisma.form.create({
+          data: {
+            ...data,
+            status: (body.status as string) ?? 'ACTIVE',
+            // A partner form is announced only by the posts carrying it, so it
+            // targets nothing itself and never appears on the Forms list.
+            type: 'permission-consent',
+            targetClass: 'Selected pupils',
+            classIds: [],
+            yearGroupIds: [],
+            schoolId: actor.schoolId,
+            perChild: true,
+            externalRef,
+            managedBy: owner,
+          },
+        })
+
+    res.status(existing ? 200 : 201).json(serializePartnerForm(form))
+  } catch (error) {
+    console.error('Error publishing partner form:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+/** Cursor over (updatedAt, id): opaque to the caller, so its shape can change. */
+function encodeAnswerCursor(at: Date, id: string): string {
+  return Buffer.from(`${at.toISOString()}|${id}`).toString('base64url')
+}
+function decodeAnswerCursor(raw: string): { at: Date; id: string } | null {
+  // A plain ISO time is accepted too, for a first read "since the form went out".
+  const plain = new Date(raw)
+  if (!Number.isNaN(plain.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(raw)) return { at: plain, id: '' }
+  const [iso, id] = Buffer.from(raw, 'base64url').toString('utf8').split('|')
+  const at = new Date(iso ?? '')
+  return Number.isNaN(at.getTime()) || id === undefined ? null : { at, id }
+}
+
+/**
+ * The answers to a per-child form, oldest change first, with a cursor.
+ *
+ *   GET /api/partner/forms/:externalRef/responses?school_id=&since=&limit=
+ *   → { form, responses: [{ pupilHubId, answers, answeredBy: { name, hubUserId },
+ *        firstAnsweredAt, answeredAt }], next, hasMore }
+ *
+ * One entry per CHILD. A guardian changing an answer before the deadline (a
+ * consent withdrawn) moves that child's entry forward, so it comes round again
+ * after the cursor: the reader keeps the latest entry per pupil. Pass `next`
+ * as the following call's `since`; it is always present, and equal to `since`
+ * when nothing has changed.
+ *
+ * Only the owning token may read: these are a family's answers about a child.
+ * Addressed by school (Hub or Connect id) rather than by an acting member of
+ * staff, so a poll does not break the day the trip lead leaves.
+ */
+router.get('/forms/:externalRef/responses', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+    const school = await partnerSchool(schoolIdParam)
+    if (!school) return res.status(404).json({ error: 'unknown_school' })
+
+    const form = await prisma.form.findFirst({
+      where: { schoolId: school.id, externalRef: (req.params.externalRef ?? '').trim() },
+    })
+    if (!form) return res.status(404).json({ error: 'unknown_form' })
+    if (form.managedBy !== callerOwner(req)) {
+      return res.status(409).json({ error: 'form_managed_elsewhere', managedBy: form.managedBy })
+    }
+
+    const sinceRaw = typeof req.query.since === 'string' ? req.query.since.trim() : ''
+    const cursor = sinceRaw ? decodeAnswerCursor(sinceRaw) : null
+    if (sinceRaw && !cursor) return res.status(400).json({ error: 'since must be a cursor from next, or an ISO-8601 time' })
+    const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit ?? '100'), 10) || 100))
+
+    const rows = await prisma.formResponse.findMany({
+      where: {
+        formId: form.id,
+        studentId: { not: null },
+        ...(cursor ? {
+          OR: [
+            { updatedAt: { gt: cursor.at } },
+            ...(cursor.id ? [{ updatedAt: cursor.at, id: { gt: cursor.id } }] : []),
+          ],
+        } : {}),
+      },
+      select: {
+        id: true, answers: true, createdAt: true, updatedAt: true,
+        student: { select: { hubPupilId: true } },
+        user: { select: { name: true, hubUserId: true } },
+      },
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      take: limit + 1,
+    })
+    const hasMore = rows.length > limit
+    const page = hasMore ? rows.slice(0, limit) : rows
+    const last = page[page.length - 1]
+    const fields = form.fields as StoredFormField[]
+
+    res.json({
+      form: serializePartnerForm(form),
+      responses: page.map(r => ({
+        pupilHubId: r.student?.hubPupilId ?? null,
+        answers: partnerAnswers(r.answers, fields),
+        // Who answered: the guardian, by name and Hub id (null for a parent
+        // who signed up without Hub), so the school's record says which
+        // guardian gave consent for which child.
+        answeredBy: { name: r.user?.name ?? null, hubUserId: r.user?.hubUserId ?? null },
+        firstAnsweredAt: r.createdAt.toISOString(),
+        answeredAt: r.updatedAt.toISOString(),
+      })),
+      next: last ? encodeAnswerCursor(last.updatedAt, last.id) : (sinceRaw || encodeAnswerCursor(new Date(0), '')),
+      hasMore,
+    })
+  } catch (error) {
+    console.error('Error reading partner form responses:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })

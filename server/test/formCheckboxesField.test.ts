@@ -13,7 +13,9 @@ import request from 'supertest'
 
 const prismaMock = {
   form: { findFirst: vi.fn() },
-  formResponse: { upsert: vi.fn() },
+  // Find-then-write rather than upsert: one answer per parent is now a partial
+  // unique index (per-child answers carry studentId), which upsert cannot name.
+  formResponse: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/services/firebase', () => ({ sendPushNotification: vi.fn(), removeInvalidTokens: vi.fn() }))
@@ -52,7 +54,8 @@ const respond = (answers: unknown) =>
 beforeEach(() => {
   vi.clearAllMocks()
   prismaMock.form.findFirst.mockResolvedValue(TRIPS)
-  prismaMock.formResponse.upsert.mockResolvedValue({
+  prismaMock.formResponse.findFirst.mockResolvedValue(null)
+  prismaMock.formResponse.create.mockResolvedValue({
     id: 'r-1', answers: { q1: ['Zoo'] }, createdAt: new Date('2026-08-31T09:00:00.000Z'),
   })
 })
@@ -61,19 +64,19 @@ describe('POST /api/forms/:id/respond — checkboxes', () => {
   it('stores every ticked option, in order', async () => {
     const res = await respond({ q1: ['Zoo', 'Farm'] })
     expect(res.status).toBe(200)
-    expect(prismaMock.formResponse.upsert.mock.calls[0][0].create.answers).toEqual({ q1: ['Zoo', 'Farm'] })
+    expect(prismaMock.formResponse.create.mock.calls[0][0].data.answers).toEqual({ q1: ['Zoo', 'Farm'] })
   })
 
   it('rejects a required group with nothing ticked — [] is NOT an answer', async () => {
     const res = await respond({ q1: [] })
     expect(res.status).toBe(400)
     expect(res.body.error).toContain('Which trips')
-    expect(prismaMock.formResponse.upsert).not.toHaveBeenCalled()
+    expect(prismaMock.formResponse.create).not.toHaveBeenCalled()
   })
 
   it('rejects a required group that is missing entirely', async () => {
     expect((await respond({})).status).toBe(400)
-    expect(prismaMock.formResponse.upsert).not.toHaveBeenCalled()
+    expect(prismaMock.formResponse.create).not.toHaveBeenCalled()
   })
 
   it('accepts one tick', async () => {

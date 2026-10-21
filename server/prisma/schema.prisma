@@ -634,6 +634,8 @@ model Student {
   ecaActivityMembers   EcaActivityMember[]
   /// Posts addressed to this pupil's family by name, not by class or group.
   messageTargets       MessageStudentTarget[]
+  /// Answers given for this pupil on per-child forms (trip consent).
+  formResponses        FormResponse[]
 }
 
 // Junction table: Parent-Student link
@@ -1232,6 +1234,20 @@ model Form {
   /// credential-shaped URL is.
   exportTokenCreatedAt DateTime?
 
+  /// Answered once per CHILD rather than once per parent. A trip consent form
+  /// is a decision about one pupil: a parent of twins on the trip answers
+  /// twice, and either linked guardian may answer for a child. Each answer is
+  /// a FormResponse carrying studentId. Set only by partner forms today.
+  perChild    Boolean @default(false)
+  /// The publishing app's own id for this form, e.g. "beyond:consent:<trip>".
+  /// Unique per school so a re-publish updates the form instead of making a
+  /// second one. Null for forms made in Connect.
+  externalRef String?
+  /// Which partner app owns the form, by token name (see Group.managedBy).
+  /// Only that app may change it or read its answers through the partner API,
+  /// and a Connect admin may not edit or delete it.
+  managedBy   String?
+
   /// Every post this form has been attached to — the first send and any
   /// reminders after it.
   messages Message[]
@@ -1241,6 +1257,7 @@ model Form {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([schoolId, externalRef])
   @@index([schoolId, status])
 }
 
@@ -1248,12 +1265,28 @@ model FormResponse {
   id        String   @id @default(cuid())
   formId    String
   form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  /// Who gave this answer. On a per-child form, the guardian who answered
+  /// most recently for that child.
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The child this answer is for, on a per-child form. Null on an ordinary
+  /// form, which is answered once per parent.
+  studentId String?
+  student   Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
   answers   Json // { fieldId: value }
   createdAt DateTime @default(now())
+  /// When the current answer was given. A guardian may change an answer before
+  /// the deadline, and a partner reading answers with a cursor reads on this.
+  updatedAt DateTime @default(now()) @updatedAt
 
-  @@unique([formId, userId])
+  // One answer per child on a per-child form.
+  @@unique([formId, studentId])
+  // NOTE: one answer per PARENT on an ordinary form is still enforced, but by a
+  // PARTIAL unique index on (formId, userId) WHERE "studentId" IS NULL, which
+  // Prisma cannot express; it lives in 20261021130000_per_child_forms. If
+  // `prisma migrate dev` offers to recreate a plain unique on (formId, userId),
+  // refuse: it would stop a parent of two children answering for both.
+  @@index([formId, updatedAt])
 }
 
 // Parent Invitations (for self-registration)

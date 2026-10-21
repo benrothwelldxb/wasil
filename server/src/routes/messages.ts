@@ -8,6 +8,7 @@ import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification, resolveAudienceParentIds } from '../services/notify.js'
 import { signalAdminNotice, unseenNoticeCount } from '../services/adminNotices.js'
 import { translateTexts } from '../services/translation.js'
+import { perChildFormStates, parentChildrenOf, type ChildFormState } from '../services/perChildForms.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
@@ -204,9 +205,27 @@ async function buildTranslator(
   return (text: string) => map.get(text) || text
 }
 
+/** Per-child form state for every per-child form among these posts: which of
+ *  the parent's children each asks about, and what is answered for each. */
+async function perChildStatesFor(messages: Array<{ form?: { id: string; perChild?: boolean } | null }>, user: any) {
+  const formIds = [...new Set(messages.filter(m => m.form?.perChild).map(m => m.form!.id))]
+  return perChildFormStates(formIds, parentChildrenOf(user))
+}
+
 /** One post as a parent reads it. Shared so the dashboard and the Posts page
  *  cannot drift into rendering the same post differently. */
-function serializeParentMessage(msg: any, getTranslated: (t: string) => string) {
+function serializeParentMessage(
+  msg: any,
+  getTranslated: (t: string) => string,
+  perChild: Map<string, ChildFormState[]> = new Map(),
+) {
+  // A per-child form counts as answered only when every child it asks about
+  // has an answer, whichever guardian gave it. `children` carries the detail,
+  // so the parent app can ask once per child.
+  const children = msg.form?.perChild ? (perChild.get(msg.form.id) ?? []) : null
+  const ownResponse = children
+    ? (children.length > 0 && children.every(c => c.response) ? children[0].response : null)
+    : msg.form?.responses?.[0] ?? null
   return {
       id: msg.id,
       title: getTranslated(msg.title),
@@ -241,12 +260,14 @@ function serializeParentMessage(msg: any, getTranslated: (t: string) => string) 
         expiresAt: msg.form.expiresAt?.toISOString() || null,
         createdAt: msg.form.createdAt.toISOString(),
         updatedAt: msg.form.updatedAt.toISOString(),
-        userResponse: msg.form.responses[0] ? {
-          id: msg.form.responses[0].id,
-          formId: msg.form.responses[0].formId,
-          userId: msg.form.responses[0].userId,
-          answers: msg.form.responses[0].answers,
-          createdAt: msg.form.responses[0].createdAt.toISOString(),
+        perChild: !!msg.form.perChild,
+        ...(children ? { children } : {}),
+        userResponse: ownResponse ? {
+          id: ownResponse.id,
+          formId: msg.form.id,
+          userId: ownResponse.userId ?? null,
+          answers: ownResponse.answers,
+          createdAt: typeof ownResponse.createdAt === 'string' ? ownResponse.createdAt : ownResponse.createdAt.toISOString(),
         } : null,
       } : undefined,
       attachments: msg.attachments.map((a: {
@@ -304,7 +325,8 @@ router.get('/', isAuthenticated, async (req, res) => {
     })
 
     const getTranslated = await buildTranslator(messages, user.preferredLanguage || 'en')
-    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated)))
+    const perChild = await perChildStatesFor(messages, user)
+    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated, perChild)))
   } catch (error) {
     console.error('Error fetching messages:', error)
     res.status(500).json({ error: 'Failed to fetch messages' })
@@ -351,8 +373,9 @@ router.get('/archive', isAuthenticated, async (req, res) => {
     const page = hasMore ? messages.slice(0, limit) : messages
 
     const getTranslated = await buildTranslator(page, user.preferredLanguage || 'en')
+    const perChild = await perChildStatesFor(page, user)
     res.json({
-      messages: page.map(msg => serializeParentMessage(msg, getTranslated)),
+      messages: page.map(msg => serializeParentMessage(msg, getTranslated, perChild)),
       nextCursor: hasMore ? page[page.length - 1].id : null,
     })
   } catch (error) {
