@@ -3010,24 +3010,54 @@ function replayBroadcast(
 // Deliberately read-only and school-wide: no sender filter, no edit, no delete,
 // no parent-level read receipts. Desk asked for none of those and should not be
 // able to change a parent-facing record it did not create.
+//
+// Two optional filters, for a publisher copying one group's posts into its own
+// log (Beyond's trip message log) without reading the whole school's:
+//
+//   group_id=<Connect id | externalRef>   only posts sent to that group
+//                                          (404 unknown_group if none)
+//   since=<ISO time>                       only posts written AFTER that time,
+//                                          OLDEST FIRST, with `next` to pass as
+//                                          the following call's `since`
+//
+// Without `since` the order is newest first, as Desk reads it. With it, the
+// order flips, because a cursor only works forwards: newest first would hand a
+// poller the latest `limit` posts and silently skip any older ones it had not
+// yet seen. `next` is always present with `since`, and equals `since` when
+// nothing new has arrived, so a poller can store it unconditionally.
 router.get('/messages', requirePartner, async (req, res) => {
   try {
     const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
     if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
 
+    const sinceParam = typeof req.query.since === 'string' ? req.query.since.trim() : ''
+    const since = sinceParam ? new Date(sinceParam) : null
+    if (since && Number.isNaN(since.getTime())) {
+      return res.status(400).json({ error: 'since must be an ISO-8601 time' })
+    }
+
     const school = await partnerSchool(schoolIdParam)
     // Unknown school is not an error — Desk probes ids across products.
-    if (!school) return res.json({ messages: [] })
+    if (!school) return res.json({ messages: [], ...(since ? { next: since.toISOString() } : {}) })
+
+    const groupParam = typeof req.query.group_id === 'string' ? req.query.group_id.trim() : ''
+    const group = groupParam ? await findGroupByIdOrRef(groupParam, school.id) : null
+    if (groupParam && !group) return res.status(404).json({ error: 'unknown_group' })
 
     const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? '60'), 10) || 60))
+    const take = limit * 4
 
     // Over-fetch the flat rows: a multi-class broadcast is several Message rows
     // and collapses into one entry below, so `limit` entries need more rows.
     const rows = await prisma.message.findMany({
-      where: { schoolId: school.id },
+      where: {
+        schoolId: school.id,
+        ...(group ? { groupId: group.id } : {}),
+        ...(since ? { createdAt: { gt: since } } : {}),
+      },
       select: {
         id: true, title: true, content: true, targetClass: true,
-        classId: true, yearGroupId: true, groupId: true,
+        classId: true, yearGroupId: true, groupId: true, formId: true,
         senderId: true, senderName: true,
         channel: true, department: true,
         scheduledAt: true, notifiedAt: true, createdAt: true,
@@ -3035,10 +3065,10 @@ router.get('/messages', requirePartner, async (req, res) => {
         class: { select: { name: true, hubClassId: true } },
         yearGroup: { select: { name: true } },
         group: { select: { name: true } },
-        _count: { select: { acknowledgments: true } },
+        _count: { select: { acknowledgments: true, studentTargets: true } },
       },
-      orderBy: { createdAt: 'desc' },
-      take: limit * 4,
+      orderBy: { createdAt: since ? 'asc' : 'desc' },
+      take,
     })
 
     // One entry per broadcast, not per fan-out row. Connect's own composer
@@ -3054,7 +3084,15 @@ router.get('/messages', requirePartner, async (req, res) => {
       else groups.set(key, [m])
     }
 
-    const messages = [...groups.values()].slice(0, limit).map(members => {
+    let entries = [...groups.values()]
+    // Paging forwards, the last entry of a FULL page may be cut part way
+    // through its fan-out rows. Leave it for the next page rather than hand it
+    // over incomplete — unless it is the only entry, or the page could never
+    // move.
+    if (since && rows.length === take && entries.length > 1) entries = entries.slice(0, -1)
+    entries = entries.slice(0, limit)
+
+    const messages = entries.map(members => {
       const head = members[0]
       // Hub class ids, never Connect's internal ones — Desk cannot resolve those.
       const classHubIds = [...new Set(
@@ -3084,7 +3122,14 @@ router.get('/messages', requirePartner, async (req, res) => {
         senderName: head.department || head.sender?.name || head.senderName,
         channel: head.channel,
         department: head.department,
-        audience: { wholeSchool, classHubIds, groupIds, yearGroupId },
+        // pupilCount: how many named pupils a pupil-addressed post went to
+        // (audience.pupilHubIds on the send). Never which pupils: this log is
+        // school-wide.
+        audience: {
+          wholeSchool, classHubIds, groupIds, yearGroupId,
+          pupilCount: members.reduce((n, m) => n + (m._count.studentTargets ?? 0), 0),
+        },
+        formId: members.find(m => m.formId)?.formId ?? null,
         audienceLabel: labelParts.join(' · ') || head.targetClass,
         // When parents were actually told. NULL means it has not gone out yet —
         // read with scheduledAt, this distinguishes queued from sent without
@@ -3098,6 +3143,12 @@ router.get('/messages', requirePartner, async (req, res) => {
       }
     })
 
+    if (since) {
+      const lastRow = entries.flat().reduce<Date | null>(
+        (max, m) => (!max || m.createdAt > max ? m.createdAt : max), null,
+      )
+      return res.json({ messages, next: (lastRow ?? since).toISOString() })
+    }
     res.json({ messages })
   } catch (error) {
     // Never an empty list on failure: Desk's original read swallowed a 404 into
