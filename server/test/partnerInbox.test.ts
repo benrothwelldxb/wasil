@@ -1089,7 +1089,8 @@ describe('POST /api/partner/messages', () => {
     })
 
     expect(res.status).toBe(201)
-    expect(res.body).toEqual({ created: 4, parents: 2 })
+    // messageIds joined the response so a publisher can find its post again.
+    expect(res.body).toEqual({ created: 4, parents: 2, messageIds: ['msg-1', 'msg-2', 'msg-3', 'msg-4'] })
 
     // Validation was school-scoped and up front.
     expect(prismaMock.class.findMany).toHaveBeenCalledWith({
@@ -1161,7 +1162,7 @@ describe('POST /api/partner/messages', () => {
     const res = await auth(request(makeApp()).post('/api/partner/messages'))
       .send({ hub_user_id: 'hu-staff', title: 'T', content: 'C', audience: { yearGroupId: 'yg-1' } })
     expect(res.status).toBe(201)
-    expect(res.body).toEqual({ created: 1, parents: 2 })
+    expect(res.body).toEqual({ created: 1, parents: 2, messageIds: ['msg-1'] })
     expect(prismaMock.message.create.mock.calls[0][0].data).toMatchObject({ targetClass: 'Year 1', yearGroupId: 'yg-1' })
   })
 

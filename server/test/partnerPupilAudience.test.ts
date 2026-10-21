@@ -85,7 +85,7 @@ describe('POST /api/partner/messages with pupilHubIds', () => {
   it('writes one row with no other target, linked to exactly those pupils', async () => {
     const res = await send({ pupilHubIds: ['hub-p1', 'hub-p2'], label: 'Year 4 Etihad Museum, 20 Oct' })
     expect(res.status).toBe(201)
-    expect(res.body).toEqual({ created: 1, parents: 1 })
+    expect(res.body).toEqual({ created: 1, parents: 1, messageIds: ['m-1'] })
 
     const data = prismaMock.message.create.mock.calls[0][0].data
     expect(data).toMatchObject({ targetClass: 'Year 4 Etihad Museum, 20 Oct', classId: null, groupId: null, yearGroupId: null })

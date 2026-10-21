@@ -10,6 +10,7 @@
 // parent-data boundary by design.
 import { Router } from 'express'
 import type { Request, Response } from 'express'
+import { createHash } from 'crypto'
 import { singleAttachment } from '../middleware/attachmentUpload.js'
 import { marked } from 'marked'
 import prisma from '../services/prisma.js'
@@ -2612,7 +2613,23 @@ router.get('/staff/mentionable', requirePartner, async (req, res) => {
 // ROWS (five classes = 5, the whole school = 1), `parents` counts distinct
 // PEOPLE. A caller that renders `created` as a headcount tells a teacher who
 // messaged five classes that 5 parents have it.
+// IDEMPOTENCY. With `idempotency_key` (any string up to 200 characters, unique
+// per partner token), a repeat returns the FIRST response, marked
+// `replayed: true`, and sends nothing — even if the audience has changed since
+// (a group archived after "back at school" went out). See PartnerMessageSend:
+//
+//   same key, same message, already sent   → 201, the first response + replayed
+//   same key, different message            → 409 idempotency_key_reused
+//   same key, first attempt still sending  → 409 idempotency_in_progress
+//   same key, first attempt broke part way → 409 idempotency_key_failed
+//
+// "Same message" ignores hub_user_id, so a retry acting as the coordinator
+// after the trip lead was refused is still recognised as the same send. A
+// request that fails validation claims nothing, so it can be corrected and
+// sent again under the same key.
 router.post('/messages', requirePartner, async (req, res) => {
+  let claimId: string | null = null
+  const messageIds: string[] = []
   try {
     const { hub_user_id, title, content, audience, isUrgent, scheduledAt, expiresAt, attachments, channel, department } = req.body ?? {}
     // A department sending from Desk — the clinic, accounts — files its message
@@ -2624,6 +2641,20 @@ router.post('/messages', requirePartner, async (req, res) => {
       : null
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+
+    const rawKey = (req.body ?? {}).idempotency_key
+    const idempotencyKey = typeof rawKey === 'string' ? rawKey.trim() : ''
+    if (rawKey !== undefined && (!idempotencyKey || idempotencyKey.length > 200)) {
+      return res.status(400).json({ error: 'idempotency_key must be a non-empty string of at most 200 characters' })
+    }
+    const owner = callerOwner(req) ?? ''
+    const requestHash = idempotencyKey ? broadcastRequestHash(req.body) : ''
+    if (idempotencyKey) {
+      const prior = await prisma.partnerMessageSend.findUnique({
+        where: { partner_idempotencyKey: { partner: owner, idempotencyKey } },
+      })
+      if (prior) return replayBroadcast(res, prior, requestHash)
+    }
 
     if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'title required' })
     if (typeof content !== 'string' || !content.trim()) return res.status(400).json({ error: 'content required' })
@@ -2738,6 +2769,24 @@ router.post('/messages', requirePartner, async (req, res) => {
     // contract and stay forward-compatible.
     ;(req as unknown as { user: StaffActor }).user = actor
 
+    // Claimed after every check has passed and before the first row is
+    // written. Two attempts racing past the lookup above meet here, and only
+    // one gets the row.
+    if (idempotencyKey) {
+      try {
+        const claim = await prisma.partnerMessageSend.create({
+          data: { partner: owner, idempotencyKey, requestHash, status: 'PENDING', schoolId: actor.schoolId },
+          select: { id: true },
+        })
+        claimId = claim.id
+      } catch (error: unknown) {
+        if ((error as { code?: string })?.code === 'P2002') {
+          return res.status(409).json({ error: 'idempotency_in_progress' })
+        }
+        throw error
+      }
+    }
+
     for (const t of targets) {
       const message = await prisma.message.create({
         data: {
@@ -2760,6 +2809,9 @@ router.post('/messages', requirePartner, async (req, res) => {
           expiresAt: expiresDate,
         },
       })
+      // Recorded the moment the row exists, so a failure anywhere after this
+      // knows a post was written and does not release the idempotency key.
+      messageIds.push(message.id)
 
       if (t.studentIds) {
         await prisma.messageStudentTarget.createMany({
@@ -2860,16 +2912,86 @@ router.post('/messages', requirePartner, async (req, res) => {
 
     // `created` = fan-out rows, unchanged. `parents` = distinct people. Zero is
     // a real answer and says so: an empty class is a thing a sender needs told.
-    res.status(201).json({
+    const result = {
       created: targets.length,
       parents: audienceParentIds.size,
+      // One per fan-out row, in the order written, so a publisher can find its
+      // own post again in GET /messages.
+      messageIds,
       ...(pupils.unknownPupilIds.length > 0 ? { unknownPupilIds: pupils.unknownPupilIds } : {}),
-    })
+    }
+    if (claimId) {
+      await prisma.partnerMessageSend.update({
+        where: { id: claimId },
+        data: { status: 'DONE', response: result },
+      })
+    }
+    res.status(201).json(result)
   } catch (error) {
     console.error('Error creating partner broadcast:', error)
+    // Release the key only if nothing was written, so the retry can send. If
+    // posts exist, some families may already have it: re-sending on a retry
+    // would be the double send this exists to stop, so the key is marked
+    // FAILED and a person decides.
+    if (claimId) {
+      try {
+        if (messageIds.length === 0) {
+          await prisma.partnerMessageSend.delete({ where: { id: claimId } })
+        } else {
+          await prisma.partnerMessageSend.update({
+            where: { id: claimId },
+            data: { status: 'FAILED', response: { messageIds } },
+          })
+        }
+      } catch (releaseError) {
+        console.error('Error releasing partner broadcast idempotency key:', releaseError)
+      }
+    }
     res.status(500).json({ error: 'internal_error' })
   }
 })
+
+/** Keys sorted at every level, so the same body hashes the same whichever
+ *  order the partner's JSON encoder wrote it in. */
+function stableStringify(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`
+  if (v && typeof v === 'object') {
+    return `{${Object.keys(v as Record<string, unknown>).sort()
+      .map(k => `${JSON.stringify(k)}:${stableStringify((v as Record<string, unknown>)[k])}`).join(',')}}`
+  }
+  return JSON.stringify(v) ?? 'null'
+}
+
+/** What makes two broadcasts "the same message": everything except who sent it
+ *  and the key itself. */
+function broadcastRequestHash(body: unknown): string {
+  const { hub_user_id: _actor, idempotency_key: _key, ...rest } = (body ?? {}) as Record<string, unknown>
+  return createHash('sha256').update(stableStringify(rest)).digest('hex')
+}
+
+function replayBroadcast(
+  res: Response,
+  prior: { status: string; requestHash: string; response: unknown },
+  requestHash: string,
+) {
+  if (prior.requestHash !== requestHash) {
+    return res.status(409).json({
+      error: 'idempotency_key_reused',
+      hint: 'this key was first used for a different message; use a new key for a new message',
+    })
+  }
+  if (prior.status === 'DONE') {
+    return res.status(201).json({ ...(prior.response as Record<string, unknown>), replayed: true })
+  }
+  if (prior.status === 'FAILED') {
+    return res.status(409).json({
+      error: 'idempotency_key_failed',
+      hint: 'the first attempt failed after some posts were written; check GET /api/partner/messages before sending again under a new key',
+      ...(prior.response as Record<string, unknown> | null ?? {}),
+    })
+  }
+  return res.status(409).json({ error: 'idempotency_in_progress' })
+}
 
 // This sender's recent broadcasts, newest first (cap 50). Display-only: a title,
 // the row's audience label, when it was sent, and `ackCount` — the number of
