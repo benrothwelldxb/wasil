@@ -68,7 +68,7 @@ const FIELDS = [
   { id: 'signed', type: 'name', label: 'Your full name' },
 ]
 const STORED_FIELDS = [
-  { id: 'consent', label: 'Do you give consent for your child to go on this trip?', required: true, removable: false, partnerType: 'yesno', type: 'select', options: ['Yes', 'No'] },
+  { id: 'consent', label: 'Do you give consent for your child to go on this trip?', required: true, removable: false, partnerType: 'yesno', type: 'select', options: ['Yes', 'No'], optionsAr: ['نعم', 'لا'] },
   { id: 'pickup', label: 'How will your child get home?', required: true, removable: false, partnerType: 'choice', type: 'select', options: ['Coach', 'Collected'] },
   { id: 'notes', label: 'Anything the trip lead should know', required: false, removable: false, partnerType: 'textarea', type: 'textarea' },
   { id: 'signed', label: 'Your full name', required: true, removable: false, partnerType: 'name', type: 'text', placeholder: 'Your full name' },

@@ -229,6 +229,8 @@ export interface FormField {
   page?: number                  // page number (0-indexed), undefined = page 0
   condition?: FormFieldCondition // show only when condition is met
   partnerType?: string           // the publishing app's own type, on a partner form
+  labelAr?: string               // the author's Arabic label, for a parent reading in Arabic
+  optionsAr?: string[]           // Arabic for `options`, by position; the answer stays the English option
 }
 
 export type FormType = 'permission-consent' | 'trip-consent' | 'payment-request' | 'medical-info' | 'general-info' | 'quick-poll'

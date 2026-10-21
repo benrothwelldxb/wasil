@@ -724,6 +724,11 @@ model Message {
   id          String     @id @default(cuid())
   title       String
   content     String
+  /// The author's own Arabic, when they wrote one (a partner sending titleAr
+  /// and bodyAr). Shown to a parent whose language is Arabic in place of a
+  /// machine translation. contentAr is sanitised HTML, like content.
+  titleAr     String?
+  contentAr   String?
   targetClass String // "Whole School" or class name
   classId     String?
   class       Class?     @relation(fields: [classId], references: [id])
@@ -1218,6 +1223,10 @@ model Form {
   id                   String    @id @default(cuid())
   title                String
   description          String?
+  /// The author's own Arabic title and description (see Message.titleAr).
+  /// Field labels carry theirs in `fields` as labelAr and optionsAr.
+  titleAr              String?
+  descriptionAr        String?
   type                 String // template key: "permission-consent", "trip-consent", etc.
   status               String    @default("DRAFT") // "DRAFT", "ACTIVE", "CLOSED"
   fields               Json // Array of field definitions

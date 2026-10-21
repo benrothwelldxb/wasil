@@ -2592,7 +2592,12 @@ router.get('/staff/mentionable', requirePartner, async (req, res) => {
 //   POST /api/partner/messages
 //   { hub_user_id, title, content, audience: { classHubIds?, wholeSchool?,
 //     yearGroupId?, groupIds?, pupilHubIds?, label? }, isUrgent?, scheduledAt?,
-//     expiresAt?, attachments?: [{ fileName, fileUrl, fileType, fileSize }] }
+//     expiresAt?, attachments?: [{ fileName, fileUrl, fileType, fileSize }],
+//     titleAr?, bodyAr?, formRef?, idempotency_key? }
+//
+// `titleAr` and `bodyAr` are the author's own Arabic (bodyAr in markdown, like
+// content). A parent whose language is Arabic reads them in place of the
+// machine translation; everyone else reads the English. Optional, separately.
 //
 // `pupilHubIds` addresses the families of named pupils (a waiting-list offer,
 // a consent chaser). It becomes ONE row with no class, year or group, whose
@@ -2664,6 +2669,12 @@ router.post('/messages', requirePartner, async (req, res) => {
 
     if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'title required' })
     if (typeof content !== 'string' || !content.trim()) return res.status(400).json({ error: 'content required' })
+    const { titleAr, bodyAr } = req.body ?? {}
+    if ((titleAr !== undefined && typeof titleAr !== 'string') || (bodyAr !== undefined && typeof bodyAr !== 'string')) {
+      return res.status(400).json({ error: 'titleAr and bodyAr must be strings' })
+    }
+    const cleanTitleAr = typeof titleAr === 'string' && titleAr.trim() ? titleAr.trim() : null
+    const safeContentAr = typeof bodyAr === 'string' && bodyAr.trim() ? markdownToSafeHtml(bodyAr) : null
 
     const aud = (audience && typeof audience === 'object') ? audience as Record<string, unknown> : {}
     const classHubIds = toIdArray(aud.classHubIds)
@@ -2831,6 +2842,8 @@ router.post('/messages', requirePartner, async (req, res) => {
           department: noticeDepartment,
           expiresAt: expiresDate,
           ...(attachedFormId ? { formId: attachedFormId } : {}),
+          ...(cleanTitleAr ? { titleAr: cleanTitleAr } : {}),
+          ...(safeContentAr ? { contentAr: safeContentAr } : {}),
         },
       })
       // Recorded the moment the row exists, so a failure anywhere after this
@@ -3770,7 +3783,15 @@ type StoredFormField = {
   options?: string[]
   placeholder?: string
   partnerType: PartnerFieldType
+  /// The author's Arabic, shown to a parent reading in Arabic. optionsAr pairs
+  /// with options by position; the ANSWER is always the English option, so an
+  /// answer reads the same whichever language it was given in.
+  labelAr?: string
+  optionsAr?: string[]
 }
+
+/** Yes and No in Arabic, for a yes/no question whose author gave no options. */
+const YES_NO_AR = ['نعم', 'لا']
 
 /** Validate and translate a partner's field list. Returns an error string on
  *  the first fault, naming the field, or the fields as Connect stores them. */
@@ -3790,12 +3811,22 @@ function normalisePartnerFields(raw: unknown): { error: string } | { fields: Sto
     }
     const label = typeof f.label === 'string' ? f.label.trim() : ''
     if (!label || label.length > 500) return { error: `field "${id}" needs a label of at most 500 characters` }
+    if (f.labelAr !== undefined && (typeof f.labelAr !== 'string' || f.labelAr.length > 500)) {
+      return { error: `field "${id}" labelAr must be a string of at most 500 characters` }
+    }
+    const labelAr = typeof f.labelAr === 'string' && f.labelAr.trim() ? f.labelAr.trim() : undefined
+    const optionsAr = f.optionsAr === undefined ? undefined
+      : Array.isArray(f.optionsAr) && f.optionsAr.every(o => typeof o === 'string' && o.trim())
+        ? (f.optionsAr as string[]).map(o => o.trim())
+        : null
+    if (optionsAr === null) return { error: `field "${id}" optionsAr must be a list of non-empty strings` }
     // Required unless the partner says otherwise: a consent form's questions
     // are its point, and an optional one should be a decision, not a default.
     const required = f.required !== false
-    const base = { id, label, required, removable: false as const, partnerType: type }
+    const base = { id, label, required, removable: false as const, partnerType: type, ...(labelAr ? { labelAr } : {}) }
     if (type === 'yesno') {
-      fields.push({ ...base, type: 'select', options: ['Yes', 'No'] })
+      if (optionsAr && optionsAr.length !== 2) return { error: `field "${id}" optionsAr must give Yes and No, in that order` }
+      fields.push({ ...base, type: 'select', options: ['Yes', 'No'], optionsAr: optionsAr ?? YES_NO_AR })
     } else if (type === 'choice') {
       const options = Array.isArray(f.options)
         ? f.options.filter((o): o is string => typeof o === 'string').map(o => o.trim()).filter(Boolean)
@@ -3803,7 +3834,10 @@ function normalisePartnerFields(raw: unknown): { error: string } | { fields: Sto
       if (options.length < 2 || options.length > 20 || new Set(options).size !== options.length) {
         return { error: `field "${id}" needs 2 to 20 distinct options` }
       }
-      fields.push({ ...base, type: 'select', options })
+      if (optionsAr && optionsAr.length !== options.length) {
+        return { error: `field "${id}" optionsAr must have one entry per option, in the same order` }
+      }
+      fields.push({ ...base, type: 'select', options, ...(optionsAr ? { optionsAr } : {}) })
     } else if (type === 'name') {
       // The typed alternative to a drawn signature: the guardian's full name.
       fields.push({ ...base, type: 'text', placeholder: 'Your full name' })
@@ -3829,21 +3863,34 @@ function partnerAnswers(answers: unknown, fields: StoredFormField[]): Record<str
 
 function serializePartnerForm(form: {
   id: string; externalRef: string | null; title: string; description: string | null; status: string
-  expiresAt: Date | null; fields: unknown; perChild: boolean
+  expiresAt: Date | null; fields: unknown; perChild: boolean; titleAr?: string | null; descriptionAr?: string | null
 }) {
   return {
     id: form.id,
     externalRef: form.externalRef,
     title: form.title,
+    titleAr: form.titleAr ?? null,
     description: form.description,
+    descriptionAr: form.descriptionAr ?? null,
     status: form.status,
     deadline: form.expiresAt ? form.expiresAt.toISOString() : null,
     perChild: form.perChild,
     fields: (form.fields as StoredFormField[]).map(f => ({
       id: f.id, type: f.partnerType, label: f.label, required: f.required,
+      ...(f.labelAr ? { labelAr: f.labelAr } : {}),
       ...(f.partnerType === 'choice' ? { options: f.options } : {}),
+      ...(f.partnerType !== 'yesno' && f.optionsAr ? { optionsAr: f.optionsAr } : {}),
     })),
   }
+}
+
+/** The questions, without their Arabic: what an answer was given against.
+ *  Correcting a translation after answers exist changes no question. */
+function questionsOf(fields: unknown): unknown {
+  return (Array.isArray(fields) ? fields : []).map((f: Record<string, unknown>) => {
+    const { labelAr: _l, optionsAr: _o, ...rest } = f ?? {}
+    return rest
+  })
 }
 
 /**
@@ -3880,6 +3927,8 @@ router.put('/forms/:externalRef', requirePartner, async (req, res) => {
     const title = typeof body.title === 'string' ? body.title.trim() : ''
     if (!title || title.length > 500) return res.status(400).json({ error: 'title required (at most 500 characters)' })
     const description = typeof body.description === 'string' && body.description.trim() ? body.description.trim() : null
+    const titleAr = typeof body.titleAr === 'string' && body.titleAr.trim() ? body.titleAr.trim().slice(0, 500) : null
+    const descriptionAr = typeof body.descriptionAr === 'string' && body.descriptionAr.trim() ? body.descriptionAr.trim() : null
 
     const normalised = normalisePartnerFields(body.fields)
     if ('error' in normalised) return res.status(400).json({ error: normalised.error })
@@ -3906,7 +3955,7 @@ router.put('/forms/:externalRef', requirePartner, async (req, res) => {
       return res.status(409).json({ error: 'form_managed_elsewhere', managedBy: existing.managedBy })
     }
     if (existing && existing._count.responses > 0
-      && stableStringify(existing.fields) !== stableStringify(normalised.fields)) {
+      && stableStringify(questionsOf(existing.fields)) !== stableStringify(questionsOf(normalised.fields))) {
       return res.status(409).json({
         error: 'form_has_answers',
         hint: 'fields cannot change once answered; publish a new externalRef for a new question',
@@ -3916,6 +3965,8 @@ router.put('/forms/:externalRef', requirePartner, async (req, res) => {
     const data = {
       title,
       description,
+      titleAr,
+      descriptionAr,
       fields: normalised.fields,
       ...(deadline !== undefined ? { expiresAt: deadline } : {}),
       ...(body.status ? { status: body.status as string } : {}),

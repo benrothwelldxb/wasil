@@ -5,6 +5,7 @@ import { Share2, AlertTriangle, Pin, Check, Clock, CreditCard, Paperclip, FileTe
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
 import { formProgress } from '../../utils/perChildForm'
+import { readsArabic, fieldLabel, optionLabel } from '../../utils/arabicText'
 
 interface MessageCardProps {
   message: Message
@@ -35,8 +36,15 @@ export function MessageCard({
   showAcknowledgeButton = true,
   classColors = {},
 }: MessageCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const theme = useTheme()
+  // A parent reading in Arabic reads the post right to left: the title, the
+  // body and any form. Only these blocks, not the card's chrome, which was
+  // laid out left to right and is not this change's to flip. The text itself
+  // is already Arabic: the author's own where they wrote it, otherwise the
+  // machine translation the server sends for the parent's language.
+  const rtl = readsArabic(i18n.language)
+  const textDir = rtl ? 'rtl' : undefined
 
   // Defense-in-depth: message bodies are sanitized on the server before storage,
   // but we sanitize again on render so any legacy row written before that fix
@@ -345,7 +353,7 @@ export function MessageCard({
         </div>
 
         {/* Title */}
-        <h3 className="text-[15px] font-bold mb-1" style={{ color: '#2D2225' }}>
+        <h3 className="text-[15px] font-bold mb-1" style={{ color: '#2D2225' }} dir={textDir}>
           {message.title}
         </h3>
 
@@ -363,6 +371,7 @@ export function MessageCard({
         {/* Content */}
         <div
           ref={contentRef}
+          dir={textDir}
           className={`text-sm leading-relaxed font-medium rich-content ${
             clampable && overflowing ? 'mb-1' : 'mb-3'
           }`}
@@ -474,6 +483,7 @@ export function MessageCard({
         {/* Inline Form Fields */}
         {hasForm && awaitingAnswer && (
           <div
+            dir={textDir}
             className="mb-3 p-4 rounded-[16px]"
             style={{ backgroundColor: '#FFF8F4', border: '1.5px solid #F0E4E6' }}
           >
@@ -528,7 +538,7 @@ export function MessageCard({
               {currentPageFields.map(field => (
                 <div key={field.id}>
                   <label className="block text-[13px] font-bold mb-1" style={{ color: '#7A6469' }}>
-                    {field.label}
+                    {fieldLabel(field, rtl)}
                     {field.required && <span style={{ color: '#D14D4D' }}> *</span>}
                   </label>
 
@@ -617,7 +627,7 @@ export function MessageCard({
                               style={{ accentColor: '#C4506E' }}
                             />
                             <span className="text-sm font-medium" style={{ color: '#4A3A40' }}>
-                              {option}
+                              {optionLabel(field, option, rtl)}
                             </span>
                           </label>
                         )
@@ -631,7 +641,7 @@ export function MessageCard({
                         <button
                           key={option}
                           onClick={() => updateAnswer(field.id, option)}
-                          className="w-full text-left px-4 py-3 rounded-xl transition-all cursor-pointer"
+                          className="w-full text-start px-4 py-3 rounded-xl transition-all cursor-pointer"
                           style={{
                             border: answers[field.id] === option
                               ? '2px solid #C4506E'
@@ -658,7 +668,7 @@ export function MessageCard({
                               className="text-sm font-semibold"
                               style={{ color: answers[field.id] === option ? '#C4506E' : '#4A3A40' }}
                             >
-                              {option}
+                              {optionLabel(field, option, rtl)}
                             </span>
                           </div>
                         </button>

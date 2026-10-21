@@ -180,29 +180,45 @@ function messageInclude(userId: string) {
   } as const
 }
 
-/** Titles, bodies and form text in the parent's language, when it isn't English. */
-async function buildTranslator(
-  messages: Array<{ title: string; content: string; form?: { title: string; description: string | null } | null }>,
-  targetLang: string,
-) {
+/** Is this parent reading in Arabic? Then an author's own Arabic wins. */
+function readsArabic(lang: string | null | undefined): boolean {
+  return (lang || '').toLowerCase().startsWith('ar')
+}
+
+type TranslatableMessage = {
+  title: string; content: string; titleAr?: string | null; contentAr?: string | null
+  form?: { title: string; description: string | null; titleAr?: string | null; descriptionAr?: string | null } | null
+}
+
+/** Titles, bodies and form text in the parent's language, when it isn't English.
+ *
+ *  For a parent reading in Arabic, text the author wrote in Arabic themselves
+ *  (titleAr, contentAr, a form's titleAr and descriptionAr) is used as it
+ *  stands and never sent for machine translation — see authorArabic. */
+async function buildTranslator(messages: TranslatableMessage[], targetLang: string) {
   const map = new Map<string, string>()
   if (targetLang !== 'en' && messages.length > 0) {
-    const texts: string[] = []
+    const ar = readsArabic(targetLang)
+    const texts = new Set<string>()
     messages.forEach(msg => {
-      texts.push(msg.title, msg.content)
-      if (msg.form?.title) texts.push(msg.form.title)
-      if (msg.form?.description) texts.push(msg.form.description)
+      if (!(ar && msg.titleAr)) texts.add(msg.title)
+      if (!(ar && msg.contentAr)) texts.add(msg.content)
+      if (msg.form?.title && !(ar && msg.form.titleAr)) texts.add(msg.form.title)
+      if (msg.form?.description && !(ar && msg.form.descriptionAr)) texts.add(msg.form.description)
     })
-    const translations = await translateTexts(texts, targetLang)
-    let i = 0
-    messages.forEach(msg => {
-      map.set(msg.title, translations[i++])
-      map.set(msg.content, translations[i++])
-      if (msg.form?.title) map.set(msg.form.title, translations[i++])
-      if (msg.form?.description) map.set(msg.form.description, translations[i++])
-    })
+    const list = [...texts]
+    if (list.length > 0) {
+      const translations = await translateTexts(list, targetLang)
+      list.forEach((text, i) => map.set(text, translations[i]))
+    }
   }
   return (text: string) => map.get(text) || text
+}
+
+/** The author's own Arabic for this text, when the parent reads Arabic and
+ *  the author wrote some; otherwise the (possibly machine-translated) text. */
+function authorArabic(lang: string, arabic: string | null | undefined, fallback: string): string {
+  return readsArabic(lang) && arabic ? arabic : fallback
 }
 
 /** Per-child form state for every per-child form among these posts: which of
@@ -218,6 +234,7 @@ function serializeParentMessage(
   msg: any,
   getTranslated: (t: string) => string,
   perChild: Map<string, ChildFormState[]> = new Map(),
+  lang = 'en',
 ) {
   // A per-child form counts as answered only when every child it asks about
   // has an answer, whichever guardian gave it. `children` carries the detail,
@@ -228,8 +245,8 @@ function serializeParentMessage(
     : msg.form?.responses?.[0] ?? null
   return {
       id: msg.id,
-      title: getTranslated(msg.title),
-      content: getTranslated(msg.content),
+      title: authorArabic(lang, msg.titleAr, getTranslated(msg.title)),
+      content: authorArabic(lang, msg.contentAr, getTranslated(msg.content)),
       targetClass: msg.targetClass,
       classId: msg.classId,
       yearGroupId: msg.yearGroupId,
@@ -248,8 +265,8 @@ function serializeParentMessage(
       formId: msg.formId,
       form: msg.form ? {
         id: msg.form.id,
-        title: getTranslated(msg.form.title),
-        description: msg.form.description ? getTranslated(msg.form.description) : null,
+        title: authorArabic(lang, msg.form.titleAr, getTranslated(msg.form.title)),
+        description: authorArabic(lang, msg.form.descriptionAr, msg.form.description ? getTranslated(msg.form.description) : '') || null,
         type: msg.form.type,
         status: msg.form.status,
         fields: msg.form.fields,
@@ -326,7 +343,7 @@ router.get('/', isAuthenticated, async (req, res) => {
 
     const getTranslated = await buildTranslator(messages, user.preferredLanguage || 'en')
     const perChild = await perChildStatesFor(messages, user)
-    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated, perChild)))
+    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en')))
   } catch (error) {
     console.error('Error fetching messages:', error)
     res.status(500).json({ error: 'Failed to fetch messages' })
@@ -375,7 +392,7 @@ router.get('/archive', isAuthenticated, async (req, res) => {
     const getTranslated = await buildTranslator(page, user.preferredLanguage || 'en')
     const perChild = await perChildStatesFor(page, user)
     res.json({
-      messages: page.map(msg => serializeParentMessage(msg, getTranslated, perChild)),
+      messages: page.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en')),
       nextCursor: hasMore ? page[page.length - 1].id : null,
     })
   } catch (error) {
