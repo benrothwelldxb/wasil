@@ -14,7 +14,7 @@ import request from 'supertest'
 
 const prismaMock = {
   partnerToken: { findUnique: vi.fn(), update: vi.fn() },
-  school: { findFirst: vi.fn() },
+  school: { findFirst: vi.fn(), findUnique: vi.fn() },
   user: { findFirst: vi.fn(), findUnique: vi.fn() },
   group: { findMany: vi.fn() },
   form: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
@@ -61,6 +61,8 @@ const auth = (r: request.Test) => r.set('Authorization', 'Bearer tok')
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // The school has turned Wasil Beyond on (services/partnerSwitch).
+  prismaMock.school.findUnique.mockResolvedValue({ beyondEnabled: true })
   prismaMock.partnerToken.findUnique.mockResolvedValue({ id: 'pt-1', name: 'beyond', revokedAt: null })
   prismaMock.partnerToken.update.mockResolvedValue({})
   prismaMock.user.findUnique.mockResolvedValue(null)

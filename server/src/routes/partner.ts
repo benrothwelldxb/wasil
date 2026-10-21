@@ -38,6 +38,7 @@ import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation
 import { ALLOWED_REACTION_EMOJIS } from './inbox.js'
 import { refreshServiceGroup, refreshServiceGroupsForSchool } from '../services/serviceGroups.js'
 import { ownerNameOf, isManagedElsewhere, managedElsewhereBody } from '../services/groupOwnership.js'
+import { switchFlagFor, partnerEnabledForSchool, refuseIfPartnerOff } from '../services/partnerSwitch.js'
 import type { PartnerIdentity } from '../middleware/partnerAuth.js'
 
 const router = Router()
@@ -2652,6 +2653,9 @@ router.post('/messages', requirePartner, async (req, res) => {
       : null
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    // Before the idempotency replay too: while the school has Beyond off, the
+    // answer to every send is the same refusal, including a retry.
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
 
     const rawKey = (req.body ?? {}).idempotency_key
     const idempotencyKey = typeof rawKey === 'string' ? rawKey.trim() : ''
@@ -2842,6 +2846,9 @@ router.post('/messages', requirePartner, async (req, res) => {
           department: noticeDepartment,
           expiresAt: expiresDate,
           ...(attachedFormId ? { formId: attachedFormId } : {}),
+          // Which partner sent it, so the school's switch for that partner can
+          // hide a post that went to pupils or a class rather than its group.
+          ...(owner ? { partnerSource: owner } : {}),
           ...(cleanTitleAr ? { titleAr: cleanTitleAr } : {}),
           ...(safeContentAr ? { contentAr: safeContentAr } : {}),
         },
@@ -3380,6 +3387,7 @@ router.post('/groups', requirePartner, async (req, res) => {
     const { hub_user_id, name, pupilHubIds, categoryId, categoryName, externalRef, reopen } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
 
     if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' })
 
@@ -3570,6 +3578,7 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
     const { hub_user_id, name, addPupilHubIds, removePupilHubIds } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
 
     // `:id` is a Connect group id or, for a caller recovering from a lost id,
     // the externalRef it published under.
@@ -3639,6 +3648,7 @@ router.delete('/groups/:id', requirePartner, async (req, res) => {
     const { hub_user_id } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
 
     const group = await findGroupByIdOrRef(req.params.id, actor.schoolId)
     if (!group) return res.status(404).json({ error: 'not_found' })
@@ -3685,6 +3695,7 @@ router.put('/groups/:externalRef/roster', requirePartner, async (req, res) => {
       schoolHintOf(req),
     )
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
 
     const version = parseVersion(body.version)
     if (!version) return res.status(400).json({ error: 'version required (ISO-8601)' })
@@ -3920,6 +3931,7 @@ router.put('/forms/:externalRef', requirePartner, async (req, res) => {
       schoolHintOf(req),
     )
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
 
     const externalRef = (req.params.externalRef ?? '').trim()
     if (!externalRef || externalRef.length > 200) return res.status(400).json({ error: 'externalRef required' })
@@ -4100,11 +4112,43 @@ router.get('/forms/:externalRef/responses', requirePartner, async (req, res) => 
 //
 //   POST /api/partner/inbox/upload  (multipart/form-data, field "file")
 //     → { fileName, fileUrl, fileType, fileSize }
+/**
+ * Is this partner turned on for a school?
+ *
+ *   GET /api/partner/status?school_id=<hub or connect id>  →  { enabled }
+ *
+ * A cheap read so a partner can show "not turned on in Connect yet" before it
+ * tries a write. Answered whether or not the partner is on. A partner with no
+ * per-school switch (Desk, Active) is always on.
+ */
+router.get('/status', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+    const school = await partnerSchool(schoolIdParam)
+    if (!school) return res.status(404).json({ error: 'unknown_school' })
+    res.json({ enabled: await partnerEnabledForSchool(callerOwner(req), school.id) })
+  } catch (error) {
+    console.error('Error reading partner status:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 router.post('/inbox/upload', requirePartner, singleAttachment(), async (req, res) => {
   try {
     const uploaded = req.file
     if (!uploaded) {
       return res.status(400).json({ error: 'file required' })
+    }
+    // A gated partner (Beyond) names the school, as a query parameter or a
+    // form field, so an upload can be refused while that school has it off.
+    // An upload alone reaches nobody, but it is the first step of a post.
+    if (switchFlagFor(callerOwner(req))) {
+      const hint = schoolHintOf(req)
+      if (!hint) return res.status(400).json({ error: 'school_id required' })
+      const school = await partnerSchool(hint)
+      if (!school) return res.status(404).json({ error: 'unknown_school' })
+      if (await refuseIfPartnerOff(req, res, school.id)) return
     }
     const check = checkUpload(uploaded.buffer, uploaded.mimetype, uploaded.originalname, ATTACHMENT_MIME_TYPES)
     if (!check.valid) {

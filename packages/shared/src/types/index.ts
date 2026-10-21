@@ -1814,6 +1814,9 @@ export type SchoolModuleFlag =
   | 'activeScheduleEnabled'
   | 'sendInclusionEnabled'
   | 'activeIntentsEnabled'
+  // Wasil Beyond (school trips). Default OFF and enforced on the server: the
+  // partner token's writes and parents' view of what it sent.
+  | 'beyondEnabled'
 
 export type SchoolModuleFlags = Record<SchoolModuleFlag, boolean>
 

@@ -36,6 +36,10 @@ const MODULE_FLAG_FIELDS = [
   'activeScheduleEnabled',
   'sendInclusionEnabled',
   'activeIntentsEnabled',
+  // Wasil Beyond (school trips). Off until a school admin turns it on: while
+  // off, Beyond cannot write anything that reaches parents and what it already
+  // wrote is hidden from them (services/partnerSwitch).
+  'beyondEnabled',
 ] as const
 
 type ModuleFlagField = (typeof MODULE_FLAG_FIELDS)[number]
@@ -68,6 +72,7 @@ const SETTINGS_SELECT = {
   activeScheduleEnabled: true,
   sendInclusionEnabled: true,
   activeIntentsEnabled: true,
+  beyondEnabled: true,
   attendanceDigestEnabled: true,
   attendanceDigestTime: true,
   attendanceFigureVisibleToParents: true,

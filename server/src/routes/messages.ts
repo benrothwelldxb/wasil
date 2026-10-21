@@ -12,6 +12,7 @@ import { perChildFormStates, parentChildrenOf, type ChildFormState } from '../se
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
+import { parentVisibleMessageWhere } from '../services/partnerSwitch.js'
 import { parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
 
 const router = Router()
@@ -322,6 +323,7 @@ router.get('/', isAuthenticated, async (req, res) => {
         OR: audienceOR(audience),
         AND: [
           ...liveForParent(now),
+          ...parentVisibleMessageWhere(),
           {
             OR: [
               { createdAt: { gte: windowStart } },
@@ -374,7 +376,7 @@ router.get('/archive', isAuthenticated, async (req, res) => {
         schoolId: user.schoolId,
         channel: 'FEED',
         OR: audienceOR(audience),
-        AND: liveForParent(now),
+        AND: [...liveForParent(now), ...parentVisibleMessageWhere()],
       },
       include: messageInclude(user.id),
       // Strictly by date here, not pinned-first: this is a record of what was
@@ -439,6 +441,7 @@ router.get('/notices', isAuthenticated, async (req, res) => {
         AND: [
           { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
           { OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] },
+          ...parentVisibleMessageWhere(),
         ],
       },
       include: { attachments: true },

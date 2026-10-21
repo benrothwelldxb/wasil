@@ -113,6 +113,13 @@ model School {
   /// the direction is opposite and so is the risk: the schedule is a screen a
   /// parent chooses to open, this reaches into their notifications unasked.
   activeIntentsEnabled   Boolean @default(false)
+  /// Wasil Beyond (school trips). While off, the `beyond` partner token may not
+  /// write anything that could reach parents (groups, posts, forms, uploads),
+  /// and everything Beyond already wrote is hidden from parents: posts it sent,
+  /// posts to the groups it manages, its forms, and those groups themselves.
+  /// Turning it back on shows them again; nothing is deleted. See
+  /// services/partnerSwitch.ts.
+  beyondEnabled          Boolean @default(false)
 
   // Attendance digest
   attendanceDigestEnabled      Boolean @default(false)
@@ -781,6 +788,12 @@ model Message {
   // form sent to Year 3 in September may go to Year 4 in January.
   formId String?
   form   Form?   @relation(fields: [formId], references: [id])
+
+  /// The partner token (by name, lowercased) that sent this post through
+  /// POST /api/partner/messages. Null for a post written in Connect. Read by
+  /// the per-school partner switch (School.beyondEnabled): a post Beyond sent
+  /// to pupils or a class has no managed group to recognise it by.
+  partnerSource String?
 
   acknowledgments MessageAcknowledgment[]
   attachments     MessageAttachment[]

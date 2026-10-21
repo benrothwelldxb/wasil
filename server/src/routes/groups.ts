@@ -5,6 +5,7 @@ import { isAuthenticated, isAdmin, loadUserWithRelations } from '../middleware/a
 import { logAudit, computeChanges } from '../services/audit.js'
 import { currentStaffWhere } from '../services/currentStaff.js'
 import { managedElsewhereAdminBody } from '../services/groupOwnership.js'
+import { parentVisibleGroupWhere } from '../services/partnerSwitch.js'
 
 const router = Router()
 
@@ -261,7 +262,9 @@ router.get('/for-parent', isAuthenticated, async (req, res) => {
 
     // Get groups where these students are members
     const groupLinks = await prisma.studentGroupLink.findMany({
-      where: { studentId: { in: studentIds } },
+      // A group kept by a partner the school has turned off (a Wasil Beyond
+      // trip group) is not listed while it is off.
+      where: { studentId: { in: studentIds }, group: { AND: parentVisibleGroupWhere() } },
       include: {
         group: {
           include: {

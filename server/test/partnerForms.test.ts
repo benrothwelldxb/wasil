@@ -83,6 +83,8 @@ const FORM = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // The school has turned Wasil Beyond on (services/partnerSwitch).
+  prismaMock.school.findUnique.mockResolvedValue({ beyondEnabled: true })
   prismaMock.partnerToken.findUnique.mockResolvedValue({ id: 'pt-1', name: 'beyond', revokedAt: null })
   prismaMock.partnerToken.update.mockResolvedValue({})
   prismaMock.user.findUnique.mockResolvedValue(null)

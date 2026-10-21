@@ -15,7 +15,7 @@ import request from 'supertest'
 
 const prismaMock = {
   partnerToken: { findUnique: vi.fn(), update: vi.fn() },
-  school: { findFirst: vi.fn() },
+  school: { findFirst: vi.fn(), findUnique: vi.fn() },
   user: { findFirst: vi.fn(), findUnique: vi.fn() },
   group: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   groupCategory: { findFirst: vi.fn(), findMany: vi.fn() },
@@ -66,6 +66,8 @@ const TRIP_GROUP = { id: 'g-1', isActive: true, managedBy: 'beyond', externalRef
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // The school has turned Wasil Beyond on (services/partnerSwitch).
+  prismaMock.school.findUnique.mockResolvedValue({ beyondEnabled: true })
   asToken('Beyond')
   prismaMock.partnerToken.update.mockResolvedValue({})
   prismaMock.user.findUnique.mockResolvedValue(null)

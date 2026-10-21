@@ -8,6 +8,7 @@ import { logAudit, computeChanges } from '../services/audit.js'
 import { tenant } from '../services/tenant.js'
 import { perChildFormStates, parentChildrenOf } from '../services/perChildForms.js'
 import { managedByLabel } from '../services/groupOwnership.js'
+import { parentVisibleFormWhere } from '../services/partnerSwitch.js'
 
 /** A form a partner app publishes is changed in that app, as its groups are. */
 function managedFormBody(managedBy: string) {
@@ -333,7 +334,8 @@ router.post('/:id/respond', isAuthenticated, async (req, res) => {
     }
 
     const form = await prisma.form.findFirst({
-      where: tenant(user.schoolId, { id, status: 'ACTIVE' }),
+      // A partner form is not answerable while its school has the partner off.
+      where: tenant(user.schoolId, { id, status: 'ACTIVE', AND: parentVisibleFormWhere() }),
     })
 
     if (!form) {

@@ -61,6 +61,10 @@ const MODULE_GROUPS: ModuleGroup[] = [
       { key: 'activeScheduleEnabled', label: 'This Week (Wasil Active)', description: "Clubs and fixtures for each child, read from Wasil Active" },
       { key: 'sendInclusionEnabled', label: 'Inclusion (Wasil Inclusion)', description: "A child's published plan, read from Wasil Inclusion" },
       { key: 'activeIntentsEnabled', label: 'Activity notifications (Wasil Active)', description: 'Lets Wasil Active notify parents when a place is offered or confirmed' },
+      // Off until a school admin turns it on. Enforced on the server: while off,
+      // Beyond's writes are refused and what it already sent is hidden from
+      // parents until it is turned back on.
+      { key: 'beyondEnabled', label: 'Trips (Wasil Beyond)', description: "Beyond can create a parents' group for each approved trip and send trip messages and consent forms to those families. Off until you turn it on. Turning it off hides Beyond's trip groups, messages and forms from parents until you turn it back on." },
     ],
   },
 ]

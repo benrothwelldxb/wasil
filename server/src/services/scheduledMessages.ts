@@ -1,5 +1,6 @@
 import prisma from './prisma.js'
 import { sendNotification } from './notify.js'
+import { parentVisibleMessageWhere } from './partnerSwitch.js'
 import logger from './logger.js'
 import { emailWeeklyMessage } from './weeklyMessageEmail.js'
 
@@ -31,6 +32,9 @@ export async function publishDueScheduledMessages(): Promise<void> {
     where: {
       notifiedAt: null,
       scheduledAt: { not: null, lte: now },
+      // A post from a partner the school has turned off (Wasil Beyond) waits,
+      // unclaimed, and is announced if the school turns it back on.
+      AND: parentVisibleMessageWhere(),
     },
     select: {
       id: true,

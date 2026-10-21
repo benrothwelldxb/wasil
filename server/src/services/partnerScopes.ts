@@ -41,6 +41,8 @@ export const PARTNER_SCOPE_PRESETS: Record<string, PartnerScope> = {
       '/api/partner/messages',
       '/api/partner/forms',
       '/api/partner/inbox/upload',
+      // Whether the school has turned Beyond on (services/partnerSwitch).
+      '/api/partner/status',
     ],
     allowedMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   },
