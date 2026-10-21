@@ -1499,6 +1499,12 @@ model Group {
   /// group made by hand, which anyone with the right role may change.
   managedBy String?
 
+  /// The publisher's clock for the last full roster accepted through
+  /// PUT /api/partner/groups/:ref/roster. A roster applies only when strictly
+  /// newer, so a retry delivered out of order cannot put a removed family back.
+  /// Null until the first roster push; the add/remove PATCH does not touch it.
+  rosterVersion DateTime?
+
   @@unique([schoolId, externalRef])
   // NOTE: (schoolId, name) is still unique, but only for groups a school made
   // by hand — enforced by a PARTIAL index (`WHERE "externalRef" IS NULL`) that

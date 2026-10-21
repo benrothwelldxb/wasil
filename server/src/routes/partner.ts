@@ -3083,7 +3083,7 @@ async function resolvePupilHubIds(
  * school's idea of a ref. Both lookups are school-scoped.
  */
 const ADDRESSED_GROUP_SELECT = {
-  id: true, isActive: true, managedBy: true, externalRef: true, sourceServiceId: true,
+  id: true, isActive: true, managedBy: true, externalRef: true, sourceServiceId: true, rosterVersion: true,
 } as const
 
 async function findGroupByIdOrRef(idOrRef: string, schoolId: string) {
@@ -3405,6 +3405,105 @@ router.delete('/groups/:id', requirePartner, async (req, res) => {
     res.json({ ok: true, id: group.id })
   } catch (error) {
     console.error('Error archiving partner group:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+/**
+ * A group's whole membership, replaced.
+ *
+ *   PUT /api/partner/groups/:externalRef/roster
+ *   { hub_user_id, version, pupilHubIds: [...] }
+ *   → { id, members, unknownPupilIds? }   or   { id, ignored: true, reason: 'stale_version' }
+ *
+ * The add/remove PATCH makes the publisher diff against what it last sent, and
+ * a diff is only as good as the publisher's memory of the last answer: two
+ * retries landing out of order can put back a family the later one removed.
+ * Beyond narrows a trip group at the consent deadline and moves it again with
+ * every booking and waiting-list change, so it sends the list it wants instead,
+ * with its own clock, and the same rules as the club roster door
+ * (PUT /activities/:externalRef/roster): strictly newer wins, an equal or older
+ * version is ignored and answered 200, and nobody is stated as `[]`.
+ *
+ * Addressed by externalRef (or Connect id). The group has to exist: a roster
+ * cannot name a group, choose its category or decide who owns it, so creating
+ * one here would invent all three. POST /groups first, then this.
+ */
+router.put('/groups/:externalRef/roster', requirePartner, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const actor = await resolveStaffActor(
+      typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : '',
+      schoolHintOf(req),
+    )
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+
+    const version = parseVersion(body.version)
+    if (!version) return res.status(400).json({ error: 'version required (ISO-8601)' })
+
+    if (!Array.isArray(body.pupilHubIds)) {
+      return res.status(400).json({
+        error: 'pupilHubIds required',
+        hint: 'send [] to state that the group has nobody in it',
+      })
+    }
+
+    const group = await findGroupByIdOrRef((req.params.externalRef ?? '').trim(), actor.schoolId)
+    if (!group) {
+      return res.status(404).json({
+        error: 'unknown_group',
+        externalRef: req.params.externalRef,
+        hint: 'publish the group with POST /api/partner/groups first, then its roster',
+      })
+    }
+    if (isManagedElsewhere(group.managedBy, callerOwner(req))) {
+      return res.status(409).json(managedElsewhereBody(group.managedBy!))
+    }
+    // A closed trip's group is a record of who it was for. Refilling it would
+    // rewrite that record while nobody can send to it anyway.
+    if (group.isActive === false) {
+      return res.status(409).json({ error: 'group_archived', id: group.id })
+    }
+    // A service group's membership is recomputed from the service at every
+    // use, so a roster written here would be silently replaced on the next read.
+    if (group.sourceServiceId) {
+      return res.status(409).json({ error: 'group_membership_owned_by_service', id: group.id })
+    }
+
+    if (!isNewer(version, group.rosterVersion)) {
+      // Not an error: a retry recomputing to older state is ordinary, and the
+      // publisher should mark it delivered rather than escalate.
+      return res.json({ id: group.id, ignored: true, reason: 'stale_version' })
+    }
+
+    const { studentIds, unknownPupilIds } = await resolvePupilHubIds(toIdArray(body.pupilHubIds), actor.schoolId)
+
+    // Removed and added as a difference, NOT emptied and refilled the way the
+    // club register is. A group is a live messaging audience: a broadcast
+    // resolving its parents between an empty and a refill would reach nobody,
+    // and "back at school" is the message that must not go missing. Families
+    // who stay in the group are never out of it, even for a moment.
+    const removed = await prisma.studentGroupLink.deleteMany({
+      where: { groupId: group.id, studentId: { notIn: studentIds } },
+    })
+    if (studentIds.length > 0) {
+      await prisma.studentGroupLink.createMany({
+        data: studentIds.map(studentId => ({ studentId, groupId: group.id })),
+        skipDuplicates: true,
+      })
+    }
+    // Stamped LAST, so a failure part way leaves the old version in place and
+    // the publisher's retry applies the whole list again.
+    await prisma.group.update({ where: { id: group.id }, data: { rosterVersion: version } })
+
+    res.json({
+      id: group.id,
+      members: studentIds.length,
+      removed: removed.count,
+      ...(unknownPupilIds.length > 0 ? { unknownPupilIds } : {}),
+    })
+  } catch (error) {
+    console.error('Error replacing partner group roster:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })
