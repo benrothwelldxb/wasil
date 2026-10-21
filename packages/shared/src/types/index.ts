@@ -228,6 +228,7 @@ export interface FormField {
   validation?: { min?: number; max?: number }
   page?: number                  // page number (0-indexed), undefined = page 0
   condition?: FormFieldCondition // show only when condition is met
+  partnerType?: string           // the publishing app's own type, on a partner form
 }
 
 export type FormType = 'permission-consent' | 'trip-consent' | 'payment-request' | 'medical-info' | 'general-info' | 'quick-poll'
@@ -248,12 +249,30 @@ export interface Form {
   createdAt: string
   updatedAt: string
   userResponse?: FormResponseData | null
+  /** Answered once per CHILD (a trip consent form). `children` lists the
+   *  parent's children it asks about, each with its answer so far, given by
+   *  either guardian. `userResponse` is set only once every child has one. */
+  perChild?: boolean
+  children?: FormChildState[]
+}
+
+export interface FormChildState {
+  studentId: string
+  name: string
+  response: {
+    id: string
+    answers: Record<string, unknown>
+    answeredBy: string
+    createdAt: string
+    updatedAt: string
+  } | null
 }
 
 export interface FormResponseData {
   id: string
   formId: string
   userId: string
+  studentId?: string | null
   answers: Record<string, unknown>
   createdAt: string
 }

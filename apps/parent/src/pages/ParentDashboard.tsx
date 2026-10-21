@@ -13,6 +13,7 @@ import type { Message, PulseSurvey, WeeklyMessage, ScheduleItem, Class, ParentEc
 import { Clock, Sparkles, MapPin, ChevronRight, Calendar, Shield, Cloud, AlertTriangle, Heart, Siren, X, Check, ClipboardList } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { Link, useNavigate } from 'react-router-dom'
+import { withAnswer, formProgress } from '../utils/perChildForm'
 
 function SkeletonCard() {
   return (
@@ -484,7 +485,9 @@ export function ParentDashboard() {
     const now = new Date()
     let count = 0
     for (const msg of messages) {
-      if (!msg.form || msg.form.userResponse) continue
+      // Outstanding means something left to answer — for a per-child form, a
+      // child still waiting (see utils/perChildForm).
+      if (!msg.form || !formProgress(msg.form).awaitingAnswer) continue
       if (!msg.form.expiresAt) continue
       const expires = new Date(msg.form.expiresAt)
       const diffDays = Math.ceil((expires.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
@@ -545,14 +548,13 @@ export function ParentDashboard() {
     )
   }
 
-  const handleFormResponse = async (formId: string, answers: Record<string, unknown>) => {
+  const handleFormResponse = async (formId: string, answers: Record<string, unknown>, studentId?: string) => {
     try {
-      const result = await api.forms.respond(formId, answers)
+      const result = await api.forms.respond(formId, answers, studentId)
+      // Per-child: only this child is marked answered (see utils/perChildForm).
       setMessages(prev =>
         prev?.map(m =>
-          m.form && m.form.id === formId
-            ? { ...m, form: { ...m.form, userResponse: result } }
-            : m
+          m.form && m.form.id === formId ? { ...m, form: withAnswer(m.form, result, studentId) } : m
         ) || null
       )
     } catch {

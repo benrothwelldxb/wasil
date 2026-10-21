@@ -4,11 +4,12 @@ import DOMPurify from 'dompurify'
 import { Share2, AlertTriangle, Pin, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
+import { formProgress } from '../../utils/perChildForm'
 
 interface MessageCardProps {
   message: Message
   onAcknowledge?: (id: string) => void
-  onFormRespond?: (formId: string, answers: Record<string, unknown>) => void
+  onFormRespond?: (formId: string, answers: Record<string, unknown>, studentId?: string) => void
   showAcknowledgeButton?: boolean
   classColors?: Record<string, { bg: string; hex: string }>
 }
@@ -44,14 +45,21 @@ export function MessageCard({
 
   const form = message.form
   const hasForm = !!form
-  const hasResponded = !!form?.userResponse
+  // A per-child form (a trip consent form) is answered once per child, in
+  // turn — see utils/perChildForm.
+  const progress = formProgress(form)
+  const perChild = progress.children
+  const pendingChildren = progress.pending
+  const activeChild = progress.active
+  const hasResponded = progress.done
+  const awaitingAnswer = progress.awaitingAnswer
   const attachments = message.attachments || []
   const hasAttachments = attachments.length > 0
   const [showAttachments, setShowAttachments] = useState(false)
 
   // Form urgency banner logic
   const getFormBanner = () => {
-    if (!hasForm || hasResponded) return null
+    if (!hasForm || !awaitingAnswer) return null
     if (!form.expiresAt) return null
 
     const now = new Date()
@@ -75,10 +83,7 @@ export function MessageCard({
 
   // Inline form state
   const fields = (form?.fields || []) as FormField[]
-  const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
-    if (form?.userResponse) {
-      return form.userResponse.answers as Record<string, unknown>
-    }
+  const blankAnswers = () => {
     const initial: Record<string, unknown> = {}
     fields.forEach(f => {
       // A group answers with an array of chosen labels; a single checkbox with
@@ -86,9 +91,26 @@ export function MessageCard({
       initial[f.id] = f.type === 'checkboxes' ? [] : f.type === 'checkbox' ? false : ''
     })
     return initial
+  }
+  const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
+    if (!perChild && form?.userResponse) {
+      return form.userResponse.answers as Record<string, unknown>
+    }
+    return blankAnswers()
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [currentPage, setCurrentPage] = useState(0)
+
+  // Each child starts from a blank form: one child's answers must never be
+  // sent again as the next child's by a parent tapping Submit twice.
+  const activeChildId = activeChild?.studentId
+  useEffect(() => {
+    if (!perChild) return
+    setAnswers(blankAnswers())
+    setErrors({})
+    setCurrentPage(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChildId])
 
   // Multi-page support
   const pages = [...new Set(fields.map(f => f.page || 0))].sort((a, b) => a - b)
@@ -142,7 +164,7 @@ export function MessageCard({
       return
     }
     setErrors({})
-    onFormRespond(form.id, answers)
+    onFormRespond(form.id, answers, activeChild?.studentId)
   }
 
   const handleNextPage = () => {
@@ -450,13 +472,37 @@ export function MessageCard({
         )}
 
         {/* Inline Form Fields */}
-        {hasForm && !hasResponded && (
+        {hasForm && awaitingAnswer && (
           <div
             className="mb-3 p-4 rounded-[16px]"
             style={{ backgroundColor: '#FFF8F4', border: '1.5px solid #F0E4E6' }}
           >
             <h4 className="font-bold text-sm mb-1" style={{ color: '#2D2225' }}>{form.title}</h4>
             {form.description && <p className="text-xs font-medium mb-3" style={{ color: '#7A6469' }}>{form.description}</p>}
+
+            {/* Per-child: who this answer is for, and who is already done. */}
+            {perChild && activeChild && (
+              <div className="mb-3">
+                {perChild.filter(c => c.response).map(c => (
+                  <p key={c.studentId} className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#5BA97B' }}>
+                    <Check className="h-3.5 w-3.5" />
+                    {t('messages.answeredFor', { name: c.name, defaultValue: 'Answered for {{name}}' })}
+                  </p>
+                ))}
+                <p className="text-sm font-bold" style={{ color: '#C4506E' }}>
+                  {t('messages.answeringFor', { name: activeChild.name, defaultValue: 'Answering for {{name}}' })}
+                </p>
+                {perChild.length > 1 && (
+                  <p className="text-[11px] font-bold" style={{ color: '#A8929A' }}>
+                    {t('messages.childProgress', {
+                      current: perChild.length - pendingChildren.length + 1,
+                      total: perChild.length,
+                      defaultValue: 'Child {{current}} of {{total}}',
+                    })}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Progress bar for multi-page */}
             {isMultiPage && (
