@@ -14,6 +14,8 @@ const prismaMock = {
   notification: { createMany: vi.fn() },
   deviceToken: { findMany: vi.fn() },
   school: { findUnique: vi.fn() },
+  // sendNotification first asks whether the post is hidden from parents.
+  message: { count: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -32,6 +34,7 @@ beforeEach(() => {
   prismaMock.user.findMany.mockResolvedValue([]) // no inactive parents for the email fallback
   prismaMock.school.findUnique.mockResolvedValue({ name: 'VH Primary' })
   prismaMock.parentStudentLink.findMany.mockResolvedValue([])
+  prismaMock.message.count.mockResolvedValue(0)
 })
 
 describe('sendNotification audience resolution (modern Student tables)', () => {

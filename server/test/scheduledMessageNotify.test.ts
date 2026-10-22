@@ -46,6 +46,7 @@ vi.mock('../src/middleware/auth', () => {
 
 const { publishDueScheduledMessages } = await import('../src/services/scheduledMessages')
 const { default: messagesRoutes } = await import('../src/routes/messages')
+const { parentVisibleMessageWhere } = await import('../src/services/partnerSwitch')
 
 function makeApp() {
   const app = express()
@@ -101,6 +102,8 @@ describe('publishDueScheduledMessages', () => {
     expect(prismaMock.message.findMany.mock.calls[0][0].where).toEqual({
       notifiedAt: null,
       scheduledAt: { not: null, lte: new Date('2026-09-01T09:15:00.000Z') },
+      // A post from a partner its school has turned off waits, unclaimed.
+      AND: parentVisibleMessageWhere(),
     })
     expect(notifyMock.sendNotification).not.toHaveBeenCalled()
   })

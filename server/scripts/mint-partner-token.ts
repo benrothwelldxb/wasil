@@ -16,8 +16,17 @@
 // and four write methods, and the routes carrying parent correspondence, the
 // ILSA safeguarding threads and a family's inspection evidence stay unreachable
 // to it even if a prefix is ever mis-typed, because every one of them is a GET.
+//
+// An agreed scope can be named instead of typed — see services/partnerScopes:
+//
+//   DATABASE_URL=<...> npx tsx scripts/mint-partner-token.ts beyond --preset=beyond
+//
+// A preset cannot be combined with --prefixes or --methods. Mixing them would
+// leave the reader unsure which one won, and the point of a preset is that the
+// scope is exactly the one reviewed.
 import crypto from 'crypto'
 import prisma from '../src/services/prisma.js'
+import { PARTNER_SCOPE_PRESETS } from '../src/services/partnerScopes.js'
 
 const args = process.argv.slice(2)
 const name = args.find((a) => !a.startsWith('--'))
@@ -27,10 +36,21 @@ const list = (v: string | undefined): string[] =>
   (v ?? '').split(',').map((x) => x.trim()).filter(Boolean)
 
 const unrestricted = args.includes('--unrestricted')
-const allowedPrefixes = list(flag('prefixes'))
-const allowedMethods = list(flag('methods')).map((m) => m.toUpperCase())
+const presetName = flag('preset')
+const preset = presetName ? PARTNER_SCOPE_PRESETS[presetName] : undefined
+if (presetName && !preset) {
+  console.error(`REFUSING: no preset called "${presetName}". Known: ${Object.keys(PARTNER_SCOPE_PRESETS).join(', ')}`)
+  process.exit(1)
+}
+if (preset && (flag('prefixes') || flag('methods') || unrestricted)) {
+  console.error('REFUSING: --preset cannot be combined with --prefixes, --methods or --unrestricted.')
+  process.exit(1)
+}
+const allowedPrefixes = preset ? [...preset.allowedPrefixes] : list(flag('prefixes'))
+const allowedMethods = (preset ? preset.allowedMethods : list(flag('methods'))).map((m) => m.toUpperCase())
 
 const usage = `usage: tsx scripts/mint-partner-token.ts <name> --prefixes=<a,b> --methods=<POST,PUT>
+       tsx scripts/mint-partner-token.ts <name> --preset=<${Object.keys(PARTNER_SCOPE_PRESETS).join('|')}>
        tsx scripts/mint-partner-token.ts <name> --unrestricted`
 
 if (!name) {

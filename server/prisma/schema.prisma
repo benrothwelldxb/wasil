@@ -113,6 +113,13 @@ model School {
   /// the direction is opposite and so is the risk: the schedule is a screen a
   /// parent chooses to open, this reaches into their notifications unasked.
   activeIntentsEnabled   Boolean @default(false)
+  /// Wasil Beyond (school trips). While off, the `beyond` partner token may not
+  /// write anything that could reach parents (groups, posts, forms, uploads),
+  /// and everything Beyond already wrote is hidden from parents: posts it sent,
+  /// posts to the groups it manages, its forms, and those groups themselves.
+  /// Turning it back on shows them again; nothing is deleted. See
+  /// services/partnerSwitch.ts.
+  beyondEnabled          Boolean @default(false)
 
   // Attendance digest
   attendanceDigestEnabled      Boolean @default(false)
@@ -632,6 +639,10 @@ model Student {
   @@index([schoolId, classId])
   @@index([schoolId, leftAt])
   ecaActivityMembers   EcaActivityMember[]
+  /// Posts addressed to this pupil's family by name, not by class or group.
+  messageTargets       MessageStudentTarget[]
+  /// Answers given for this pupil on per-child forms (trip consent).
+  formResponses        FormResponse[]
 }
 
 // Junction table: Parent-Student link
@@ -720,6 +731,11 @@ model Message {
   id          String     @id @default(cuid())
   title       String
   content     String
+  /// The author's own Arabic, when they wrote one (a partner sending titleAr
+  /// and bodyAr). Shown to a parent whose language is Arabic in place of a
+  /// machine translation. contentAr is sanitised HTML, like content.
+  titleAr     String?
+  contentAr   String?
   targetClass String // "Whole School" or class name
   classId     String?
   class       Class?     @relation(fields: [classId], references: [id])
@@ -773,8 +789,18 @@ model Message {
   formId String?
   form   Form?   @relation(fields: [formId], references: [id])
 
+  /// The partner token (by name, lowercased) that sent this post through
+  /// POST /api/partner/messages. Null for a post written in Connect. Read by
+  /// the per-school partner switch (School.beyondEnabled): a post Beyond sent
+  /// to pupils or a class has no managed group to recognise it by.
+  partnerSource String?
+
   acknowledgments MessageAcknowledgment[]
   attachments     MessageAttachment[]
+  /// Set only on a post addressed to named pupils' families (a waiting-list
+  /// offer, a consent chaser). Such a row has no class, year group or group,
+  /// and these rows are the whole of its audience.
+  studentTargets  MessageStudentTarget[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -803,6 +829,24 @@ model MessageAttachment {
 enum MessageChannel {
   FEED
   ADMIN_NOTICE
+}
+
+/// A post addressed to the families of particular pupils.
+///
+/// Message is single-target per row (class, year group, group or whole school),
+/// and none of those can say "these four families". A waiting-list offer goes
+/// to one family; a consent chaser to the families who have not answered. The
+/// row carries no other target, and the parent feed shows it to a parent only
+/// through one of these links to their own child.
+model MessageStudentTarget {
+  id        String  @id @default(cuid())
+  messageId String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, studentId])
+  @@index([studentId])
 }
 
 model MessageAcknowledgment {
@@ -1192,6 +1236,10 @@ model Form {
   id                   String    @id @default(cuid())
   title                String
   description          String?
+  /// The author's own Arabic title and description (see Message.titleAr).
+  /// Field labels carry theirs in `fields` as labelAr and optionsAr.
+  titleAr              String?
+  descriptionAr        String?
   type                 String // template key: "permission-consent", "trip-consent", etc.
   status               String    @default("DRAFT") // "DRAFT", "ACTIVE", "CLOSED"
   fields               Json // Array of field definitions
@@ -1208,6 +1256,20 @@ model Form {
   /// credential-shaped URL is.
   exportTokenCreatedAt DateTime?
 
+  /// Answered once per CHILD rather than once per parent. A trip consent form
+  /// is a decision about one pupil: a parent of twins on the trip answers
+  /// twice, and either linked guardian may answer for a child. Each answer is
+  /// a FormResponse carrying studentId. Set only by partner forms today.
+  perChild    Boolean @default(false)
+  /// The publishing app's own id for this form, e.g. "beyond:consent:<trip>".
+  /// Unique per school so a re-publish updates the form instead of making a
+  /// second one. Null for forms made in Connect.
+  externalRef String?
+  /// Which partner app owns the form, by token name (see Group.managedBy).
+  /// Only that app may change it or read its answers through the partner API,
+  /// and a Connect admin may not edit or delete it.
+  managedBy   String?
+
   /// Every post this form has been attached to — the first send and any
   /// reminders after it.
   messages Message[]
@@ -1217,6 +1279,7 @@ model Form {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([schoolId, externalRef])
   @@index([schoolId, status])
 }
 
@@ -1224,12 +1287,28 @@ model FormResponse {
   id        String   @id @default(cuid())
   formId    String
   form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  /// Who gave this answer. On a per-child form, the guardian who answered
+  /// most recently for that child.
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The child this answer is for, on a per-child form. Null on an ordinary
+  /// form, which is answered once per parent.
+  studentId String?
+  student   Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
   answers   Json // { fieldId: value }
   createdAt DateTime @default(now())
+  /// When the current answer was given. A guardian may change an answer before
+  /// the deadline, and a partner reading answers with a cursor reads on this.
+  updatedAt DateTime @default(now()) @updatedAt
 
-  @@unique([formId, userId])
+  // One answer per child on a per-child form.
+  @@unique([formId, studentId])
+  // NOTE: one answer per PARENT on an ordinary form is still enforced, but by a
+  // PARTIAL unique index on (formId, userId) WHERE "studentId" IS NULL, which
+  // Prisma cannot express; it lives in 20261021130000_per_child_forms. If
+  // `prisma migrate dev` offers to recreate a plain unique on (formId, userId),
+  // refuse: it would stop a parent of two children answering for both.
+  @@index([formId, updatedAt])
 }
 
 // Parent Invitations (for self-registration)
@@ -1490,6 +1569,20 @@ model Group {
   /// like "Football (Autumn Term)" just to stay unique. Null for a group made
   /// by hand in Connect, which is most of them.
   externalRef String?
+
+  /// Which partner app OWNS this group, by its partner token's name ("beyond",
+  /// "active"). Stamped when a partner publishes a group under an externalRef.
+  /// A managed group's membership is kept in step by that app, so nobody else
+  /// may edit, archive or delete it: not another partner token (Desk), and not
+  /// a Connect admin. It stays an ordinary audience for broadcasts. Null for a
+  /// group made by hand, which anyone with the right role may change.
+  managedBy String?
+
+  /// The publisher's clock for the last full roster accepted through
+  /// PUT /api/partner/groups/:ref/roster. A roster applies only when strictly
+  /// newer, so a retry delivered out of order cannot put a removed family back.
+  /// Null until the first roster push; the add/remove PATCH does not touch it.
+  rosterVersion DateTime?
 
   @@unique([schoolId, externalRef])
   // NOTE: (schoolId, name) is still unique, but only for groups a school made
@@ -3067,6 +3160,32 @@ model PartnerToken {
 // is still recorded, UNDELIVERABLE with a reason — Active's outbox stops the
 // moment we answer 2xx, so a dropped intent must leave a trace on this side or
 // it is simply lost.
+/// One partner broadcast, keyed on the partner's own idempotency key.
+///
+/// Beyond sends "back at school" from a phone on a coach, and a retry after a
+/// lost response must not tell every family twice. The row is CLAIMED before
+/// any post is written (status PENDING), so two attempts racing on one key
+/// cannot both send, and it keeps the first response to hand back on a repeat.
+model PartnerMessageSend {
+  id             String   @id @default(cuid())
+  /// The partner token's owner name ("beyond"). Keys are the partner's own, so
+  /// they are unique per partner, not across partners.
+  partner        String
+  idempotencyKey String
+  /// sha256 of the request's content and audience, so a key reused for a
+  /// DIFFERENT message is refused rather than silently answered with the old one.
+  requestHash    String
+  /// PENDING while sending, DONE with `response` once sent, FAILED if it broke
+  /// after some posts were written (never re-sent automatically).
+  status         String
+  response       Json?
+  schoolId       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([partner, idempotencyKey])
+}
+
 model PartnerIntent {
   id             String   @id @default(cuid())
   idempotencyKey String   @unique

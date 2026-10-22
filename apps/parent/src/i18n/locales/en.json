@@ -94,7 +94,11 @@
     "completed": "Completed",
     "wholeSchool": "Whole School",
     "payNow": "Pay Now",
-    "installApp": "Install app"
+    "installApp": "Install app",
+    "answeringFor": "Answering for {{name}}",
+    "childProgress": "Child {{current}} of {{total}}",
+    "answeredFor": "Answered for {{name}}",
+    "chooseFriend": "Choose a friend"
   },
   "events": {
     "title": "Calendar",

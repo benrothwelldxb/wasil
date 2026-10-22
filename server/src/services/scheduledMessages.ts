@@ -1,5 +1,6 @@
 import prisma from './prisma.js'
 import { sendNotification } from './notify.js'
+import { parentVisibleMessageWhere } from './partnerSwitch.js'
 import logger from './logger.js'
 import { emailWeeklyMessage } from './weeklyMessageEmail.js'
 
@@ -31,6 +32,9 @@ export async function publishDueScheduledMessages(): Promise<void> {
     where: {
       notifiedAt: null,
       scheduledAt: { not: null, lte: now },
+      // A post from a partner the school has turned off (Wasil Beyond) waits,
+      // unclaimed, and is announced if the school turns it back on.
+      AND: parentVisibleMessageWhere(),
     },
     select: {
       id: true,
@@ -41,6 +45,7 @@ export async function publishDueScheduledMessages(): Promise<void> {
       yearGroupId: true,
       groupId: true,
       schoolId: true,
+      studentTargets: { select: { studentId: true } },
     },
     orderBy: { scheduledAt: 'asc' },
     take: BATCH,
@@ -68,6 +73,11 @@ export async function publishDueScheduledMessages(): Promise<void> {
           classId: message.classId || undefined,
           yearGroupId: message.yearGroupId || undefined,
           groupId: message.groupId || undefined,
+          // A post addressed to named pupils has no other target; without this
+          // its audience resolves to nobody and the reminder goes out silent.
+          ...(message.studentTargets && message.studentTargets.length > 0
+            ? { studentIds: message.studentTargets.map(t => t.studentId) }
+            : {}),
           schoolId: message.schoolId,
         },
       })

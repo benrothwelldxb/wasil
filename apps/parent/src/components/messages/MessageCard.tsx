@@ -4,11 +4,14 @@ import DOMPurify from 'dompurify'
 import { Share2, AlertTriangle, Pin, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
+import { formProgress } from '../../utils/perChildForm'
+import { readsArabic, fieldLabel, optionLabel } from '../../utils/arabicText'
+import { pupilChoiceOptions } from '../../utils/pupilChoice'
 
 interface MessageCardProps {
   message: Message
   onAcknowledge?: (id: string) => void
-  onFormRespond?: (formId: string, answers: Record<string, unknown>) => void
+  onFormRespond?: (formId: string, answers: Record<string, unknown>, studentId?: string) => void
   showAcknowledgeButton?: boolean
   classColors?: Record<string, { bg: string; hex: string }>
 }
@@ -34,8 +37,15 @@ export function MessageCard({
   showAcknowledgeButton = true,
   classColors = {},
 }: MessageCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const theme = useTheme()
+  // A parent reading in Arabic reads the post right to left: the title, the
+  // body and any form. Only these blocks, not the card's chrome, which was
+  // laid out left to right and is not this change's to flip. The text itself
+  // is already Arabic: the author's own where they wrote it, otherwise the
+  // machine translation the server sends for the parent's language.
+  const rtl = readsArabic(i18n.language)
+  const textDir = rtl ? 'rtl' : undefined
 
   // Defense-in-depth: message bodies are sanitized on the server before storage,
   // but we sanitize again on render so any legacy row written before that fix
@@ -44,14 +54,21 @@ export function MessageCard({
 
   const form = message.form
   const hasForm = !!form
-  const hasResponded = !!form?.userResponse
+  // A per-child form (a trip consent form) is answered once per child, in
+  // turn — see utils/perChildForm.
+  const progress = formProgress(form)
+  const perChild = progress.children
+  const pendingChildren = progress.pending
+  const activeChild = progress.active
+  const hasResponded = progress.done
+  const awaitingAnswer = progress.awaitingAnswer
   const attachments = message.attachments || []
   const hasAttachments = attachments.length > 0
   const [showAttachments, setShowAttachments] = useState(false)
 
   // Form urgency banner logic
   const getFormBanner = () => {
-    if (!hasForm || hasResponded) return null
+    if (!hasForm || !awaitingAnswer) return null
     if (!form.expiresAt) return null
 
     const now = new Date()
@@ -75,10 +92,7 @@ export function MessageCard({
 
   // Inline form state
   const fields = (form?.fields || []) as FormField[]
-  const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
-    if (form?.userResponse) {
-      return form.userResponse.answers as Record<string, unknown>
-    }
+  const blankAnswers = () => {
     const initial: Record<string, unknown> = {}
     fields.forEach(f => {
       // A group answers with an array of chosen labels; a single checkbox with
@@ -86,9 +100,26 @@ export function MessageCard({
       initial[f.id] = f.type === 'checkboxes' ? [] : f.type === 'checkbox' ? false : ''
     })
     return initial
+  }
+  const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
+    if (!perChild && form?.userResponse) {
+      return form.userResponse.answers as Record<string, unknown>
+    }
+    return blankAnswers()
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [currentPage, setCurrentPage] = useState(0)
+
+  // Each child starts from a blank form: one child's answers must never be
+  // sent again as the next child's by a parent tapping Submit twice.
+  const activeChildId = activeChild?.studentId
+  useEffect(() => {
+    if (!perChild) return
+    setAnswers(blankAnswers())
+    setErrors({})
+    setCurrentPage(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChildId])
 
   // Multi-page support
   const pages = [...new Set(fields.map(f => f.page || 0))].sort((a, b) => a - b)
@@ -142,7 +173,7 @@ export function MessageCard({
       return
     }
     setErrors({})
-    onFormRespond(form.id, answers)
+    onFormRespond(form.id, answers, activeChild?.studentId)
   }
 
   const handleNextPage = () => {
@@ -323,7 +354,7 @@ export function MessageCard({
         </div>
 
         {/* Title */}
-        <h3 className="text-[15px] font-bold mb-1" style={{ color: '#2D2225' }}>
+        <h3 className="text-[15px] font-bold mb-1" style={{ color: '#2D2225' }} dir={textDir}>
           {message.title}
         </h3>
 
@@ -341,6 +372,7 @@ export function MessageCard({
         {/* Content */}
         <div
           ref={contentRef}
+          dir={textDir}
           className={`text-sm leading-relaxed font-medium rich-content ${
             clampable && overflowing ? 'mb-1' : 'mb-3'
           }`}
@@ -450,13 +482,38 @@ export function MessageCard({
         )}
 
         {/* Inline Form Fields */}
-        {hasForm && !hasResponded && (
+        {hasForm && awaitingAnswer && (
           <div
+            dir={textDir}
             className="mb-3 p-4 rounded-[16px]"
             style={{ backgroundColor: '#FFF8F4', border: '1.5px solid #F0E4E6' }}
           >
             <h4 className="font-bold text-sm mb-1" style={{ color: '#2D2225' }}>{form.title}</h4>
             {form.description && <p className="text-xs font-medium mb-3" style={{ color: '#7A6469' }}>{form.description}</p>}
+
+            {/* Per-child: who this answer is for, and who is already done. */}
+            {perChild && activeChild && (
+              <div className="mb-3">
+                {perChild.filter(c => c.response).map(c => (
+                  <p key={c.studentId} className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#5BA97B' }}>
+                    <Check className="h-3.5 w-3.5" />
+                    {t('messages.answeredFor', { name: c.name, defaultValue: 'Answered for {{name}}' })}
+                  </p>
+                ))}
+                <p className="text-sm font-bold" style={{ color: '#C4506E' }}>
+                  {t('messages.answeringFor', { name: activeChild.name, defaultValue: 'Answering for {{name}}' })}
+                </p>
+                {perChild.length > 1 && (
+                  <p className="text-[11px] font-bold" style={{ color: '#A8929A' }}>
+                    {t('messages.childProgress', {
+                      current: perChild.length - pendingChildren.length + 1,
+                      total: perChild.length,
+                      defaultValue: 'Child {{current}} of {{total}}',
+                    })}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Progress bar for multi-page */}
             {isMultiPage && (
@@ -482,7 +539,7 @@ export function MessageCard({
               {currentPageFields.map(field => (
                 <div key={field.id}>
                   <label className="block text-[13px] font-bold mb-1" style={{ color: '#7A6469' }}>
-                    {field.label}
+                    {fieldLabel(field, rtl)}
                     {field.required && <span style={{ color: '#D14D4D' }}> *</span>}
                   </label>
 
@@ -571,7 +628,7 @@ export function MessageCard({
                               style={{ accentColor: '#C4506E' }}
                             />
                             <span className="text-sm font-medium" style={{ color: '#4A3A40' }}>
-                              {option}
+                              {optionLabel(field, option, rtl)}
                             </span>
                           </label>
                         )
@@ -585,7 +642,7 @@ export function MessageCard({
                         <button
                           key={option}
                           onClick={() => updateAnswer(field.id, option)}
-                          className="w-full text-left px-4 py-3 rounded-xl transition-all cursor-pointer"
+                          className="w-full text-start px-4 py-3 rounded-xl transition-all cursor-pointer"
                           style={{
                             border: answers[field.id] === option
                               ? '2px solid #C4506E'
@@ -612,13 +669,40 @@ export function MessageCard({
                               className="text-sm font-semibold"
                               style={{ color: answers[field.id] === option ? '#C4506E' : '#4A3A40' }}
                             >
-                              {option}
+                              {optionLabel(field, option, rtl)}
                             </span>
                           </div>
                         </button>
                       ))}
                     </div>
                   )}
+
+                  {field.type === 'pupil_choice' && (() => {
+                    // A friend for a shared room (C14): a drop-down of the
+                    // trip's pupils, styled like a choice. The answer is the
+                    // chosen pupil's Hub id.
+                    const value = typeof answers[field.id] === 'string' ? (answers[field.id] as string) : ''
+                    const chosen = value !== ''
+                    return (
+                      <select
+                        value={value}
+                        onChange={e => updateAnswer(field.id, e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl text-sm font-semibold outline-none cursor-pointer"
+                        style={{
+                          border: chosen ? '2px solid #C4506E' : '1.5px solid #F0E4E6',
+                          backgroundColor: chosen ? '#FFF0F3' : '#FFFFFF',
+                          color: chosen ? '#C4506E' : '#4A3A40',
+                        }}
+                      >
+                        <option value="" disabled={field.required}>
+                          {t('messages.chooseFriend', { defaultValue: 'Choose a friend' })}
+                        </option>
+                        {pupilChoiceOptions(field, fields, answers, activeChild?.hubPupilId).map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    )
+                  })()}
 
                   {field.type === 'signature' && (
                     <SignaturePad

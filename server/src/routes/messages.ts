@@ -8,9 +8,12 @@ import { logAudit, computeChanges } from '../services/audit.js'
 import { sendNotification, resolveAudienceParentIds } from '../services/notify.js'
 import { signalAdminNotice, unseenNoticeCount } from '../services/adminNotices.js'
 import { translateTexts } from '../services/translation.js'
+import { perChildFormStates, parentChildrenOf, type ChildFormState } from '../services/perChildForms.js'
+import { parentFieldsByForm } from '../services/pupilChoice.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
+import { parentVisibleMessageWhere } from '../services/partnerSwitch.js'
 import { parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
 
 const router = Router()
@@ -141,15 +144,23 @@ async function resolveParentAudience(user: {
     : []
   const childGroupIds = [...new Set(childGroupLinks.map(l => l.groupId))]
 
-  return { childClassIds, childYearGroupIds, childGroupIds }
+  return { childClassIds, childYearGroupIds, childGroupIds, childStudentIds: studentIds }
 }
 
-function audienceOR(a: { childClassIds: string[]; childYearGroupIds: string[]; childGroupIds: string[] }) {
+function audienceOR(a: {
+  childClassIds: string[]; childYearGroupIds: string[]; childGroupIds: string[]; childStudentIds?: string[]
+}) {
   return [
     { targetClass: 'Whole School' },
     { classId: { in: a.childClassIds } },
     ...(a.childYearGroupIds.length > 0 ? [{ yearGroupId: { in: a.childYearGroupIds } }] : []),
     ...(a.childGroupIds.length > 0 ? [{ groupId: { in: a.childGroupIds } }] : []),
+    // A post addressed to named pupils' families (a waiting-list offer) has no
+    // other target, so this is the only way it reaches the feed — and only the
+    // feed of a parent of one of those pupils.
+    ...(a.childStudentIds && a.childStudentIds.length > 0
+      ? [{ studentTargets: { some: { studentId: { in: a.childStudentIds } } } }]
+      : []),
   ]
 }
 
@@ -171,38 +182,74 @@ function messageInclude(userId: string) {
   } as const
 }
 
-/** Titles, bodies and form text in the parent's language, when it isn't English. */
-async function buildTranslator(
-  messages: Array<{ title: string; content: string; form?: { title: string; description: string | null } | null }>,
-  targetLang: string,
-) {
+/** Is this parent reading in Arabic? Then an author's own Arabic wins. */
+function readsArabic(lang: string | null | undefined): boolean {
+  return (lang || '').toLowerCase().startsWith('ar')
+}
+
+type TranslatableMessage = {
+  title: string; content: string; titleAr?: string | null; contentAr?: string | null
+  form?: { title: string; description: string | null; titleAr?: string | null; descriptionAr?: string | null } | null
+}
+
+/** Titles, bodies and form text in the parent's language, when it isn't English.
+ *
+ *  For a parent reading in Arabic, text the author wrote in Arabic themselves
+ *  (titleAr, contentAr, a form's titleAr and descriptionAr) is used as it
+ *  stands and never sent for machine translation — see authorArabic. */
+async function buildTranslator(messages: TranslatableMessage[], targetLang: string) {
   const map = new Map<string, string>()
   if (targetLang !== 'en' && messages.length > 0) {
-    const texts: string[] = []
+    const ar = readsArabic(targetLang)
+    const texts = new Set<string>()
     messages.forEach(msg => {
-      texts.push(msg.title, msg.content)
-      if (msg.form?.title) texts.push(msg.form.title)
-      if (msg.form?.description) texts.push(msg.form.description)
+      if (!(ar && msg.titleAr)) texts.add(msg.title)
+      if (!(ar && msg.contentAr)) texts.add(msg.content)
+      if (msg.form?.title && !(ar && msg.form.titleAr)) texts.add(msg.form.title)
+      if (msg.form?.description && !(ar && msg.form.descriptionAr)) texts.add(msg.form.description)
     })
-    const translations = await translateTexts(texts, targetLang)
-    let i = 0
-    messages.forEach(msg => {
-      map.set(msg.title, translations[i++])
-      map.set(msg.content, translations[i++])
-      if (msg.form?.title) map.set(msg.form.title, translations[i++])
-      if (msg.form?.description) map.set(msg.form.description, translations[i++])
-    })
+    const list = [...texts]
+    if (list.length > 0) {
+      const translations = await translateTexts(list, targetLang)
+      list.forEach((text, i) => map.set(text, translations[i]))
+    }
   }
   return (text: string) => map.get(text) || text
 }
 
+/** The author's own Arabic for this text, when the parent reads Arabic and
+ *  the author wrote some; otherwise the (possibly machine-translated) text. */
+function authorArabic(lang: string, arabic: string | null | undefined, fallback: string): string {
+  return readsArabic(lang) && arabic ? arabic : fallback
+}
+
+/** Per-child form state for every per-child form among these posts: which of
+ *  the parent's children each asks about, and what is answered for each. */
+async function perChildStatesFor(messages: Array<{ form?: { id: string; perChild?: boolean } | null }>, user: any) {
+  const formIds = [...new Set(messages.filter(m => m.form?.perChild).map(m => m.form!.id))]
+  return perChildFormStates(formIds, parentChildrenOf(user))
+}
+
 /** One post as a parent reads it. Shared so the dashboard and the Posts page
  *  cannot drift into rendering the same post differently. */
-function serializeParentMessage(msg: any, getTranslated: (t: string) => string) {
+function serializeParentMessage(
+  msg: any,
+  getTranslated: (t: string) => string,
+  perChild: Map<string, ChildFormState[]> = new Map(),
+  lang = 'en',
+  formFields: Map<string, unknown[]> = new Map(),
+) {
+  // A per-child form counts as answered only when every child it asks about
+  // has an answer, whichever guardian gave it. `children` carries the detail,
+  // so the parent app can ask once per child.
+  const children = msg.form?.perChild ? (perChild.get(msg.form.id) ?? []) : null
+  const ownResponse = children
+    ? (children.length > 0 && children.every(c => c.response) ? children[0].response : null)
+    : msg.form?.responses?.[0] ?? null
   return {
       id: msg.id,
-      title: getTranslated(msg.title),
-      content: getTranslated(msg.content),
+      title: authorArabic(lang, msg.titleAr, getTranslated(msg.title)),
+      content: authorArabic(lang, msg.contentAr, getTranslated(msg.content)),
       targetClass: msg.targetClass,
       classId: msg.classId,
       yearGroupId: msg.yearGroupId,
@@ -221,11 +268,12 @@ function serializeParentMessage(msg: any, getTranslated: (t: string) => string) 
       formId: msg.formId,
       form: msg.form ? {
         id: msg.form.id,
-        title: getTranslated(msg.form.title),
-        description: msg.form.description ? getTranslated(msg.form.description) : null,
+        title: authorArabic(lang, msg.form.titleAr, getTranslated(msg.form.title)),
+        description: authorArabic(lang, msg.form.descriptionAr, msg.form.description ? getTranslated(msg.form.description) : '') || null,
         type: msg.form.type,
         status: msg.form.status,
-        fields: msg.form.fields,
+        // A pupil choice (C14) arrives as named options, not Hub ids.
+        fields: formFields.get(msg.form.id) ?? msg.form.fields,
         targetClass: msg.form.targetClass,
         classIds: msg.form.classIds as string[],
         yearGroupIds: msg.form.yearGroupIds as string[],
@@ -233,12 +281,14 @@ function serializeParentMessage(msg: any, getTranslated: (t: string) => string) 
         expiresAt: msg.form.expiresAt?.toISOString() || null,
         createdAt: msg.form.createdAt.toISOString(),
         updatedAt: msg.form.updatedAt.toISOString(),
-        userResponse: msg.form.responses[0] ? {
-          id: msg.form.responses[0].id,
-          formId: msg.form.responses[0].formId,
-          userId: msg.form.responses[0].userId,
-          answers: msg.form.responses[0].answers,
-          createdAt: msg.form.responses[0].createdAt.toISOString(),
+        perChild: !!msg.form.perChild,
+        ...(children ? { children } : {}),
+        userResponse: ownResponse ? {
+          id: ownResponse.id,
+          formId: msg.form.id,
+          userId: ownResponse.userId ?? null,
+          answers: ownResponse.answers,
+          createdAt: typeof ownResponse.createdAt === 'string' ? ownResponse.createdAt : ownResponse.createdAt.toISOString(),
         } : null,
       } : undefined,
       attachments: msg.attachments.map((a: {
@@ -276,6 +326,7 @@ router.get('/', isAuthenticated, async (req, res) => {
         OR: audienceOR(audience),
         AND: [
           ...liveForParent(now),
+          ...parentVisibleMessageWhere(),
           {
             OR: [
               { createdAt: { gte: windowStart } },
@@ -296,7 +347,9 @@ router.get('/', isAuthenticated, async (req, res) => {
     })
 
     const getTranslated = await buildTranslator(messages, user.preferredLanguage || 'en')
-    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated)))
+    const perChild = await perChildStatesFor(messages, user)
+    const formFields = await parentFieldsByForm(messages.flatMap(m => m.form ? [m.form] : []))
+    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en', formFields)))
   } catch (error) {
     console.error('Error fetching messages:', error)
     res.status(500).json({ error: 'Failed to fetch messages' })
@@ -327,7 +380,7 @@ router.get('/archive', isAuthenticated, async (req, res) => {
         schoolId: user.schoolId,
         channel: 'FEED',
         OR: audienceOR(audience),
-        AND: liveForParent(now),
+        AND: [...liveForParent(now), ...parentVisibleMessageWhere()],
       },
       include: messageInclude(user.id),
       // Strictly by date here, not pinned-first: this is a record of what was
@@ -343,8 +396,10 @@ router.get('/archive', isAuthenticated, async (req, res) => {
     const page = hasMore ? messages.slice(0, limit) : messages
 
     const getTranslated = await buildTranslator(page, user.preferredLanguage || 'en')
+    const perChild = await perChildStatesFor(page, user)
+    const formFields = await parentFieldsByForm(page.flatMap(m => m.form ? [m.form] : []))
     res.json({
-      messages: page.map(msg => serializeParentMessage(msg, getTranslated)),
+      messages: page.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en', formFields)),
       nextCursor: hasMore ? page[page.length - 1].id : null,
     })
   } catch (error) {
@@ -386,10 +441,12 @@ router.get('/notices', isAuthenticated, async (req, res) => {
           { classId: { in: childClassIds } },
           ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
           ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
+          ...(studentIds.length > 0 ? [{ studentTargets: { some: { studentId: { in: studentIds } } } }] : []),
         ],
         AND: [
           { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
           { OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] },
+          ...parentVisibleMessageWhere(),
         ],
       },
       include: { attachments: true },

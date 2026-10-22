@@ -147,7 +147,7 @@ function AnalyticsView({ form }: { form: FormWithResponses }) {
               </p>
             )}
 
-            {(stat.type === 'text' || stat.type === 'textarea' || stat.type === 'date') && (
+            {(stat.type === 'text' || stat.type === 'textarea' || stat.type === 'date' || stat.type === 'pupil_choice') && (
               <p className="text-sm text-slate-600">
                 {stat.filledCount ?? 0} of {totalResponses} responded
                 {totalResponses > 0 && (
@@ -509,7 +509,9 @@ export function FormsPage() {
                                 const val = (r.answers as Record<string, unknown>)[f.id]
                                 return (
                                   <td key={f.id} className="py-2 pr-3">
-                                    {f.type === 'checkbox' ? (val ? 'Yes' : 'No') : Array.isArray(val) ? (val.length ? val.join(', ') : '—') : String(val ?? '—')}
+                                    {f.type === 'pupil_choice' && typeof val === 'string' && val
+                                      ? (viewing.pupilNames?.[val] ?? val)
+                                      : f.type === 'checkbox' ? (val ? 'Yes' : 'No') : Array.isArray(val) ? (val.length ? val.join(', ') : '—') : String(val ?? '—')}
                                   </td>
                                 )
                               })}

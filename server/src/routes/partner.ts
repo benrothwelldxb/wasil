@@ -10,6 +10,7 @@
 // parent-data boundary by design.
 import { Router } from 'express'
 import type { Request, Response } from 'express'
+import { createHash } from 'crypto'
 import { singleAttachment } from '../middleware/attachmentUpload.js'
 import { marked } from 'marked'
 import prisma from '../services/prisma.js'
@@ -36,6 +37,9 @@ import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { ALLOWED_REACTION_EMOJIS } from './inbox.js'
 import { refreshServiceGroup, refreshServiceGroupsForSchool } from '../services/serviceGroups.js'
+import { ownerNameOf, isManagedElsewhere, managedElsewhereBody } from '../services/groupOwnership.js'
+import { switchFlagFor, partnerEnabledForSchool, refuseIfPartnerOff } from '../services/partnerSwitch.js'
+import type { PartnerIdentity } from '../middleware/partnerAuth.js'
 
 const router = Router()
 
@@ -2111,6 +2115,11 @@ router.get('/oversight/parent-threads', requirePartner, async (req, res) => {
 // Responses carry only counts / display names — never pupil or parent PII.
 // ============================================================================
 
+/** The owner name of the partner token on this request (see groupOwnership). */
+function callerOwner(req: Request): string | null {
+  return ownerNameOf((req as Request & { partner?: PartnerIdentity }).partner)
+}
+
 // Coerce a request-body value into a clean, de-duplicated string-id array.
 function toIdArray(v: unknown): string[] {
   if (!Array.isArray(v)) return []
@@ -2583,8 +2592,26 @@ router.get('/staff/mentionable', requirePartner, async (req, res) => {
 //
 //   POST /api/partner/messages
 //   { hub_user_id, title, content, audience: { classHubIds?, wholeSchool?,
-//     yearGroupId?, groupIds? }, isUrgent?, scheduledAt?, expiresAt?,
-//     attachments?: [{ fileName, fileUrl, fileType, fileSize }] }
+//     yearGroupId?, groupIds?, pupilHubIds?, label? }, isUrgent?, scheduledAt?,
+//     expiresAt?, attachments?: [{ fileName, fileUrl, fileType, fileSize }],
+//     titleAr?, bodyAr?, formRef?, idempotency_key? }
+//
+// `titleAr` and `bodyAr` are the author's own Arabic (bodyAr in markdown, like
+// content). A parent whose language is Arabic reads them in place of the
+// machine translation; everyone else reads the English. Optional, separately.
+//
+// `pupilHubIds` addresses the families of named pupils (a waiting-list offer,
+// a consent chaser). It becomes ONE row with no class, year or group, whose
+// audience is its MessageStudentTarget links; `label` is what parents see as
+// the post's audience on that row (default "Selected pupils"). Unknown pupils
+// are named in `unknownPupilIds` and the rest still sent, unless none resolve
+// and nothing else was asked for, which is a 400 rather than a post to nobody.
+//
+// `formRef` attaches a form the caller published with PUT /forms/:externalRef
+// (every row of the fan-out carries it). Unknown is a 400, another app's is
+// 409 form_managed_elsewhere, and a closed or past-deadline form is
+// 409 form_closed: a reminder to answer something that no longer takes
+// answers only produces an error for the parent.
 //
 // `Message` is single-target per row, so we FAN OUT: one row per class, one per
 // group, one per year-group, plus one for whole-school. Every target is
@@ -2598,7 +2625,23 @@ router.get('/staff/mentionable', requirePartner, async (req, res) => {
 // ROWS (five classes = 5, the whole school = 1), `parents` counts distinct
 // PEOPLE. A caller that renders `created` as a headcount tells a teacher who
 // messaged five classes that 5 parents have it.
+// IDEMPOTENCY. With `idempotency_key` (any string up to 200 characters, unique
+// per partner token), a repeat returns the FIRST response, marked
+// `replayed: true`, and sends nothing — even if the audience has changed since
+// (a group archived after "back at school" went out). See PartnerMessageSend:
+//
+//   same key, same message, already sent   → 201, the first response + replayed
+//   same key, different message            → 409 idempotency_key_reused
+//   same key, first attempt still sending  → 409 idempotency_in_progress
+//   same key, first attempt broke part way → 409 idempotency_key_failed
+//
+// "Same message" ignores hub_user_id, so a retry acting as the coordinator
+// after the trip lead was refused is still recognised as the same send. A
+// request that fails validation claims nothing, so it can be corrected and
+// sent again under the same key.
 router.post('/messages', requirePartner, async (req, res) => {
+  let claimId: string | null = null
+  const messageIds: string[] = []
   try {
     const { hub_user_id, title, content, audience, isUrgent, scheduledAt, expiresAt, attachments, channel, department } = req.body ?? {}
     // A department sending from Desk — the clinic, accounts — files its message
@@ -2610,18 +2653,50 @@ router.post('/messages', requirePartner, async (req, res) => {
       : null
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    // Before the idempotency replay too: while the school has Beyond off, the
+    // answer to every send is the same refusal, including a retry.
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
+
+    const rawKey = (req.body ?? {}).idempotency_key
+    const idempotencyKey = typeof rawKey === 'string' ? rawKey.trim() : ''
+    if (rawKey !== undefined && (!idempotencyKey || idempotencyKey.length > 200)) {
+      return res.status(400).json({ error: 'idempotency_key must be a non-empty string of at most 200 characters' })
+    }
+    const owner = callerOwner(req) ?? ''
+    const requestHash = idempotencyKey ? broadcastRequestHash(req.body) : ''
+    if (idempotencyKey) {
+      const prior = await prisma.partnerMessageSend.findUnique({
+        where: { partner_idempotencyKey: { partner: owner, idempotencyKey } },
+      })
+      if (prior) return replayBroadcast(res, prior, requestHash)
+    }
 
     if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'title required' })
     if (typeof content !== 'string' || !content.trim()) return res.status(400).json({ error: 'content required' })
+    const { titleAr, bodyAr } = req.body ?? {}
+    if ((titleAr !== undefined && typeof titleAr !== 'string') || (bodyAr !== undefined && typeof bodyAr !== 'string')) {
+      return res.status(400).json({ error: 'titleAr and bodyAr must be strings' })
+    }
+    const cleanTitleAr = typeof titleAr === 'string' && titleAr.trim() ? titleAr.trim() : null
+    const safeContentAr = typeof bodyAr === 'string' && bodyAr.trim() ? markdownToSafeHtml(bodyAr) : null
 
     const aud = (audience && typeof audience === 'object') ? audience as Record<string, unknown> : {}
     const classHubIds = toIdArray(aud.classHubIds)
     const groupIds = toIdArray(aud.groupIds)
     const yearGroupId = typeof aud.yearGroupId === 'string' && aud.yearGroupId.trim() ? aud.yearGroupId.trim() : null
     const wholeSchool = aud.wholeSchool === true
+    const pupilHubIds = toIdArray(aud.pupilHubIds)
+    const pupilLabel = typeof aud.label === 'string' && aud.label.trim()
+      ? aud.label.trim().slice(0, 120)
+      : 'Selected pupils'
 
-    if (classHubIds.length === 0 && groupIds.length === 0 && !yearGroupId && !wholeSchool) {
+    if (classHubIds.length === 0 && groupIds.length === 0 && !yearGroupId && !wholeSchool && pupilHubIds.length === 0) {
       return res.status(400).json({ error: 'audience required' })
+    }
+    // targetClass "Whole School" is what the parent feed matches every parent
+    // on, so a pupil row carrying it as a label would reach the whole school.
+    if (pupilLabel.toLowerCase() === 'whole school') {
+      return res.status(400).json({ error: 'audience.label may not be "Whole School"' })
     }
 
     // Validate EVERY target belongs to the actor's school before creating rows.
@@ -2638,13 +2713,22 @@ router.post('/messages', requirePartner, async (req, res) => {
 
     let resolvedGroups: { id: string; name: string }[] = []
     if (groupIds.length > 0) {
-      resolvedGroups = await prisma.group.findMany({
+      const found = await prisma.group.findMany({
         where: { id: { in: groupIds }, schoolId: actor.schoolId },
-        select: { id: true, name: true },
+        select: { id: true, name: true, isActive: true },
       })
-      if (resolvedGroups.length !== groupIds.length) {
+      if (found.length !== groupIds.length) {
         return res.status(400).json({ error: 'unknown or cross-school group in audience' })
       }
+      // An archived group is a closed trip or a finished club. Its members are
+      // whoever was in it when it closed, and nobody has kept that list true
+      // since, so a post to it reaches families it is no longer about. Refused
+      // as a whole, like an unknown target: no rows, nobody told.
+      const archived = found.filter(g => g.isActive === false).map(g => g.id)
+      if (archived.length > 0) {
+        return res.status(409).json({ error: 'group_archived', groupIds: archived })
+      }
+      resolvedGroups = found.map(g => ({ id: g.id, name: g.name }))
     }
 
     let resolvedYearGroup: { id: string; name: string } | null = null
@@ -2658,8 +2742,34 @@ router.post('/messages', requirePartner, async (req, res) => {
       }
     }
 
-    // Build one fan-out target per resolved audience (class → group → year → school).
-    const targets: { targetClass: string; classId?: string; yearGroupId?: string; groupId?: string }[] = []
+    const formRef = typeof (req.body ?? {}).formRef === 'string' ? req.body.formRef.trim() : ''
+    let attachedFormId: string | null = null
+    if (formRef) {
+      const form = await prisma.form.findFirst({
+        where: { schoolId: actor.schoolId, externalRef: formRef },
+        select: { id: true, status: true, managedBy: true, expiresAt: true },
+      })
+      if (!form) return res.status(400).json({ error: 'unknown_form', formRef })
+      if (form.managedBy !== callerOwner(req)) {
+        return res.status(409).json({ error: 'form_managed_elsewhere', managedBy: form.managedBy })
+      }
+      if (form.status !== 'ACTIVE' || (form.expiresAt && form.expiresAt <= new Date())) {
+        return res.status(409).json({ error: 'form_closed', formRef })
+      }
+      attachedFormId = form.id
+    }
+
+    // Pupils resolved to this school. A pupil who has left still resolves here
+    // and is then dropped by the audience resolve (leftAt), the same as for a
+    // class, so their family is neither told nor shown the post.
+    const pupils = await resolvePupilHubIds(pupilHubIds, actor.schoolId)
+    if (pupilHubIds.length > 0 && pupils.studentIds.length === 0
+      && classHubIds.length === 0 && groupIds.length === 0 && !yearGroupId && !wholeSchool) {
+      return res.status(400).json({ error: 'no known pupils in audience', unknownPupilIds: pupils.unknownPupilIds })
+    }
+
+    // Build one fan-out target per resolved audience (class → group → year → school → pupils).
+    const targets: { targetClass: string; classId?: string; yearGroupId?: string; groupId?: string; studentIds?: string[] }[] = []
     // Distinct parent users across the whole send — see the resolve below.
     const audienceParentIds = new Set<string>()
     // The row a tapped notification opens. With several rows there is no single
@@ -2670,6 +2780,7 @@ router.post('/messages', requirePartner, async (req, res) => {
     for (const g of resolvedGroups) targets.push({ targetClass: g.name, groupId: g.id })
     if (resolvedYearGroup) targets.push({ targetClass: resolvedYearGroup.name, yearGroupId: resolvedYearGroup.id })
     if (wholeSchool) targets.push({ targetClass: 'Whole School' })
+    if (pupils.studentIds.length > 0) targets.push({ targetClass: pupilLabel, studentIds: pupils.studentIds })
 
     // Desk sends markdown; convert → sanitized HTML so parents see formatting
     // (the broadcast render path is HTML, shared with the admin composer).
@@ -2696,6 +2807,24 @@ router.post('/messages', requirePartner, async (req, res) => {
     // contract and stay forward-compatible.
     ;(req as unknown as { user: StaffActor }).user = actor
 
+    // Claimed after every check has passed and before the first row is
+    // written. Two attempts racing past the lookup above meet here, and only
+    // one gets the row.
+    if (idempotencyKey) {
+      try {
+        const claim = await prisma.partnerMessageSend.create({
+          data: { partner: owner, idempotencyKey, requestHash, status: 'PENDING', schoolId: actor.schoolId },
+          select: { id: true },
+        })
+        claimId = claim.id
+      } catch (error: unknown) {
+        if ((error as { code?: string })?.code === 'P2002') {
+          return res.status(409).json({ error: 'idempotency_in_progress' })
+        }
+        throw error
+      }
+    }
+
     for (const t of targets) {
       const message = await prisma.message.create({
         data: {
@@ -2716,8 +2845,24 @@ router.post('/messages', requirePartner, async (req, res) => {
           channel: isNotice ? 'ADMIN_NOTICE' : 'FEED',
           department: noticeDepartment,
           expiresAt: expiresDate,
+          ...(attachedFormId ? { formId: attachedFormId } : {}),
+          // Which partner sent it, so the school's switch for that partner can
+          // hide a post that went to pupils or a class rather than its group.
+          ...(owner ? { partnerSource: owner } : {}),
+          ...(cleanTitleAr ? { titleAr: cleanTitleAr } : {}),
+          ...(safeContentAr ? { contentAr: safeContentAr } : {}),
         },
       })
+      // Recorded the moment the row exists, so a failure anywhere after this
+      // knows a post was written and does not release the idempotency key.
+      messageIds.push(message.id)
+
+      if (t.studentIds) {
+        await prisma.messageStudentTarget.createMany({
+          data: t.studentIds.map(studentId => ({ messageId: message.id, studentId })),
+          skipDuplicates: true,
+        })
+      }
 
       if (attachmentRows.length > 0) {
         await prisma.messageAttachment.createMany({
@@ -2736,6 +2881,7 @@ router.post('/messages', requirePartner, async (req, res) => {
         classId: t.classId,
         yearGroupId: t.yearGroupId,
         groupId: t.groupId,
+        studentIds: t.studentIds,
         schoolId: actor.schoolId,
       }
 
@@ -2810,12 +2956,86 @@ router.post('/messages', requirePartner, async (req, res) => {
 
     // `created` = fan-out rows, unchanged. `parents` = distinct people. Zero is
     // a real answer and says so: an empty class is a thing a sender needs told.
-    res.status(201).json({ created: targets.length, parents: audienceParentIds.size })
+    const result = {
+      created: targets.length,
+      parents: audienceParentIds.size,
+      // One per fan-out row, in the order written, so a publisher can find its
+      // own post again in GET /messages.
+      messageIds,
+      ...(pupils.unknownPupilIds.length > 0 ? { unknownPupilIds: pupils.unknownPupilIds } : {}),
+    }
+    if (claimId) {
+      await prisma.partnerMessageSend.update({
+        where: { id: claimId },
+        data: { status: 'DONE', response: result },
+      })
+    }
+    res.status(201).json(result)
   } catch (error) {
     console.error('Error creating partner broadcast:', error)
+    // Release the key only if nothing was written, so the retry can send. If
+    // posts exist, some families may already have it: re-sending on a retry
+    // would be the double send this exists to stop, so the key is marked
+    // FAILED and a person decides.
+    if (claimId) {
+      try {
+        if (messageIds.length === 0) {
+          await prisma.partnerMessageSend.delete({ where: { id: claimId } })
+        } else {
+          await prisma.partnerMessageSend.update({
+            where: { id: claimId },
+            data: { status: 'FAILED', response: { messageIds } },
+          })
+        }
+      } catch (releaseError) {
+        console.error('Error releasing partner broadcast idempotency key:', releaseError)
+      }
+    }
     res.status(500).json({ error: 'internal_error' })
   }
 })
+
+/** Keys sorted at every level, so the same body hashes the same whichever
+ *  order the partner's JSON encoder wrote it in. */
+function stableStringify(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`
+  if (v && typeof v === 'object') {
+    return `{${Object.keys(v as Record<string, unknown>).sort()
+      .map(k => `${JSON.stringify(k)}:${stableStringify((v as Record<string, unknown>)[k])}`).join(',')}}`
+  }
+  return JSON.stringify(v) ?? 'null'
+}
+
+/** What makes two broadcasts "the same message": everything except who sent it
+ *  and the key itself. */
+function broadcastRequestHash(body: unknown): string {
+  const { hub_user_id: _actor, idempotency_key: _key, ...rest } = (body ?? {}) as Record<string, unknown>
+  return createHash('sha256').update(stableStringify(rest)).digest('hex')
+}
+
+function replayBroadcast(
+  res: Response,
+  prior: { status: string; requestHash: string; response: unknown },
+  requestHash: string,
+) {
+  if (prior.requestHash !== requestHash) {
+    return res.status(409).json({
+      error: 'idempotency_key_reused',
+      hint: 'this key was first used for a different message; use a new key for a new message',
+    })
+  }
+  if (prior.status === 'DONE') {
+    return res.status(201).json({ ...(prior.response as Record<string, unknown>), replayed: true })
+  }
+  if (prior.status === 'FAILED') {
+    return res.status(409).json({
+      error: 'idempotency_key_failed',
+      hint: 'the first attempt failed after some posts were written; check GET /api/partner/messages before sending again under a new key',
+      ...(prior.response as Record<string, unknown> | null ?? {}),
+    })
+  }
+  return res.status(409).json({ error: 'idempotency_in_progress' })
+}
 
 // This sender's recent broadcasts, newest first (cap 50). Display-only: a title,
 // the row's audience label, when it was sent, and `ackCount` — the number of
@@ -2834,24 +3054,54 @@ router.post('/messages', requirePartner, async (req, res) => {
 // Deliberately read-only and school-wide: no sender filter, no edit, no delete,
 // no parent-level read receipts. Desk asked for none of those and should not be
 // able to change a parent-facing record it did not create.
+//
+// Two optional filters, for a publisher copying one group's posts into its own
+// log (Beyond's trip message log) without reading the whole school's:
+//
+//   group_id=<Connect id | externalRef>   only posts sent to that group
+//                                          (404 unknown_group if none)
+//   since=<ISO time>                       only posts written AFTER that time,
+//                                          OLDEST FIRST, with `next` to pass as
+//                                          the following call's `since`
+//
+// Without `since` the order is newest first, as Desk reads it. With it, the
+// order flips, because a cursor only works forwards: newest first would hand a
+// poller the latest `limit` posts and silently skip any older ones it had not
+// yet seen. `next` is always present with `since`, and equals `since` when
+// nothing new has arrived, so a poller can store it unconditionally.
 router.get('/messages', requirePartner, async (req, res) => {
   try {
     const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
     if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
 
+    const sinceParam = typeof req.query.since === 'string' ? req.query.since.trim() : ''
+    const since = sinceParam ? new Date(sinceParam) : null
+    if (since && Number.isNaN(since.getTime())) {
+      return res.status(400).json({ error: 'since must be an ISO-8601 time' })
+    }
+
     const school = await partnerSchool(schoolIdParam)
     // Unknown school is not an error — Desk probes ids across products.
-    if (!school) return res.json({ messages: [] })
+    if (!school) return res.json({ messages: [], ...(since ? { next: since.toISOString() } : {}) })
+
+    const groupParam = typeof req.query.group_id === 'string' ? req.query.group_id.trim() : ''
+    const group = groupParam ? await findGroupByIdOrRef(groupParam, school.id) : null
+    if (groupParam && !group) return res.status(404).json({ error: 'unknown_group' })
 
     const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? '60'), 10) || 60))
+    const take = limit * 4
 
     // Over-fetch the flat rows: a multi-class broadcast is several Message rows
     // and collapses into one entry below, so `limit` entries need more rows.
     const rows = await prisma.message.findMany({
-      where: { schoolId: school.id },
+      where: {
+        schoolId: school.id,
+        ...(group ? { groupId: group.id } : {}),
+        ...(since ? { createdAt: { gt: since } } : {}),
+      },
       select: {
         id: true, title: true, content: true, targetClass: true,
-        classId: true, yearGroupId: true, groupId: true,
+        classId: true, yearGroupId: true, groupId: true, formId: true,
         senderId: true, senderName: true,
         channel: true, department: true,
         scheduledAt: true, notifiedAt: true, createdAt: true,
@@ -2859,10 +3109,10 @@ router.get('/messages', requirePartner, async (req, res) => {
         class: { select: { name: true, hubClassId: true } },
         yearGroup: { select: { name: true } },
         group: { select: { name: true } },
-        _count: { select: { acknowledgments: true } },
+        _count: { select: { acknowledgments: true, studentTargets: true } },
       },
-      orderBy: { createdAt: 'desc' },
-      take: limit * 4,
+      orderBy: { createdAt: since ? 'asc' : 'desc' },
+      take,
     })
 
     // One entry per broadcast, not per fan-out row. Connect's own composer
@@ -2878,7 +3128,15 @@ router.get('/messages', requirePartner, async (req, res) => {
       else groups.set(key, [m])
     }
 
-    const messages = [...groups.values()].slice(0, limit).map(members => {
+    let entries = [...groups.values()]
+    // Paging forwards, the last entry of a FULL page may be cut part way
+    // through its fan-out rows. Leave it for the next page rather than hand it
+    // over incomplete — unless it is the only entry, or the page could never
+    // move.
+    if (since && rows.length === take && entries.length > 1) entries = entries.slice(0, -1)
+    entries = entries.slice(0, limit)
+
+    const messages = entries.map(members => {
       const head = members[0]
       // Hub class ids, never Connect's internal ones — Desk cannot resolve those.
       const classHubIds = [...new Set(
@@ -2908,7 +3166,14 @@ router.get('/messages', requirePartner, async (req, res) => {
         senderName: head.department || head.sender?.name || head.senderName,
         channel: head.channel,
         department: head.department,
-        audience: { wholeSchool, classHubIds, groupIds, yearGroupId },
+        // pupilCount: how many named pupils a pupil-addressed post went to
+        // (audience.pupilHubIds on the send). Never which pupils: this log is
+        // school-wide.
+        audience: {
+          wholeSchool, classHubIds, groupIds, yearGroupId,
+          pupilCount: members.reduce((n, m) => n + (m._count.studentTargets ?? 0), 0),
+        },
+        formId: members.find(m => m.formId)?.formId ?? null,
         audienceLabel: labelParts.join(' · ') || head.targetClass,
         // When parents were actually told. NULL means it has not gone out yet —
         // read with scheduledAt, this distinguishes queued from sent without
@@ -2922,6 +3187,12 @@ router.get('/messages', requirePartner, async (req, res) => {
       }
     })
 
+    if (since) {
+      const lastRow = entries.flat().reduce<Date | null>(
+        (max, m) => (!max || m.createdAt > max ? m.createdAt : max), null,
+      )
+      return res.json({ messages, next: (lastRow ?? since).toISOString() })
+    }
     res.json({ messages })
   } catch (error) {
     // Never an empty list on failure: Desk's original read swallowed a 404 into
@@ -2997,11 +3268,25 @@ router.get('/groups', requirePartner, async (req, res) => {
 
     const groups = await prisma.group.findMany({
       where: { schoolId: school.id, isActive: true },
-      select: { id: true, name: true, _count: { select: { studentMembers: true } } },
+      select: {
+        id: true, name: true, externalRef: true, managedBy: true,
+        _count: { select: { studentMembers: true } },
+      },
       orderBy: { name: 'asc' },
     })
 
-    res.json({ groups: groups.map(g => ({ id: g.id, name: g.name, memberCount: g._count.studentMembers })) })
+    // `managedBy` is what lets Desk show "Managed by Wasil Beyond" in place of
+    // Edit and Remove. Null for a hand-made group. Edits to a managed group are
+    // refused here regardless; this is so Desk need not offer them.
+    res.json({
+      groups: groups.map(g => ({
+        id: g.id,
+        name: g.name,
+        memberCount: g._count.studentMembers,
+        externalRef: g.externalRef ?? null,
+        managedBy: g.managedBy ?? null,
+      })),
+    })
   } catch (error) {
     console.error('Error building partner groups list:', error)
     res.status(500).json({ error: 'internal_error' })
@@ -3052,13 +3337,17 @@ async function resolvePupilHubIds(
  * Id wins when both could match, so an id never silently resolves to some other
  * school's idea of a ref. Both lookups are school-scoped.
  */
+const ADDRESSED_GROUP_SELECT = {
+  id: true, isActive: true, managedBy: true, externalRef: true, sourceServiceId: true, rosterVersion: true,
+} as const
+
 async function findGroupByIdOrRef(idOrRef: string, schoolId: string) {
-  const byId = await prisma.group.findFirst({ where: { id: idOrRef, schoolId }, select: { id: true } })
+  const byId = await prisma.group.findFirst({ where: { id: idOrRef, schoolId }, select: ADDRESSED_GROUP_SELECT })
   if (byId) return byId
   // Guarded on non-empty: `where: { externalRef: '' }` is a real query, but an
   // empty path segment can't reach here anyway — Express won't route it.
   if (!idOrRef) return null
-  return prisma.group.findFirst({ where: { externalRef: idOrRef, schoolId }, select: { id: true } })
+  return prisma.group.findFirst({ where: { externalRef: idOrRef, schoolId }, select: ADDRESSED_GROUP_SELECT })
 }
 
 /**
@@ -3085,12 +3374,20 @@ async function resolveCategoryName(categoryName: string, schoolId: string) {
 // Hub pupil ids (`pupilHubIds`); we map them to internal Student ids at the
 // boundary and store StudentGroupLink rows on the internal ids.
 //
-//   POST /api/partner/groups  { hub_user_id, name, pupilHubIds: string[] }
+//   POST /api/partner/groups  { hub_user_id, name, pupilHubIds: string[],
+//     externalRef?, categoryId?, categoryName?, reopen? }
+//
+// With an externalRef the group is OWNED by the calling token (`managedBy`),
+// and only that token may change it afterwards — see services/groupOwnership.
+// An upsert onto an archived group answers 409 group_archived unless the body
+// says `reopen: true`: a trip closed and then reopened would otherwise be
+// renamed and refilled while staying invisible in every audience picker.
 router.post('/groups', requirePartner, async (req, res) => {
   try {
-    const { hub_user_id, name, pupilHubIds, categoryId, categoryName, externalRef } = req.body ?? {}
+    const { hub_user_id, name, pupilHubIds, categoryId, categoryName, externalRef, reopen } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
 
     if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' })
 
@@ -3130,13 +3427,39 @@ router.post('/groups', requirePartner, async (req, res) => {
     // to stay unique.
     let group: { id: string }
     const existing = ref
-      ? await prisma.group.findFirst({ where: { externalRef: ref, schoolId: actor.schoolId }, select: { id: true } })
+      ? await prisma.group.findFirst({
+          where: { externalRef: ref, schoolId: actor.schoolId },
+          select: { id: true, isActive: true, managedBy: true },
+        })
       : null
+
+    // Only a group published under a ref has an owner. A plain create (Desk's
+    // own groups) stays unmanaged, so a teacher can still edit what they made.
+    const owner = ref ? callerOwner(req) : null
+    if (existing && isManagedElsewhere(existing.managedBy, owner)) {
+      return res.status(409).json(managedElsewhereBody(existing.managedBy!))
+    }
+    const reopening = !!existing && existing.isActive === false
+    if (reopening && reopen !== true) {
+      return res.status(409).json({
+        error: 'group_archived',
+        id: existing!.id,
+        hint: 'send reopen: true to make the archived group live again',
+      })
+    }
+
     try {
       group = existing
         ? await prisma.group.update({
             where: { id: existing.id },
-            data: { name: name.trim(), ...(resolvedCategory ? { categoryId: resolvedCategory.id } : {}) },
+            data: {
+              name: name.trim(),
+              ...(resolvedCategory ? { categoryId: resolvedCategory.id } : {}),
+              ...(reopening ? { isActive: true } : {}),
+              // Claims a group published before ownership existed. Safe because
+              // only the holder of the ref reaches this branch.
+              ...(!existing.managedBy && owner ? { managedBy: owner } : {}),
+            },
             select: { id: true },
           })
         : await prisma.group.create({
@@ -3145,6 +3468,7 @@ router.post('/groups', requirePartner, async (req, res) => {
               schoolId: actor.schoolId,
               ...(resolvedCategory ? { categoryId: resolvedCategory.id } : {}),
               ...(ref ? { externalRef: ref } : {}),
+              ...(owner ? { managedBy: owner } : {}),
             },
             select: { id: true },
           })
@@ -3170,6 +3494,7 @@ router.post('/groups', requirePartner, async (req, res) => {
     res.status(201).json({
       id: group.id,
       added: studentIds.length,
+      ...(reopening ? { reopened: true } : {}),
       // Present only when something didn't resolve, so a clean call stays clean.
       ...(unknownPupilIds.length > 0 ? { unknownPupilIds } : {}),
       ...(unmatchedCategoryName ? { unmatchedCategoryName } : {}),
@@ -3227,6 +3552,9 @@ router.get('/groups/:id', requirePartner, async (req, res) => {
     res.json({
       id: group.id,
       name: group.name,
+      externalRef: group.externalRef ?? null,
+      managedBy: group.managedBy ?? null,
+      isActive: group.isActive,
       members: group.studentMembers.map(m => ({
         pupilHubId: m.student.hubPupilId,
         studentName: `${m.student.firstName} ${m.student.lastName}`.trim(),
@@ -3250,11 +3578,15 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
     const { hub_user_id, name, addPupilHubIds, removePupilHubIds } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
 
     // `:id` is a Connect group id or, for a caller recovering from a lost id,
     // the externalRef it published under.
     const group = await findGroupByIdOrRef(req.params.id, actor.schoolId)
     if (!group) return res.status(404).json({ error: 'not_found' })
+    if (isManagedElsewhere(group.managedBy, callerOwner(req))) {
+      return res.status(409).json(managedElsewhereBody(group.managedBy!))
+    }
     const id = group.id
 
     // Both sets resolved up front (read-only). Unknown ids are reported rather
@@ -3303,27 +3635,508 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
 })
 
 // Archive a group (isActive:false) rather than hard-delete — a group may be
-// referenced by messages/events. Archived groups drop out of GET /groups.
+// referenced by messages/events. Archived groups drop out of GET /groups, and
+// their message history stays visible to their members.
 //
-//   DELETE /api/partner/groups/:id  { hub_user_id }
+//   DELETE /api/partner/groups/:idOrRef  { hub_user_id }
+//
+// Addressed by Connect id or by the externalRef it was published under, so a
+// publisher that lost the id can still close what it opened. Archiving an
+// archived group is a no-op that answers ok, so a retried close is harmless.
 router.delete('/groups/:id', requirePartner, async (req, res) => {
   try {
     const { hub_user_id } = req.body ?? {}
     const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
     if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
 
-    const { id } = req.params
-    const group = await prisma.group.findFirst({
-      where: { id, schoolId: actor.schoolId },
-      select: { id: true },
-    })
+    const group = await findGroupByIdOrRef(req.params.id, actor.schoolId)
     if (!group) return res.status(404).json({ error: 'not_found' })
+    if (isManagedElsewhere(group.managedBy, callerOwner(req))) {
+      return res.status(409).json(managedElsewhereBody(group.managedBy!))
+    }
 
-    await prisma.group.update({ where: { id }, data: { isActive: false } })
+    if (group.isActive !== false) {
+      await prisma.group.update({ where: { id: group.id }, data: { isActive: false } })
+    }
 
-    res.json({ ok: true })
+    res.json({ ok: true, id: group.id })
   } catch (error) {
     console.error('Error archiving partner group:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+/**
+ * A group's whole membership, replaced.
+ *
+ *   PUT /api/partner/groups/:externalRef/roster
+ *   { hub_user_id, version, pupilHubIds: [...] }
+ *   → { id, members, unknownPupilIds? }   or   { id, ignored: true, reason: 'stale_version' }
+ *
+ * The add/remove PATCH makes the publisher diff against what it last sent, and
+ * a diff is only as good as the publisher's memory of the last answer: two
+ * retries landing out of order can put back a family the later one removed.
+ * Beyond narrows a trip group at the consent deadline and moves it again with
+ * every booking and waiting-list change, so it sends the list it wants instead,
+ * with its own clock, and the same rules as the club roster door
+ * (PUT /activities/:externalRef/roster): strictly newer wins, an equal or older
+ * version is ignored and answered 200, and nobody is stated as `[]`.
+ *
+ * Addressed by externalRef (or Connect id). The group has to exist: a roster
+ * cannot name a group, choose its category or decide who owns it, so creating
+ * one here would invent all three. POST /groups first, then this.
+ */
+router.put('/groups/:externalRef/roster', requirePartner, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const actor = await resolveStaffActor(
+      typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : '',
+      schoolHintOf(req),
+    )
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
+
+    const version = parseVersion(body.version)
+    if (!version) return res.status(400).json({ error: 'version required (ISO-8601)' })
+
+    if (!Array.isArray(body.pupilHubIds)) {
+      return res.status(400).json({
+        error: 'pupilHubIds required',
+        hint: 'send [] to state that the group has nobody in it',
+      })
+    }
+
+    const group = await findGroupByIdOrRef((req.params.externalRef ?? '').trim(), actor.schoolId)
+    if (!group) {
+      return res.status(404).json({
+        error: 'unknown_group',
+        externalRef: req.params.externalRef,
+        hint: 'publish the group with POST /api/partner/groups first, then its roster',
+      })
+    }
+    if (isManagedElsewhere(group.managedBy, callerOwner(req))) {
+      return res.status(409).json(managedElsewhereBody(group.managedBy!))
+    }
+    // A closed trip's group is a record of who it was for. Refilling it would
+    // rewrite that record while nobody can send to it anyway.
+    if (group.isActive === false) {
+      return res.status(409).json({ error: 'group_archived', id: group.id })
+    }
+    // A service group's membership is recomputed from the service at every
+    // use, so a roster written here would be silently replaced on the next read.
+    if (group.sourceServiceId) {
+      return res.status(409).json({ error: 'group_membership_owned_by_service', id: group.id })
+    }
+
+    if (!isNewer(version, group.rosterVersion)) {
+      // Not an error: a retry recomputing to older state is ordinary, and the
+      // publisher should mark it delivered rather than escalate.
+      return res.json({ id: group.id, ignored: true, reason: 'stale_version' })
+    }
+
+    const { studentIds, unknownPupilIds } = await resolvePupilHubIds(toIdArray(body.pupilHubIds), actor.schoolId)
+
+    // Removed and added as a difference, NOT emptied and refilled the way the
+    // club register is. A group is a live messaging audience: a broadcast
+    // resolving its parents between an empty and a refill would reach nobody,
+    // and "back at school" is the message that must not go missing. Families
+    // who stay in the group are never out of it, even for a moment.
+    const removed = await prisma.studentGroupLink.deleteMany({
+      where: { groupId: group.id, studentId: { notIn: studentIds } },
+    })
+    if (studentIds.length > 0) {
+      await prisma.studentGroupLink.createMany({
+        data: studentIds.map(studentId => ({ studentId, groupId: group.id })),
+        skipDuplicates: true,
+      })
+    }
+    // Stamped LAST, so a failure part way leaves the old version in place and
+    // the publisher's retry applies the whole list again.
+    await prisma.group.update({ where: { id: group.id }, data: { rosterVersion: version } })
+
+    res.json({
+      id: group.id,
+      members: studentIds.length,
+      removed: removed.count,
+      ...(unknownPupilIds.length > 0 ? { unknownPupilIds } : {}),
+    })
+  } catch (error) {
+    console.error('Error replacing partner group roster:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// --- Forms (per-child, partner-owned) -----------------------------------------
+//
+// A partner app publishes a form that parents answer once per CHILD (a trip
+// consent form), attaches it to a post with `formRef` on POST /messages, and
+// reads the answers back with a cursor. Connect stores and shows the form; the
+// partner owns its wording, which must never ask for medical information (the
+// clinic owns that, not a parent form copied into another app).
+//
+// A partner form has no audience of its own, like every Connect form: it is
+// announced by the posts carrying it, and asks about each of a parent's
+// children who is in the audience of one of those posts.
+
+/** The field types a partner may publish, and what each becomes in Connect's
+ *  own form vocabulary — so the parent app renders them with no new control. */
+const PARTNER_FIELD_TYPES = ['yesno', 'text', 'textarea', 'choice', 'signature', 'name', 'pupil_choice'] as const
+type PartnerFieldType = typeof PARTNER_FIELD_TYPES[number]
+const FIELD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+
+type StoredFormField = {
+  id: string
+  type: 'select' | 'text' | 'textarea' | 'signature' | 'pupil_choice'
+  label: string
+  required: boolean
+  removable: false
+  options?: string[]
+  placeholder?: string
+  partnerType: PartnerFieldType
+  /// The author's Arabic, shown to a parent reading in Arabic. optionsAr pairs
+  /// with options by position; the ANSWER is always the English option, so an
+  /// answer reads the same whichever language it was given in.
+  labelAr?: string
+  optionsAr?: string[]
+  /// A pupil choice (C14): the Hub pupil ids a parent may choose from. Not part
+  /// of the question for form_has_answers, so it may change after answers.
+  pupilHubIds?: string[]
+}
+
+/** Yes and No in Arabic, for a yes/no question whose author gave no options. */
+const YES_NO_AR = ['نعم', 'لا']
+
+/** Validate and translate a partner's field list. Returns an error string on
+ *  the first fault, naming the field, or the fields as Connect stores them. */
+function normalisePartnerFields(raw: unknown): { error: string } | { fields: StoredFormField[] } {
+  if (!Array.isArray(raw) || raw.length === 0) return { error: 'fields required' }
+  if (raw.length > 50) return { error: 'at most 50 fields' }
+  const seen = new Set<string>()
+  const fields: StoredFormField[] = []
+  for (const f of raw as Array<Record<string, unknown>>) {
+    const id = typeof f?.id === 'string' ? f.id.trim() : ''
+    if (!FIELD_ID_RE.test(id)) return { error: `field id "${String(f?.id)}" must be 1 to 64 letters, digits, _ or -` }
+    if (seen.has(id)) return { error: `field id "${id}" is used twice` }
+    seen.add(id)
+    const type = f.type as PartnerFieldType
+    if (!PARTNER_FIELD_TYPES.includes(type)) {
+      return { error: `field "${id}" has unknown type; use one of ${PARTNER_FIELD_TYPES.join(', ')}` }
+    }
+    const label = typeof f.label === 'string' ? f.label.trim() : ''
+    if (!label || label.length > 500) return { error: `field "${id}" needs a label of at most 500 characters` }
+    if (f.labelAr !== undefined && (typeof f.labelAr !== 'string' || f.labelAr.length > 500)) {
+      return { error: `field "${id}" labelAr must be a string of at most 500 characters` }
+    }
+    const labelAr = typeof f.labelAr === 'string' && f.labelAr.trim() ? f.labelAr.trim() : undefined
+    const optionsAr = f.optionsAr === undefined ? undefined
+      : Array.isArray(f.optionsAr) && f.optionsAr.every(o => typeof o === 'string' && o.trim())
+        ? (f.optionsAr as string[]).map(o => o.trim())
+        : null
+    if (optionsAr === null) return { error: `field "${id}" optionsAr must be a list of non-empty strings` }
+    // Required unless the partner says otherwise: a consent form's questions
+    // are its point, and an optional one should be a decision, not a default.
+    const required = f.required !== false
+    const base = { id, label, required, removable: false as const, partnerType: type, ...(labelAr ? { labelAr } : {}) }
+    if (type === 'yesno') {
+      if (optionsAr && optionsAr.length !== 2) return { error: `field "${id}" optionsAr must give Yes and No, in that order` }
+      fields.push({ ...base, type: 'select', options: ['Yes', 'No'], optionsAr: optionsAr ?? YES_NO_AR })
+    } else if (type === 'choice') {
+      const options = Array.isArray(f.options)
+        ? f.options.filter((o): o is string => typeof o === 'string').map(o => o.trim()).filter(Boolean)
+        : []
+      if (options.length < 2 || options.length > 20 || new Set(options).size !== options.length) {
+        return { error: `field "${id}" needs 2 to 20 distinct options` }
+      }
+      if (optionsAr && optionsAr.length !== options.length) {
+        return { error: `field "${id}" optionsAr must have one entry per option, in the same order` }
+      }
+      fields.push({ ...base, type: 'select', options, ...(optionsAr ? { optionsAr } : {}) })
+    } else if (type === 'pupil_choice') {
+      // A friend for a shared room (C14): one of these pupils, by Hub id. Ids
+      // Connect does not know are kept but never offered (services/pupilChoice).
+      if (f.options !== undefined || f.optionsAr !== undefined) {
+        return { error: `field "${id}" is a pupil_choice: give pupilHubIds, not options` }
+      }
+      const raw = f.pupilHubIds
+      const ids = Array.isArray(raw) && raw.every(x => typeof x === 'string' && x.trim() && x.trim().length <= 200)
+        ? (raw as string[]).map(x => x.trim())
+        : null
+      if (!ids || ids.length < 1 || ids.length > 400 || new Set(ids).size !== ids.length) {
+        return { error: `field "${id}" needs pupilHubIds: 1 to 400 distinct Hub pupil ids` }
+      }
+      fields.push({ ...base, type: 'pupil_choice', pupilHubIds: ids })
+    } else if (type === 'name') {
+      // The typed alternative to a drawn signature: the guardian's full name.
+      fields.push({ ...base, type: 'text', placeholder: 'Your full name' })
+    } else {
+      fields.push({ ...base, type })
+    }
+  }
+  return { fields }
+}
+
+/** An answer as the partner reads it back: a yes/no question is a boolean,
+ *  everything else exactly as given (a drawn signature is a PNG data URL). */
+function partnerAnswers(answers: unknown, fields: StoredFormField[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const given = (answers && typeof answers === 'object' ? answers : {}) as Record<string, unknown>
+  for (const f of fields) {
+    if (!(f.id in given)) continue
+    const v = given[f.id]
+    if (f.partnerType === 'pupil_choice') {
+      // A Hub pupil id, or null when left empty.
+      out[f.id] = typeof v === 'string' && v ? v : null
+      continue
+    }
+    out[f.id] = f.partnerType === 'yesno' ? (v === 'Yes' ? true : v === 'No' ? false : null) : v
+  }
+  return out
+}
+
+function serializePartnerForm(form: {
+  id: string; externalRef: string | null; title: string; description: string | null; status: string
+  expiresAt: Date | null; fields: unknown; perChild: boolean; titleAr?: string | null; descriptionAr?: string | null
+}) {
+  return {
+    id: form.id,
+    externalRef: form.externalRef,
+    title: form.title,
+    titleAr: form.titleAr ?? null,
+    description: form.description,
+    descriptionAr: form.descriptionAr ?? null,
+    status: form.status,
+    deadline: form.expiresAt ? form.expiresAt.toISOString() : null,
+    perChild: form.perChild,
+    fields: (form.fields as StoredFormField[]).map(f => ({
+      id: f.id, type: f.partnerType, label: f.label, required: f.required,
+      ...(f.labelAr ? { labelAr: f.labelAr } : {}),
+      ...(f.partnerType === 'choice' ? { options: f.options } : {}),
+      ...(f.partnerType !== 'yesno' && f.optionsAr ? { optionsAr: f.optionsAr } : {}),
+      ...(f.partnerType === 'pupil_choice' ? { pupilHubIds: f.pupilHubIds ?? [] } : {}),
+    })),
+  }
+}
+
+/** The questions, without their Arabic: what an answer was given against.
+ *  Correcting a translation after answers exist changes no question. Nor does
+ *  a pupil choice's list of pupils (C14): children join and leave a trip, and
+ *  an answer already given stays as stored. */
+function questionsOf(fields: unknown): unknown {
+  return (Array.isArray(fields) ? fields : []).map((f: Record<string, unknown>) => {
+    const { labelAr: _l, optionsAr: _o, pupilHubIds: _p, ...rest } = f ?? {}
+    return rest
+  })
+}
+
+/**
+ * Publish or update a per-child form.
+ *
+ *   PUT /api/partner/forms/:externalRef
+ *   { hub_user_id, title, description?, deadline?, status?: 'ACTIVE' | 'CLOSED',
+ *     fields: [{ id, type: yesno|text|textarea|choice|signature|name|pupil_choice,
+ *                label, required?, options?, pupilHubIds? }] }
+ *   → 201 (created) or 200 (updated) with the form as stored
+ *
+ * Idempotent on the ref, so a retry or a re-publish edits the same form. The
+ * form belongs to the publishing token (409 form_managed_elsewhere to anyone
+ * else). Once any answer exists its FIELDS are fixed — 409 form_has_answers —
+ * because an answer is only meaningful against the question it answered;
+ * wording around it, the deadline and the status may still change. Publish a
+ * new ref for a new question.
+ *
+ * `deadline` is an ISO time, or a bare date meaning the end of that day in the
+ * school's zone; `null` clears it. Answers are refused after it.
+ *
+ * A `pupil_choice` field (C14, room-sharing friendship choices) carries
+ * `pupilHubIds`: 1 to 400 distinct Hub pupil ids. The parent picks one from a
+ * drop-down of those Connect knows, labelled "Jade W." and sorted by label,
+ * leaving out the child being answered for; ids Connect does not know are
+ * never offered. The answer is the chosen pupil's Hub id (absent, and null in
+ * the read, when left empty). POST /api/forms/:id/respond refuses a value not
+ * in the list, unknown to Connect, or the child being answered for (400
+ * invalid_choice), and one pupil chosen in two pupil choices for one child
+ * (400 duplicate_choice). Unlike `options`, `pupilHubIds` may change after
+ * answers exist; answers already given stay as stored. See
+ * services/pupilChoice.
+ */
+router.put('/forms/:externalRef', requirePartner, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const actor = await resolveStaffActor(
+      typeof body.hub_user_id === 'string' ? body.hub_user_id.trim() : '',
+      schoolHintOf(req),
+    )
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (await refuseIfPartnerOff(req, res, actor.schoolId)) return
+
+    const externalRef = (req.params.externalRef ?? '').trim()
+    if (!externalRef || externalRef.length > 200) return res.status(400).json({ error: 'externalRef required' })
+
+    const title = typeof body.title === 'string' ? body.title.trim() : ''
+    if (!title || title.length > 500) return res.status(400).json({ error: 'title required (at most 500 characters)' })
+    const description = typeof body.description === 'string' && body.description.trim() ? body.description.trim() : null
+    const titleAr = typeof body.titleAr === 'string' && body.titleAr.trim() ? body.titleAr.trim().slice(0, 500) : null
+    const descriptionAr = typeof body.descriptionAr === 'string' && body.descriptionAr.trim() ? body.descriptionAr.trim() : null
+
+    const normalised = normalisePartnerFields(body.fields)
+    if ('error' in normalised) return res.status(400).json({ error: normalised.error })
+
+    if (body.status !== undefined && body.status !== 'ACTIVE' && body.status !== 'CLOSED') {
+      return res.status(400).json({ error: 'status must be ACTIVE or CLOSED' })
+    }
+
+    let deadline: Date | null | undefined
+    if (body.deadline === null) deadline = null
+    else if (typeof body.deadline === 'string' && body.deadline.trim()) {
+      deadline = await parseExpiryForSchool(body.deadline.trim(), actor.schoolId)
+      if (!deadline || Number.isNaN(deadline.getTime())) return res.status(400).json({ error: 'deadline must be an ISO-8601 time or date' })
+    } else if (body.deadline !== undefined) {
+      return res.status(400).json({ error: 'deadline must be an ISO-8601 time or date, or null' })
+    }
+
+    const owner = callerOwner(req)
+    const existing = await prisma.form.findFirst({
+      where: { schoolId: actor.schoolId, externalRef },
+      select: { id: true, managedBy: true, fields: true, _count: { select: { responses: true } } },
+    })
+    if (existing && existing.managedBy !== owner) {
+      return res.status(409).json({ error: 'form_managed_elsewhere', managedBy: existing.managedBy })
+    }
+    if (existing && existing._count.responses > 0
+      && stableStringify(questionsOf(existing.fields)) !== stableStringify(questionsOf(normalised.fields))) {
+      return res.status(409).json({
+        error: 'form_has_answers',
+        hint: 'fields cannot change once answered; publish a new externalRef for a new question',
+      })
+    }
+
+    const data = {
+      title,
+      description,
+      titleAr,
+      descriptionAr,
+      fields: normalised.fields,
+      ...(deadline !== undefined ? { expiresAt: deadline } : {}),
+      ...(body.status ? { status: body.status as string } : {}),
+    }
+    const form = existing
+      ? await prisma.form.update({ where: { id: existing.id }, data })
+      : await prisma.form.create({
+          data: {
+            ...data,
+            status: (body.status as string) ?? 'ACTIVE',
+            // A partner form is announced only by the posts carrying it, so it
+            // targets nothing itself and never appears on the Forms list.
+            type: 'permission-consent',
+            targetClass: 'Selected pupils',
+            classIds: [],
+            yearGroupIds: [],
+            schoolId: actor.schoolId,
+            perChild: true,
+            externalRef,
+            managedBy: owner,
+          },
+        })
+
+    res.status(existing ? 200 : 201).json(serializePartnerForm(form))
+  } catch (error) {
+    console.error('Error publishing partner form:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+/** Cursor over (updatedAt, id): opaque to the caller, so its shape can change. */
+function encodeAnswerCursor(at: Date, id: string): string {
+  return Buffer.from(`${at.toISOString()}|${id}`).toString('base64url')
+}
+function decodeAnswerCursor(raw: string): { at: Date; id: string } | null {
+  // A plain ISO time is accepted too, for a first read "since the form went out".
+  const plain = new Date(raw)
+  if (!Number.isNaN(plain.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(raw)) return { at: plain, id: '' }
+  const [iso, id] = Buffer.from(raw, 'base64url').toString('utf8').split('|')
+  const at = new Date(iso ?? '')
+  return Number.isNaN(at.getTime()) || id === undefined ? null : { at, id }
+}
+
+/**
+ * The answers to a per-child form, oldest change first, with a cursor.
+ *
+ *   GET /api/partner/forms/:externalRef/responses?school_id=&since=&limit=
+ *   → { form, responses: [{ pupilHubId, answers, answeredBy: { name, hubUserId },
+ *        firstAnsweredAt, answeredAt }], next, hasMore }
+ *
+ * One entry per CHILD. A guardian changing an answer before the deadline (a
+ * consent withdrawn) moves that child's entry forward, so it comes round again
+ * after the cursor: the reader keeps the latest entry per pupil. Pass `next`
+ * as the following call's `since`; it is always present, and equal to `since`
+ * when nothing has changed.
+ *
+ * Only the owning token may read: these are a family's answers about a child.
+ * Addressed by school (Hub or Connect id) rather than by an acting member of
+ * staff, so a poll does not break the day the trip lead leaves.
+ */
+router.get('/forms/:externalRef/responses', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+    const school = await partnerSchool(schoolIdParam)
+    if (!school) return res.status(404).json({ error: 'unknown_school' })
+
+    const form = await prisma.form.findFirst({
+      where: { schoolId: school.id, externalRef: (req.params.externalRef ?? '').trim() },
+    })
+    if (!form) return res.status(404).json({ error: 'unknown_form' })
+    if (form.managedBy !== callerOwner(req)) {
+      return res.status(409).json({ error: 'form_managed_elsewhere', managedBy: form.managedBy })
+    }
+
+    const sinceRaw = typeof req.query.since === 'string' ? req.query.since.trim() : ''
+    const cursor = sinceRaw ? decodeAnswerCursor(sinceRaw) : null
+    if (sinceRaw && !cursor) return res.status(400).json({ error: 'since must be a cursor from next, or an ISO-8601 time' })
+    const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit ?? '100'), 10) || 100))
+
+    const rows = await prisma.formResponse.findMany({
+      where: {
+        formId: form.id,
+        studentId: { not: null },
+        ...(cursor ? {
+          OR: [
+            { updatedAt: { gt: cursor.at } },
+            ...(cursor.id ? [{ updatedAt: cursor.at, id: { gt: cursor.id } }] : []),
+          ],
+        } : {}),
+      },
+      select: {
+        id: true, answers: true, createdAt: true, updatedAt: true,
+        student: { select: { hubPupilId: true } },
+        user: { select: { name: true, hubUserId: true } },
+      },
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      take: limit + 1,
+    })
+    const hasMore = rows.length > limit
+    const page = hasMore ? rows.slice(0, limit) : rows
+    const last = page[page.length - 1]
+    const fields = form.fields as StoredFormField[]
+
+    res.json({
+      form: serializePartnerForm(form),
+      responses: page.map(r => ({
+        pupilHubId: r.student?.hubPupilId ?? null,
+        answers: partnerAnswers(r.answers, fields),
+        // Who answered: the guardian, by name and Hub id (null for a parent
+        // who signed up without Hub), so the school's record says which
+        // guardian gave consent for which child.
+        answeredBy: { name: r.user?.name ?? null, hubUserId: r.user?.hubUserId ?? null },
+        firstAnsweredAt: r.createdAt.toISOString(),
+        answeredAt: r.updatedAt.toISOString(),
+      })),
+      next: last ? encodeAnswerCursor(last.updatedAt, last.id) : (sinceRaw || encodeAnswerCursor(new Date(0), '')),
+      hasMore,
+    })
+  } catch (error) {
+    console.error('Error reading partner form responses:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })
@@ -3336,11 +4149,43 @@ router.delete('/groups/:id', requirePartner, async (req, res) => {
 //
 //   POST /api/partner/inbox/upload  (multipart/form-data, field "file")
 //     → { fileName, fileUrl, fileType, fileSize }
+/**
+ * Is this partner turned on for a school?
+ *
+ *   GET /api/partner/status?school_id=<hub or connect id>  →  { enabled }
+ *
+ * A cheap read so a partner can show "not turned on in Connect yet" before it
+ * tries a write. Answered whether or not the partner is on. A partner with no
+ * per-school switch (Desk, Active) is always on.
+ */
+router.get('/status', requirePartner, async (req, res) => {
+  try {
+    const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
+    if (!schoolIdParam) return res.status(400).json({ error: 'school_id required' })
+    const school = await partnerSchool(schoolIdParam)
+    if (!school) return res.status(404).json({ error: 'unknown_school' })
+    res.json({ enabled: await partnerEnabledForSchool(callerOwner(req), school.id) })
+  } catch (error) {
+    console.error('Error reading partner status:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 router.post('/inbox/upload', requirePartner, singleAttachment(), async (req, res) => {
   try {
     const uploaded = req.file
     if (!uploaded) {
       return res.status(400).json({ error: 'file required' })
+    }
+    // A gated partner (Beyond) names the school, as a query parameter or a
+    // form field, so an upload can be refused while that school has it off.
+    // An upload alone reaches nobody, but it is the first step of a post.
+    if (switchFlagFor(callerOwner(req))) {
+      const hint = schoolHintOf(req)
+      if (!hint) return res.status(400).json({ error: 'school_id required' })
+      const school = await partnerSchool(hint)
+      if (!school) return res.status(404).json({ error: 'unknown_school' })
+      if (await refuseIfPartnerOff(req, res, school.id)) return
     }
     const check = checkUpload(uploaded.buffer, uploaded.mimetype, uploaded.originalname, ATTACHMENT_MIME_TYPES)
     if (!check.valid) {

@@ -567,10 +567,11 @@ export const forms = {
     fetchApi<{ message: string }>(`/api/forms/${id}`, {
       method: 'DELETE',
     }),
-  respond: (id: string, answers: Record<string, unknown>) =>
+  // `studentId` is required on a per-child form: which child this answer is for.
+  respond: (id: string, answers: Record<string, unknown>, studentId?: string) =>
     fetchApi<FormResponseData>(`/api/forms/${id}/respond`, {
       method: 'POST',
-      body: JSON.stringify({ answers }),
+      body: JSON.stringify(studentId ? { answers, studentId } : { answers }),
     }),
   close: (id: string) =>
     fetchApi<{ id: string; status: string }>(`/api/forms/${id}/close`, {
