@@ -23,6 +23,7 @@ const prismaMock = {
   messageAttachment: { createMany: vi.fn() },
   studentGroupLink: { findMany: vi.fn() },
   class: { findMany: vi.fn() },
+  student: { findMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/services/notify', () => ({ sendNotification: vi.fn(), resolveAudienceParentIds: vi.fn(async () => ['parent-1']) }))
@@ -81,6 +82,15 @@ const FORM = {
   createdAt: new Date('2026-10-10T08:00:00Z'), updatedAt: new Date('2026-10-10T08:00:00Z'),
 }
 
+// The school's pupils Connect knows, for pupil choices (C14). stu-1 and stu-2
+// are the answering parent's own children (see PARENT below).
+const PUPILS = [
+  { id: 'stu-1', firstName: 'Omar', lastName: 'Haddad', hubPupilId: 'hub-omar' },
+  { id: 'stu-2', firstName: 'Lina', lastName: 'Haddad', hubPupilId: 'hub-lina' },
+  { id: 'stu-9', firstName: 'Jade', lastName: 'williams', hubPupilId: 'hub-jade' },
+  { id: 'stu-8', firstName: 'Aisha', lastName: 'Rahman', hubPupilId: 'hub-aisha' },
+]
+
 beforeEach(() => {
   vi.clearAllMocks()
   // The school has turned Wasil Beyond on (services/partnerSwitch).
@@ -93,6 +103,8 @@ beforeEach(() => {
   prismaMock.form.create.mockImplementation(async ({ data }: any) => ({ ...FORM, ...data, id: 'f-1' }))
   prismaMock.form.update.mockImplementation(async ({ data }: any) => ({ ...FORM, ...data }))
   prismaMock.message.create.mockResolvedValue({ id: 'm-1' })
+  prismaMock.student.findMany.mockImplementation(async ({ where }: any) =>
+    PUPILS.filter(p => where.schoolId === 'school-1' && where.hubPupilId.in.includes(p.hubPupilId)))
 })
 
 describe('PUT /api/partner/forms/:externalRef', () => {
@@ -215,8 +227,8 @@ describe('attaching the form to a post', () => {
 const PARENT = {
   id: 'parent-1', schoolId: 'school-1', preferredLanguage: 'en', children: [],
   studentLinks: [
-    { studentId: 'stu-1', student: { firstName: 'Omar', lastName: 'Haddad', classId: 'c-4a', class: { yearGroupId: 'y4' } } },
-    { studentId: 'stu-2', student: { firstName: 'Lina', lastName: 'Haddad', classId: 'c-4b', class: { yearGroupId: 'y4' } } },
+    { studentId: 'stu-1', student: { firstName: 'Omar', lastName: 'Haddad', hubPupilId: 'hub-omar', classId: 'c-4a', class: { yearGroupId: 'y4' } } },
+    { studentId: 'stu-2', student: { firstName: 'Lina', lastName: 'Haddad', hubPupilId: 'hub-lina', classId: 'c-4b', class: { yearGroupId: 'y4' } } },
     { studentId: 'stu-3', student: { firstName: 'Sami', lastName: 'Haddad', classId: 'c-1a', class: { yearGroupId: 'y1' } } },
   ],
 }
@@ -410,5 +422,169 @@ describe('a Connect admin and a partner form', () => {
       expect(res.body).toMatchObject({ code: 'form_managed_elsewhere', managedBy: 'beyond' })
     }
     expect(prismaMock.form.update).not.toHaveBeenCalled()
+  })
+})
+
+// C14: a pupil choice, for room-sharing friendship choices on a residential trip.
+describe('a pupil_choice field', () => {
+  const ROOM_REF = 'beyond:rooms:t-1'
+  const ROOM_IDS = ['hub-jade', 'hub-aisha', 'hub-omar', 'hub-lina', 'hub-gone']
+  const ROOM_FIELDS = [
+    { id: 'friend_1', type: 'pupil_choice', label: 'First choice', labelAr: 'الاختيار الأول', required: true, pupilHubIds: ROOM_IDS },
+    { id: 'friend_2', type: 'pupil_choice', label: 'Second choice', required: false, pupilHubIds: ROOM_IDS },
+  ]
+  const ROOM_STORED = [
+    { id: 'friend_1', label: 'First choice', required: true, removable: false, partnerType: 'pupil_choice', labelAr: 'الاختيار الأول', type: 'pupil_choice', pupilHubIds: ROOM_IDS },
+    { id: 'friend_2', label: 'Second choice', required: false, removable: false, partnerType: 'pupil_choice', type: 'pupil_choice', pupilHubIds: ROOM_IDS },
+  ]
+  const ROOM_FORM = { ...FORM, externalRef: ROOM_REF, fields: ROOM_STORED }
+
+  const publish = (fields: unknown) =>
+    auth(request(makeApp()).put(`/api/partner/forms/${ROOM_REF}`)).send({ hub_user_id: 'hub-lead', title: 'Room choices', fields })
+
+  describe('publishing', () => {
+    it('stores the Hub ids and answers with them', async () => {
+      prismaMock.form.findFirst.mockResolvedValue(null)
+      const res = await publish(ROOM_FIELDS)
+      expect(res.status).toBe(201)
+      expect(prismaMock.form.create.mock.calls[0][0].data.fields).toEqual(ROOM_STORED)
+      expect(res.body.fields[0]).toEqual({
+        id: 'friend_1', type: 'pupil_choice', label: 'First choice', labelAr: 'الاختيار الأول', required: true, pupilHubIds: ROOM_IDS,
+      })
+    })
+
+    it.each([
+      ['no pupilHubIds', {}],
+      ['an empty list', { pupilHubIds: [] }],
+      ['more than 400', { pupilHubIds: Array.from({ length: 401 }, (_, i) => `hub-${i}`) }],
+      ['an id given twice', { pupilHubIds: ['hub-jade', 'hub-jade'] }],
+      ['a non-string id', { pupilHubIds: ['hub-jade', 7] }],
+      ['a blank id', { pupilHubIds: ['hub-jade', ' '] }],
+      ['options', { pupilHubIds: ['hub-jade'], options: ['a', 'b'] }],
+    ])('refuses %s', async (_what, extra) => {
+      prismaMock.form.findFirst.mockResolvedValue(null)
+      const res = await publish([{ id: 'friend_1', type: 'pupil_choice', label: 'First choice', ...extra }])
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('friend_1')
+      expect(prismaMock.form.create).not.toHaveBeenCalled()
+    })
+
+    it('takes exactly 400', async () => {
+      prismaMock.form.findFirst.mockResolvedValue(null)
+      const res = await publish([{ id: 'friend_1', type: 'pupil_choice', label: 'First choice', pupilHubIds: Array.from({ length: 400 }, (_, i) => `hub-${i}`) }])
+      expect(res.status).toBe(201)
+    })
+
+    it('lets the pupils change after answers, but not the question', async () => {
+      prismaMock.form.findFirst.mockResolvedValue({ id: 'f-1', managedBy: 'beyond', fields: ROOM_STORED, _count: { responses: 2 } })
+      const moved = await publish(ROOM_FIELDS.map(f => ({ ...f, pupilHubIds: ['hub-jade', 'hub-new'] })))
+      expect(moved.status).toBe(200)
+      expect(prismaMock.form.update.mock.calls[0][0].data.fields[0].pupilHubIds).toEqual(['hub-jade', 'hub-new'])
+
+      const relabelled = await publish(ROOM_FIELDS.map(f => ({ ...f, label: `${f.label}!` })))
+      expect(relabelled.status).toBe(409)
+      expect(relabelled.body.error).toBe('form_has_answers')
+    })
+  })
+
+  describe('answering', () => {
+    const answer = (answers: Record<string, unknown>, studentId = 'stu-1') =>
+      request(makeApp()).post('/api/forms/f-1/respond').send({ answers, studentId })
+
+    beforeEach(() => {
+      onTheTrip()
+      prismaMock.form.findFirst.mockResolvedValue(ROOM_FORM)
+      prismaMock.formResponse.findMany.mockResolvedValue([])
+      prismaMock.formResponse.upsert.mockImplementation(async ({ create }: any) => ({
+        id: `r-${create.studentId}`, ...create, createdAt: new Date(),
+      }))
+    })
+
+    it('stores the chosen pupil\'s Hub id, and drops an empty optional choice', async () => {
+      const res = await answer({ friend_1: 'hub-jade', friend_2: '' })
+      expect(res.status).toBe(200)
+      expect(prismaMock.formResponse.upsert.mock.calls[0][0].create.answers).toEqual({ friend_1: 'hub-jade' })
+    })
+
+    it('may choose a sibling, just not the child answered for', async () => {
+      expect((await answer({ friend_1: 'hub-lina' }, 'stu-1')).status).toBe(200)
+      const self = await answer({ friend_1: 'hub-omar' }, 'stu-1')
+      expect(self.status).toBe(400)
+      expect(self.body).toMatchObject({ error: 'invalid_choice', field: 'friend_1' })
+    })
+
+    it.each([
+      ['a pupil not on the list', 'hub-stranger'],
+      ['a listed id with no pupil in Connect', 'hub-gone'],
+      ['a non-string', 42],
+    ])('refuses %s', async (_what, value) => {
+      const res = await answer({ friend_1: value })
+      expect(res.status).toBe(400)
+      expect(res.body).toMatchObject({ error: 'invalid_choice', field: 'friend_1' })
+      expect(prismaMock.formResponse.upsert).not.toHaveBeenCalled()
+    })
+
+    it('refuses the same pupil twice for one child', async () => {
+      const res = await answer({ friend_1: 'hub-jade', friend_2: 'hub-jade' })
+      expect(res.status).toBe(400)
+      expect(res.body).toMatchObject({ error: 'duplicate_choice', field: 'friend_2' })
+      expect(prismaMock.formResponse.upsert).not.toHaveBeenCalled()
+    })
+
+    it('still requires a required choice', async () => {
+      expect((await answer({ friend_2: 'hub-jade' })).status).toBe(400)
+    })
+
+    it('is not answerable while Beyond is off for the school', async () => {
+      // The switch is applied in the query (parentVisibleFormWhere): no form comes back.
+      prismaMock.form.findFirst.mockResolvedValue(null)
+      expect((await answer({ friend_1: 'hub-jade' })).status).toBe(404)
+    })
+  })
+
+  it('reaches the parent as named options, never as the list of Hub ids', async () => {
+    onTheTrip()
+    prismaMock.class.findMany.mockResolvedValue([])
+    prismaMock.formResponse.findMany.mockResolvedValue([])
+    const feed = prismaMock.message.findMany.getMockImplementation()!
+    prismaMock.message.findMany.mockImplementation(async (args: any) => args?.where?.formId ? feed(args) : [{
+      id: 'm-1', title: 'Rooms', content: 'Choose', targetClass: 'Trip', classId: null, yearGroupId: null, groupId: 'g-1',
+      schoolId: 'school-1', senderId: 's', sender: { id: 's', name: 'Mrs Ahmed' }, actionType: null, actionLabel: null,
+      actionDueDate: null, actionAmount: null, isPinned: false, isUrgent: false, requiresAcknowledgment: false, expiresAt: null,
+      formId: 'f-1', acknowledgments: [], _count: { acknowledgments: 0 }, attachments: [], createdAt: new Date(),
+      form: { ...ROOM_FORM, responses: [] },
+    }])
+    const res = await request(makeApp()).get('/api/messages')
+    const form = res.body[0].form
+    expect(form.fields[0].pupilHubIds).toBeUndefined()
+    // Sorted by label; the id with no Connect pupil is not offered. The app
+    // leaves out the child being answered for, by the child's hubPupilId.
+    expect(form.fields[0].pupilOptions).toEqual([
+      { value: 'hub-aisha', label: 'Aisha R.' },
+      { value: 'hub-jade', label: 'Jade W.' },
+      { value: 'hub-lina', label: 'Lina H.' },
+      { value: 'hub-omar', label: 'Omar H.' },
+    ])
+    expect(form.children.map((c: any) => c.hubPupilId)).toEqual(['hub-omar', 'hub-lina'])
+  })
+
+  it('reads back as the Hub pupil id, or null when left empty', async () => {
+    prismaMock.form.findFirst.mockResolvedValue(ROOM_FORM)
+    prismaMock.formResponse.findMany.mockResolvedValue([{
+      id: 'r-1', answers: { friend_1: 'hub-jade' }, createdAt: new Date('2026-10-11T08:00:00Z'), updatedAt: new Date('2026-10-11T08:00:00Z'),
+      student: { hubPupilId: 'hub-omar' }, user: { name: 'Rania Haddad', hubUserId: 'hub-guardian-1' },
+    }])
+    const res = await auth(request(makeApp()).get(`/api/partner/forms/${ROOM_REF}/responses?school_id=hub-school`))
+    expect(res.body.responses[0].answers).toEqual({ friend_1: 'hub-jade' })
+    expect(res.body.form.fields[1].pupilHubIds).toEqual(ROOM_IDS)
+  })
+
+  it('shows a school admin the chosen child\'s name', async () => {
+    ;(prismaMock.form as any).findMany = vi.fn().mockResolvedValue([{
+      ...ROOM_FORM, responses: [{ id: 'r-1', answers: { friend_1: 'hub-jade' }, user: { name: 'Rania', email: 'r@x' }, createdAt: new Date() }],
+    }])
+    const res = await request(makeApp()).get('/api/forms/all')
+    expect(res.status).toBe(200)
+    expect(res.body[0].pupilNames).toEqual({ 'hub-jade': 'Jade williams' })
   })
 })

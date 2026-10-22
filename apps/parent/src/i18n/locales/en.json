@@ -97,7 +97,8 @@
     "installApp": "Install app",
     "answeringFor": "Answering for {{name}}",
     "childProgress": "Child {{current}} of {{total}}",
-    "answeredFor": "Answered for {{name}}"
+    "answeredFor": "Answered for {{name}}",
+    "chooseFriend": "Choose a friend"
   },
   "events": {
     "title": "Calendar",

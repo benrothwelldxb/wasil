@@ -9,6 +9,7 @@ import { tenant } from '../services/tenant.js'
 import { perChildFormStates, parentChildrenOf } from '../services/perChildForms.js'
 import { managedByLabel } from '../services/groupOwnership.js'
 import { parentVisibleFormWhere } from '../services/partnerSwitch.js'
+import { checkPupilChoices, chosenPupilNames, isPupilChoice } from '../services/pupilChoice.js'
 
 /** A form a partner app publishes is changed in that app, as its groups are. */
 function managedFormBody(managedBy: string) {
@@ -191,7 +192,13 @@ router.get('/all', isAdmin, async (req, res) => {
       orderBy: { createdAt: 'desc' },
     })
 
-    res.json(forms.map(form => serializeForm(form, {
+    // A pupil choice's answer is a Hub pupil id; the school's admins see the
+    // chosen child's name (C14).
+    const names = await Promise.all(forms.map(form =>
+      chosenPupilNames(form.schoolId, form.fields, form.responses.map(r => r.answers))))
+
+    res.json(forms.map((form, i) => serializeForm(form, {
+      ...(Object.keys(names[i]).length > 0 ? { pupilNames: names[i] } : {}),
       responses: form.responses.map(r => ({
         id: r.id,
         answers: r.answers,
@@ -370,10 +377,17 @@ router.post('/:id/respond', isAuthenticated, async (req, res) => {
       if (!(states.get(form.id) ?? []).some(c => c.studentId === studentId)) {
         return res.status(403).json({ error: 'This form is not asking about that child' })
       }
+      // A pupil choice (C14) must be one of its pupils, a pupil Connect knows,
+      // not this child, and not chosen twice for this child.
+      const checked = await checkPupilChoices(form.schoolId, fields, answers, studentId)
+      if (!checked.ok) {
+        return res.status(400).json({ error: checked.error, field: checked.field, message: checked.message })
+      }
+      const stored = checked.answers as typeof answers
       const response = await prisma.formResponse.upsert({
         where: { formId_studentId: { formId: id, studentId } },
-        update: { answers, userId: user.id },
-        create: { formId: id, userId: user.id, studentId, answers },
+        update: { answers: stored, userId: user.id },
+        create: { formId: id, userId: user.id, studentId, answers: stored },
       })
       return res.json({
         id: response.id,
@@ -468,6 +482,8 @@ router.get('/:id/export', isAdmin, async (req, res) => {
     }
 
     const fields = form.fields as Array<{ id: string; label: string; type: string }>
+    // A pupil choice's answer is a Hub pupil id: the export names the child.
+    const pupilNames = await chosenPupilNames(form.schoolId, form.fields, form.responses.map(r => r.answers))
 
     // Build CSV header
     const headers = [
@@ -496,6 +512,7 @@ router.get('/:id/export', isAdmin, async (req, res) => {
         const val = answers[f.id]
         if (val === undefined || val === null) return ''
         if (f.type === 'checkbox') return val ? 'Yes' : 'No'
+        if (isPupilChoice(f) && typeof val === 'string') return pupilNames[val] ?? val
         // Joined with '; ' rather than left to String(array)'s commas — the same
         // separator the children/classes columns use, and it survives escapeCSV
         // without turning one answer into several columns.
@@ -864,6 +881,8 @@ router.get('/public-export/:token', async (req, res) => {
     // nobody is told about.
 
     const fields = form.fields as Array<{ id: string; label: string; type: string }>
+    // A pupil choice's answer is a Hub pupil id: the export names the child.
+    const pupilNames = await chosenPupilNames(form.schoolId, form.fields, form.responses.map(r => r.answers))
 
     // Build CSV header
     const headers = [
@@ -892,6 +911,7 @@ router.get('/public-export/:token', async (req, res) => {
         const val = answers[f.id]
         if (val === undefined || val === null) return ''
         if (f.type === 'checkbox') return val ? 'Yes' : 'No'
+        if (isPupilChoice(f) && typeof val === 'string') return pupilNames[val] ?? val
         // Joined with '; ' rather than left to String(array)'s commas — the same
         // separator the children/classes columns use, and it survives escapeCSV
         // without turning one answer into several columns.

@@ -3781,13 +3781,13 @@ router.put('/groups/:externalRef/roster', requirePartner, async (req, res) => {
 
 /** The field types a partner may publish, and what each becomes in Connect's
  *  own form vocabulary — so the parent app renders them with no new control. */
-const PARTNER_FIELD_TYPES = ['yesno', 'text', 'textarea', 'choice', 'signature', 'name'] as const
+const PARTNER_FIELD_TYPES = ['yesno', 'text', 'textarea', 'choice', 'signature', 'name', 'pupil_choice'] as const
 type PartnerFieldType = typeof PARTNER_FIELD_TYPES[number]
 const FIELD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
 
 type StoredFormField = {
   id: string
-  type: 'select' | 'text' | 'textarea' | 'signature'
+  type: 'select' | 'text' | 'textarea' | 'signature' | 'pupil_choice'
   label: string
   required: boolean
   removable: false
@@ -3799,6 +3799,9 @@ type StoredFormField = {
   /// answer reads the same whichever language it was given in.
   labelAr?: string
   optionsAr?: string[]
+  /// A pupil choice (C14): the Hub pupil ids a parent may choose from. Not part
+  /// of the question for form_has_answers, so it may change after answers.
+  pupilHubIds?: string[]
 }
 
 /** Yes and No in Arabic, for a yes/no question whose author gave no options. */
@@ -3849,6 +3852,20 @@ function normalisePartnerFields(raw: unknown): { error: string } | { fields: Sto
         return { error: `field "${id}" optionsAr must have one entry per option, in the same order` }
       }
       fields.push({ ...base, type: 'select', options, ...(optionsAr ? { optionsAr } : {}) })
+    } else if (type === 'pupil_choice') {
+      // A friend for a shared room (C14): one of these pupils, by Hub id. Ids
+      // Connect does not know are kept but never offered (services/pupilChoice).
+      if (f.options !== undefined || f.optionsAr !== undefined) {
+        return { error: `field "${id}" is a pupil_choice: give pupilHubIds, not options` }
+      }
+      const raw = f.pupilHubIds
+      const ids = Array.isArray(raw) && raw.every(x => typeof x === 'string' && x.trim() && x.trim().length <= 200)
+        ? (raw as string[]).map(x => x.trim())
+        : null
+      if (!ids || ids.length < 1 || ids.length > 400 || new Set(ids).size !== ids.length) {
+        return { error: `field "${id}" needs pupilHubIds: 1 to 400 distinct Hub pupil ids` }
+      }
+      fields.push({ ...base, type: 'pupil_choice', pupilHubIds: ids })
     } else if (type === 'name') {
       // The typed alternative to a drawn signature: the guardian's full name.
       fields.push({ ...base, type: 'text', placeholder: 'Your full name' })
@@ -3867,6 +3884,11 @@ function partnerAnswers(answers: unknown, fields: StoredFormField[]): Record<str
   for (const f of fields) {
     if (!(f.id in given)) continue
     const v = given[f.id]
+    if (f.partnerType === 'pupil_choice') {
+      // A Hub pupil id, or null when left empty.
+      out[f.id] = typeof v === 'string' && v ? v : null
+      continue
+    }
     out[f.id] = f.partnerType === 'yesno' ? (v === 'Yes' ? true : v === 'No' ? false : null) : v
   }
   return out
@@ -3891,15 +3913,18 @@ function serializePartnerForm(form: {
       ...(f.labelAr ? { labelAr: f.labelAr } : {}),
       ...(f.partnerType === 'choice' ? { options: f.options } : {}),
       ...(f.partnerType !== 'yesno' && f.optionsAr ? { optionsAr: f.optionsAr } : {}),
+      ...(f.partnerType === 'pupil_choice' ? { pupilHubIds: f.pupilHubIds ?? [] } : {}),
     })),
   }
 }
 
 /** The questions, without their Arabic: what an answer was given against.
- *  Correcting a translation after answers exist changes no question. */
+ *  Correcting a translation after answers exist changes no question. Nor does
+ *  a pupil choice's list of pupils (C14): children join and leave a trip, and
+ *  an answer already given stays as stored. */
 function questionsOf(fields: unknown): unknown {
   return (Array.isArray(fields) ? fields : []).map((f: Record<string, unknown>) => {
-    const { labelAr: _l, optionsAr: _o, ...rest } = f ?? {}
+    const { labelAr: _l, optionsAr: _o, pupilHubIds: _p, ...rest } = f ?? {}
     return rest
   })
 }
@@ -3909,8 +3934,8 @@ function questionsOf(fields: unknown): unknown {
  *
  *   PUT /api/partner/forms/:externalRef
  *   { hub_user_id, title, description?, deadline?, status?: 'ACTIVE' | 'CLOSED',
- *     fields: [{ id, type: yesno|text|textarea|choice|signature|name, label,
- *                required?, options? }] }
+ *     fields: [{ id, type: yesno|text|textarea|choice|signature|name|pupil_choice,
+ *                label, required?, options?, pupilHubIds? }] }
  *   → 201 (created) or 200 (updated) with the form as stored
  *
  * Idempotent on the ref, so a retry or a re-publish edits the same form. The
@@ -3922,6 +3947,18 @@ function questionsOf(fields: unknown): unknown {
  *
  * `deadline` is an ISO time, or a bare date meaning the end of that day in the
  * school's zone; `null` clears it. Answers are refused after it.
+ *
+ * A `pupil_choice` field (C14, room-sharing friendship choices) carries
+ * `pupilHubIds`: 1 to 400 distinct Hub pupil ids. The parent picks one from a
+ * drop-down of those Connect knows, labelled "Jade W." and sorted by label,
+ * leaving out the child being answered for; ids Connect does not know are
+ * never offered. The answer is the chosen pupil's Hub id (absent, and null in
+ * the read, when left empty). POST /api/forms/:id/respond refuses a value not
+ * in the list, unknown to Connect, or the child being answered for (400
+ * invalid_choice), and one pupil chosen in two pupil choices for one child
+ * (400 duplicate_choice). Unlike `options`, `pupilHubIds` may change after
+ * answers exist; answers already given stay as stored. See
+ * services/pupilChoice.
  */
 router.put('/forms/:externalRef', requirePartner, async (req, res) => {
   try {

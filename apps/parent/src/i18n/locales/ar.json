@@ -85,7 +85,8 @@
     "payNow": "ادفع الآن",
     "answeringFor": "الإجابة عن {{name}}",
     "childProgress": "الطفل {{current}} من {{total}}",
-    "answeredFor": "تمت الإجابة عن {{name}}"
+    "answeredFor": "تمت الإجابة عن {{name}}",
+    "chooseFriend": "اختر صديقاً"
   },
   "events": {
     "title": "تقويم الفعاليات",

@@ -209,7 +209,7 @@ export interface MessageAcknowledgment {
 // 'checkbox' is ONE box, answered with a boolean. 'checkboxes' is a group,
 // answered with an array of the chosen option labels. Different answer shapes,
 // so they are different types rather than one type with a flag.
-export type FormFieldType = 'text' | 'textarea' | 'checkbox' | 'checkboxes' | 'select' | 'number' | 'date' | 'signature'
+export type FormFieldType = 'text' | 'textarea' | 'checkbox' | 'checkboxes' | 'select' | 'number' | 'date' | 'signature' | 'pupil_choice'
 
 export interface FormFieldCondition {
   fieldId: string    // which field to check
@@ -231,6 +231,9 @@ export interface FormField {
   partnerType?: string           // the publishing app's own type, on a partner form
   labelAr?: string               // the author's Arabic label, for a parent reading in Arabic
   optionsAr?: string[]           // Arabic for `options`, by position; the answer stays the English option
+  /** A pupil choice (C14), as a parent receives it: the pupils to choose from,
+   *  labelled "Jade W.". The answer is `value`, a Hub pupil id. */
+  pupilOptions?: Array<{ value: string; label: string }>
 }
 
 export type FormType = 'permission-consent' | 'trip-consent' | 'payment-request' | 'medical-info' | 'general-info' | 'quick-poll'
@@ -261,6 +264,8 @@ export interface Form {
 export interface FormChildState {
   studentId: string
   name: string
+  /** The child's Hub pupil id, so a pupil choice can leave the child out. */
+  hubPupilId?: string | null
   response: {
     id: string
     answers: Record<string, unknown>
@@ -292,6 +297,8 @@ export interface FormWithResponses extends Form {
     createdAt: string
   }>
   responseCount: number
+  /** Names of the pupils chosen in a pupil choice (C14), keyed by Hub pupil id. */
+  pupilNames?: Record<string, string>
 }
 
 export interface FormFieldStat {

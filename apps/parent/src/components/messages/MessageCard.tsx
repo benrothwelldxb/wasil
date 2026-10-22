@@ -6,6 +6,7 @@ import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
 import { formProgress } from '../../utils/perChildForm'
 import { readsArabic, fieldLabel, optionLabel } from '../../utils/arabicText'
+import { pupilChoiceOptions } from '../../utils/pupilChoice'
 
 interface MessageCardProps {
   message: Message
@@ -675,6 +676,33 @@ export function MessageCard({
                       ))}
                     </div>
                   )}
+
+                  {field.type === 'pupil_choice' && (() => {
+                    // A friend for a shared room (C14): a drop-down of the
+                    // trip's pupils, styled like a choice. The answer is the
+                    // chosen pupil's Hub id.
+                    const value = typeof answers[field.id] === 'string' ? (answers[field.id] as string) : ''
+                    const chosen = value !== ''
+                    return (
+                      <select
+                        value={value}
+                        onChange={e => updateAnswer(field.id, e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl text-sm font-semibold outline-none cursor-pointer"
+                        style={{
+                          border: chosen ? '2px solid #C4506E' : '1.5px solid #F0E4E6',
+                          backgroundColor: chosen ? '#FFF0F3' : '#FFFFFF',
+                          color: chosen ? '#C4506E' : '#4A3A40',
+                        }}
+                      >
+                        <option value="" disabled={field.required}>
+                          {t('messages.chooseFriend', { defaultValue: 'Choose a friend' })}
+                        </option>
+                        {pupilChoiceOptions(field, fields, answers, activeChild?.hubPupilId).map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    )
+                  })()}
 
                   {field.type === 'signature' && (
                     <SignaturePad

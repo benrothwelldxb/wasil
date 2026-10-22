@@ -9,6 +9,7 @@ import { sendNotification, resolveAudienceParentIds } from '../services/notify.j
 import { signalAdminNotice, unseenNoticeCount } from '../services/adminNotices.js'
 import { translateTexts } from '../services/translation.js'
 import { perChildFormStates, parentChildrenOf, type ChildFormState } from '../services/perChildForms.js'
+import { parentFieldsByForm } from '../services/pupilChoice.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
@@ -236,6 +237,7 @@ function serializeParentMessage(
   getTranslated: (t: string) => string,
   perChild: Map<string, ChildFormState[]> = new Map(),
   lang = 'en',
+  formFields: Map<string, unknown[]> = new Map(),
 ) {
   // A per-child form counts as answered only when every child it asks about
   // has an answer, whichever guardian gave it. `children` carries the detail,
@@ -270,7 +272,8 @@ function serializeParentMessage(
         description: authorArabic(lang, msg.form.descriptionAr, msg.form.description ? getTranslated(msg.form.description) : '') || null,
         type: msg.form.type,
         status: msg.form.status,
-        fields: msg.form.fields,
+        // A pupil choice (C14) arrives as named options, not Hub ids.
+        fields: formFields.get(msg.form.id) ?? msg.form.fields,
         targetClass: msg.form.targetClass,
         classIds: msg.form.classIds as string[],
         yearGroupIds: msg.form.yearGroupIds as string[],
@@ -345,7 +348,8 @@ router.get('/', isAuthenticated, async (req, res) => {
 
     const getTranslated = await buildTranslator(messages, user.preferredLanguage || 'en')
     const perChild = await perChildStatesFor(messages, user)
-    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en')))
+    const formFields = await parentFieldsByForm(messages.flatMap(m => m.form ? [m.form] : []))
+    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en', formFields)))
   } catch (error) {
     console.error('Error fetching messages:', error)
     res.status(500).json({ error: 'Failed to fetch messages' })
@@ -393,8 +397,9 @@ router.get('/archive', isAuthenticated, async (req, res) => {
 
     const getTranslated = await buildTranslator(page, user.preferredLanguage || 'en')
     const perChild = await perChildStatesFor(page, user)
+    const formFields = await parentFieldsByForm(page.flatMap(m => m.form ? [m.form] : []))
     res.json({
-      messages: page.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en')),
+      messages: page.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en', formFields)),
       nextCursor: hasMore ? page[page.length - 1].id : null,
     })
   } catch (error) {

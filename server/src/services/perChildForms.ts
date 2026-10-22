@@ -19,11 +19,14 @@ export interface ParentChild {
   lastName: string
   classId: string | null
   yearGroupId: string | null
+  hubPupilId?: string | null
 }
 
 export interface ChildFormState {
   studentId: string
   name: string
+  /** So a pupil choice (C14) can leave out the child being answered for. */
+  hubPupilId: string | null
   response: {
     id: string
     answers: unknown
@@ -38,7 +41,10 @@ export interface ChildFormState {
 export function parentChildrenOf(user: {
   studentLinks?: Array<{
     studentId: string
-    student: { firstName?: string; lastName?: string; classId?: string | null; class?: { yearGroupId?: string | null } | null }
+    student: {
+      firstName?: string; lastName?: string; classId?: string | null; hubPupilId?: string | null
+      class?: { yearGroupId?: string | null } | null
+    }
   }> | null
 }): ParentChild[] {
   return (user.studentLinks ?? []).map(l => ({
@@ -47,6 +53,7 @@ export function parentChildrenOf(user: {
     lastName: l.student.lastName ?? '',
     classId: l.student.classId ?? null,
     yearGroupId: l.student.class?.yearGroupId ?? null,
+    hubPupilId: l.student.hubPupilId ?? null,
   }))
 }
 
@@ -103,6 +110,7 @@ export async function perChildFormStates(
       return {
         studentId: child.id,
         name: `${child.firstName} ${child.lastName}`.trim(),
+        hubPupilId: child.hubPupilId ?? null,
         response: r ? {
           id: r.id,
           answers: r.answers,
