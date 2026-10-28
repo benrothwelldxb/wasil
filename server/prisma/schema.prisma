@@ -336,6 +336,7 @@ model User {
 
   // Activity relations
   messageAcks    MessageAcknowledgment[]
+  messageViews   MessageView[]
   formResponses  FormResponse[]
   eventRsvps     EventRsvp[]
   proposedEvents Event[]                 @relation("EventProposals")
@@ -774,6 +775,7 @@ model Message {
   form   Form?   @relation(fields: [formId], references: [id])
 
   acknowledgments MessageAcknowledgment[]
+  views           MessageView[]
   attachments     MessageAttachment[]
 
   createdAt DateTime @default(now())
@@ -2436,6 +2438,23 @@ model ConversationMessage {
   reactions   MessageReaction[]
 
   @@index([conversationId, createdAt])
+}
+
+/// A parent had this post on their screen. Not "read": nobody can know that.
+/// It is recorded when at least half the card has been visible for a second,
+/// which is the most an app can honestly claim, and is labelled "seen"
+/// everywhere for that reason. One row per parent per post, kept at the FIRST
+/// sighting — a school asking "has this family seen it" wants the earliest
+/// answer, and later scrolls past the same post add nothing.
+model MessageView {
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([messageId, userId])
+  @@index([userId])
 }
 
 model MessageReaction {

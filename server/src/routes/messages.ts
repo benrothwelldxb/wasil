@@ -12,6 +12,7 @@ import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
 import { parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
+import { postReach } from '../services/postReach.js'
 
 const router = Router()
 
@@ -165,6 +166,7 @@ function messageInclude(userId: string) {
   return {
     sender: { select: { id: true, name: true } },
     acknowledgments: { where: { userId } },
+    views: { where: { userId }, select: { userId: true } },
     _count: { select: { acknowledgments: true } },
     form: { include: { responses: { where: { userId } } } },
     attachments: true,
@@ -254,6 +256,8 @@ function serializeParentMessage(msg: any, getTranslated: (t: string) => string) 
       })),
       acknowledged: msg.acknowledgments.length > 0,
       acknowledgmentCount: msg._count.acknowledgments,
+      // Lets the card skip reporting a post this parent has already seen.
+      seen: msg.views.length > 0,
       createdAt: msg.createdAt.toISOString(),
   }
 }
@@ -907,6 +911,65 @@ router.delete('/:id', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error deleting message:', error)
     res.status(500).json({ error: 'Failed to delete message' })
+  }
+})
+
+/**
+ * The parent app reporting posts that have been on screen — see MessageView.
+ * Batched, because a dashboard scroll passes several at once.
+ *
+ * Parents only: a member of staff previewing the feed is not a family having
+ * seen it. Ids outside the parent's school are dropped rather than refused, so
+ * one stale id cannot lose the rest of the batch. Not audience-checked: a
+ * sighting by someone outside the audience changes no count, and the reach view
+ * lists such viewers separately rather than folding them in.
+ */
+const seenSchema = z.object({ ids: z.array(z.string().min(1)).min(1).max(50) })
+
+router.post('/seen', isAuthenticated, validate(seenSchema), async (req, res) => {
+  try {
+    const user = req.user!
+    if (user.role !== 'PARENT') return res.json({ recorded: 0 })
+
+    const ids = [...new Set((req.body as z.infer<typeof seenSchema>).ids)]
+    const posts = await prisma.message.findMany({
+      where: { id: { in: ids }, schoolId: user.schoolId },
+      select: { id: true },
+    })
+    if (posts.length === 0) return res.json({ recorded: 0 })
+
+    // skipDuplicates keeps the FIRST sighting, which is the one that answers
+    // "has this family seen it, and since when".
+    const { count } = await prisma.messageView.createMany({
+      data: posts.map(p => ({ messageId: p.id, userId: user.id })),
+      skipDuplicates: true,
+    })
+    res.json({ recorded: count })
+  } catch (error) {
+    console.error('Error recording seen posts:', error)
+    res.status(500).json({ error: 'Failed to record seen posts' })
+  }
+})
+
+// Who has seen a post, counted in children. See services/postReach.
+router.get('/:id/reach', isAdmin, async (req, res) => {
+  try {
+    const message = await prisma.message.findFirst({
+      where: { id: req.params.id, schoolId: req.user!.schoolId },
+      select: { id: true, schoolId: true, targetClass: true, classId: true, yearGroupId: true, groupId: true, scheduledAt: true },
+    })
+    if (!message) return res.status(404).json({ error: 'Message not found' })
+
+    const reach = await postReach(message)
+    res.json({
+      ...reach,
+      // Still waiting to go out: nobody can have seen it, and saying "0 of 52"
+      // would read as a failure rather than as not yet.
+      scheduled: !!message.scheduledAt && message.scheduledAt > new Date(),
+    })
+  } catch (error) {
+    console.error('Error fetching post reach:', error)
+    res.status(500).json({ error: 'Failed to fetch who has seen this post' })
   }
 })
 

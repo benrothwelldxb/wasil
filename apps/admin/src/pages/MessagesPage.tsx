@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react'
-import { Plus, X, Pencil, Trash2, Paperclip } from 'lucide-react'
+import { Plus, X, Pencil, Trash2, Paperclip, Eye } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant } from '@wasil/shared'
 import type { Message, Class, YearGroup, Group } from '@wasil/shared'
 import { MessageForm } from '../components/forms'
+import { PostReachModal } from '../components/PostReachModal'
 import type { MessageFormData, AudienceOption, AttachmentData } from '../components/forms'
 
 export function MessagesPage() {
@@ -23,6 +24,7 @@ export function MessagesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null)
+  const [reachFor, setReachFor] = useState<Message | null>(null)
   const [formData, setFormData] = useState<MessageFormData>({
     title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false, requiresAcknowledgment: false,
     scheduledAt: '', expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '',
@@ -269,6 +271,12 @@ export function MessagesPage() {
                 <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
                   <span>{new Date(message.createdAt).toLocaleDateString()}</span>
                   {message.acknowledgmentCount !== undefined && <span>{message.acknowledgmentCount} acknowledged</span>}
+                  {!message.isScheduled && (
+                    <button onClick={() => setReachFor(message)} className="flex items-center gap-1 font-medium hover:underline" style={{ color: theme.colors.brandColor }}>
+                      <Eye className="h-3.5 w-3.5" />
+                      Who's seen it
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="flex items-center space-x-2 ml-4">
@@ -279,6 +287,10 @@ export function MessagesPage() {
           </div>
         ))}
       </div>
+
+      {reachFor && (
+        <PostReachModal messageId={reachFor.id} title={reachFor.title} createdAt={reachFor.createdAt} onClose={() => setReachFor(null)} />
+      )}
 
       {deleteConfirm && (
         <ConfirmModal title="Delete Message?" message={`Are you sure you want to delete "${deleteConfirm.title}"? This action cannot be undone.`} confirmLabel="Delete" variant="danger" isLoading={isDeleting} onConfirm={handleDelete} onCancel={() => setDeleteConfirm(null)} />

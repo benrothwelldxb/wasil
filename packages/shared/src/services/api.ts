@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core'
 import type {
   User,
   Message,
+  PostReach,
   Form,
   FormWithResponses,
   FormField,
@@ -521,6 +522,14 @@ export const messages = {
     fetchApi<{ id: string; messageId: string }>(`/api/messages/${id}/ack`, {
       method: 'POST',
     }),
+  /** Posts that have been on this parent's screen. Batched by the caller. */
+  markSeen: (ids: string[]) =>
+    fetchApi<{ recorded: number }>('/api/messages/seen', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+  /** Who has seen a post, counted in children (admin). */
+  reach: (id: string) => fetchApi<PostReach>(`/api/messages/${id}/reach`),
 }
 
 
