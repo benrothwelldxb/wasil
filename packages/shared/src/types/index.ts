@@ -195,7 +195,28 @@ export interface Message {
   attachments?: MessageAttachment[]
   acknowledged?: boolean
   acknowledgmentCount?: number
+  /** This parent has had the post on screen (parent reads only). */
+  seen?: boolean
   createdAt: string
+}
+
+/** Who has seen a post. Counted in children: a child is reached once any
+ *  linked parent has seen it. "Seen" = on screen, or acknowledged. */
+export interface PostReachParent {
+  id: string
+  name: string
+  seenAt: string | null
+  acknowledgedAt: string | null
+}
+
+export interface PostReach {
+  scheduled: boolean
+  audienceKnown: boolean
+  children: { total: number; seen: number; noParentOnConnect: number }
+  parents: { total: number; seen: number }
+  rows: Array<{ studentId: string; name: string; className: string; seen: boolean; parents: PostReachParent[] }>
+  otherViewers: PostReachParent[]
+  trackingSince: string | null
 }
 
 export interface MessageAcknowledgment {

@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify'
 import { Share2, AlertTriangle, Pin, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
+import { reportPostSeen } from '../../services/postSeen'
 
 interface MessageCardProps {
   message: Message
@@ -251,6 +252,36 @@ export function MessageCard({
   // The clamp must not become a way to acknowledge six lines of a long post.
   const mustExpandToAcknowledge = clampable && overflowing && !expanded
 
+  // --- Seen ------------------------------------------------------------------
+  // Tells the school this post has been on this parent's screen: at least half
+  // the card (or half the screen) visible for a second. A second rather than any intersection, so a
+  // fast scroll past a card is not a sighting. Not "read" — nothing can know
+  // that — and the admin side says "seen" for the same reason. Skipped once the
+  // server already has it.
+  const cardRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = cardRef.current
+    if (!el || message.seen || typeof IntersectionObserver === 'undefined') return
+    let dwell: ReturnType<typeof setTimeout> | null = null
+    const observer = new IntersectionObserver(([entry]) => {
+      // Half the card, or half the screen: an urgent post is never clamped and
+      // can be taller than two screens, so half of IT may never be visible.
+      const viewport = entry.rootBounds?.height ?? window.innerHeight
+      const visible = entry.intersectionRatio >= 0.5 || entry.intersectionRect.height >= viewport * 0.5
+      if (visible) {
+        if (!dwell) dwell = setTimeout(() => { reportPostSeen(message.id); observer.disconnect() }, 1000)
+      } else if (dwell) {
+        clearTimeout(dwell)
+        dwell = null
+      }
+    }, { threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] })
+    observer.observe(el)
+    return () => {
+      if (dwell) clearTimeout(dwell)
+      observer.disconnect()
+    }
+  }, [message.id, message.seen])
+
   // Get initials for avatar
   const getInitials = (name: string) => {
     if (name === 'Whole School') return 'WS'
@@ -267,6 +298,7 @@ export function MessageCard({
 
   return (
     <div
+      ref={cardRef}
       className="bg-white overflow-hidden"
       style={{
         borderRadius: '22px',

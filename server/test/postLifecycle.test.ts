@@ -60,7 +60,7 @@ const post = (over: Record<string, unknown> = {}) => ({
   actionType: null, actionLabel: null, actionDueDate: null, actionAmount: null,
   isPinned: false, isUrgent: false, requiresAcknowledgment: false,
   expiresAt: null, formId: null, form: null, attachments: [],
-  acknowledgments: [], _count: { acknowledgments: 0 },
+  acknowledgments: [], views: [], _count: { acknowledgments: 0 },
   createdAt: new Date('2026-09-01T09:00:00.000Z'),
   ...over,
 })
