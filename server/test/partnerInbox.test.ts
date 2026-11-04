@@ -1221,7 +1221,7 @@ describe('GET /api/partner/groups', () => {
   it('lists active groups with memberCount, resolved by Hub-or-Connect id, key-set locked', async () => {
     prismaMock.school.findFirst.mockResolvedValue({ id: 'sch-1' })
     prismaMock.group.findMany.mockResolvedValue([
-      { id: 'g-1', name: 'Choir', _count: { studentMembers: 3 } },
+      { id: 'g-1', name: 'Choir', externalRef: null, sourceServiceId: null, ecaActivity: null, staffManagers: [], _count: { studentMembers: 3 } },
     ])
     const res = await auth(request(makeApp()).get('/api/partner/groups?school_id=hub-1'))
     expect(res.status).toBe(200)
@@ -1236,8 +1236,10 @@ describe('GET /api/partner/groups', () => {
       .map(c => c[0])
       .find(a => a?.select?.name === true)
     expect(listCall.where).toEqual({ schoolId: 'sch-1', isActive: true })
-    expect(res.body.groups[0]).toEqual({ id: 'g-1', name: 'Choir', memberCount: 3 })
-    expect(Object.keys(res.body.groups[0]).sort()).toEqual(['id', 'memberCount', 'name'])
+    expect(res.body.groups[0]).toEqual({
+      id: 'g-1', name: 'Choir', memberCount: 3, source: 'hand', managersEditable: true, staffManagers: [],
+    })
+    expect(Object.keys(res.body.groups[0]).sort()).toEqual(['id', 'managersEditable', 'memberCount', 'name', 'source', 'staffManagers'])
   })
 
   // A service-derived group is "the children currently in this service". Desk
@@ -1250,7 +1252,7 @@ describe('GET /api/partner/groups', () => {
       // The refresh's own query: one service group at this school.
       .mockResolvedValueOnce([{ id: 'g-svc' }])
       // The listing.
-      .mockResolvedValueOnce([{ id: 'g-svc', name: 'Friday aftercare', _count: { studentMembers: 6 } }])
+      .mockResolvedValueOnce([{ id: 'g-svc', name: 'Friday aftercare', externalRef: null, sourceServiceId: null, ecaActivity: null, staffManagers: [], _count: { studentMembers: 6 } }])
     prismaMock.group.findUnique.mockResolvedValue({
       id: 'g-svc', schoolId: 'sch-1', sourceServiceId: 'svc-1', sourceYearGroupId: null,
     })
@@ -1272,7 +1274,7 @@ describe('GET /api/partner/groups', () => {
   it('still answers when the refresh throws', async () => {
     prismaMock.group.findMany
       .mockResolvedValueOnce([{ id: 'g-svc' }])
-      .mockResolvedValueOnce([{ id: 'g-svc', name: 'Friday aftercare', _count: { studentMembers: 4 } }])
+      .mockResolvedValueOnce([{ id: 'g-svc', name: 'Friday aftercare', externalRef: null, sourceServiceId: null, ecaActivity: null, staffManagers: [], _count: { studentMembers: 4 } }])
     prismaMock.group.findUnique.mockRejectedValue(new Error('db blip'))
 
     const res = await auth(request(makeApp()).get('/api/partner/groups?school_id=hub-1'))
@@ -1463,6 +1465,10 @@ describe('GET /api/partner/groups/:id', () => {
     prismaMock.group.findFirst.mockResolvedValue({
       id: 'g-1',
       name: 'Choir',
+      externalRef: null,
+      sourceServiceId: null,
+      ecaActivity: null,
+      staffManagers: [],
       studentMembers: [
         { student: { hubPupilId: 'hp-1', firstName: 'Amina', lastName: 'Khan', class: { name: '1A' } } },
         { student: { hubPupilId: 'hp-2', firstName: 'Bilal', lastName: 'Khan', class: null } },
@@ -1473,6 +1479,9 @@ describe('GET /api/partner/groups/:id', () => {
     expect(res.body).toEqual({
       id: 'g-1',
       name: 'Choir',
+      source: 'hand',
+      managersEditable: true,
+      staffManagers: [],
       members: [
         { pupilHubId: 'hp-1', studentName: 'Amina Khan', className: '1A' },
         { pupilHubId: 'hp-2', studentName: 'Bilal Khan', className: null },
