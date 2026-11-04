@@ -50,6 +50,11 @@ jobs:
         run: npx prisma migrate status
       - name: Typecheck
         working-directory: server
+        # The server typecheck needs ~2.3 GB, past Node's default heap, and grows
+        # with the Prisma schema; at the default it dies with an OOM (exit 134)
+        # rather than a type error. Runners have 16 GB.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npx tsc --noEmit -p tsconfig.json
       - name: Unit tests
         working-directory: server
