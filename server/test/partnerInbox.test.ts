@@ -1189,7 +1189,7 @@ describe('GET /api/partner/messages/sent', () => {
   it('returns the sender\'s rows with ackCount from _count, key-set locked', async () => {
     prismaMock.user.findUnique.mockResolvedValue(STAFF)
     prismaMock.message.findMany.mockResolvedValue([
-      { id: 'm-1', title: 'Sports Day', targetClass: '1A', createdAt: new Date('2026-08-14T10:00:00.000Z'), _count: { acknowledgments: 5 } },
+      { id: 'm-1', title: 'Sports Day', targetClass: '1A', createdAt: new Date('2026-08-14T10:00:00.000Z'), expiresAt: new Date('2026-08-28T20:00:00.000Z'), archivedAt: null, _count: { acknowledgments: 5 } },
     ])
     const res = await auth(request(makeApp()).get('/api/partner/messages/sent?hub_user_id=hu-staff'))
     expect(res.status).toBe(200)
@@ -1201,8 +1201,10 @@ describe('GET /api/partner/messages/sent', () => {
     })
     expect(res.body.messages[0]).toEqual({
       id: 'm-1', title: 'Sports Day', audienceLabel: '1A', sentAt: '2026-08-14T10:00:00.000Z', ackCount: 5,
+      // Whether parents can still see it, judged here rather than by the caller.
+      expiresAt: '2026-08-28T20:00:00.000Z', isExpired: true, archivedAt: null,
     })
-    expect(Object.keys(res.body.messages[0]).sort()).toEqual(['ackCount', 'audienceLabel', 'id', 'sentAt', 'title'])
+    expect(Object.keys(res.body.messages[0]).sort()).toEqual(['ackCount', 'archivedAt', 'audienceLabel', 'expiresAt', 'id', 'isExpired', 'sentAt', 'title'])
   })
 })
 

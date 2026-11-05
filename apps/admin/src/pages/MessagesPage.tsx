@@ -52,6 +52,9 @@ export function MessagesPage() {
   // never acts on posts that are no longer on screen.
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [isArchiving, setIsArchiving] = useState(false)
+  // Set when an archive would take down a form still collecting replies; the
+  // archive waits for a second, informed click.
+  const [openFormWarning, setOpenFormWarning] = useState<Message[] | null>(null)
 
   const activeGroups = (groups || []).filter(g => g.isActive)
   const audienceOptions: AudienceOption[] = [
@@ -205,10 +208,25 @@ export function MessagesPage() {
 
   // Archive hides a post from parents and keeps it; restoring is one click in
   // the Archived view, so no confirmation step — the toast says where they went.
-  const handleBulkArchive = async () => {
+  // A form is still collecting replies while it is ACTIVE and before its
+  // deadline. Archiving its post hides the form from parents, so the replies
+  // simply stop — and a partner app that owns the form (Wasil Beyond's room
+  // and consent forms) is not told.
+  const stillCollecting = (m: Message) =>
+    !!m.form && m.form.status === 'ACTIVE' && (!m.form.expiresAt || new Date(m.form.expiresAt) > new Date())
+
+  const handleBulkArchive = async (confirmed = false) => {
     const ids = [...selected]
     if (ids.length === 0) return
     const archiving = filter !== 'archived'
+    if (archiving && !confirmed) {
+      const open = all.filter(m => selected.has(m.id) && stillCollecting(m))
+      if (open.length > 0) {
+        setOpenFormWarning(open)
+        return
+      }
+    }
+    setOpenFormWarning(null)
     setIsArchiving(true)
     try {
       const { changed } = await api.messages.bulkArchive(ids, archiving)
@@ -334,7 +352,7 @@ export function MessagesPage() {
             <>
               <span className="text-slate-500">{selected.size} selected</span>
               <button
-                onClick={handleBulkArchive}
+                onClick={() => handleBulkArchive()}
                 disabled={isArchiving}
                 className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-bold disabled:opacity-60"
                 style={{ backgroundColor: theme.colors.brandColor }}
@@ -417,6 +435,24 @@ export function MessagesPage() {
 
       {reachFor && (
         <PostReachModal messageId={reachFor.id} title={reachFor.title} createdAt={reachFor.createdAt} onClose={() => setReachFor(null)} />
+      )}
+
+      {openFormWarning && (
+        <ConfirmModal
+          title="Some of these posts have forms still open"
+          message={
+            `${openFormWarning.length === 1 ? 'One post carries a form' : `${openFormWarning.length} posts carry forms`} still collecting replies: ` +
+            openFormWarning.map(m => `"${m.form?.title || m.title}"${m.form?.expiresAt ? ` (closes ${new Date(m.form.expiresAt).toLocaleDateString()})` : ''}${m.form?.managedBy ? ` from ${m.form.managedBy === 'beyond' ? 'Wasil Beyond' : m.form.managedBy}` : ''}`).join(', ') +
+            '. Archiving hides the form from parents, so no more replies will arrive' +
+            (openFormWarning.some(m => m.form?.managedBy) ? ', and the app that sent it is not told' : '') +
+            '. Archive anyway, or untick them first.'
+          }
+          confirmLabel={`Archive all ${selected.size}`}
+          variant="danger"
+          isLoading={isArchiving}
+          onConfirm={() => handleBulkArchive(true)}
+          onCancel={() => setOpenFormWarning(null)}
+        />
       )}
 
       {deleteConfirm && (

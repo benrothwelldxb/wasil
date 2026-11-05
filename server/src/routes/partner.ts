@@ -3074,6 +3074,37 @@ function replayBroadcast(
 // poller the latest `limit` posts and silently skip any older ones it had not
 // yet seen. `next` is always present with `since`, and equals `since` when
 // nothing new has arrived, so a poller can store it unconditionally.
+/**
+ * Whether parents can still see a sent post, for a log that keeps every post.
+ *
+ * A post that has ended or been archived WAS told to parents, so the logs keep
+ * it — dropping it would make a school's record of what it sent lie by
+ * omission. But the log must not imply parents can still see it, so it says.
+ *
+ *   expiresAt   the stored end instant (fixed at send time, but extended if
+ *               a carried form's deadline moves later — so Connect's value,
+ *               not the caller's copy, is the true one).
+ *   isExpired   derived HERE from that instant against Connect's clock, so a
+ *               caller in another timezone never compares a boundary itself.
+ *   archivedAt  set when an admin took the post down; null otherwise.
+ *
+ * Across a fan-out the rows share one send, so the latest end and any archive
+ * describe the whole: it is gone only once every row is gone.
+ */
+function shownToParents(rows: { expiresAt: Date | null; archivedAt: Date | null }[], now = new Date()) {
+  const ends = rows.map(r => r.expiresAt)
+  const expiresAt = ends.some(e => e === null) ? null : ends.reduce<Date | null>((max, e) => (!max || e! > max ? e : max), null)
+  const archived = rows.every(r => r.archivedAt)
+  const archivedAt = archived
+    ? rows.reduce<Date | null>((max, r) => (!max || r.archivedAt! > max ? r.archivedAt : max), null)
+    : null
+  return {
+    expiresAt: expiresAt ? expiresAt.toISOString() : null,
+    isExpired: !!expiresAt && expiresAt <= now,
+    archivedAt: archivedAt ? archivedAt.toISOString() : null,
+  }
+}
+
 router.get('/messages', requirePartner, async (req, res) => {
   try {
     const schoolIdParam = typeof req.query.school_id === 'string' ? req.query.school_id.trim() : ''
@@ -3109,7 +3140,7 @@ router.get('/messages', requirePartner, async (req, res) => {
         classId: true, yearGroupId: true, groupId: true, formId: true,
         senderId: true, senderName: true,
         channel: true, department: true,
-        scheduledAt: true, notifiedAt: true, createdAt: true,
+        scheduledAt: true, notifiedAt: true, createdAt: true, expiresAt: true, archivedAt: true,
         sender: { select: { name: true } },
         class: { select: { name: true, hubClassId: true } },
         yearGroup: { select: { name: true } },
@@ -3186,6 +3217,7 @@ router.get('/messages', requirePartner, async (req, res) => {
         sentAt: head.notifiedAt ? head.notifiedAt.toISOString() : null,
         scheduledAt: head.scheduledAt ? head.scheduledAt.toISOString() : null,
         createdAt: head.createdAt.toISOString(),
+        ...shownToParents(members),
         // Summed across the fan-out rows, so a three-class broadcast reports
         // the acknowledgements for the whole thing.
         ackCount: members.reduce((n, m) => n + m._count.acknowledgments, 0),
@@ -3221,6 +3253,8 @@ router.get('/messages/sent', requirePartner, async (req, res) => {
         title: true,
         targetClass: true,
         createdAt: true,
+        expiresAt: true,
+        archivedAt: true,
         _count: { select: { acknowledgments: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -3234,6 +3268,7 @@ router.get('/messages/sent', requirePartner, async (req, res) => {
         audienceLabel: m.targetClass,
         sentAt: m.createdAt.toISOString(),
         ackCount: m._count.acknowledgments,
+        ...shownToParents([m]),
       })),
     })
   } catch (error) {
