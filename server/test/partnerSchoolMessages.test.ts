@@ -45,6 +45,7 @@ const row = (over: Record<string, unknown> = {}) => ({
   channel: 'FEED', department: null,
   scheduledAt: null, notifiedAt: new Date('2026-09-01T05:30:00Z'),
   createdAt: new Date('2026-09-01T05:30:00Z'),
+  expiresAt: null, archivedAt: null,
   sender: { name: 'Aisha Karim' },
   class: null, yearGroup: null, group: null,
   _count: { acknowledgments: 12 },
@@ -105,6 +106,42 @@ describe('GET /api/partner/messages', () => {
     expect(res.body.messages[0].audienceLabel).toBe('4F, 4G')
     // Summed, so the count describes the whole broadcast.
     expect(res.body.messages[0].ackCount).toBe(12)
+  })
+
+  // A post that ended or was archived WAS told to parents, so the log keeps
+  // it — but says parents can no longer see it, judged on Connect's clock so
+  // Desk never compares a boundary in another timezone.
+  describe('whether parents can still see it', () => {
+    it('reports a live post as live, with its end date', async () => {
+      prismaMock.message.findMany.mockResolvedValue([row({ expiresAt: new Date(Date.now() + 86_400_000) })])
+      const m = (await get()).body.messages[0]
+      expect(m.isExpired).toBe(false)
+      expect(m.archivedAt).toBeNull()
+      expect(typeof m.expiresAt).toBe('string')
+    })
+
+    it('reports an ended post as expired, and keeps it', async () => {
+      prismaMock.message.findMany.mockResolvedValue([row({ expiresAt: new Date('2026-09-15T20:00:00Z') })])
+      const m = (await get()).body.messages[0]
+      expect(m).toMatchObject({ expiresAt: '2026-09-15T20:00:00.000Z', isExpired: true, archivedAt: null })
+    })
+
+    it('reports an archived post with when it was archived', async () => {
+      prismaMock.message.findMany.mockResolvedValue([row({ archivedAt: new Date('2026-09-20T08:00:00Z') })])
+      const m = (await get()).body.messages[0]
+      expect(m).toMatchObject({ expiresAt: null, isExpired: false, archivedAt: '2026-09-20T08:00:00.000Z' })
+    })
+
+    // One send, several rows: gone only once every row is gone.
+    it('treats a multi-class send as archived only when every row is', async () => {
+      const when = new Date('2026-09-01T05:30:00Z')
+      prismaMock.message.findMany.mockResolvedValue([
+        row({ id: 'm-1', targetClass: '4F', classId: 'c1', class: { name: '4F', hubClassId: 'hc_4f' }, createdAt: when, archivedAt: new Date('2026-09-20T08:00:00Z') }),
+        row({ id: 'm-2', targetClass: '4G', classId: 'c2', class: { name: '4G', hubClassId: 'hc_4g' }, createdAt: when }),
+      ])
+      const m = (await get()).body.messages[0]
+      expect(m.archivedAt).toBeNull()
+    })
   })
 
   it('keeps two different broadcasts apart', async () => {

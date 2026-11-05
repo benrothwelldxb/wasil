@@ -195,7 +195,7 @@ export interface Message {
   /** Admin list only: taken down in a tidy-up. Hidden from parents, kept. */
   archivedAt?: string | null
   formId?: string
-  form?: Form & { userResponse?: FormResponseData | null }
+  form?: Form & { userResponse?: FormResponseData | null; responseCount?: number; managedBy?: string | null }
   attachments?: MessageAttachment[]
   acknowledged?: boolean
   acknowledgmentCount?: number

@@ -606,6 +606,10 @@ router.get('/all', isAdmin, async (req, res) => {
         status: msg.form.status,
         fields: msg.form.fields,
         responseCount: msg.form._count.responses,
+        // So the tidy-up can warn before archiving a post whose form is still
+        // collecting replies — and say when a partner app owns that form.
+        expiresAt: msg.form.expiresAt?.toISOString() ?? null,
+        managedBy: msg.form.managedBy ?? null,
       } : undefined,
       attachments: msg.attachments.map(a => ({
         id: a.id,
