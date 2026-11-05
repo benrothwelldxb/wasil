@@ -23,6 +23,8 @@ export const ACTIVITY_INTENT_EVENT_TYPES = [
   'fixture.availability_requested',
   'fixture.team_selected',
   'fixture.team_removed',
+  'fixture.cancelled',
+  'fixture.back_on',
 ] as const
 
 export type ActivityIntentEventType = (typeof ACTIVITY_INTENT_EVENT_TYPES)[number]
@@ -40,6 +42,8 @@ const NOTIFICATION_TYPE: Record<ActivityIntentEventType, string> = {
   'fixture.availability_requested': 'ECA_FIXTURE_AVAILABILITY',
   'fixture.team_selected': 'ECA_FIXTURE_TEAM',
   'fixture.team_removed': 'ECA_FIXTURE_TEAM',
+  'fixture.cancelled': 'ECA_FIXTURE_STATUS',
+  'fixture.back_on': 'ECA_FIXTURE_STATUS',
 }
 
 export interface ActivityIntent {
@@ -118,6 +122,15 @@ function composeFixtureCopy(
     }
   }
 
+  // The reason goes in word for word: the teacher wrote it for parents to read.
+  if (eventType === 'fixture.cancelled') {
+    const reason = stringField(payload, 'reason')
+    return {
+      title: `${childName}'s fixture is cancelled`,
+      body: `${fixture}${on} is cancelled.${reason ? ` ${reason}` : ''}`,
+    }
+  }
+
   const substitute = stringField(payload, 'role') === 'substitute'
   const changed = stringField(payload, 'previousRole') !== null
   const practical: string[] = []
@@ -129,6 +142,13 @@ function composeFixtureCopy(
   const kit = stringField(payload, 'kit')
   if (kit) practical.push(`Kit: ${kit}.`)
   const extra = practical.length ? ` ${practical.join(' ')}` : ''
+
+  if (eventType === 'fixture.back_on') {
+    return {
+      title: `${childName}'s fixture is back on`,
+      body: `${fixture}${on} is going ahead after all.${extra}`,
+    }
+  }
 
   if (changed) {
     return {
@@ -159,7 +179,9 @@ export function composeCopy(
   if (
     eventType === 'fixture.availability_requested' ||
     eventType === 'fixture.team_selected' ||
-    eventType === 'fixture.team_removed'
+    eventType === 'fixture.team_removed' ||
+    eventType === 'fixture.cancelled' ||
+    eventType === 'fixture.back_on'
   ) {
     return composeFixtureCopy(eventType, payload, childName)
   }
