@@ -182,6 +182,78 @@ describe('the body Active actually sends', () => {
   })
 })
 
+describe('fixtures', () => {
+  const fixture = {
+    fixtureId: 'fx-1',
+    fixtureName: 'U11 A Netball v DESS',
+    date: '2026-11-11',
+    meetAt: '14:00',
+    returnsAt: '17:30',
+    kit: 'Whites',
+  }
+  const sent = () => txMock.notification.createMany.mock.calls[0][0].data[0]
+  const send = (event_type: string, payload: Record<string, unknown>) =>
+    post(intent({ event_type, payload: { ...fixture, ...payload } }))
+
+  beforeEach(() => {
+    prismaMock.school.findUnique.mockResolvedValue({ id: 'school-1', activeScheduleEnabled: true })
+  })
+
+  it('tells a family their child is playing, with the times they plan around', async () => {
+    const res = await send('fixture.team_selected', { role: 'playing', previousRole: null })
+    expect(res.status).toBe(200)
+    expect(sent()).toMatchObject({
+      type: 'ECA_FIXTURE_TEAM',
+      title: 'Amina is in the team',
+      body: 'Amina is playing in U11 A Netball v DESS on Wednesday 11 November. Out of lessons from 14:00, back by 17:30. Kit: Whites.',
+      resourceType: 'ACTIVE_FIXTURE',
+      resourceId: 'fx-1',
+    })
+  })
+
+  it('says substitute when they are one', async () => {
+    await send('fixture.team_selected', { role: 'substitute', previousRole: null })
+    expect(sent().title).toBe('Amina is a substitute')
+  })
+
+  it('words a change of role as a change', async () => {
+    await send('fixture.team_selected', { role: 'substitute', previousRole: 'playing' })
+    expect(sent().title).toBe('Team change')
+    expect(sent().body).toContain('is now a substitute for')
+  })
+
+  it('tells a family their child has come out of the team', async () => {
+    await send('fixture.team_removed', {})
+    expect(sent().title).toBe('Team change')
+    expect(sent().body).toBe('Amina is no longer in the team for U11 A Netball v DESS on Wednesday 11 November.')
+  })
+
+  it('still reads properly with only the name', async () => {
+    await post(intent({ event_type: 'fixture.team_selected', payload: { fixtureName: 'Netball v DESS', role: 'playing' } }))
+    expect(sent().body).toBe('Amina is playing in Netball v DESS.')
+  })
+
+  it('asks whether they can play, and says where to answer', async () => {
+    await send('fixture.availability_requested', {})
+    expect(sent()).toMatchObject({ type: 'ECA_FIXTURE_AVAILABILITY', title: 'Can Amina play?' })
+    expect(sent().body).toContain('Open This Week')
+  })
+
+  it('does not ask when the school has no screen to answer it on', async () => {
+    prismaMock.school.findUnique.mockResolvedValue({ id: 'school-1', activeScheduleEnabled: false })
+    const res = await send('fixture.availability_requested', {})
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ status: 'UNDELIVERABLE', reason: 'this_week_off', recipients: 0 })
+    expect(txMock.notification.createMany).not.toHaveBeenCalled()
+  })
+
+  it('still sends team news when that screen is off, since it asks nothing', async () => {
+    prismaMock.school.findUnique.mockResolvedValue({ id: 'school-1', activeScheduleEnabled: false })
+    const res = await send('fixture.team_selected', { role: 'playing' })
+    expect(res.body.status).toBe('DELIVERED')
+  })
+})
+
 describe('idempotency — Active WILL present the same key twice', () => {
   it('returns the original result and sends nothing the second time', async () => {
     prismaMock.partnerIntent.findUnique.mockResolvedValue({

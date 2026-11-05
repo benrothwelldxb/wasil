@@ -2690,6 +2690,22 @@ export interface ThisWeekResponse {
   clubsPublished?: boolean
 }
 
+/** A question the school has asked about a child and a fixture. */
+export interface ThisWeekAvailabilityAsk {
+  fixtureId: string
+  studentId: string
+  childName: string
+  /** Already composed by Active. */
+  name: string
+  /** YYYY-MM-DD and wall clock at the school. Never converted. */
+  date: string
+  startsAt: string
+  venue: string | null
+  travelling: boolean
+  state: 'available' | 'unavailable' | 'unknown'
+  respondedVia: 'parent' | 'staff' | null
+}
+
 /**
  * Wasil Inclusion — a child's SEND plan, documents and therapy sessions.
  *
@@ -2798,6 +2814,12 @@ export const thisWeek = {
     fetchApi<ThisWeekResponse>(
       `/api/this-week/child/${studentId}${weekOf ? `?weekOf=${weekOf}` : ''}`,
     ),
+  availability: () => fetchApi<{ asks: ThisWeekAvailabilityAsk[] }>('/api/this-week/availability'),
+  replyAvailability: (body: { studentId: string; fixtureId: string; state: 'available' | 'unavailable' }) =>
+    fetchApi<{ ok: true }>('/api/this-week/availability', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 }
 
 // Attendance

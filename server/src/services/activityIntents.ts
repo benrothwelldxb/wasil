@@ -7,7 +7,7 @@ import { enqueuePush } from './outbox.js'
  * Active is the system of record for extra-curricular activities — programmes,
  * staffing, choices, allocation, attendance. Connect consumes the outcome and
  * tells the family. Nothing here models any of Active's domain; `payload` is
- * carried opaquely and only read for the couple of fields that go into the copy.
+ * carried opaquely and only read for the fields that go into the copy.
  *
  * The delivery path is the one Connect already uses for a per-child ECA
  * notification (see sendEcaInvitationNotification in notify.ts): a Notification
@@ -20,6 +20,9 @@ import { enqueuePush } from './outbox.js'
 export const ACTIVITY_INTENT_EVENT_TYPES = [
   'activity.assignment_confirmed',
   'activity.assignment_waitlisted',
+  'fixture.availability_requested',
+  'fixture.team_selected',
+  'fixture.team_removed',
 ] as const
 
 export type ActivityIntentEventType = (typeof ACTIVITY_INTENT_EVENT_TYPES)[number]
@@ -34,6 +37,9 @@ export function isKnownEventType(value: string): value is ActivityIntentEventTyp
 const NOTIFICATION_TYPE: Record<ActivityIntentEventType, string> = {
   'activity.assignment_confirmed': 'ECA_ASSIGNMENT_CONFIRMED',
   'activity.assignment_waitlisted': 'ECA_ASSIGNMENT_WAITLISTED',
+  'fixture.availability_requested': 'ECA_FIXTURE_AVAILABILITY',
+  'fixture.team_selected': 'ECA_FIXTURE_TEAM',
+  'fixture.team_removed': 'ECA_FIXTURE_TEAM',
 }
 
 export interface ActivityIntent {
@@ -67,6 +73,77 @@ function numberField(payload: Record<string, unknown>, key: string): number | nu
 }
 
 /**
+ * "Wednesday 11 November", from a YYYY-MM-DD at the school.
+ *
+ * Built from the string's own parts. Active sends the school's calendar day, and
+ * reading it as an instant and formatting it in another zone is how a parent
+ * gets told the wrong day.
+ */
+function fixtureDate(date: string | null): string | null {
+  const match = date?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return null
+  const at = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+  const weekday = at.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' })
+  const dayMonth = at.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' })
+  return `${weekday} ${dayMonth}`
+}
+
+/**
+ * What a parent is told about a fixture.
+ *
+ * Times are wall clock at the school and already formatted by Active, so they go
+ * into the sentence as they are. Anything missing is left out, and the sentence
+ * has to still read properly without it.
+ */
+function composeFixtureCopy(
+  eventType: Extract<ActivityIntentEventType, `fixture.${string}`>,
+  payload: Record<string, unknown>,
+  childName: string
+): { title: string; body: string } {
+  const fixture = stringField(payload, 'fixtureName') ?? 'a fixture'
+  const date = fixtureDate(stringField(payload, 'date'))
+  const on = date ? ` on ${date}` : ''
+
+  if (eventType === 'fixture.availability_requested') {
+    return {
+      title: `Can ${childName} play?`,
+      body: `${fixture}${on}. Open This Week in Connect to reply.`,
+    }
+  }
+
+  if (eventType === 'fixture.team_removed') {
+    return {
+      title: 'Team change',
+      body: `${childName} is no longer in the team for ${fixture}${on}.`,
+    }
+  }
+
+  const substitute = stringField(payload, 'role') === 'substitute'
+  const changed = stringField(payload, 'previousRole') !== null
+  const practical: string[] = []
+  const out = stringField(payload, 'meetAt') ?? stringField(payload, 'departsAt')
+  const back = stringField(payload, 'returnsAt')
+  if (out && back) practical.push(`Out of lessons from ${out}, back by ${back}.`)
+  else if (out) practical.push(`Out of lessons from ${out}.`)
+  else if (back) practical.push(`Back by ${back}.`)
+  const kit = stringField(payload, 'kit')
+  if (kit) practical.push(`Kit: ${kit}.`)
+  const extra = practical.length ? ` ${practical.join(' ')}` : ''
+
+  if (changed) {
+    return {
+      title: 'Team change',
+      body: substitute
+        ? `${childName} is now a substitute for ${fixture}${on}.${extra}`
+        : `${childName} is now playing in ${fixture}${on}.${extra}`,
+    }
+  }
+  return substitute
+    ? { title: `${childName} is a substitute`, body: `${childName} is a substitute for ${fixture}${on}.${extra}` }
+    : { title: `${childName} is in the team`, body: `${childName} is playing in ${fixture}${on}.${extra}` }
+}
+
+/**
  * The words a parent actually reads.
  *
  * `activityName` is read defensively rather than required: Active's payload is
@@ -79,6 +156,14 @@ export function composeCopy(
   payload: Record<string, unknown>,
   childName: string
 ): { title: string; body: string } {
+  if (
+    eventType === 'fixture.availability_requested' ||
+    eventType === 'fixture.team_selected' ||
+    eventType === 'fixture.team_removed'
+  ) {
+    return composeFixtureCopy(eventType, payload, childName)
+  }
+
   const activity = stringField(payload, 'activityName') ?? 'an activity'
 
   if (eventType === 'activity.assignment_confirmed') {
@@ -160,9 +245,16 @@ export async function recordIntent(intent: ActivityIntent): Promise<IntentResult
   try {
     const school = await prisma.school.findUnique({
       where: { hubSchoolId: intent.hubSchoolId },
-      select: { id: true },
+      select: { id: true, activeScheduleEnabled: true },
     })
     if (!school) return await undeliverable('unknown_school')
+
+    // A question with nowhere to answer it is worse than no question: the reply
+    // buttons live on This Week. Recorded with a reason so Active can tell the
+    // teacher, rather than a parent being asked and left unable to say.
+    if (intent.eventType === 'fixture.availability_requested' && !school.activeScheduleEnabled) {
+      return await undeliverable('this_week_off', { schoolId: school.id })
+    }
 
     if (!intent.hubPupilId) return await undeliverable('no_pupil', { schoolId: school.id })
 
@@ -206,6 +298,10 @@ export async function recordIntent(intent: ActivityIntent): Promise<IntentResult
 
     const { title, body } = composeCopy(intent.eventType, intent.payload, student.firstName)
     const activityId = stringField(intent.payload, 'activityId')
+    const fixtureId = stringField(intent.payload, 'fixtureId')
+    const isFixture = intent.eventType.startsWith('fixture.')
+    const resourceType = isFixture ? 'ACTIVE_FIXTURE' : 'ECA_ACTIVITY'
+    const resourceId = isFixture ? fixtureId : activityId
 
     const deviceTokens = await prisma.deviceToken.findMany({
       where: { userId: { in: parentIds } },
@@ -230,8 +326,8 @@ export async function recordIntent(intent: ActivityIntent): Promise<IntentResult
           type: NOTIFICATION_TYPE[intent.eventType],
           title,
           body,
-          resourceType: 'ECA_ACTIVITY',
-          resourceId: activityId,
+          resourceType,
+          resourceId,
           data: { ...intent.payload, studentId: student.id, eventType: intent.eventType },
           schoolId: school.id,
         })),
@@ -246,8 +342,9 @@ export async function recordIntent(intent: ActivityIntent): Promise<IntentResult
             body,
             data: {
               type: NOTIFICATION_TYPE[intent.eventType],
-              resourceType: 'ECA_ACTIVITY',
+              resourceType,
               ...(activityId ? { resourceId: activityId, activityId } : {}),
+              ...(isFixture && fixtureId ? { resourceId: fixtureId, fixtureId } : {}),
               studentId: student.id,
             },
           },

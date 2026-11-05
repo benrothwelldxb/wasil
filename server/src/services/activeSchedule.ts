@@ -178,3 +178,72 @@ export async function fetchChildWeek(opts: {
     clubsPublished: data.clubs_published,
   }
 }
+
+/** One question Active has open for a child. Connect keeps no copy. */
+export interface ActiveAvailabilityAsk {
+  fixture_id: string
+  hub_pupil_id: string
+  /** Already composed, like a schedule item's name. */
+  name: string
+  /** YYYY-MM-DD and wall clock at the school. Never converted. */
+  date: string
+  starts_at: string
+  venue?: string | null
+  travelling: boolean
+  state: 'available' | 'unavailable' | 'unknown'
+  responded_via?: 'parent' | 'staff' | null
+}
+
+/**
+ * The questions still open for these children.
+ *
+ * Callers must only pass pupils they have already checked are the requester's
+ * own. Active cannot check that, and answers for whichever pupils it is asked.
+ */
+export async function fetchOpenAvailability(opts: {
+  hubSchoolId: string
+  hubPupilIds: string[]
+}): Promise<ActiveAvailabilityAsk[]> {
+  if (!baseUrl()) throw new ActiveNotConfiguredError('ACTIVE_API_URL')
+  if (!serviceToken()) throw new ActiveNotConfiguredError('ACTIVE_PARTNER_TOKEN')
+
+  const params = new URLSearchParams({
+    school_id: opts.hubSchoolId,
+    hub_pupil_ids: opts.hubPupilIds.join(','),
+  })
+  const res = await fetch(`${baseUrl()}/api/partner/availability?${params.toString()}`, {
+    headers: { authorization: `Bearer ${serviceToken()}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    throw new ActiveScheduleError(res.status, (await res.text().catch(() => '')) || res.statusText)
+  }
+  const data = (await res.json()) as { asks?: ActiveAvailabilityAsk[] }
+  return data.asks ?? []
+}
+
+/** Pass a parent's answer to Active. Same rule as above: guardian check first. */
+export async function sendAvailabilityReply(opts: {
+  hubSchoolId: string
+  hubPupilId: string
+  fixtureId: string
+  state: 'available' | 'unavailable'
+}): Promise<void> {
+  if (!baseUrl()) throw new ActiveNotConfiguredError('ACTIVE_API_URL')
+  if (!serviceToken()) throw new ActiveNotConfiguredError('ACTIVE_PARTNER_TOKEN')
+
+  const res = await fetch(`${baseUrl()}/api/partner/availability`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${serviceToken()}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      school_id: opts.hubSchoolId,
+      fixture_id: opts.fixtureId,
+      hub_pupil_id: opts.hubPupilId,
+      state: opts.state,
+    }),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    throw new ActiveScheduleError(res.status, (await res.text().catch(() => '')) || res.statusText)
+  }
+}
