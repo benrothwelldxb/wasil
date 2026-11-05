@@ -134,6 +134,15 @@ describe('PUT /groups/:id/managers', () => {
     expect(prismaMock.staffGroupAssignment.deleteMany).not.toHaveBeenCalled()
   })
 
+  // The explicit claim, not just the ref convention: Beyond's trip groups.
+  it('refuses a group a partner claims with managedBy', async () => {
+    prismaMock.group.findUnique.mockResolvedValue({ ...HAND_GROUP, managedBy: 'beyond' })
+    const res = await put({ managers: [{ hubUserId: 'hu-teach' }] })
+
+    expect(res.status).toBe(409)
+    expect(res.body).toEqual({ error: 'managers_owned_elsewhere', source: 'published' })
+  })
+
   it('refuses a duplicate rather than guessing which flags were meant', async () => {
     const res = await put({ managers: [{ hubUserId: 'hu-teach' }, { hubUserId: 'hu-teach', canManage: true }] })
     expect(res.status).toBe(400)
@@ -154,7 +163,8 @@ describe('managers on the group reads', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.groups[0]).toEqual({
-      id: 'g-1', name: 'Swimming squad', memberCount: 12, source: 'hand', managersEditable: true,
+      id: 'g-1', name: 'Swimming squad', memberCount: 12, externalRef: null, managedBy: null,
+      source: 'hand', managersEditable: true,
       staffManagers: [{ hubUserId: 'hu-teach', name: 'Sarah Khan', canMessage: true, canManage: true }],
     })
     expect(res.body.groups[1]).toMatchObject({ source: 'published', managersEditable: false, staffManagers: [] })

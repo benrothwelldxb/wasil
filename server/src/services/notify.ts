@@ -1,6 +1,7 @@
 import { Request } from 'express'
 import prisma from './prisma.js'
 import { refreshServiceGroup } from './serviceGroups.js'
+import { parentHiddenMessageWhere } from './partnerSwitch.js'
 import { enqueuePush, enqueueEmail } from './outbox.js'
 
 // Notification types that warrant an email fallback when the parent has been
@@ -274,6 +275,13 @@ export async function resolveAudienceParentIds(target: NotificationTarget): Prom
 export async function sendNotification({ req, type, title, body, resourceType, resourceId, data, target }: SendNotificationParams): Promise<void> {
   try {
     const { schoolId } = target
+
+    // A post parents cannot see (its school has turned the partner that owns
+    // it off, e.g. a staff post to a Wasil Beyond trip group) is not announced.
+    if (resourceType === 'MESSAGE' && resourceId) {
+      const hidden = await prisma.message.count({ where: { id: resourceId, ...parentHiddenMessageWhere() } })
+      if (hidden > 0) return
+    }
 
     let parentUserIds = await resolveAudienceParentIds(target)
     if (parentUserIds.length === 0) return

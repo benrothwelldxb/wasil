@@ -6,6 +6,20 @@ import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../mid
 import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { tenant } from '../services/tenant.js'
+import { perChildFormStates, parentChildrenOf } from '../services/perChildForms.js'
+import { managedByLabel } from '../services/groupOwnership.js'
+import { parentVisibleFormWhere } from '../services/partnerSwitch.js'
+import { checkPupilChoices, chosenPupilNames, isPupilChoice } from '../services/pupilChoice.js'
+
+/** A form a partner app publishes is changed in that app, as its groups are. */
+function managedFormBody(managedBy: string) {
+  const label = managedByLabel(managedBy)
+  return {
+    error: `This form is managed by ${label}. Change it in ${label}, not here.`,
+    code: 'form_managed_elsewhere',
+    managedBy,
+  }
+}
 
 const router = Router()
 
@@ -178,7 +192,13 @@ router.get('/all', isAdmin, async (req, res) => {
       orderBy: { createdAt: 'desc' },
     })
 
-    res.json(forms.map(form => serializeForm(form, {
+    // A pupil choice's answer is a Hub pupil id; the school's admins see the
+    // chosen child's name (C14).
+    const names = await Promise.all(forms.map(form =>
+      chosenPupilNames(form.schoolId, form.fields, form.responses.map(r => r.answers))))
+
+    res.json(forms.map((form, i) => serializeForm(form, {
+      ...(Object.keys(names[i]).length > 0 ? { pupilNames: names[i] } : {}),
       responses: form.responses.map(r => ({
         id: r.id,
         answers: r.answers,
@@ -243,6 +263,9 @@ router.put('/:id', isAdmin, validate(updateFormSchema), async (req, res) => {
     if (!existing) {
       return res.status(404).json({ error: 'Form not found' })
     }
+    if (existing.managedBy) {
+      return res.status(409).json(managedFormBody(existing.managedBy))
+    }
 
     const form = await prisma.form.update({
       where: { id },
@@ -282,6 +305,11 @@ router.delete('/:id', isAdmin, async (req, res) => {
     if (!existing) {
       return res.status(404).json({ error: 'Form not found' })
     }
+    // Deleting a form cascades to its answers, and a partner form's answers are
+    // a trip's consent record. Never an admin's call from here.
+    if (existing.managedBy) {
+      return res.status(409).json(managedFormBody(existing.managedBy))
+    }
 
     await prisma.form.delete({ where: { id } })
 
@@ -295,14 +323,26 @@ router.delete('/:id', isAdmin, async (req, res) => {
 })
 
 // Submit form response
+//   POST /api/forms/:id/respond  { answers, studentId? }
+//
+// A per-child form (Form.perChild) is answered once per CHILD: `studentId` is
+// required, must be one of this parent's children the form is asking about
+// (see services/perChildForms), and the answer is stored against the child, so
+// a second guardian answering for the same child replaces it. The form's
+// deadline is enforced: consent given after it closed is not consent the trip
+// can rely on. An ordinary form is answered once per parent, as before.
 router.post('/:id/respond', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
     const { id } = req.params
-    const { answers } = req.body
+    const { answers, studentId } = req.body ?? {}
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+      return res.status(400).json({ error: 'answers required' })
+    }
 
     const form = await prisma.form.findFirst({
-      where: tenant(user.schoolId, { id, status: 'ACTIVE' }),
+      // A partner form is not answerable while its school has the partner off.
+      where: tenant(user.schoolId, { id, status: 'ACTIVE', AND: parentVisibleFormWhere() }),
     })
 
     if (!form) {
@@ -323,20 +363,66 @@ router.post('/:id/respond', isAuthenticated, async (req, res) => {
       }
     }
 
-    const response = await prisma.formResponse.upsert({
-      where: {
-        formId_userId: {
-          formId: id,
-          userId: user.id,
-        },
-      },
-      update: { answers },
-      create: {
-        formId: id,
-        userId: user.id,
-        answers,
-      },
+    if (form.perChild) {
+      if (form.expiresAt && form.expiresAt <= new Date()) {
+        return res.status(409).json({ error: 'This form has closed' })
+      }
+      if (typeof studentId !== 'string' || !studentId) {
+        return res.status(400).json({ error: 'Choose which child this answer is for' })
+      }
+      const full = await loadUserWithRelations(user.id)
+      const states = await perChildFormStates([form.id], parentChildrenOf(full ?? {}))
+      // Not one of this parent's children, or not one the form is asking about:
+      // the same answer either way, so it says nothing about other families.
+      if (!(states.get(form.id) ?? []).some(c => c.studentId === studentId)) {
+        return res.status(403).json({ error: 'This form is not asking about that child' })
+      }
+      // A pupil choice (C14) must be one of its pupils, a pupil Connect knows,
+      // not this child, and not chosen twice for this child.
+      const checked = await checkPupilChoices(form.schoolId, fields, answers, studentId)
+      if (!checked.ok) {
+        return res.status(400).json({ error: checked.error, field: checked.field, message: checked.message })
+      }
+      const stored = checked.answers as typeof answers
+      const response = await prisma.formResponse.upsert({
+        where: { formId_studentId: { formId: id, studentId } },
+        update: { answers: stored, userId: user.id },
+        create: { formId: id, userId: user.id, studentId, answers: stored },
+      })
+      return res.json({
+        id: response.id,
+        formId: response.formId,
+        userId: response.userId,
+        studentId: response.studentId,
+        answers: response.answers,
+        createdAt: response.createdAt.toISOString(),
+      })
+    }
+
+    // Once per parent. This was an upsert on @@unique([formId, userId]); that
+    // unique is now a PARTIAL index (studentId IS NULL), which Prisma cannot
+    // address, so it is find-then-write — and a lost race on the index is
+    // answered by updating the row the winner made.
+    const existing = await prisma.formResponse.findFirst({
+      where: { formId: id, userId: user.id, studentId: null },
+      select: { id: true },
     })
+    let response
+    if (existing) {
+      response = await prisma.formResponse.update({ where: { id: existing.id }, data: { answers } })
+    } else {
+      try {
+        response = await prisma.formResponse.create({ data: { formId: id, userId: user.id, answers } })
+      } catch (error: unknown) {
+        if ((error as { code?: string })?.code !== 'P2002') throw error
+        const winner = await prisma.formResponse.findFirst({
+          where: { formId: id, userId: user.id, studentId: null },
+          select: { id: true },
+        })
+        if (!winner) throw error
+        response = await prisma.formResponse.update({ where: { id: winner.id }, data: { answers } })
+      }
+    }
 
     res.json({
       id: response.id,
@@ -396,6 +482,8 @@ router.get('/:id/export', isAdmin, async (req, res) => {
     }
 
     const fields = form.fields as Array<{ id: string; label: string; type: string }>
+    // A pupil choice's answer is a Hub pupil id: the export names the child.
+    const pupilNames = await chosenPupilNames(form.schoolId, form.fields, form.responses.map(r => r.answers))
 
     // Build CSV header
     const headers = [
@@ -424,6 +512,7 @@ router.get('/:id/export', isAdmin, async (req, res) => {
         const val = answers[f.id]
         if (val === undefined || val === null) return ''
         if (f.type === 'checkbox') return val ? 'Yes' : 'No'
+        if (isPupilChoice(f) && typeof val === 'string') return pupilNames[val] ?? val
         // Joined with '; ' rather than left to String(array)'s commas — the same
         // separator the children/classes columns use, and it survives escapeCSV
         // without turning one answer into several columns.
@@ -792,6 +881,8 @@ router.get('/public-export/:token', async (req, res) => {
     // nobody is told about.
 
     const fields = form.fields as Array<{ id: string; label: string; type: string }>
+    // A pupil choice's answer is a Hub pupil id: the export names the child.
+    const pupilNames = await chosenPupilNames(form.schoolId, form.fields, form.responses.map(r => r.answers))
 
     // Build CSV header
     const headers = [
@@ -820,6 +911,7 @@ router.get('/public-export/:token', async (req, res) => {
         const val = answers[f.id]
         if (val === undefined || val === null) return ''
         if (f.type === 'checkbox') return val ? 'Yes' : 'No'
+        if (isPupilChoice(f) && typeof val === 'string') return pupilNames[val] ?? val
         // Joined with '; ' rather than left to String(array)'s commas — the same
         // separator the children/classes columns use, and it survives escapeCSV
         // without turning one answer into several columns.

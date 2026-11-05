@@ -82,7 +82,11 @@
     "formDaysRemaining": "نموذج يتطلب إدخال بياناتك — {{days}} يومًا متبقيًا",
     "completed": "مكتمل",
     "wholeSchool": "المدرسة بأكملها",
-    "payNow": "ادفع الآن"
+    "payNow": "ادفع الآن",
+    "answeringFor": "الإجابة عن {{name}}",
+    "childProgress": "الطفل {{current}} من {{total}}",
+    "answeredFor": "تمت الإجابة عن {{name}}",
+    "chooseFriend": "اختر صديقاً"
   },
   "events": {
     "title": "تقويم الفعاليات",

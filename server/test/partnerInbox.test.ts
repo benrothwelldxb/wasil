@@ -1090,7 +1090,8 @@ describe('POST /api/partner/messages', () => {
     })
 
     expect(res.status).toBe(201)
-    expect(res.body).toEqual({ created: 4, parents: 2 })
+    // messageIds joined the response so a publisher can find its post again.
+    expect(res.body).toEqual({ created: 4, parents: 2, messageIds: ['msg-1', 'msg-2', 'msg-3', 'msg-4'] })
 
     // Validation was school-scoped and up front.
     expect(prismaMock.class.findMany).toHaveBeenCalledWith({
@@ -1099,7 +1100,8 @@ describe('POST /api/partner/messages', () => {
     })
     expect(prismaMock.group.findMany).toHaveBeenCalledWith({
       where: { id: { in: ['g-1'] }, schoolId: 'sch-1' },
-      select: { id: true, name: true },
+      // isActive, so a post to an archived group can be refused.
+      select: { id: true, name: true, isActive: true },
     })
 
     // One Message row per target, in order class → group → whole-school.
@@ -1161,7 +1163,7 @@ describe('POST /api/partner/messages', () => {
     const res = await auth(request(makeApp()).post('/api/partner/messages'))
       .send({ hub_user_id: 'hu-staff', title: 'T', content: 'C', audience: { yearGroupId: 'yg-1' } })
     expect(res.status).toBe(201)
-    expect(res.body).toEqual({ created: 1, parents: 2 })
+    expect(res.body).toEqual({ created: 1, parents: 2, messageIds: ['msg-1'] })
     expect(prismaMock.message.create.mock.calls[0][0].data).toMatchObject({ targetClass: 'Year 1', yearGroupId: 'yg-1' })
   })
 
@@ -1237,10 +1239,14 @@ describe('GET /api/partner/groups', () => {
       .map(c => c[0])
       .find(a => a?.select?.name === true)
     expect(listCall.where).toEqual({ schoolId: 'sch-1', isActive: true })
+    // externalRef and managedBy are the ownership lock (Desk shows "Managed by
+    // Wasil Beyond"); source / managersEditable / staffManagers are who looks
+    // after the group.
     expect(res.body.groups[0]).toEqual({
-      id: 'g-1', name: 'Choir', memberCount: 3, source: 'hand', managersEditable: true, staffManagers: [],
+      id: 'g-1', name: 'Choir', memberCount: 3, externalRef: null, managedBy: null,
+      source: 'hand', managersEditable: true, staffManagers: [],
     })
-    expect(Object.keys(res.body.groups[0]).sort()).toEqual(['id', 'managersEditable', 'memberCount', 'name', 'source', 'staffManagers'])
+    expect(Object.keys(res.body.groups[0]).sort()).toEqual(['externalRef', 'id', 'managedBy', 'managersEditable', 'memberCount', 'name', 'source', 'staffManagers'])
   })
 
   // A service-derived group is "the children currently in this service". Desk
@@ -1480,6 +1486,8 @@ describe('GET /api/partner/groups/:id', () => {
     expect(res.body).toEqual({
       id: 'g-1',
       name: 'Choir',
+      externalRef: null,
+      managedBy: null,
       source: 'hand',
       managersEditable: true,
       staffManagers: [],
@@ -1608,7 +1616,7 @@ describe('DELETE /api/partner/groups/:id', () => {
     prismaMock.group.update.mockResolvedValue({ id: 'g-1' })
     const res = await auth(request(makeApp()).delete('/api/partner/groups/g-1')).send({ hub_user_id: 'hu-staff' })
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ ok: true })
+    expect(res.body).toEqual({ ok: true, id: 'g-1' })
     expect(prismaMock.group.update).toHaveBeenCalledWith({ where: { id: 'g-1' }, data: { isActive: false } })
   })
 })

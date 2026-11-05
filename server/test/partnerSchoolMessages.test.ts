@@ -15,6 +15,7 @@ const prismaMock = {
   partnerToken: { findUnique: vi.fn(), update: vi.fn() },
   school: { findFirst: vi.fn() },
   message: { findMany: vi.fn() },
+  group: { findFirst: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 vi.mock('../src/services/logger', () => ({
@@ -172,5 +173,88 @@ describe('GET /api/partner/messages', () => {
   it('401 without a partner token', async () => {
     const res = await request(makeApp()).get('/api/partner/messages?school_id=hub-1')
     expect(res.status).toBe(401)
+  })
+})
+
+/**
+ * The filters a publisher polls with: Beyond copies every post sent to a trip
+ * group, from Desk, Connect or itself, into the trip's message log. Reading the
+ * whole school's last 200 posts and filtering would let a busy week push a trip
+ * post out of the window between polls.
+ */
+describe('GET /api/partner/messages — group_id and since', () => {
+  const get = (q: string) => auth(request(makeApp()).get(`/api/partner/messages?school_id=hub-1${q}`))
+
+  beforeEach(() => {
+    prismaMock.group.findFirst.mockImplementation(async (args: any) =>
+      args?.where?.externalRef === 'beyond:trip:t-1' || args?.where?.id === 'g-1' ? { id: 'g-1' } : null)
+    prismaMock.message.findMany.mockResolvedValue([])
+  })
+
+  it('narrows to one group, addressed by id or by its externalRef', async () => {
+    await get('&group_id=beyond:trip:t-1')
+    expect(prismaMock.message.findMany.mock.calls[0][0].where).toEqual({ schoolId: 'school-1', groupId: 'g-1' })
+    // Scoped to the school: a ref is only unique within one.
+    expect(prismaMock.group.findFirst.mock.calls.every(([a]: any) => a.where.schoolId === 'school-1')).toBe(true)
+  })
+
+  it('404s a group it does not know rather than answering "nothing sent"', async () => {
+    const res = await get('&group_id=nope')
+    expect(res.status).toBe(404)
+    expect(res.body.error).toBe('unknown_group')
+  })
+
+  it('reads forwards from since, oldest first, with a cursor', async () => {
+    prismaMock.message.findMany.mockResolvedValue([
+      row({ id: 'm-1', title: 'Arrived', createdAt: new Date('2026-10-20T07:00:00Z') }),
+      row({ id: 'm-2', title: 'Running late', createdAt: new Date('2026-10-20T13:10:00Z') }),
+    ])
+    const res = await get('&group_id=g-1&since=2026-10-20T06:00:00.000Z')
+    const args = prismaMock.message.findMany.mock.calls[0][0]
+    expect(args.where.createdAt).toEqual({ gt: new Date('2026-10-20T06:00:00.000Z') })
+    expect(args.orderBy).toEqual({ createdAt: 'asc' })
+    expect(res.body.messages.map((m: any) => m.id)).toEqual(['m-1', 'm-2'])
+    expect(res.body.next).toBe('2026-10-20T13:10:00.000Z')
+  })
+
+  it('hands back the same cursor when nothing new has arrived', async () => {
+    const res = await get('&since=2026-10-20T06:00:00.000Z')
+    expect(res.body).toEqual({ messages: [], next: '2026-10-20T06:00:00.000Z' })
+  })
+
+  it('holds back a full page\'s last entry, which may be cut part way', async () => {
+    // limit=1 → take 4 rows. Four rows in two broadcasts: the second may have
+    // more rows beyond the page, so it waits for the next one.
+    const t1 = new Date('2026-10-20T07:00:00Z')
+    const t2 = new Date('2026-10-20T08:00:00Z')
+    prismaMock.message.findMany.mockResolvedValue([
+      row({ id: 'm-1', title: 'A', createdAt: t1 }),
+      row({ id: 'm-2', title: 'A', createdAt: t1 }),
+      row({ id: 'm-3', title: 'B', createdAt: t2 }),
+      row({ id: 'm-4', title: 'B', createdAt: t2 }),
+    ])
+    const res = await get('&since=2026-10-20T06:00:00.000Z&limit=1')
+    expect(res.body.messages.map((m: any) => m.title)).toEqual(['A'])
+    expect(res.body.next).toBe(t1.toISOString())
+  })
+
+  it('refuses a since that is not a time', async () => {
+    const res = await get('&since=yesterday')
+    expect(res.status).toBe(400)
+  })
+
+  it('keeps the newest-first order Desk reads without since', async () => {
+    await get('')
+    expect(prismaMock.message.findMany.mock.calls[0][0].orderBy).toEqual({ createdAt: 'desc' })
+    expect((await get('')).body.next).toBeUndefined()
+  })
+
+  it('says how many named pupils a pupil-addressed post reached, never which', async () => {
+    prismaMock.message.findMany.mockResolvedValue([
+      row({ targetClass: 'Selected pupils', _count: { acknowledgments: 0, studentTargets: 3 }, formId: 'f-1' }),
+    ])
+    const res = await get('')
+    expect(res.body.messages[0].audience.pupilCount).toBe(3)
+    expect(res.body.messages[0].formId).toBe('f-1')
   })
 })

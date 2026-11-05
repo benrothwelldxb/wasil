@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { Prisma } from '@prisma/client'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, loadUserWithRelations } from '../middleware/auth.js'
+import { parentVisibleMessageWhere, parentVisibleFormWhere } from '../services/partnerSwitch.js'
 
 const router = Router()
 
@@ -59,6 +60,7 @@ router.get('/', isAuthenticated, async (req, res) => {
           { classId: { in: classIds } },
           ...(yearGroupIds.length ? [{ yearGroupId: { in: yearGroupIds } }] : []),
           ...(groupIds.length ? [{ groupId: { in: groupIds } }] : []),
+          ...(studentIds.length ? [{ studentTargets: { some: { studentId: { in: studentIds } } } }] : []),
         ],
         AND: [
           { archivedAt: null },
@@ -84,7 +86,8 @@ router.get('/', isAuthenticated, async (req, res) => {
           { title: { contains: q, mode: 'insensitive' } },
           { content: { contains: q, mode: 'insensitive' } },
         ],
-        ...(parentMessageAudience ? { AND: [parentMessageAudience] } : {}),
+        // A partner a school has turned off (Wasil Beyond) is hidden here too.
+        ...(parentMessageAudience ? { AND: [parentMessageAudience, ...parentVisibleMessageWhere()] } : {}),
       },
       select: { id: true, title: true, targetClass: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
@@ -158,7 +161,7 @@ router.get('/', isAuthenticated, async (req, res) => {
           { title: { contains: q, mode: 'insensitive' } },
           { description: { contains: q, mode: 'insensitive' } },
         ],
-        ...(parentFormAudience ? { AND: [parentFormAudience] } : {}),
+        ...(parentFormAudience ? { AND: [parentFormAudience, ...parentVisibleFormWhere()] } : {}),
       },
       select: { id: true, title: true, status: true, createdAt: true },
       orderBy: { createdAt: 'desc' },

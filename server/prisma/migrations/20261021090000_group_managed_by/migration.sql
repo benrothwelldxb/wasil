@@ -1,0 +1,11 @@
+-- Which partner app owns a published group.
+--
+-- A group a partner keeps in step (a Beyond trip group, an Active club roster)
+-- could be edited or deleted by hand from Desk or the Connect admin screen, and
+-- the next sync would quietly put it back or, worse, not know it had gone. A
+-- Connect admin's delete is a hard delete, which also clears groupId on every
+-- message sent to it, so a trip's message history lost its link.
+--
+-- Stamped from the partner token's name when a partner publishes under an
+-- externalRef. Null for hand-made groups, which stay editable as before.
+ALTER TABLE "Group" ADD COLUMN "managedBy" TEXT;

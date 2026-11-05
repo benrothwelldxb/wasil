@@ -312,12 +312,21 @@ export function defaultPostExpiry(
   return dueDay > byDefault ? dueDay : byDefault
 }
 
-/** `defaultPostExpiry`, looking the timezone up from the School row. */
+/**
+ * `defaultPostExpiry`, looking the timezone up from the School row.
+ *
+ * `formDeadline` is the closing INSTANT of a form the post carries. A post
+ * that hid before its own form closed would take the form away from the
+ * parents still meant to answer it — a room choice or a consent due in a
+ * month — so the default never ends before it.
+ */
 export async function defaultPostExpiryForSchool(
   schoolId: string,
   goesLive: Date,
   actionDueDate?: Date | null,
+  formDeadline?: Date | null,
 ): Promise<Date> {
   const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { timezone: true } })
-  return defaultPostExpiry(goesLive, school?.timezone || 'UTC', actionDueDate)
+  const byDefault = defaultPostExpiry(goesLive, school?.timezone || 'UTC', actionDueDate)
+  return formDeadline && formDeadline > byDefault ? formDeadline : byDefault
 }

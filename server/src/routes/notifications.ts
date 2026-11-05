@@ -1,8 +1,21 @@
 import { Router } from 'express'
 import prisma from '../services/prisma.js'
 import { isAuthenticated } from '../middleware/auth.js'
+import { parentHiddenMessageWhere } from '../services/partnerSwitch.js'
 
 const router = Router()
+
+/** Leaves out notifications about posts parents cannot see right now: those
+ *  of a partner the school has turned off (Wasil Beyond). Usually nothing is
+ *  hidden and this adds no condition. */
+async function visibleNotificationWhere(schoolId: string) {
+  const hidden = await prisma.message.findMany({
+    where: { schoolId, ...parentHiddenMessageWhere() },
+    select: { id: true },
+  })
+  if (hidden.length === 0) return {}
+  return { OR: [{ resourceId: null }, { resourceId: { notIn: hidden.map(m => m.id) } }] }
+}
 
 // List notifications (paginated)
 router.get('/', isAuthenticated, async (req, res) => {
@@ -11,14 +24,15 @@ router.get('/', isAuthenticated, async (req, res) => {
     const page = parseInt(req.query.page as string) || 1
     const limit = parseInt(req.query.limit as string) || 20
 
+    const visible = await visibleNotificationWhere(user.schoolId)
     const [notifications, total] = await Promise.all([
       prisma.notification.findMany({
-        where: { userId: user.id },
+        where: { userId: user.id, ...visible },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.notification.count({ where: { userId: user.id } }),
+      prisma.notification.count({ where: { userId: user.id, ...visible } }),
     ])
 
     res.json({
@@ -51,7 +65,7 @@ router.get('/unread-count', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
     const count = await prisma.notification.count({
-      where: { userId: user.id, read: false },
+      where: { userId: user.id, read: false, ...(await visibleNotificationWhere(user.schoolId)) },
     })
     res.json({ count })
   } catch (error) {
