@@ -50,12 +50,20 @@ router.get('/', isAuthenticated, async (req, res) => {
         : []
       const groupIds = [...new Set(groupLinks.map(l => l.groupId))]
 
+      // ...and only what is live for them now. Search ignored the end date, so a
+      // post the school had taken down was still one search away.
+      const now = new Date()
       parentMessageAudience = {
         OR: [
           { targetClass: 'Whole School' },
           { classId: { in: classIds } },
           ...(yearGroupIds.length ? [{ yearGroupId: { in: yearGroupIds } }] : []),
           ...(groupIds.length ? [{ groupId: { in: groupIds } }] : []),
+        ],
+        AND: [
+          { archivedAt: null },
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+          { OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] },
         ],
       }
       parentFormAudience = {

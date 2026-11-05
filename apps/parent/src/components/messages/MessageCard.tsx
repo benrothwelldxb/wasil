@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import DOMPurify from 'dompurify'
-import { Share2, AlertTriangle, Pin, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
+import { Share2, AlertTriangle, Pin, X, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
 import { reportPostSeen } from '../../services/postSeen'
@@ -9,6 +9,8 @@ import { reportPostSeen } from '../../services/postSeen'
 interface MessageCardProps {
   message: Message
   onAcknowledge?: (id: string) => void
+  /** Unpin this post for this parent only. Absent → the pin is display-only. */
+  onUnpin?: (id: string) => void
   onFormRespond?: (formId: string, answers: Record<string, unknown>) => void
   showAcknowledgeButton?: boolean
   classColors?: Record<string, { bg: string; hex: string }>
@@ -31,6 +33,7 @@ function isImageType(fileType: string): boolean {
 export function MessageCard({
   message,
   onAcknowledge,
+  onUnpin,
   onFormRespond,
   showAcknowledgeButton = true,
   classColors = {},
@@ -346,9 +349,23 @@ export function MessageCard({
               </span>
             </div>
           </div>
-          {message.isPinned && (
+          {/* The school pinned it; a parent who has read it can let it go. Only
+              their own feed changes — it stays pinned for everyone else. */}
+          {message.isPinned && (onUnpin ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onUnpin(message.id) }}
+              className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold flex-shrink-0"
+              style={{ backgroundColor: '#F7F0F1', color: '#7A6469' }}
+              aria-label={t('messages.unpin', 'Unpin')}
+            >
+              <Pin className="h-3 w-3" style={{ transform: 'rotate(45deg)' }} />
+              {t('messages.unpin', 'Unpin')}
+              <X className="h-3 w-3" />
+            </button>
+          ) : (
             <Pin className="h-4 w-4 flex-shrink-0" style={{ color: '#A8929A', transform: 'rotate(45deg)' }} />
-          )}
+          ))}
           {!message.acknowledged && (
             <div className="w-[9px] h-[9px] rounded-full flex-shrink-0" style={{ backgroundColor: '#C4506E' }} />
           )}

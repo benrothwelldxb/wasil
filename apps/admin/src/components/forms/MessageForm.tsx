@@ -4,6 +4,24 @@ import { RichTextEditor } from './RichTextEditor'
 import { useTheme, useApi, api } from '@wasil/shared'
 import type { Form } from '@wasil/shared'
 
+/** How long a new post shows unless the sender picks longer. The server applies
+ *  the same default to a post sent with no date, so the two cannot disagree. */
+export const DEFAULT_SHOW_DAYS = 14
+
+/** A date input's value (YYYY-MM-DD, local) for `days` from today. */
+export function showUntilFromToday(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Longer is a deliberate choice: one tap, but a tap. */
+const SHOW_PRESETS: Array<{ label: string; days: number }> = [
+  { label: '2 weeks', days: DEFAULT_SHOW_DAYS },
+  { label: '1 month', days: 30 },
+  { label: '3 months', days: 90 },
+]
+
 export interface AttachmentData {
   fileName: string
   fileUrl: string
@@ -437,14 +455,31 @@ export function MessageForm({
             <p className="text-xs text-gray-500 mt-1">Leave empty to publish immediately</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Show Until (optional)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Show Until</label>
             <input
               type="date"
               value={formData.expiresAt}
               onChange={(e) => onChange({ ...formData, expiresAt: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             />
-            <p className="text-xs text-gray-500 mt-1">Auto-hide after this date</p>
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {SHOW_PRESETS.map(p => {
+                const value = showUntilFromToday(p.days)
+                return (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => onChange({ ...formData, expiresAt: value })}
+                    className={`text-xs px-2 py-0.5 rounded-full border ${formData.expiresAt === value ? 'bg-slate-700 text-white border-slate-700' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                  >
+                    {p.label}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Hidden from parents after this date. Two weeks unless you choose longer.
+            </p>
           </div>
         </div>
         <div className="flex items-center flex-wrap gap-4">

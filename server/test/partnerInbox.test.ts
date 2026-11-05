@@ -20,7 +20,8 @@ const prismaMock = {
   staffClassAssignment: { findMany: vi.fn() },
   student: { findMany: vi.fn() },
   class: { findFirst: vi.fn(), findMany: vi.fn() },
-  school: { findFirst: vi.fn() },
+  // findUnique: the school's timezone, for a post's default end date.
+  school: { findFirst: vi.fn(), findUnique: vi.fn(async () => ({ timezone: 'Asia/Dubai' })) },
   attendanceRequest: { findMany: vi.fn() },
   message: { create: vi.fn(), findMany: vi.fn() },
   messageAttachment: { createMany: vi.fn() },
