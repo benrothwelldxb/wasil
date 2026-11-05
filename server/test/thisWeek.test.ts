@@ -23,15 +23,18 @@ vi.mock('../src/middleware/auth', () => ({
 }))
 
 const fetchChildWeek = vi.fn()
+const fetchOpenAvailability = vi.fn()
+const sendAvailabilityReply = vi.fn()
 vi.mock('../src/services/activeSchedule', async (orig) => {
   const real = await (orig() as Promise<any>)
-  return { ...real, fetchChildWeek }
+  return { ...real, fetchChildWeek, fetchOpenAvailability, sendAvailabilityReply }
 })
 
 const { default: routes } = await import('../src/routes/thisWeek')
 
 function makeApp() {
   const app = express()
+  app.use(express.json())
   app.use('/api/this-week', routes)
   return app
 }
@@ -175,8 +178,7 @@ describe('GET /api/this-week/child/:studentId — the four states', () => {
   // A missing `schedule:read` scope arrives as Active's 403. It is the config,
   // not the family's week, so it must not read as "no clubs" either.
   it('unavailable: Active’s own refusal, including a missing scope', async () => {
-    const { ActiveScheduleError } = await import('../src/services/activeSchedule')
-    fetchChildWeek.mockRejectedValue(
+      fetchChildWeek.mockRejectedValue(
       new ActiveScheduleError(403, 'this token does not hold the "schedule:read" scope'),
     )
     const res = await request(makeApp()).get('/api/this-week/child/stu-1')
@@ -194,8 +196,7 @@ describe('GET /api/this-week/child/:studentId — the four states', () => {
 // they are three different jobs for three different people.
 describe('GET /api/this-week/child/:studentId — why Active refused', () => {
   const refuse = async (status: number, body: string) => {
-    const { ActiveScheduleError } = await import('../src/services/activeSchedule')
-    fetchChildWeek.mockRejectedValue(new ActiveScheduleError(status, body))
+      fetchChildWeek.mockRejectedValue(new ActiveScheduleError(status, body))
     return request(makeApp()).get('/api/this-week/child/stu-1')
   }
 
@@ -270,5 +271,82 @@ describe('schoolWeekBounds', () => {
     const { from, to } = schoolWeekBounds('Asia/Dubai', '2026-09-16')
     const days = (Date.parse(to) - Date.parse(from)) / 86400000 + 1
     expect(days).toBe(7)
+  })
+})
+
+const { ActiveScheduleError } = await import('../src/services/activeSchedule')
+
+describe('"Can they play?"', () => {
+  const ASK = {
+    fixture_id: 'fx-1', hub_pupil_id: 'hp-1', name: 'U11 A Netball v DESS', date: '2026-11-11',
+    starts_at: '15:00', venue: 'Away at DESS', travelling: true, state: 'unknown',
+  }
+  const REPLY = { studentId: 'stu-1', fixtureId: 'fx-1', state: 'unavailable' }
+
+  beforeEach(() => {
+    fetchOpenAvailability.mockResolvedValue([ASK])
+    sendAvailabilityReply.mockResolvedValue(undefined)
+  })
+
+  it('asks Active only about the requester’s own children', async () => {
+    const res = await request(makeApp()).get('/api/this-week/availability')
+    expect(res.status).toBe(200)
+    expect(fetchOpenAvailability).toHaveBeenCalledWith({ hubSchoolId: 'hub-sch-1', hubPupilIds: ['hp-1'] })
+    expect(res.body.asks[0]).toMatchObject({ studentId: 'stu-1', childName: 'Amira Hassan', fixtureId: 'fx-1', startsAt: '15:00' })
+    expect(res.body.asks[0]).not.toHaveProperty('hub_pupil_id')
+  })
+
+  it('does not pass on a question about somebody else’s child', async () => {
+    fetchOpenAvailability.mockResolvedValue([{ ...ASK, hub_pupil_id: 'hp-OTHER' }])
+    const res = await request(makeApp()).get('/api/this-week/availability')
+    expect(res.body.asks).toEqual([])
+  })
+
+  it('asks Active nothing for a parent with no linked child', async () => {
+    asLegacyParentOf({ id: 'legacy-1', name: 'Old Record' })
+    const res = await request(makeApp()).get('/api/this-week/availability')
+    expect(res.body.asks).toEqual([])
+    expect(fetchOpenAvailability).not.toHaveBeenCalled()
+  })
+
+  it('passes on a parent’s answer about their own child', async () => {
+    const res = await request(makeApp()).post('/api/this-week/availability').send(REPLY)
+    expect(res.status).toBe(200)
+    expect(sendAvailabilityReply).toHaveBeenCalledWith({
+      hubSchoolId: 'hub-sch-1', hubPupilId: 'hp-1', fixtureId: 'fx-1', state: 'unavailable',
+    })
+  })
+
+  it('refuses an answer about someone else’s child, and tells Active nothing', async () => {
+    const res = await request(makeApp()).post('/api/this-week/availability').send({ ...REPLY, studentId: 'stu-OTHER' })
+    expect(res.status).toBe(404)
+    expect(sendAvailabilityReply).not.toHaveBeenCalled()
+  })
+
+  it('refuses anything that is not an answer', async () => {
+    const res = await request(makeApp()).post('/api/this-week/availability').send({ ...REPLY, state: 'unknown' })
+    expect(res.status).toBe(400)
+    expect(sendAvailabilityReply).not.toHaveBeenCalled()
+  })
+
+  it('says when the fixture has closed', async () => {
+    sendAvailabilityReply.mockRejectedValue(new ActiveScheduleError(409, '{"error":"fixture_closed"}'))
+    const res = await request(makeApp()).post('/api/this-week/availability').send(REPLY)
+    expect(res.status).toBe(409)
+    expect(res.body.error).toBe('fixture_closed')
+  })
+
+  it('reads a missing scope as unavailable, not as no questions', async () => {
+    fetchOpenAvailability.mockRejectedValue(new ActiveScheduleError(403, 'availability:read'))
+    const res = await request(makeApp()).get('/api/this-week/availability')
+    expect(res.status).toBe(503)
+    expect(res.body.reason).toBe('scope')
+  })
+
+  it('is closed to a school without the module', async () => {
+    prismaMock.school.findUnique.mockResolvedValue({ activeScheduleEnabled: false })
+    const res = await request(makeApp()).post('/api/this-week/availability').send(REPLY)
+    expect(res.status).toBe(404)
+    expect(sendAvailabilityReply).not.toHaveBeenCalled()
   })
 })
