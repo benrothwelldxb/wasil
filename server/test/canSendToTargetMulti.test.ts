@@ -14,6 +14,7 @@ import type { Request, Response } from 'express'
 
 const prismaMock = {
   staffClassAssignment: { findMany: vi.fn() },
+  staffGroupAssignment: { findMany: vi.fn() },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
@@ -32,6 +33,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   // This teacher has Y3 Blue and nothing else.
   prismaMock.staffClassAssignment.findMany.mockResolvedValue([{ classId: 'c-1' }])
+  // ...and manages the swimming squad, with canMessage. The query filters on
+  // canMessage itself, so a manager without it simply isn't returned.
+  prismaMock.staffGroupAssignment.findMany.mockResolvedValue([{ groupId: 'g-1' }])
 })
 
 describe('canSendToTarget with several classes', () => {
@@ -79,5 +83,45 @@ describe('canSendToTarget with several classes', () => {
     const { next, status } = await run('ADMIN', { targetClass: 'Y3 Blue', classIds: ['c-1', 'c-elsewhere'] })
     expect(next).toHaveBeenCalled()
     expect(status).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Groups were never checked at all: any staff member could post to any group in
+ * the school by naming its id, while the canMessage flag an admin set on each of
+ * the group's managers was stored and never read.
+ */
+describe('canSendToTarget with groups', () => {
+  it('lets a staff member post to a group they manage with canMessage', async () => {
+    const { next, status } = await run('STAFF', { targetClass: 'Swimming squad', groupIds: ['g-1'] })
+    expect(next).toHaveBeenCalled()
+    expect(status).not.toHaveBeenCalled()
+    expect(prismaMock.staffGroupAssignment.findMany).toHaveBeenCalledWith({
+      where: { userId: 'u-1', canMessage: true, groupId: { in: ['g-1'] } },
+      select: { groupId: true },
+    })
+  })
+
+  it('refuses a group they do not manage', async () => {
+    const { next, status } = await run('STAFF', { targetClass: 'Choir', groupId: 'g-elsewhere' })
+    expect(next).not.toHaveBeenCalled()
+    expect(status).toHaveBeenCalledWith(403)
+  })
+
+  it('refuses the whole selection when one group is not theirs', async () => {
+    const { next, status } = await run('STAFF', { targetClass: 'Swimming squad', groupId: 'g-1', groupIds: ['g-elsewhere'] })
+    expect(next).not.toHaveBeenCalled()
+    expect(status).toHaveBeenCalledWith(403)
+  })
+
+  it('does not ask about groups when none are named', async () => {
+    await run('STAFF', { targetClass: 'Y3 Blue', classIds: ['c-1'] })
+    expect(prismaMock.staffGroupAssignment.findMany).not.toHaveBeenCalled()
+  })
+
+  it('lets an admin post to any group', async () => {
+    const { next } = await run('ADMIN', { targetClass: 'Choir', groupIds: ['g-elsewhere'] })
+    expect(next).toHaveBeenCalled()
+    expect(prismaMock.staffGroupAssignment.findMany).not.toHaveBeenCalled()
   })
 })

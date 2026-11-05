@@ -548,6 +548,24 @@ export function ParentDashboard() {
     )
   }
 
+  // Unpinning is for this parent only. Applied straight away and put back if
+  // the server refuses, so the card moves the moment it is tapped.
+  const byFeedOrder = (a: Message, b: Message) =>
+    Number(!!b.isPinned) - Number(!!a.isPinned) ||
+    Number(!!b.isUrgent) - Number(!!a.isUrgent) ||
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+
+  const handleUnpin = async (messageId: string) => {
+    const setPinned = (pinned: boolean) =>
+      setMessages(prev => prev?.map(m => (m.id === messageId ? { ...m, isPinned: pinned } : m)).sort(byFeedOrder) || null)
+    setPinned(false)
+    try {
+      await api.messages.unpinForMe(messageId)
+    } catch {
+      setPinned(true)
+    }
+  }
+
   const handleFormResponse = async (formId: string, answers: Record<string, unknown>, studentId?: string) => {
     try {
       const result = await api.forms.respond(formId, answers, studentId)
@@ -1247,6 +1265,7 @@ export function ParentDashboard() {
                   key={message.id}
                   message={message}
                   onAcknowledge={handleAcknowledge}
+                  onUnpin={handleUnpin}
                   onFormRespond={handleFormResponse}
                   classColors={classColorMap}
                 />

@@ -145,20 +145,21 @@ describe('publishing a group under a ref', () => {
 describe('reading groups', () => {
   it('lists the owner and the ref, so Desk can label a managed group', async () => {
     prismaMock.group.findMany.mockResolvedValue([
-      { id: 'g-1', name: 'Trip', externalRef: REF, managedBy: 'beyond', _count: { studentMembers: 54 } },
-      { id: 'g-2', name: 'Choir', externalRef: null, managedBy: null, _count: { studentMembers: 12 } },
+      { id: 'g-1', name: 'Trip', externalRef: REF, managedBy: 'beyond', sourceServiceId: null, ecaActivity: null, staffManagers: [], _count: { studentMembers: 54 } },
+      { id: 'g-2', name: 'Choir', externalRef: null, managedBy: null, sourceServiceId: null, ecaActivity: null, staffManagers: [], _count: { studentMembers: 12 } },
     ])
     const res = await auth(request(makeApp()).get('/api/partner/groups?school_id=hub-school'))
     expect(res.body.groups).toEqual([
-      { id: 'g-1', name: 'Trip', memberCount: 54, externalRef: REF, managedBy: 'beyond' },
-      { id: 'g-2', name: 'Choir', memberCount: 12, externalRef: null, managedBy: null },
+      // A claimed group reads as published, so it cannot be handed a manager.
+      { id: 'g-1', name: 'Trip', memberCount: 54, externalRef: REF, managedBy: 'beyond', source: 'published', managersEditable: false, staffManagers: [] },
+      { id: 'g-2', name: 'Choir', memberCount: 12, externalRef: null, managedBy: null, source: 'hand', managersEditable: true, staffManagers: [] },
     ])
   })
 
   it('returns the owner and the archive state on one group', async () => {
     prismaMock.group.findFirst
       .mockResolvedValueOnce(TRIP_GROUP)
-      .mockResolvedValueOnce({ id: 'g-1', name: 'Trip', externalRef: REF, managedBy: 'beyond', isActive: true, studentMembers: [] })
+      .mockResolvedValueOnce({ id: 'g-1', name: 'Trip', externalRef: REF, managedBy: 'beyond', isActive: true, sourceServiceId: null, ecaActivity: null, staffManagers: [], studentMembers: [] })
     const res = await auth(request(makeApp()).get(`/api/partner/groups/${REF}?hub_user_id=hub-staff-1`))
     expect(res.body).toMatchObject({ id: 'g-1', managedBy: 'beyond', externalRef: REF, isActive: true })
   })

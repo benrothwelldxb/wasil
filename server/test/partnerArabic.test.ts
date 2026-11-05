@@ -150,7 +150,7 @@ describe('what the parent reads', () => {
     id: 'm-1', title: 'Back at school', content: '<p>Back.</p>', titleAr: 'عدنا إلى المدرسة', contentAr: '<p>وصلنا.</p>',
     targetClass: 'Trip', classId: null, yearGroupId: null, groupId: 'g-1', schoolId: 'school-1',
     senderId: 's', sender: { id: 's', name: 'Mrs Ahmed' }, isPinned: false, isUrgent: false, requiresAcknowledgment: false,
-    acknowledgments: [], _count: { acknowledgments: 0 }, attachments: [], createdAt: new Date(), formId: null, form: null,
+    acknowledgments: [], views: [], pinDismissals: [], _count: { acknowledgments: 0 }, attachments: [], createdAt: new Date(), formId: null, form: null,
   }
   const asParent = (preferredLanguage: string) => {
     loadUserWithRelations.mockResolvedValue({

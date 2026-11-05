@@ -19,7 +19,7 @@ const prismaMock = {
   group: { findMany: vi.fn() },
   form: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   formResponse: { findMany: vi.fn(), upsert: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
-  message: { create: vi.fn(), findMany: vi.fn() },
+  message: { create: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
   messageAttachment: { createMany: vi.fn() },
   studentGroupLink: { findMany: vi.fn() },
   class: { findMany: vi.fn() },
@@ -179,6 +179,17 @@ describe('PUT /api/partner/forms/:externalRef', () => {
     expect(prismaMock.form.update.mock.calls[0][0].data.expiresAt).toEqual(new Date('2099-10-19T20:00:00.000Z'))
   })
 
+  // A post ending before its form closes would hide the form from the parents
+  // still meant to answer it. Only ever extends.
+  it('carries a later deadline onto the posts showing the form', async () => {
+    prismaMock.form.findFirst.mockResolvedValue({ id: 'f-1', managedBy: 'beyond', fields: STORED_FIELDS, _count: { responses: 0 } })
+    await publish({ deadline: '2099-10-19T20:00:00.000Z' })
+    expect(prismaMock.message.updateMany).toHaveBeenCalledWith({
+      where: { formId: 'f-1', expiresAt: { lt: new Date('2099-10-19T20:00:00.000Z') } },
+      data: { expiresAt: new Date('2099-10-19T20:00:00.000Z') },
+    })
+  })
+
   it('closes on request', async () => {
     prismaMock.form.findFirst.mockResolvedValue({ id: 'f-1', managedBy: 'beyond', fields: STORED_FIELDS, _count: { responses: 3 } })
     await publish({ status: 'CLOSED' })
@@ -200,6 +211,15 @@ describe('attaching the form to a post', () => {
     const res = await post(REF)
     expect(res.status).toBe(201)
     expect(prismaMock.message.create.mock.calls[0][0].data.formId).toBe('f-1')
+  })
+
+  // Beyond's room and consent forms run for weeks; the 14-day default must not
+  // end the post first.
+  it('shows the post at least until the form closes when no end date is sent', async () => {
+    const closes = new Date(Date.now() + 40 * 86_400_000)
+    prismaMock.form.findFirst.mockResolvedValue({ id: 'f-1', status: 'ACTIVE', managedBy: 'beyond', expiresAt: closes })
+    await post(REF)
+    expect(prismaMock.message.create.mock.calls[0][0].data.expiresAt).toEqual(closes)
   })
 
   it('refuses an unknown form', async () => {
@@ -304,7 +324,7 @@ describe('the post as the parent sees it', () => {
     id: 'm-1', title: 'Consent', content: '<p>Please answer</p>', targetClass: 'Trip', classId: null,
     yearGroupId: null, groupId: 'g-1', schoolId: 'school-1', senderId: 's', sender: { id: 's', name: 'Mrs Ahmed' },
     actionType: null, actionLabel: null, actionDueDate: null, actionAmount: null, isPinned: false, isUrgent: false,
-    requiresAcknowledgment: false, expiresAt: null, formId: 'f-1', acknowledgments: [], _count: { acknowledgments: 0 },
+    requiresAcknowledgment: false, expiresAt: null, formId: 'f-1', acknowledgments: [], views: [], pinDismissals: [], _count: { acknowledgments: 0 },
     attachments: [], createdAt: new Date('2026-10-10T08:00:00Z'),
     form: { ...FORM, responses: [] },
   }
@@ -551,7 +571,7 @@ describe('a pupil_choice field', () => {
       id: 'm-1', title: 'Rooms', content: 'Choose', targetClass: 'Trip', classId: null, yearGroupId: null, groupId: 'g-1',
       schoolId: 'school-1', senderId: 's', sender: { id: 's', name: 'Mrs Ahmed' }, actionType: null, actionLabel: null,
       actionDueDate: null, actionAmount: null, isPinned: false, isUrgent: false, requiresAcknowledgment: false, expiresAt: null,
-      formId: 'f-1', acknowledgments: [], _count: { acknowledgments: 0 }, attachments: [], createdAt: new Date(),
+      formId: 'f-1', acknowledgments: [], views: [], pinDismissals: [], _count: { acknowledgments: 0 }, attachments: [], createdAt: new Date(),
       form: { ...ROOM_FORM, responses: [] },
     }])
     const res = await request(makeApp()).get('/api/messages')

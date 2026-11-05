@@ -16,7 +16,7 @@ import { marked } from 'marked'
 import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
-import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
+import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool, defaultPostExpiryForSchool } from '../services/dateTime.js'
 import { currentStaffWhere, hasLeft } from '../services/currentStaff.js'
 import { describeAttachments } from '../services/attachmentSummary.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
@@ -2744,6 +2744,7 @@ router.post('/messages', requirePartner, async (req, res) => {
 
     const formRef = typeof (req.body ?? {}).formRef === 'string' ? req.body.formRef.trim() : ''
     let attachedFormId: string | null = null
+    let attachedFormDeadline: Date | null = null
     if (formRef) {
       const form = await prisma.form.findFirst({
         where: { schoolId: actor.schoolId, externalRef: formRef },
@@ -2757,6 +2758,7 @@ router.post('/messages', requirePartner, async (req, res) => {
         return res.status(409).json({ error: 'form_closed', formRef })
       }
       attachedFormId = form.id
+      attachedFormDeadline = form.expiresAt
     }
 
     // Pupils resolved to this school. A pupil who has left still resolves here
@@ -2796,9 +2798,12 @@ router.post('/messages', requirePartner, async (req, res) => {
     const broadcastLiveNow = !scheduledDate || scheduledDate <= new Date()
     // Same rule as the admin composer: a bare date runs to the end of that day
     // in the school's zone; anything more specific is taken as sent.
+    // No date means the default — two weeks from going live — as on the admin
+    // composer, so a Desk post and a Connect post end the same way. Never before
+    // the attached form closes: Beyond's room and consent forms run for weeks.
     const expiresDate = typeof expiresAt === 'string' && expiresAt
       ? await parseExpiryForSchool(expiresAt, actor.schoolId)
-      : null
+      : await defaultPostExpiryForSchool(actor.schoolId, scheduledDate ?? new Date(), null, attachedFormDeadline)
     const attachmentRows = Array.isArray(attachments) ? attachments : []
 
     // `sendNotification` currently ignores `req`, but the native route passes it
@@ -3269,15 +3274,18 @@ router.get('/groups', requirePartner, async (req, res) => {
     const groups = await prisma.group.findMany({
       where: { schoolId: school.id, isActive: true },
       select: {
-        id: true, name: true, externalRef: true, managedBy: true,
+        id: true,
+        name: true,
+        ...GROUP_SOURCE_SELECT,
+        staffManagers: STAFF_MANAGERS_SELECT,
         _count: { select: { studentMembers: true } },
       },
       orderBy: { name: 'asc' },
     })
 
     // `managedBy` is what lets Desk show "Managed by Wasil Beyond" in place of
-    // Edit and Remove. Null for a hand-made group. Edits to a managed group are
-    // refused here regardless; this is so Desk need not offer them.
+    // Edit and Remove; managers ride on the list so Desk can show "Swimming
+    // squad · Sarah Khan" without a call per group.
     res.json({
       groups: groups.map(g => ({
         id: g.id,
@@ -3285,6 +3293,7 @@ router.get('/groups', requirePartner, async (req, res) => {
         memberCount: g._count.studentMembers,
         externalRef: g.externalRef ?? null,
         managedBy: g.managedBy ?? null,
+        ...describeGroupOwnership(g),
       })),
     })
   } catch (error) {
@@ -3292,6 +3301,87 @@ router.get('/groups', requirePartner, async (req, res) => {
     res.status(500).json({ error: 'internal_error' })
   }
 })
+
+// A group's managers are StaffGroupAssignment rows: canMessage lets a staff
+// member post to the group (enforced by canSendToTarget on Connect's own
+// composer), canManage marks them as someone who may edit its membership.
+// Desk keys staff on Hub user ids and never holds a Connect User.id, so the
+// boundary map is hubUserId both ways.
+//
+// Leavers are filtered on the READ rather than deleted on departure: someone
+// who has left grants nothing, and showing them as a group's owner would
+// tell Desk somebody is looking after it when nobody is.
+const STAFF_MANAGERS_SELECT = {
+  where: { user: currentStaffWhere() },
+  select: {
+    canMessage: true,
+    canManage: true,
+    user: { select: { hubUserId: true, name: true } },
+  },
+  orderBy: { user: { name: 'asc' as const } },
+}
+
+const GROUP_SOURCE_SELECT = {
+  externalRef: true,
+  managedBy: true,
+  sourceServiceId: true,
+  ecaActivity: { select: { id: true } },
+}
+const GROUP_SOURCE_INCLUDE = { ecaActivity: { select: { id: true } } }
+
+type GroupSource = 'hand' | 'published' | 'service' | 'eca'
+
+/**
+ * Who owns a group's membership, and therefore whether a person may be given
+ * the job of looking after it.
+ *
+ *   hand       made by a person, in Connect or Desk. Managers can be set.
+ *   published  pushed by another system: claimed outright with managedBy (Wasil
+ *              Beyond's trip groups), or published under an externalRef (Active
+ *              club rosters, Desk's bus-route mirrors). The publisher rewrites
+ *              the membership, so a hand edit would be silently undone.
+ *   service    membership recomputed from a school service's registrations.
+ *   eca        an ECA activity's group, whose managers ECA itself writes.
+ *
+ * Only `hand` groups take managers through the partner API: on every other kind
+ * the system that owns the group already decides who is in it, and a manager
+ * it does not know about would be told they can edit something that is not
+ * theirs to edit.
+ */
+function groupSourceOf(g: {
+  externalRef: string | null
+  managedBy?: string | null
+  sourceServiceId: string | null
+  ecaActivity: { id: string } | null
+}): GroupSource {
+  if (g.ecaActivity) return 'eca'
+  if (g.sourceServiceId) return 'service'
+  // managedBy is the explicit claim; the ref is the convention it hardens.
+  if (g.managedBy || g.externalRef) return 'published'
+  return 'hand'
+}
+
+function describeGroupOwnership(g: {
+  externalRef: string | null
+  managedBy?: string | null
+  sourceServiceId: string | null
+  ecaActivity: { id: string } | null
+  staffManagers: { canMessage: boolean; canManage: boolean; user: { hubUserId: string | null; name: string } }[]
+}) {
+  const source = groupSourceOf(g)
+  return {
+    source,
+    managersEditable: source === 'hand',
+    staffManagers: g.staffManagers.map(m => ({
+      // Null only for a manager Connect has never linked to Hub — rare, and
+      // reported rather than dropped so the count Desk shows is the true one.
+      hubUserId: m.user.hubUserId,
+      name: m.user.name,
+      canMessage: m.canMessage,
+      canManage: m.canManage,
+    })),
+  }
+}
 
 // Resolve a set of Hub pupil ids to same-school internal Student ids. Desk keys
 // pupils on `Student.hubPupilId` (the Hub MIS link) and never sees our internal
@@ -3534,6 +3624,8 @@ router.get('/groups/:id', requirePartner, async (req, res) => {
     const group = await prisma.group.findFirst({
       where: { id: addressed.id, schoolId: actor.schoolId },
       include: {
+        ...GROUP_SOURCE_INCLUDE,
+        staffManagers: STAFF_MANAGERS_SELECT,
         studentMembers: {
           include: {
             student: {
@@ -3555,6 +3647,7 @@ router.get('/groups/:id', requirePartner, async (req, res) => {
       externalRef: group.externalRef ?? null,
       managedBy: group.managedBy ?? null,
       isActive: group.isActive,
+      ...describeGroupOwnership(group),
       members: group.studentMembers.map(m => ({
         pupilHubId: m.student.hubPupilId,
         studentName: `${m.student.firstName} ${m.student.lastName}`.trim(),
@@ -3630,6 +3723,115 @@ router.patch('/groups/:id', requirePartner, async (req, res) => {
     })
   } catch (error) {
     console.error('Error patching partner group:', error)
+    res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// Replace a group's managers — who looks after it, and what that lets them do.
+// The whole set is sent each time, so the call is idempotent and a removal is
+// just an absence; an empty array leaves the group with no managers.
+//
+//   PUT /api/partner/groups/:id/managers
+//   { hub_user_id, managers: [{ hubUserId, canMessage?: true, canManage?: false }] }
+//
+// Admins only: this grants messaging rights, which is the same decision as
+// whole-school broadcast and is not one a manager makes for themselves.
+//
+// Unlike a roster, this is all or nothing. A roster naming a pupil who has left
+// should still move the other twenty-nine; a list of who holds rights that
+// quietly drops a name would leave a group the admin believes is looked after
+// with nobody looking after it. So any manager that does not resolve refuses
+// the whole call, naming each one and why:
+//
+//   has_left    Connect knows them and they have left the school.
+//   not_known   no current staff member at this school has this Hub user id.
+router.put('/groups/:id/managers', requirePartner, async (req, res) => {
+  try {
+    const { hub_user_id, managers } = req.body ?? {}
+    const actor = await resolveStaffActor(typeof hub_user_id === 'string' ? hub_user_id.trim() : '', schoolHintOf(req))
+    if (!actor) return res.status(403).json({ error: 'actor_not_known' })
+    if (!isAdminActor(actor)) return res.status(403).json({ error: 'forbidden' })
+
+    if (!Array.isArray(managers)) return res.status(400).json({ error: 'managers must be an array' })
+    const wanted: { hubUserId: string; canMessage: boolean; canManage: boolean }[] = []
+    for (const m of managers) {
+      const hubUserId = typeof m?.hubUserId === 'string' ? m.hubUserId.trim() : ''
+      if (!hubUserId) return res.status(400).json({ error: 'every manager needs a hubUserId' })
+      if (m.canMessage !== undefined && typeof m.canMessage !== 'boolean') {
+        return res.status(400).json({ error: 'canMessage must be a boolean' })
+      }
+      if (m.canManage !== undefined && typeof m.canManage !== 'boolean') {
+        return res.status(400).json({ error: 'canManage must be a boolean' })
+      }
+      if (wanted.some(w => w.hubUserId === hubUserId)) {
+        return res.status(400).json({ error: 'duplicate manager', hubUserId })
+      }
+      wanted.push({ hubUserId, canMessage: m.canMessage ?? true, canManage: m.canManage ?? false })
+    }
+
+    const addressed = await findGroupByIdOrRef(req.params.id, actor.schoolId)
+    if (!addressed) return res.status(404).json({ error: 'not_found' })
+    const group = await prisma.group.findUnique({
+      where: { id: addressed.id },
+      select: { id: true, name: true, ...GROUP_SOURCE_SELECT },
+    })
+    if (!group) return res.status(404).json({ error: 'not_found' })
+    const source = groupSourceOf(group)
+    if (source !== 'hand') return res.status(409).json({ error: 'managers_owned_elsewhere', source })
+
+    // Local rows first, so a leaver is reported as one rather than as unknown;
+    // anyone Connect has no row for goes through the same Hub check that lets
+    // non-teaching staff act on this surface.
+    const local = await prisma.user.findMany({
+      where: { hubUserId: { in: wanted.map(w => w.hubUserId) }, schoolId: actor.schoolId },
+      select: { id: true, hubUserId: true, role: true, leftAt: true, accessRevokedAt: true },
+    })
+    const resolved = new Map<string, string>()
+    const unresolved: { hubUserId: string; reason: 'has_left' | 'not_known' }[] = []
+    for (const w of wanted) {
+      const row = local.find(u => u.hubUserId === w.hubUserId)
+      if (row && STAFF_ELIGIBLE_ROLES.includes(row.role)) {
+        if (hasLeft(row)) unresolved.push({ hubUserId: w.hubUserId, reason: 'has_left' })
+        else resolved.set(w.hubUserId, row.id)
+        continue
+      }
+      const staff = row ? null : await resolveStaffActor(w.hubUserId, actor.schoolId)
+      if (staff && staff.schoolId === actor.schoolId) resolved.set(w.hubUserId, staff.id)
+      else unresolved.push({ hubUserId: w.hubUserId, reason: 'not_known' })
+    }
+    if (unresolved.length > 0) return res.status(400).json({ error: 'unresolved_managers', unresolved })
+
+    await prisma.$transaction([
+      prisma.staffGroupAssignment.deleteMany({ where: { groupId: group.id } }),
+      prisma.staffGroupAssignment.createMany({
+        data: wanted.map(w => ({
+          userId: resolved.get(w.hubUserId)!,
+          groupId: group.id,
+          canMessage: w.canMessage,
+          canManage: w.canManage,
+        })),
+      }),
+      prisma.auditLog.create({
+        data: {
+          userId: actor.id,
+          userName: actor.name,
+          action: 'UPDATE',
+          resourceType: 'GROUP',
+          resourceId: group.id,
+          metadata: { event: 'GROUP_MANAGERS_SET', groupName: group.name, via: 'partner', managers: wanted },
+          schoolId: actor.schoolId,
+          ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+        },
+      }),
+    ])
+
+    const after = await prisma.group.findUnique({
+      where: { id: group.id },
+      select: { ...GROUP_SOURCE_SELECT, staffManagers: STAFF_MANAGERS_SELECT },
+    })
+    res.json({ id: group.id, ...describeGroupOwnership(after!) })
+  } catch (error) {
+    console.error('Error setting partner group managers:', error)
     res.status(500).json({ error: 'internal_error' })
   }
 })
@@ -4020,6 +4222,17 @@ router.put('/forms/:externalRef', requirePartner, async (req, res) => {
       ...(deadline !== undefined ? { expiresAt: deadline } : {}),
       ...(body.status ? { status: body.status as string } : {}),
     }
+    // A deadline moved later carries the posts showing this form with it: a post
+    // that ended before its form closed would hide the form from the parents
+    // still meant to answer. Only ever extends — a post already set to show
+    // longer keeps its own date.
+    if (existing && deadline) {
+      await prisma.message.updateMany({
+        where: { formId: existing.id, expiresAt: { lt: deadline } },
+        data: { expiresAt: deadline },
+      })
+    }
+
     const form = existing
       ? await prisma.form.update({ where: { id: existing.id }, data })
       : await prisma.form.create({

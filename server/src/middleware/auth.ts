@@ -272,7 +272,7 @@ export async function canSendToTarget(req: Request, res: Response, next: NextFun
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  const { targetClass, classId, classIds } = req.body
+  const { targetClass, classId, classIds, groupId, groupIds } = req.body
   // A post can now name several classes at once. Every one of them is checked:
   // gating on the singular field alone would let a staff member reach any class
   // in the school by putting it in the array instead.
@@ -280,6 +280,10 @@ export async function canSendToTarget(req: Request, res: Response, next: NextFun
     ...(typeof classId === 'string' && classId ? [classId] : []),
     ...(Array.isArray(classIds) ? classIds.filter((c): c is string => typeof c === 'string' && !!c) : []),
   ]
+  const requestedGroupIds: string[] = [...new Set([
+    ...(typeof groupId === 'string' && groupId ? [groupId] : []),
+    ...(Array.isArray(groupIds) ? groupIds.filter((g): g is string => typeof g === 'string' && !!g) : []),
+  ])]
 
   if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
     return next()
@@ -300,6 +304,22 @@ export async function canSendToTarget(req: Request, res: Response, next: NextFun
       // quietly posted to the subset the sender happens to teach.
       if (requestedClassIds.some(id => !assignedClassIds.has(id))) {
         return res.status(403).json({ error: 'You can only send messages to your assigned classes' })
+      }
+    }
+
+    // Groups are gated the way classes are: a staff member may post to a group
+    // only if they are one of its managers with canMessage. Before this the
+    // middleware never looked at groups, so any staff member could reach any
+    // group in the school by naming its id — while the canMessage flag the
+    // admin set on each manager was stored and never read.
+    if (requestedGroupIds.length > 0) {
+      const assignedGroups = await prisma.staffGroupAssignment.findMany({
+        where: { userId: user.id, canMessage: true, groupId: { in: requestedGroupIds } },
+        select: { groupId: true },
+      })
+      const assignedGroupIds = new Set(assignedGroups.map(ag => ag.groupId))
+      if (requestedGroupIds.some(id => !assignedGroupIds.has(id))) {
+        return res.status(403).json({ error: 'You can only send messages to groups you manage' })
       }
     }
 

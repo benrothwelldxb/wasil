@@ -86,6 +86,7 @@
     "acknowledged": "Acknowledged",
     "urgent": "Urgent Message",
     "pinned": "Pinned",
+    "unpin": "Unpin",
     "actionRequired": "Action Required",
     "dueDate": "Due: {{date}}",
     "formExpired": "Form expired",

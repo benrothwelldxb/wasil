@@ -99,7 +99,7 @@ export async function unseenNoticeCount(userId: string): Promise<number> {
       // Same visibility rules the section itself applies — a scheduled notice
       // that has not come due yet is not something to chase someone about.
       OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
-      AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, ...parentVisibleMessageWhere()],
+      AND: [{ archivedAt: null }, { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, ...parentVisibleMessageWhere()],
       ...(user.noticesLastSeenAt ? { createdAt: { gt: user.noticesLastSeenAt } } : {}),
     },
   })

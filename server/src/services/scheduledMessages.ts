@@ -35,6 +35,8 @@ export async function publishDueScheduledMessages(): Promise<void> {
       // A post from a partner the school has turned off (Wasil Beyond) waits,
       // unclaimed, and is announced if the school turns it back on.
       AND: parentVisibleMessageWhere(),
+      // Archived before it came due: it was taken down, so nobody is told.
+      archivedAt: null,
     },
     select: {
       id: true,

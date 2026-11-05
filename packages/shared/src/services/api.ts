@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core'
 import type {
   User,
   Message,
+  PostReach,
   Form,
   FormWithResponses,
   FormField,
@@ -521,6 +522,25 @@ export const messages = {
     fetchApi<{ id: string; messageId: string }>(`/api/messages/${id}/ack`, {
       method: 'POST',
     }),
+  /** A parent unpinning a post for themselves; the school's pin is untouched. */
+  unpinForMe: (id: string) =>
+    fetchApi<{ pinned: false }>(`/api/messages/${id}/unpin`, { method: 'POST' }),
+  repinForMe: (id: string) =>
+    fetchApi<{ pinned: true }>(`/api/messages/${id}/unpin`, { method: 'DELETE' }),
+  /** Admin tidy-up: archive (hide from parents, keep) or restore, in bulk. */
+  bulkArchive: (ids: string[], archived: boolean) =>
+    fetchApi<{ changed: number }>('/api/messages/bulk-archive', {
+      method: 'POST',
+      body: JSON.stringify({ ids, archived }),
+    }),
+  /** Posts that have been on this parent's screen. Batched by the caller. */
+  markSeen: (ids: string[]) =>
+    fetchApi<{ recorded: number }>('/api/messages/seen', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+  /** Who has seen a post, counted in children (admin). */
+  reach: (id: string) => fetchApi<PostReach>(`/api/messages/${id}/reach`),
 }
 
 
