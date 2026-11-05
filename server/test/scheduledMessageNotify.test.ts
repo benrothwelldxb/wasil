@@ -101,6 +101,8 @@ describe('publishDueScheduledMessages', () => {
     expect(prismaMock.message.findMany.mock.calls[0][0].where).toEqual({
       notifiedAt: null,
       scheduledAt: { not: null, lte: new Date('2026-09-01T09:15:00.000Z') },
+      // Archived before it came due: taken down, so nobody is told.
+      archivedAt: null,
     })
     expect(notifyMock.sendNotification).not.toHaveBeenCalled()
   })
@@ -191,7 +193,9 @@ describe('POST /api/messages — holding the announcement back', () => {
   // The other half: a client that sends a real instant is never second-guessed,
   // and costs no lookup at all.
   it('honours an instant as sent, without asking for the school’s zone', async () => {
-    await post({ scheduledAt: '2026-09-11T07:30:00.000Z' })
+    // An end instant too: a post with NO end date takes the two-week default,
+    // which is a calendar date at the school and so does need the zone.
+    await post({ scheduledAt: '2026-09-11T07:30:00.000Z', expiresAt: '2026-09-25T20:00:00.000Z' })
 
     expect(prismaMock.school.findUnique).not.toHaveBeenCalled()
     const stored = prismaMock.message.create.mock.calls[0][0].data.scheduledAt as Date

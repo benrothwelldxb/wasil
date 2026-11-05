@@ -337,6 +337,7 @@ model User {
   // Activity relations
   messageAcks    MessageAcknowledgment[]
   messageViews   MessageView[]
+  pinDismissals  MessagePinDismissal[]
   formResponses  FormResponse[]
   eventRsvps     EventRsvp[]
   proposedEvents Event[]                 @relation("EventProposals")
@@ -761,7 +762,14 @@ model Message {
 
   // Lifecycle
   scheduledAt DateTime? // If set, hidden from parents until this time
-  expiresAt   DateTime? // Auto-archive after this date
+  expiresAt   DateTime? // Hidden from parents after this instant. Defaults to two weeks on create.
+  // Taken down by an admin — the bulk tidy-up on the Posts page. Hidden from
+  // parents everywhere, like an expired post, but separate from expiresAt so
+  // restoring one puts back exactly what was there, and so "it ran its course"
+  // and "someone cleared it away" stay distinguishable. Never deleted: the
+  // post, its acknowledgements and its form responses are all kept.
+  archivedAt   DateTime?
+  archivedById String?
   // When parents were actually told. Set at creation for an immediate post, and
   // by the publishScheduledMessages sweep when a scheduled one comes due — which
   // is also what stops the sweep announcing the same post twice.
@@ -776,6 +784,7 @@ model Message {
 
   acknowledgments MessageAcknowledgment[]
   views           MessageView[]
+  pinDismissals   MessagePinDismissal[]
   attachments     MessageAttachment[]
 
   createdAt DateTime @default(now())
@@ -2447,6 +2456,20 @@ model ConversationMessage {
 /// sighting — a school asking "has this family seen it" wants the earliest
 /// answer, and later scrolls past the same post add nothing.
 model MessageView {
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([messageId, userId])
+  @@index([userId])
+}
+
+/// A parent unpinning a post for themselves. The school's pin is untouched —
+/// every other parent still sees it pinned — this parent just stops having it
+/// held at the top of their feed.
+model MessagePinDismissal {
   messageId String
   message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
   userId    String

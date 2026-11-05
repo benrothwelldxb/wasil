@@ -270,3 +270,54 @@ export function datesBetween(
   }
   return dates
 }
+
+/** How long a post shows to parents when nobody says otherwise. */
+export const DEFAULT_POST_DAYS = 14
+
+/** The calendar date (YYYY-MM-DD) an instant falls on in a timezone. */
+export function dateInTimezone(instant: Date, timezone: string): string {
+  try {
+    // en-CA formats as YYYY-MM-DD.
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(instant)
+  } catch {
+    return instant.toISOString().slice(0, 10)
+  }
+}
+
+/**
+ * When a post stops showing if the sender set no date: the end of the day two
+ * weeks after it goes live, at the school.
+ *
+ * Without a default, almost nothing was given an end date — the field was
+ * optional and empty — so posts piled up for ever. Two weeks is long enough for
+ * an ordinary notice to be read and short enough that the feed stays current;
+ * keeping something longer is a deliberate choice of date.
+ *
+ * A post asking for something by a date shows at least until the end of that
+ * day: hiding a consent request before it is due would be the tidy-up doing
+ * real harm.
+ */
+export function defaultPostExpiry(
+  goesLive: Date,
+  timezone: string,
+  actionDueDate?: Date | null,
+): Date {
+  const [y, m, d] = dateInTimezone(goesLive, timezone).split('-').map(Number)
+  const lastDay = new Date(Date.UTC(y, m - 1, d + DEFAULT_POST_DAYS)).toISOString().slice(0, 10)
+  const byDefault = parseSchoolExpiry(lastDay, timezone)
+  if (!actionDueDate) return byDefault
+  const dueDay = parseSchoolExpiry(dateInTimezone(actionDueDate, timezone), timezone)
+  return dueDay > byDefault ? dueDay : byDefault
+}
+
+/** `defaultPostExpiry`, looking the timezone up from the School row. */
+export async function defaultPostExpiryForSchool(
+  schoolId: string,
+  goesLive: Date,
+  actionDueDate?: Date | null,
+): Promise<Date> {
+  const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { timezone: true } })
+  return defaultPostExpiry(goesLive, school?.timezone || 'UTC', actionDueDate)
+}

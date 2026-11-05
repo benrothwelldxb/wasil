@@ -31,6 +31,8 @@ export async function publishDueScheduledMessages(): Promise<void> {
     where: {
       notifiedAt: null,
       scheduledAt: { not: null, lte: now },
+      // Archived before it came due: it was taken down, so nobody is told.
+      archivedAt: null,
     },
     select: {
       id: true,

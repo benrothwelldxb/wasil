@@ -103,8 +103,10 @@ describe('the dashboard shows what is current', () => {
       (c: { AND?: Array<Record<string, unknown>> }) => c.AND?.[0] && 'isPinned' in c.AND[0],
     )
     expect(pinned.AND[0]).toEqual({ isPinned: true })
+    // ...unless this parent unpinned it, when it ages out like any other post.
+    expect(pinned.AND[1]).toEqual({ pinDismissals: { none: { userId: 'p-1' } } })
 
-    const pinnedFloor = pinned.AND[1].createdAt.gte
+    const pinnedFloor = pinned.AND[2].createdAt.gte
     expect(pinnedFloor).toBeInstanceOf(Date)
     const days = (Date.now() - pinnedFloor.getTime()) / 86_400_000
     expect(days).toBeGreaterThan(89.9)

@@ -1,10 +1,18 @@
 import React, { useState, useRef } from 'react'
-import { Plus, X, Pencil, Trash2, Paperclip, Eye } from 'lucide-react'
+import { Plus, X, Pencil, Trash2, Paperclip, Eye, Archive, RotateCcw } from 'lucide-react'
 import { useTheme, useApi, api, ConfirmModal, useToast, toLocalInputValue, toIsoInstant } from '@wasil/shared'
 import type { Message, Class, YearGroup, Group } from '@wasil/shared'
-import { MessageForm } from '../components/forms'
+import { MessageForm, showUntilFromToday, DEFAULT_SHOW_DAYS } from '../components/forms'
 import { PostReachModal } from '../components/PostReachModal'
 import type { MessageFormData, AudienceOption, AttachmentData } from '../components/forms'
+
+const blankForm = (): MessageFormData => ({
+  title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false, requiresAcknowledgment: false,
+  scheduledAt: '', expiresAt: showUntilFromToday(DEFAULT_SHOW_DAYS), hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '',
+})
+
+/** "Older than two weeks" for the tidy-up shortcut. */
+const TIDY_AGE_DAYS = 14
 
 export function MessagesPage() {
   const theme = useTheme()
@@ -25,10 +33,7 @@ export function MessagesPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null)
   const [reachFor, setReachFor] = useState<Message | null>(null)
-  const [formData, setFormData] = useState<MessageFormData>({
-    title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false, requiresAcknowledgment: false,
-    scheduledAt: '', expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '',
-  })
+  const [formData, setFormData] = useState<MessageFormData>(blankForm)
   const [attachments, setAttachments] = useState<AttachmentData[]>([])
   /**
    * Which posts to list.
@@ -38,7 +43,15 @@ export function MessagesPage() {
    * a way to SEE what is pinned the only way to find out was to scroll a
    * parent's app.
    */
-  const [filter, setFilter] = useState<'all' | 'pinned' | 'urgent' | 'scheduled'>('all')
+  //
+  // "Live" is the default: what parents can see right now. Expired and archived
+  // posts each have their own view, so hundreds of old posts stop burying the
+  // current ones — and so an end date visibly does something.
+  const [filter, setFilter] = useState<'live' | 'expired' | 'archived' | 'pinned' | 'urgent' | 'scheduled'>('live')
+  // The tidy-up selection. Cleared whenever the view changes, so an archive
+  // never acts on posts that are no longer on screen.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [isArchiving, setIsArchiving] = useState(false)
 
   const activeGroups = (groups || []).filter(g => g.isActive)
   const audienceOptions: AudienceOption[] = [
@@ -61,19 +74,26 @@ export function MessagesPage() {
     e.preventDefault()
     setIsSubmitting(true)
     try {
+      // On an edit, an emptied field is sent as '' — the server reads a missing
+      // field as "leave it alone" (so a one-click Unpin cannot wipe the rest of
+      // the post), and '' as "clear it".
+      const cleared = editingMessage ? '' : undefined
       const data = {
         title: formData.title, content: formData.content, targetClass: formData.targetClass,
-        classId: formData.classId || undefined, yearGroupId: formData.yearGroupId || undefined,
-        groupId: formData.groupId || undefined,
+        classId: formData.classId || cleared, yearGroupId: formData.yearGroupId || cleared,
+        groupId: formData.groupId || cleared,
         isPinned: formData.isPinned, isUrgent: formData.isUrgent, requiresAcknowledgment: formData.requiresAcknowledgment,
         // The composer's wall clock → a real instant, so "11:30" is 11:30 here
         // and not 11:30 UTC. (expiresAt is a plain date and stays as typed.)
-        scheduledAt: toIsoInstant(formData.scheduledAt), expiresAt: formData.expiresAt || undefined,
-        formId: formData.formId || undefined,
+        scheduledAt: toIsoInstant(formData.scheduledAt) || cleared, expiresAt: formData.expiresAt || cleared,
+        formId: formData.formId || cleared,
         channel: formData.channel === 'ADMIN_NOTICE' ? 'ADMIN_NOTICE' : undefined,
         department: formData.channel === 'ADMIN_NOTICE' ? (formData.department || undefined) : undefined,
-        attachments: attachments.length > 0 ? attachments : undefined,
-        ...(formData.hasAction && { actionType: formData.actionType, actionLabel: formData.actionLabel, actionDueDate: formData.actionDueDate, actionAmount: formData.actionAmount }),
+        // [] on an edit, so removing the last attachment actually removes it.
+        attachments: attachments.length > 0 ? attachments : (editingMessage ? [] : undefined),
+        ...(formData.hasAction
+          ? { actionType: formData.actionType, actionLabel: formData.actionLabel, actionDueDate: formData.actionDueDate, actionAmount: formData.actionAmount }
+          : { actionType: cleared, actionLabel: cleared, actionDueDate: cleared, actionAmount: cleared }),
       }
       if (editingMessage) {
         // Editing changes one post. The audience arrays are deliberately not
@@ -129,7 +149,7 @@ export function MessagesPage() {
   const resetForm = () => {
     setShowForm(false)
     setEditingMessage(null)
-    setFormData({ title: '', content: '', targetClass: 'Whole School', isPinned: false, isUrgent: false, requiresAcknowledgment: false, scheduledAt: '', expiresAt: '', hasAction: false, actionType: 'consent', actionLabel: '', actionDueDate: '', actionAmount: '' })
+    setFormData(blankForm())
     setAttachments([])
   }
 
@@ -147,14 +167,62 @@ export function MessagesPage() {
     }
   }
 
-  const pinnedCount = (messages || []).filter(m => m.isPinned).length
+  // Archived posts appear only in their own view; every other view is of posts
+  // that have not been tidied away.
+  const all = messages || []
+  const notArchived = all.filter(m => !m.archivedAt)
+  const live = notArchived.filter(m => !m.isExpired)
+  const pinnedCount = live.filter(m => m.isPinned).length
 
-  const visibleMessages = (messages || []).filter(m => {
-    if (filter === 'pinned') return m.isPinned
-    if (filter === 'urgent') return m.isUrgent
-    if (filter === 'scheduled') return m.isScheduled
-    return true
-  })
+  const visibleMessages = (() => {
+    switch (filter) {
+      case 'expired': return notArchived.filter(m => m.isExpired)
+      case 'archived': return all.filter(m => !!m.archivedAt)
+      case 'pinned': return live.filter(m => m.isPinned)
+      case 'urgent': return live.filter(m => m.isUrgent)
+      case 'scheduled': return live.filter(m => m.isScheduled)
+      default: return live
+    }
+  })()
+
+  const changeFilter = (next: typeof filter) => {
+    setFilter(next)
+    setSelected(new Set())
+  }
+
+  const toggleSelected = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const allShownSelected = visibleMessages.length > 0 && visibleMessages.every(m => selected.has(m.id))
+  const tidyCutoff = Date.now() - TIDY_AGE_DAYS * 24 * 60 * 60 * 1000
+  const olderShown = visibleMessages.filter(m => new Date(m.createdAt).getTime() < tidyCutoff)
+
+  // Archive hides a post from parents and keeps it; restoring is one click in
+  // the Archived view, so no confirmation step — the toast says where they went.
+  const handleBulkArchive = async () => {
+    const ids = [...selected]
+    if (ids.length === 0) return
+    const archiving = filter !== 'archived'
+    setIsArchiving(true)
+    try {
+      const { changed } = await api.messages.bulkArchive(ids, archiving)
+      setSelected(new Set())
+      refetchMessages()
+      toast.success(archiving
+        ? `Archived ${changed} post${changed === 1 ? '' : 's'}. Parents no longer see them; they are under Archived.`
+        : `Restored ${changed} post${changed === 1 ? '' : 's'}.`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update posts')
+    } finally {
+      setIsArchiving(false)
+    }
+  }
 
   // One click, because unpinning through the edit form means opening it,
   // finding the checkbox and re-saving the whole post — enough friction that
@@ -175,10 +243,12 @@ export function MessagesPage() {
   }
 
   const FILTERS: Array<{ key: typeof filter; label: string; count?: number }> = [
-    { key: 'all', label: 'All', count: messages?.length },
+    { key: 'live', label: 'Live', count: live.length },
     { key: 'pinned', label: 'Pinned', count: pinnedCount },
-    { key: 'urgent', label: 'Urgent', count: (messages || []).filter(m => m.isUrgent).length },
-    { key: 'scheduled', label: 'Scheduled', count: (messages || []).filter(m => m.isScheduled).length },
+    { key: 'urgent', label: 'Urgent', count: live.filter(m => m.isUrgent).length },
+    { key: 'scheduled', label: 'Scheduled', count: live.filter(m => m.isScheduled).length },
+    { key: 'expired', label: 'Expired', count: notArchived.filter(m => m.isExpired).length },
+    { key: 'archived', label: 'Archived', count: all.filter(m => !!m.archivedAt).length },
   ]
 
   return (
@@ -212,7 +282,7 @@ export function MessagesPage() {
         {FILTERS.map(f => (
           <button
             key={f.key}
-            onClick={() => setFilter(f.key)}
+            onClick={() => changeFilter(f.key)}
             className="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors"
             style={filter === f.key
               ? { backgroundColor: theme.colors.brandColor, color: '#FFFFFF', borderColor: theme.colors.brandColor }
@@ -233,19 +303,73 @@ export function MessagesPage() {
         </p>
       )}
 
+      {filter === 'expired' && visibleMessages.length > 0 && (
+        <p className="text-xs text-slate-400 mb-3">
+          Past their end date, so parents no longer see them. Archive them to clear this list.
+        </p>
+      )}
+
+      {/* The tidy-up bar. */}
+      {visibleMessages.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-3 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-sm">
+          <label className="flex items-center gap-2 text-slate-600 cursor-pointer">
+            <input
+              type="checkbox"
+              className="rounded"
+              checked={allShownSelected}
+              onChange={() => setSelected(allShownSelected ? new Set() : new Set(visibleMessages.map(m => m.id)))}
+            />
+            Select all {visibleMessages.length}
+          </label>
+          {filter !== 'archived' && olderShown.length > 0 && (
+            <button
+              onClick={() => setSelected(new Set(olderShown.map(m => m.id)))}
+              className="text-xs font-semibold hover:underline"
+              style={{ color: theme.colors.brandColor }}
+            >
+              Select the {olderShown.length} older than {TIDY_AGE_DAYS} days
+            </button>
+          )}
+          {selected.size > 0 && (
+            <>
+              <span className="text-slate-500">{selected.size} selected</span>
+              <button
+                onClick={handleBulkArchive}
+                disabled={isArchiving}
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-bold disabled:opacity-60"
+                style={{ backgroundColor: theme.colors.brandColor }}
+              >
+                {filter === 'archived' ? <RotateCcw className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                {filter === 'archived' ? `Restore ${selected.size}` : `Archive ${selected.size}`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="space-y-3">
         {visibleMessages.length === 0 && (
           <p className="text-sm text-slate-400 py-6 text-center">
-            {filter === 'all' ? 'No posts yet.' : `No ${filter} posts.`}
+            {filter === 'live' ? 'No live posts.' : `No ${filter} posts.`}
           </p>
         )}
         {visibleMessages.map((message) => (
           <div key={message.id} className="bg-white rounded-lg border border-slate-200 p-4">
             <div className="flex items-start justify-between">
+              <input
+                type="checkbox"
+                className="rounded mt-1.5 mr-3 flex-shrink-0"
+                checked={selected.has(message.id)}
+                onChange={() => toggleSelected(message.id)}
+                aria-label={`Select "${message.title}"`}
+              />
               <div className="flex-1">
                 <div className="flex items-center space-x-2">
                   <span className="text-xs px-2 py-1 rounded-full text-white" style={{ backgroundColor: theme.colors.brandColor }}>{message.targetClass}</span>
                   {message.isScheduled && <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">Scheduled</span>}
+                  {message.archivedAt
+                    ? <span className="text-xs px-2 py-1 rounded-full bg-slate-200 text-slate-600">Archived</span>
+                    : message.isExpired && <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-500">Expired</span>}
                   {message.isPinned && (
                     <button
                       onClick={() => handleUnpin(message)}
@@ -270,6 +394,9 @@ export function MessagesPage() {
                 </p>
                 <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
                   <span>{new Date(message.createdAt).toLocaleDateString()}</span>
+                  {message.expiresAt && !message.archivedAt && (
+                    <span>{message.isExpired ? 'Ended' : 'Shows until'} {new Date(new Date(message.expiresAt).getTime() - 1).toLocaleDateString()}</span>
+                  )}
                   {message.acknowledgmentCount !== undefined && <span>{message.acknowledgmentCount} acknowledged</span>}
                   {!message.isScheduled && (
                     <button onClick={() => setReachFor(message)} className="flex items-center gap-1 font-medium hover:underline" style={{ color: theme.colors.brandColor }}>

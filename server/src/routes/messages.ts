@@ -11,7 +11,7 @@ import { translateTexts } from '../services/translation.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
-import { parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
+import { parseWallClockForSchool, parseExpiryForSchool, defaultPostExpiryForSchool } from '../services/dateTime.js'
 import { postReach } from '../services/postReach.js'
 
 const router = Router()
@@ -154,9 +154,10 @@ function audienceOR(a: { childClassIds: string[]; childYearGroupIds: string[]; c
   ]
 }
 
-/** Live for a parent right now: not expired, not still scheduled. */
+/** Live for a parent right now: not archived, not expired, not still scheduled. */
 function liveForParent(now: Date) {
   return [
+    { archivedAt: null },
     { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
     { OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] },
   ]
@@ -167,6 +168,7 @@ function messageInclude(userId: string) {
     sender: { select: { id: true, name: true } },
     acknowledgments: { where: { userId } },
     views: { where: { userId }, select: { userId: true } },
+    pinDismissals: { where: { userId }, select: { userId: true } },
     _count: { select: { acknowledgments: true } },
     form: { include: { responses: { where: { userId } } } },
     attachments: true,
@@ -216,7 +218,8 @@ function serializeParentMessage(msg: any, getTranslated: (t: string) => string) 
       actionLabel: msg.actionLabel,
       actionDueDate: msg.actionDueDate?.toISOString(),
       actionAmount: msg.actionAmount,
-      isPinned: msg.isPinned,
+      // Pinned FOR THIS PARENT: the school's pin, unless they unpinned it.
+      isPinned: msg.isPinned && !(msg.pinDismissals?.length > 0),
       isUrgent: msg.isUrgent,
       requiresAcknowledgment: msg.requiresAcknowledgment,
       expiresAt: msg.expiresAt?.toISOString(),
@@ -283,8 +286,9 @@ router.get('/', isAuthenticated, async (req, res) => {
           {
             OR: [
               { createdAt: { gte: windowStart } },
-              // Pinned lasts longer, not forever.
-              { AND: [{ isPinned: true }, { createdAt: { gte: pinnedWindowStart } }] },
+              // Pinned lasts longer, not forever — and not at all for a parent
+              // who unpinned it, for whom it ages out like any other post.
+              { AND: [{ isPinned: true }, { pinDismissals: { none: { userId: user.id } } }, { createdAt: { gte: pinnedWindowStart } }] },
               // And the safety catch: a post still ASKING something of this
               // parent does not age out. Hiding an unsigned consent form
               // because it is five weeks old would be the tidy-up doing real
@@ -300,7 +304,12 @@ router.get('/', isAuthenticated, async (req, res) => {
     })
 
     const getTranslated = await buildTranslator(messages, user.preferredLanguage || 'en')
-    res.json(messages.map(msg => serializeParentMessage(msg, getTranslated)))
+    // The query orders on the school's pin; re-sorted on the parent's own, so a
+    // post they unpinned drops back into date order. Stable, so urgent-then-
+    // newest still holds within each half.
+    const serialized = messages.map(msg => serializeParentMessage(msg, getTranslated))
+    serialized.sort((a, b) => Number(b.isPinned) - Number(a.isPinned))
+    res.json(serialized)
   } catch (error) {
     console.error('Error fetching messages:', error)
     res.status(500).json({ error: 'Failed to fetch messages' })
@@ -357,6 +366,48 @@ router.get('/archive', isAuthenticated, async (req, res) => {
   }
 })
 
+/**
+ * A parent unpinning a post for themselves, or pinning it back.
+ *
+ *   POST   /api/messages/:id/unpin   → { pinned: false }
+ *   DELETE /api/messages/:id/unpin   → { pinned: true }
+ *
+ * The school's pin is untouched: every other parent still sees it pinned. Only
+ * a post the school actually pinned can be unpinned, and only within the
+ * parent's own school; anything else is a 404 rather than a silent no-op, so
+ * the app never shows a change that did not happen.
+ */
+router.post('/:id/unpin', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    const message = await prisma.message.findFirst({
+      where: { id: req.params.id, schoolId: user.schoolId, isPinned: true },
+      select: { id: true },
+    })
+    if (!message) return res.status(404).json({ error: 'Message not found' })
+    await prisma.messagePinDismissal.upsert({
+      where: { messageId_userId: { messageId: message.id, userId: user.id } },
+      update: {},
+      create: { messageId: message.id, userId: user.id },
+    })
+    res.json({ pinned: false })
+  } catch (error) {
+    console.error('Error unpinning message:', error)
+    res.status(500).json({ error: 'Failed to unpin' })
+  }
+})
+
+router.delete('/:id/unpin', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    await prisma.messagePinDismissal.deleteMany({ where: { messageId: req.params.id, userId: user.id } })
+    res.json({ pinned: true })
+  } catch (error) {
+    console.error('Error re-pinning message:', error)
+    res.status(500).json({ error: 'Failed to pin' })
+  }
+})
+
 // Get all messages (admin)
 // ─── Admin Notices (parent-facing) ───────────────────────────────────────────
 // The section notices live in, kept out of GET / on purpose. Same audience
@@ -391,10 +442,7 @@ router.get('/notices', isAuthenticated, async (req, res) => {
           ...(childYearGroupIds.length > 0 ? [{ yearGroupId: { in: childYearGroupIds } }] : []),
           ...(childGroupIds.length > 0 ? [{ groupId: { in: childGroupIds } }] : []),
         ],
-        AND: [
-          { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
-          { OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] },
-        ],
+        AND: liveForParent(now),
       },
       include: { attachments: true },
       orderBy: { createdAt: 'desc' },
@@ -493,6 +541,7 @@ router.get('/all', isAdmin, async (req, res) => {
       isScheduled: msg.scheduledAt ? msg.scheduledAt > now : false,
       expiresAt: msg.expiresAt?.toISOString(),
       isExpired: msg.expiresAt ? msg.expiresAt < now : false,
+      archivedAt: msg.archivedAt?.toISOString() ?? null,
       formId: msg.formId,
       form: msg.form ? {
         id: msg.form.id,
@@ -541,7 +590,11 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
     const scheduledDate = scheduledAt ? await parseWallClockForSchool(scheduledAt, user.schoolId) : null
     // "Show until" names the last day the post is shown, so it runs to the END
     // of that day locally — read as UTC midnight it hid the post a day early.
-    const expiresDate = expiresAt ? await parseExpiryForSchool(expiresAt, user.schoolId) : null
+    // No date given means the default — two weeks from going live — not "for
+    // ever". Optional-and-empty is how hundreds of posts came to have no end.
+    const expiresDate = expiresAt
+      ? await parseExpiryForSchool(expiresAt, user.schoolId)
+      : await defaultPostExpiryForSchool(user.schoolId, scheduledDate ?? new Date(), actionDueDate ? new Date(actionDueDate) : null)
     const liveNow = !scheduledDate || scheduledDate <= new Date()
 
     // One post to several audiences is several rows, one per audience — the
@@ -775,6 +828,65 @@ router.post('/', isStaff, validate(createMessageSchema), canSendToTarget, canMar
   }
 })
 
+/**
+ * Archive or restore posts in bulk — the Posts page tidy-up.
+ *
+ *   POST /api/messages/bulk-archive  { ids: string[], archived: boolean }
+ *
+ * Archiving hides a post from parents everywhere (feed, Posts page, notices,
+ * search) and from the admin list's default view. Nothing is deleted:
+ * acknowledgements, form responses and who-has-seen-it are all kept, and
+ * restoring puts the post back exactly as it was — including its own end
+ * date, which is why this is a separate field rather than setting expiresAt.
+ *
+ * Ids from another school are ignored rather than refused, and the response
+ * says how many changed, so a stale selection cannot reach across schools and
+ * cannot fail the whole tidy-up either.
+ */
+const bulkArchiveSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(1000),
+  archived: z.boolean(),
+})
+
+router.post('/bulk-archive', isAdmin, validate(bulkArchiveSchema), async (req, res) => {
+  try {
+    const user = req.user!
+    const { ids, archived } = req.body as z.infer<typeof bulkArchiveSchema>
+    const uniqueIds = [...new Set(ids)]
+
+    const result = await prisma.message.updateMany({
+      where: {
+        id: { in: uniqueIds },
+        schoolId: user.schoolId,
+        // Only rows that actually change, so the count is what was done and a
+        // re-archive does not move the original archive date.
+        archivedAt: archived ? null : { not: null },
+      },
+      data: archived
+        ? { archivedAt: new Date(), archivedById: user.id }
+        : { archivedAt: null, archivedById: null },
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        userName: user.name,
+        action: 'UPDATE',
+        resourceType: 'MESSAGE',
+        resourceId: uniqueIds.length === 1 ? uniqueIds[0] : 'bulk',
+        metadata: { event: archived ? 'MESSAGES_ARCHIVED' : 'MESSAGES_RESTORED', ids: uniqueIds, changed: result.count },
+        schoolId: user.schoolId,
+        ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+      },
+    })
+
+    res.json({ changed: result.count })
+  } catch (error) {
+    console.error('Error bulk-archiving messages:', error)
+    res.status(500).json({ error: 'Failed to update posts' })
+  }
+})
+
 // Update message (admin only)
 router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
   try {
@@ -795,25 +907,32 @@ router.put('/:id', isAdmin, validate(updateMessageSchema), async (req, res) => {
     const scheduledDate = scheduledAt ? await parseWallClockForSchool(scheduledAt, user.schoolId) : null
     const expiresDate = expiresAt ? await parseExpiryForSchool(expiresAt, user.schoolId) : null
 
+    // A field that is not sent is left as it is; an empty string clears it.
+    // Every field used to be written on every save, so the one-click Unpin —
+    // which sends only the title, text and the flag — also wiped the post's
+    // end date, its action, and its class or year group: a class post that was
+    // unpinned stopped reaching that class at all.
+    const keep = <T>(sent: string | undefined, value: T, current: T): T => (sent !== undefined ? value : current)
+
     const message = await prisma.message.update({
       where: { id },
       data: {
-        title,
-        content: sanitizeRichText(content),
-        targetClass,
-        classId: classId || null,
-        yearGroupId: yearGroupId || null,
-        groupId: groupId !== undefined ? (groupId || null) : existing.groupId,
-        actionType: actionType || null,
-        actionLabel: actionLabel || null,
-        actionDueDate: actionDueDate ? new Date(actionDueDate) : null,
-        actionAmount: actionAmount || null,
+        title: title ?? existing.title,
+        content: content !== undefined ? sanitizeRichText(content) : existing.content,
+        targetClass: targetClass ?? existing.targetClass,
+        classId: keep(classId, classId || null, existing.classId),
+        yearGroupId: keep(yearGroupId, yearGroupId || null, existing.yearGroupId),
+        groupId: keep(groupId, groupId || null, existing.groupId),
+        actionType: keep(actionType, actionType || null, existing.actionType),
+        actionLabel: keep(actionLabel, actionLabel || null, existing.actionLabel),
+        actionDueDate: keep(actionDueDate, actionDueDate ? new Date(actionDueDate) : null, existing.actionDueDate),
+        actionAmount: keep(actionAmount, actionAmount || null, existing.actionAmount),
         isPinned: isPinned ?? existing.isPinned,
         isUrgent: isUrgent ?? existing.isUrgent,
         requiresAcknowledgment: requiresAcknowledgment ?? existing.requiresAcknowledgment,
-        scheduledAt: scheduledAt !== undefined ? scheduledDate : existing.scheduledAt,
-        expiresAt: expiresDate,
-        formId: formId !== undefined ? (formId || null) : existing.formId,
+        scheduledAt: keep(scheduledAt, scheduledDate, existing.scheduledAt),
+        expiresAt: keep(expiresAt, expiresDate, existing.expiresAt),
+        formId: keep(formId, formId || null, existing.formId),
       },
     })
 

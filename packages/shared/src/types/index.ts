@@ -190,6 +190,10 @@ export interface Message {
   scheduledAt?: string
   isScheduled?: boolean
   expiresAt?: string
+  /** Admin list only: past its end date, so parents no longer see it. */
+  isExpired?: boolean
+  /** Admin list only: taken down in a tidy-up. Hidden from parents, kept. */
+  archivedAt?: string | null
   formId?: string
   form?: Form & { userResponse?: FormResponseData | null }
   attachments?: MessageAttachment[]

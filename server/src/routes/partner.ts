@@ -15,7 +15,7 @@ import { marked } from 'marked'
 import prisma from '../services/prisma.js'
 import { requirePartner } from '../middleware/partnerAuth.js'
 import { resolveHubStaffMembership } from '../services/hubStaffActor.js'
-import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool } from '../services/dateTime.js'
+import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool, defaultPostExpiryForSchool } from '../services/dateTime.js'
 import { currentStaffWhere, hasLeft } from '../services/currentStaff.js'
 import { describeAttachments } from '../services/attachmentSummary.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
@@ -2685,9 +2685,11 @@ router.post('/messages', requirePartner, async (req, res) => {
     const broadcastLiveNow = !scheduledDate || scheduledDate <= new Date()
     // Same rule as the admin composer: a bare date runs to the end of that day
     // in the school's zone; anything more specific is taken as sent.
+    // No date means the default — two weeks from going live — as on the admin
+    // composer, so a Desk post and a Connect post end the same way.
     const expiresDate = typeof expiresAt === 'string' && expiresAt
       ? await parseExpiryForSchool(expiresAt, actor.schoolId)
-      : null
+      : await defaultPostExpiryForSchool(actor.schoolId, scheduledDate ?? new Date())
     const attachmentRows = Array.isArray(attachments) ? attachments : []
 
     // `sendNotification` currently ignores `req`, but the native route passes it
