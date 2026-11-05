@@ -228,6 +228,27 @@ describe('fixtures', () => {
     expect(sent().body).toBe('Amina is no longer in the team for U11 A Netball v DESS on Wednesday 11 November.')
   })
 
+  it('tells a family the fixture is off, in the words the teacher wrote', async () => {
+    await send('fixture.cancelled', { reason: 'Pitch waterlogged.' })
+    expect(sent().type).toBe('ECA_FIXTURE_STATUS')
+    expect(sent().title).toBe("Amina's fixture is cancelled")
+    expect(sent().body).toBe('U11 A Netball v DESS on Wednesday 11 November is cancelled. Pitch waterlogged.')
+  })
+
+  it('tells a family it is back on, with the times they need again', async () => {
+    await send('fixture.back_on', {})
+    expect(sent().title).toBe("Amina's fixture is back on")
+    expect(sent().body).toBe(
+      'U11 A Netball v DESS on Wednesday 11 November is going ahead after all. Out of lessons from 14:00, back by 17:30. Kit: Whites.'
+    )
+  })
+
+  it('still sends a cancellation when This Week is off, because there is nothing to reply to', async () => {
+    prismaMock.school.findUnique.mockResolvedValue({ id: 'school-1', activeScheduleEnabled: false })
+    await send('fixture.cancelled', { reason: 'Pitch waterlogged.' })
+    expect(sent().title).toBe("Amina's fixture is cancelled")
+  })
+
   it('still reads properly with only the name', async () => {
     await post(intent({ event_type: 'fixture.team_selected', payload: { fixtureName: 'Netball v DESS', role: 'playing' } }))
     expect(sent().body).toBe('Amina is playing in Netball v DESS.')
