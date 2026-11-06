@@ -243,6 +243,35 @@ describe('fixtures', () => {
     )
   })
 
+  it('passes on the transport and the note for families, in the words the teacher wrote', async () => {
+    await send('fixture.team_selected', {
+      role: 'playing',
+      previousRole: null,
+      transport: 'Coach from the main gate',
+      familyNote: 'Collection is from the Al Barsha gate, not the school.',
+    })
+    expect(sent().body).toBe(
+      'Amina is playing in U11 A Netball v DESS on Wednesday 11 November. Out of lessons from 14:00, back by 17:30. Kit: Whites. Transport: Coach from the main gate. Collection is from the Al Barsha gate, not the school.'
+    )
+  })
+
+  it('includes the note when asking whether they can play, because it may change the answer', async () => {
+    await send('fixture.availability_requested', { familyNote: 'Collection is from the Al Barsha gate.' })
+    expect(sent().body).toBe(
+      'U11 A Netball v DESS on Wednesday 11 November. Collection is from the Al Barsha gate. Open This Week in Connect to reply.'
+    )
+  })
+
+  it('leaves the note out when a child comes out of the team', async () => {
+    await send('fixture.team_removed', { familyNote: 'Collection is from the Al Barsha gate.' })
+    expect(sent().body).toBe('Amina is no longer in the team for U11 A Netball v DESS on Wednesday 11 November.')
+  })
+
+  it('leaves the note out when the fixture is off', async () => {
+    await send('fixture.cancelled', { reason: 'Pitch waterlogged.', familyNote: 'Collection is from the Al Barsha gate.' })
+    expect(sent().body).toBe('U11 A Netball v DESS on Wednesday 11 November is cancelled. Pitch waterlogged.')
+  })
+
   it('still sends a cancellation when This Week is off, because there is nothing to reply to', async () => {
     prismaMock.school.findUnique.mockResolvedValue({ id: 'school-1', activeScheduleEnabled: false })
     await send('fixture.cancelled', { reason: 'Pitch waterlogged.' })

@@ -107,11 +107,14 @@ function composeFixtureCopy(
   const fixture = stringField(payload, 'fixtureName') ?? 'a fixture'
   const date = fixtureDate(stringField(payload, 'date'))
   const on = date ? ` on ${date}` : ''
+  // Word for word, like the cancellation reason: the teacher wrote it for parents.
+  const noteField = stringField(payload, 'familyNote')
+  const note = noteField ? ` ${noteField}` : ''
 
   if (eventType === 'fixture.availability_requested') {
     return {
       title: `Can ${childName} play?`,
-      body: `${fixture}${on}. Open This Week in Connect to reply.`,
+      body: `${fixture}${on}.${note} Open This Week in Connect to reply.`,
     }
   }
 
@@ -141,7 +144,9 @@ function composeFixtureCopy(
   else if (back) practical.push(`Back by ${back}.`)
   const kit = stringField(payload, 'kit')
   if (kit) practical.push(`Kit: ${kit}.`)
-  const extra = practical.length ? ` ${practical.join(' ')}` : ''
+  const transport = stringField(payload, 'transport')
+  if (transport) practical.push(`Transport: ${transport}.`)
+  const extra = `${practical.length ? ` ${practical.join(' ')}` : ''}${note}`
 
   if (eventType === 'fixture.back_on') {
     return {
