@@ -6,6 +6,7 @@ import prisma from '../services/prisma.js'
 import { isAuthenticated, isAdmin } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { createLoginCode } from './auth.js'
+import { removeGuardianAnswers } from '../services/perChildForms.js'
 import {
   generateAccessCode,
   generateMagicToken,
@@ -277,6 +278,9 @@ router.delete('/parents/:id', isAdmin, async (req: Request, res: Response) => {
     await prisma.parentStudentLink.deleteMany({ where: { userId: id } })
     await prisma.child.deleteMany({ where: { parentId: id } })
     await prisma.messageAcknowledgment.deleteMany({ where: { userId: id } })
+    // Per-child answers first, so the other guardian's answer then stands for
+    // the child instead of the child going unanswered (services/perChildForms).
+    await removeGuardianAnswers(id)
     await prisma.formResponse.deleteMany({ where: { userId: id } })
     await prisma.eventRsvp.deleteMany({ where: { userId: id } })
     await prisma.pulseResponse.deleteMany({ where: { userId: id } })

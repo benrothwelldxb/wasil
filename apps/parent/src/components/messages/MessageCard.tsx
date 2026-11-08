@@ -4,7 +4,7 @@ import DOMPurify from 'dompurify'
 import { Share2, AlertTriangle, Pin, X, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
-import { formProgress } from '../../utils/perChildForm'
+import { formProgress, changeableChildren, answersToChange } from '../../utils/perChildForm'
 import { readsArabic, fieldLabel, optionLabel } from '../../utils/arabicText'
 import { pupilChoiceOptions } from '../../utils/pupilChoice'
 import { reportPostSeen } from '../../services/postSeen'
@@ -63,9 +63,19 @@ export function MessageCard({
   const progress = formProgress(form)
   const perChild = progress.children
   const pendingChildren = progress.pending
-  const activeChild = progress.active
+  // On a consent form a parent may reopen their own answer for a child and
+  // change it before the deadline. While they do, that child is the one the
+  // form is for.
+  const changeable = changeableChildren(form)
+  const [changingChildId, setChangingChildId] = useState<string | null>(null)
+  const changingChild = changeable.find(c => c.studentId === changingChildId) ?? null
+  const activeChild = changingChild ?? progress.active
   const hasResponded = progress.done
   const awaitingAnswer = progress.awaitingAnswer
+  const showFormFields = awaitingAnswer || !!changingChild
+  const consentField = form?.consentField
+    ? ((form.fields || []) as FormField[]).find(f => f.id === form.consentField) ?? null
+    : null
   const attachments = message.attachments || []
   const hasAttachments = attachments.length > 0
   const [showAttachments, setShowAttachments] = useState(false)
@@ -115,15 +125,16 @@ export function MessageCard({
   const [currentPage, setCurrentPage] = useState(0)
 
   // Each child starts from a blank form: one child's answers must never be
-  // sent again as the next child's by a parent tapping Submit twice.
+  // sent again as the next child's by a parent tapping Submit twice. A change
+  // starts from this parent's own answer for that child.
   const activeChildId = activeChild?.studentId
   useEffect(() => {
     if (!perChild) return
-    setAnswers(blankAnswers())
+    setAnswers(changingChild && form ? { ...blankAnswers(), ...answersToChange(form, changingChild) } : blankAnswers())
     setErrors({})
     setCurrentPage(0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChildId])
+  }, [activeChildId, changingChildId])
 
   // Multi-page support
   const pages = [...new Set(fields.map(f => f.page || 0))].sort((a, b) => a - b)
@@ -178,6 +189,7 @@ export function MessageCard({
     }
     setErrors({})
     onFormRespond(form.id, answers, activeChild?.studentId)
+    setChangingChildId(null)
   }
 
   const handleNextPage = () => {
@@ -531,7 +543,7 @@ export function MessageCard({
         )}
 
         {/* Inline Form Fields */}
-        {hasForm && awaitingAnswer && (
+        {hasForm && showFormFields && (
           <div
             dir={textDir}
             className="mb-3 p-4 rounded-[16px]"
@@ -540,10 +552,27 @@ export function MessageCard({
             <h4 className="font-bold text-sm mb-1" style={{ color: '#2D2225' }}>{form.title}</h4>
             {form.description && <p className="text-xs font-medium mb-3" style={{ color: '#7A6469' }}>{form.description}</p>}
 
+            {/* Changing an answer already given: which child, and a way out. */}
+            {changingChild && (
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-sm font-bold" style={{ color: '#C4506E' }}>
+                  {t('messages.changingAnswerFor', { name: changingChild.name, defaultValue: 'Changing your answer for {{name}}' })}
+                </p>
+                <button
+                  onClick={() => setChangingChildId(null)}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg"
+                  style={{ backgroundColor: '#F5EEF0', color: '#7A6469' }}
+                >
+                  {t('common.cancel', 'Cancel')}
+                </button>
+              </div>
+            )}
+
             {/* Per-child: who this answer is for, and who is already done. */}
-            {perChild && activeChild && (
+            {perChild && activeChild && !changingChild && (
               <div className="mb-3">
-                {perChild.filter(c => c.response).map(c => (
+                {/* A child this parent can change is listed below the form instead. */}
+                {perChild.filter(c => c.response && !changeable.some(x => x.studentId === c.studentId)).map(c => (
                   <p key={c.studentId} className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#5BA97B' }}>
                     <Check className="h-3.5 w-3.5" />
                     {t('messages.answeredFor', { name: c.name, defaultValue: 'Answered for {{name}}' })}
@@ -808,6 +837,33 @@ export function MessageCard({
                 {t('common.submit', 'Submit')}
               </button>
             )}
+          </div>
+        )}
+
+        {/* A consent form: this parent's own answer for each child, and a way
+            to change it before the deadline. Only their own answer is ever
+            shown, never the other parent's. */}
+        {hasForm && !changingChild && changeable.length > 0 && (
+          <div dir={textDir} className="mb-3 space-y-1.5">
+            {changeable.map(c => {
+              const given = consentField ? c.yourAnswer?.answers?.[consentField.id] : undefined
+              return (
+                <div key={c.studentId} className="flex items-center justify-between gap-2 text-xs font-semibold" style={{ color: '#7A6469' }}>
+                  <span>
+                    {typeof given === 'string' && consentField
+                      ? t('messages.yourAnswerFor', { name: c.name, answer: optionLabel(consentField, given, rtl), defaultValue: 'Your answer for {{name}}: {{answer}}' })
+                      : t('messages.answeredFor', { name: c.name, defaultValue: 'Answered for {{name}}' })}
+                  </span>
+                  <button
+                    onClick={() => setChangingChildId(c.studentId)}
+                    className="font-bold px-3 py-1.5 rounded-lg"
+                    style={{ backgroundColor: '#F5EEF0', color: '#C4506E' }}
+                  >
+                    {t('messages.changeAnswer', 'Change answer')}
+                  </button>
+                </div>
+              )
+            })}
           </div>
         )}
 

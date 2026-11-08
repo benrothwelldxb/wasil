@@ -4134,6 +4134,7 @@ function partnerAnswers(answers: unknown, fields: StoredFormField[]): Record<str
 function serializePartnerForm(form: {
   id: string; externalRef: string | null; title: string; description: string | null; status: string
   expiresAt: Date | null; fields: unknown; perChild: boolean; titleAr?: string | null; descriptionAr?: string | null
+  consentFieldId?: string | null
 }) {
   return {
     id: form.id,
@@ -4145,6 +4146,7 @@ function serializePartnerForm(form: {
     status: form.status,
     deadline: form.expiresAt ? form.expiresAt.toISOString() : null,
     perChild: form.perChild,
+    consentField: form.consentFieldId ?? null,
     fields: (form.fields as StoredFormField[]).map(f => ({
       id: f.id, type: f.partnerType, label: f.label, required: f.required,
       ...(f.labelAr ? { labelAr: f.labelAr } : {}),
@@ -4185,6 +4187,15 @@ function questionsOf(fields: unknown): unknown {
  * `deadline` is an ISO time, or a bare date meaning the end of that day in the
  * school's zone; `null` clears it. Answers are refused after it.
  *
+ * `consentField` names the required yesno question that IS the consent. Set,
+ * one guardian's Yes stands for the child: the other guardian's No does not
+ * overturn it, a first No does not stop the other guardian being asked, and
+ * each parent sees and may change only their own answer before the deadline.
+ * Leave it out on a form that is not consent (a room choice), where the latest
+ * answer for a child stands. Omitted on a re-publish, it is left as it is; it
+ * may be set on a form that already has answers, but not moved to another
+ * question or cleared once answers exist (409 form_has_answers).
+ *
  * A `pupil_choice` field (C14, room-sharing friendship choices) carries
  * `pupilHubIds`: 1 to 400 distinct Hub pupil ids. The parent picks one from a
  * drop-down of those Connect knows, labelled "Jade W." and sorted by label,
@@ -4219,6 +4230,18 @@ router.put('/forms/:externalRef', requirePartner, async (req, res) => {
     const normalised = normalisePartnerFields(body.fields)
     if ('error' in normalised) return res.status(400).json({ error: normalised.error })
 
+    let consentFieldId: string | null | undefined
+    if (body.consentField === null) consentFieldId = null
+    else if (typeof body.consentField === 'string') {
+      const named = normalised.fields.find(f => f.id === body.consentField)
+      if (!named || named.partnerType !== 'yesno' || !named.required) {
+        return res.status(400).json({ error: 'consentField must name a required yesno field' })
+      }
+      consentFieldId = named.id
+    } else if (body.consentField !== undefined) {
+      return res.status(400).json({ error: 'consentField must be a field id, or null' })
+    }
+
     if (body.status !== undefined && body.status !== 'ACTIVE' && body.status !== 'CLOSED') {
       return res.status(400).json({ error: 'status must be ACTIVE or CLOSED' })
     }
@@ -4235,7 +4258,7 @@ router.put('/forms/:externalRef', requirePartner, async (req, res) => {
     const owner = callerOwner(req)
     const existing = await prisma.form.findFirst({
       where: { schoolId: actor.schoolId, externalRef },
-      select: { id: true, managedBy: true, fields: true, _count: { select: { responses: true } } },
+      select: { id: true, managedBy: true, fields: true, consentFieldId: true, _count: { select: { responses: true } } },
     })
     if (existing && existing.managedBy !== owner) {
       return res.status(409).json({ error: 'form_managed_elsewhere', managedBy: existing.managedBy })
@@ -4247,6 +4270,16 @@ router.put('/forms/:externalRef', requirePartner, async (req, res) => {
         hint: 'fields cannot change once answered; publish a new externalRef for a new question',
       })
     }
+    // Which question is the consent decides whose answer stands, so it cannot
+    // move once answered. Setting it for the first time can: every guardian's
+    // answer is already on record, and the rule only ever keeps a Yes standing.
+    if (existing && existing._count.responses > 0 && consentFieldId !== undefined
+      && existing.consentFieldId && existing.consentFieldId !== consentFieldId) {
+      return res.status(409).json({
+        error: 'form_has_answers',
+        hint: 'consentField cannot change once answered; publish a new externalRef for a new question',
+      })
+    }
 
     const data = {
       title,
@@ -4254,6 +4287,7 @@ router.put('/forms/:externalRef', requirePartner, async (req, res) => {
       titleAr,
       descriptionAr,
       fields: normalised.fields,
+      ...(consentFieldId !== undefined ? { consentFieldId } : {}),
       ...(deadline !== undefined ? { expiresAt: deadline } : {}),
       ...(body.status ? { status: body.status as string } : {}),
     }
@@ -4312,11 +4346,19 @@ function decodeAnswerCursor(raw: string): { at: Date; id: string } | null {
  *
  *   GET /api/partner/forms/:externalRef/responses?school_id=&since=&limit=
  *   → { form, responses: [{ pupilHubId, answers, answeredBy: { name, hubUserId },
- *        firstAnsweredAt, answeredAt }], next, hasMore }
+ *        firstAnsweredAt, answeredAt,
+ *        guardianAnswers: [{ answers, answeredBy, answeredAt }] }], next, hasMore }
  *
- * One entry per CHILD. A guardian changing an answer before the deadline (a
- * consent withdrawn) moves that child's entry forward, so it comes round again
- * after the cursor: the reader keeps the latest entry per pupil. Pass `next`
+ * One entry per CHILD: the answer that STANDS for the child. On a form with a
+ * consentField that is one guardian's Yes if any guardian has said yes,
+ * otherwise the latest answer; on any other form the latest answer.
+ * `answeredAt` is when that standing answer was given. `guardianAnswers` is
+ * every guardian's own current answer, so the school's record shows a No that
+ * did not stand.
+ *
+ * Any guardian answering or changing an answer moves that child's entry
+ * forward, so it comes round again after the cursor, even when the answer
+ * standing did not change: the reader keeps the latest entry per pupil. Pass `next`
  * as the following call's `since`; it is always present, and equal to `since`
  * when nothing has changed.
  *
@@ -4356,7 +4398,7 @@ router.get('/forms/:externalRef/responses', requirePartner, async (req, res) => 
         } : {}),
       },
       select: {
-        id: true, answers: true, createdAt: true, updatedAt: true,
+        id: true, answers: true, createdAt: true, updatedAt: true, studentId: true, userId: true,
         student: { select: { hubPupilId: true } },
         user: { select: { name: true, hubUserId: true } },
       },
@@ -4367,6 +4409,17 @@ router.get('/forms/:externalRef/responses', requirePartner, async (req, res) => 
     const page = hasMore ? rows.slice(0, limit) : rows
     const last = page[page.length - 1]
     const fields = form.fields as StoredFormField[]
+    // Every guardian's own answer for the children on this page: the school's
+    // record of who said what, including a No that did not stand.
+    const pageStudentIds = page.map(r => r.studentId).filter((x): x is string => !!x)
+    const guardianRows = pageStudentIds.length === 0 ? [] : await prisma.formGuardianAnswer.findMany({
+      where: { formId: form.id, studentId: { in: pageStudentIds } },
+      select: {
+        studentId: true, userId: true, answers: true, updatedAt: true,
+        user: { select: { name: true, hubUserId: true } },
+      },
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+    })
 
     res.json({
       form: serializePartnerForm(form),
@@ -4378,7 +4431,16 @@ router.get('/forms/:externalRef/responses', requirePartner, async (req, res) => 
         // guardian gave consent for which child.
         answeredBy: { name: r.user?.name ?? null, hubUserId: r.user?.hubUserId ?? null },
         firstAnsweredAt: r.createdAt.toISOString(),
-        answeredAt: r.updatedAt.toISOString(),
+        // When the answer that stands was given, not when the entry last
+        // changed: another guardian's No that did not stand moves the entry
+        // round the cursor but must not make an old Yes look newer than, say,
+        // an office record made after it.
+        answeredAt: (guardianRows.find(g => g.studentId === r.studentId && g.userId === r.userId)?.updatedAt ?? r.updatedAt).toISOString(),
+        guardianAnswers: guardianRows.filter(g => g.studentId === r.studentId).map(g => ({
+          answers: partnerAnswers(g.answers, fields),
+          answeredBy: { name: g.user?.name ?? null, hubUserId: g.user?.hubUserId ?? null },
+          answeredAt: g.updatedAt.toISOString(),
+        })),
       })),
       next: last ? encodeAnswerCursor(last.updatedAt, last.id) : (sinceRaw || encodeAnswerCursor(new Date(0), '')),
       hasMore,

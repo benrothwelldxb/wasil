@@ -346,6 +346,7 @@ model User {
   messageViews   MessageView[]
   pinDismissals  MessagePinDismissal[]
   formResponses  FormResponse[]
+  formGuardianAnswers FormGuardianAnswer[]
   eventRsvps     EventRsvp[]
   proposedEvents Event[]                 @relation("EventProposals")
   pulseResponses PulseResponse[]
@@ -645,6 +646,7 @@ model Student {
   messageTargets       MessageStudentTarget[]
   /// Answers given for this pupil on per-child forms (trip consent).
   formResponses        FormResponse[]
+  formGuardianAnswers FormGuardianAnswer[]
 }
 
 // Junction table: Parent-Student link
@@ -1280,12 +1282,19 @@ model Form {
   /// Only that app may change it or read its answers through the partner API,
   /// and a Connect admin may not edit or delete it.
   managedBy   String?
+  /// The id of the yes/no question that IS the consent, on a partner consent
+  /// form. When set, one guardian's Yes stands for the child: the other
+  /// guardian's No does not overturn it, and a first No does not stop the
+  /// other guardian being asked. Null on every other form, where the latest
+  /// answer for a child stands (a room choice). Declared by the partner.
+  consentFieldId String?
 
   /// Every post this form has been attached to — the first send and any
   /// reminders after it.
   messages Message[]
 
-  responses FormResponse[]
+  responses       FormResponse[]
+  guardianAnswers FormGuardianAnswer[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1320,6 +1329,27 @@ model FormResponse {
   // `prisma migrate dev` offers to recreate a plain unique on (formId, userId),
   // refuse: it would stop a parent of two children answering for both.
   @@index([formId, updatedAt])
+}
+
+/// Each guardian's own answer for a child on a per-child form. FormResponse is
+/// the child's answer that stands, derived from these (see
+/// services/perChildForms effectiveAnswer); these are the record of who said
+/// what, so one guardian answering never erases the other's answer.
+model FormGuardianAnswer {
+  id        String   @id @default(cuid())
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers   Json // { fieldId: value }
+  createdAt DateTime @default(now())
+  /// When this guardian's current answer was given.
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([formId, studentId, userId])
+  @@index([userId])
 }
 
 // Parent Invitations (for self-registration)

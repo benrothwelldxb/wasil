@@ -99,6 +99,9 @@
     "answeringFor": "Answering for {{name}}",
     "childProgress": "Child {{current}} of {{total}}",
     "answeredFor": "Answered for {{name}}",
+    "changingAnswerFor": "Changing your answer for {{name}}",
+    "yourAnswerFor": "Your answer for {{name}}: {{answer}}",
+    "changeAnswer": "Change answer",
     "chooseFriend": "Choose a friend"
   },
   "events": {

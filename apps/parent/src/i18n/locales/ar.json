@@ -86,6 +86,9 @@
     "answeringFor": "الإجابة عن {{name}}",
     "childProgress": "الطفل {{current}} من {{total}}",
     "answeredFor": "تمت الإجابة عن {{name}}",
+    "changingAnswerFor": "تغيير إجابتك عن {{name}}",
+    "yourAnswerFor": "إجابتك عن {{name}}: {{answer}}",
+    "changeAnswer": "تغيير الإجابة",
     "chooseFriend": "اختر صديقاً"
   },
   "events": {

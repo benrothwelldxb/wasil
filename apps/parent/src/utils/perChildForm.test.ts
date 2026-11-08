@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Form, FormChildState, FormResponseData } from '@wasil/shared'
-import { formProgress, withAnswer } from './perChildForm'
+import { formProgress, withAnswer, canChangeAnswers, changeableChildren, answersToChange } from './perChildForm'
 
 /**
  * A trip consent form is answered once per CHILD.
@@ -68,5 +68,43 @@ describe('withAnswer', () => {
 
   it('records an ordinary form\'s answer as before', () => {
     expect(withAnswer(form({}), result).userResponse).toEqual(result)
+  })
+})
+
+describe('changing an answer on a consent form', () => {
+  const mine = (studentId: string, name: string, consent: string): FormChildState => ({
+    ...child(studentId, name, true),
+    yourAnswer: { answers: { consent, sig: 'data:image/png;base64,xx', signed: 'Rania' }, updatedAt: 'x' },
+  })
+  const consent = (over: Partial<Form>) => form({ perChild: true, consentField: 'consent', expiresAt: '2099-01-01T00:00:00Z', ...over })
+
+  it('is offered only on a consent form that is open and before its deadline', () => {
+    expect(canChangeAnswers(consent({}))).toBe(true)
+    expect(canChangeAnswers(consent({ consentField: null }))).toBe(false)
+    expect(canChangeAnswers(consent({ status: 'CLOSED' }))).toBe(false)
+    expect(canChangeAnswers(consent({ expiresAt: '2020-01-01T00:00:00Z' }))).toBe(false)
+    expect(canChangeAnswers(form({ consentField: 'consent' }))).toBe(false)
+  })
+
+  it('lists only the children this parent answered for themselves', () => {
+    // Omar: this parent's own answer. Lina: settled by the other parent's Yes.
+    const f = consent({ children: [mine('a', 'Omar', 'No'), child('b', 'Lina', true)] })
+    expect(changeableChildren(f).map(c => c.name)).toEqual(['Omar'])
+  })
+
+  it('starts the change from their own answer, but signs again', () => {
+    const f = consent({ fields: [{ id: 'sig', type: 'signature', label: 'Sign', required: true, removable: false }] as Form['fields'] })
+    expect(answersToChange(f, mine('a', 'Omar', 'No'))).toEqual({ consent: 'No', sig: '', signed: 'Rania' })
+  })
+
+  it('keeps the new answer as their own once accepted', () => {
+    const f = consent({ children: [mine('a', 'Omar', 'No')] })
+    const next = withAnswer(f, { ...result, answers: { consent: 'Yes' }, updatedAt: '2026-10-12T08:00:00.000Z' }, 'a')
+    expect(next.children![0].yourAnswer).toEqual({ answers: { consent: 'Yes' }, updatedAt: '2026-10-12T08:00:00.000Z' })
+  })
+
+  it('records no own answer on a form that is not consent', () => {
+    const next = withAnswer(form({ perChild: true, children: [child('a', 'Omar')] }), result, 'a')
+    expect(next.children![0].yourAnswer).toBeUndefined()
   })
 })
