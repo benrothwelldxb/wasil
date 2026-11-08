@@ -6,7 +6,7 @@ import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../mid
 import { validate } from '../middleware/validate.js'
 import { logAudit, computeChanges } from '../services/audit.js'
 import { tenant } from '../services/tenant.js'
-import { perChildFormStates, parentChildrenOf } from '../services/perChildForms.js'
+import { perChildFormStates, parentChildrenOf, recordChildAnswer } from '../services/perChildForms.js'
 import { managedByLabel } from '../services/groupOwnership.js'
 import { parentVisibleFormWhere } from '../services/partnerSwitch.js'
 import { checkPupilChoices, chosenPupilNames, isPupilChoice } from '../services/pupilChoice.js'
@@ -327,8 +327,9 @@ router.delete('/:id', isAdmin, async (req, res) => {
 //
 // A per-child form (Form.perChild) is answered once per CHILD: `studentId` is
 // required, must be one of this parent's children the form is asking about
-// (see services/perChildForms), and the answer is stored against the child, so
-// a second guardian answering for the same child replaces it. The form's
+// (see services/perChildForms). Each guardian's answer is kept as their own;
+// the answer that stands for the child is settled from both: on a consent
+// form one guardian's Yes stands, otherwise the latest answer. The form's
 // deadline is enforced: consent given after it closed is not consent the trip
 // can rely on. An ordinary form is answered once per parent, as before.
 router.post('/:id/respond', isAuthenticated, async (req, res) => {
@@ -371,7 +372,7 @@ router.post('/:id/respond', isAuthenticated, async (req, res) => {
         return res.status(400).json({ error: 'Choose which child this answer is for' })
       }
       const full = await loadUserWithRelations(user.id)
-      const states = await perChildFormStates([form.id], parentChildrenOf(full ?? {}))
+      const states = await perChildFormStates([form.id], parentChildrenOf(full ?? {}), user.id)
       // Not one of this parent's children, or not one the form is asking about:
       // the same answer either way, so it says nothing about other families.
       if (!(states.get(form.id) ?? []).some(c => c.studentId === studentId)) {
@@ -384,18 +385,20 @@ router.post('/:id/respond', isAuthenticated, async (req, res) => {
         return res.status(400).json({ error: checked.error, field: checked.field, message: checked.message })
       }
       const stored = checked.answers as typeof answers
-      const response = await prisma.formResponse.upsert({
-        where: { formId_studentId: { formId: id, studentId } },
-        update: { answers: stored, userId: user.id },
-        create: { formId: id, userId: user.id, studentId, answers: stored },
+      // Kept as this guardian's own answer; the answer that stands for the
+      // child is settled from both guardians' (services/perChildForms). The
+      // reply is this guardian's own answer, never the other guardian's.
+      const mine = await recordChildAnswer({
+        formId: id, studentId, userId: user.id, answers: stored, consentFieldId: form.consentFieldId ?? null,
       })
       return res.json({
-        id: response.id,
-        formId: response.formId,
-        userId: response.userId,
-        studentId: response.studentId,
-        answers: response.answers,
-        createdAt: response.createdAt.toISOString(),
+        id: mine.id,
+        formId: mine.formId,
+        userId: mine.userId,
+        studentId: mine.studentId,
+        answers: mine.answers,
+        createdAt: mine.createdAt.toISOString(),
+        updatedAt: mine.updatedAt.toISOString(),
       })
     }
 

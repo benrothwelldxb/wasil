@@ -231,7 +231,7 @@ function authorArabic(lang: string, arabic: string | null | undefined, fallback:
  *  the parent's children each asks about, and what is answered for each. */
 async function perChildStatesFor(messages: Array<{ form?: { id: string; perChild?: boolean } | null }>, user: any) {
   const formIds = [...new Set(messages.filter(m => m.form?.perChild).map(m => m.form!.id))]
-  return perChildFormStates(formIds, parentChildrenOf(user))
+  return perChildFormStates(formIds, parentChildrenOf(user), user.id)
 }
 
 /** One post as a parent reads it. Shared so the dashboard and the Posts page
@@ -287,6 +287,10 @@ function serializeParentMessage(
         createdAt: msg.form.createdAt.toISOString(),
         updatedAt: msg.form.updatedAt.toISOString(),
         perChild: !!msg.form.perChild,
+        // A consent form names its consent question: one guardian's Yes
+        // stands, and each parent may change their own answer before the
+        // deadline (services/perChildForms).
+        consentField: msg.form.perChild ? msg.form.consentFieldId ?? null : null,
         ...(children ? { children } : {}),
         userResponse: ownResponse ? {
           id: ownResponse.id,

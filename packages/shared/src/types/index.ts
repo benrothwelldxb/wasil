@@ -284,6 +284,10 @@ export interface Form {
    *  either guardian. `userResponse` is set only once every child has one. */
   perChild?: boolean
   children?: FormChildState[]
+  /** On a per-child consent form, the id of the yes/no question that is the
+   *  consent. One guardian's Yes stands, and each parent may change their own
+   *  answer before the deadline. Null or absent on every other form. */
+  consentField?: string | null
 }
 
 export interface FormChildState {
@@ -298,6 +302,12 @@ export interface FormChildState {
     createdAt: string
     updatedAt: string
   } | null
+  /** This parent's own answer, on a consent form only. Never the other
+   *  guardian's. */
+  yourAnswer?: {
+    answers: Record<string, unknown>
+    updatedAt: string
+  } | null
 }
 
 export interface FormResponseData {
@@ -307,6 +317,7 @@ export interface FormResponseData {
   studentId?: string | null
   answers: Record<string, unknown>
   createdAt: string
+  updatedAt?: string
 }
 
 export interface FormListResponse {

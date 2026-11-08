@@ -17,8 +17,13 @@ const prismaMock = {
   school: { findFirst: vi.fn(), findUnique: vi.fn() },
   user: { findFirst: vi.fn(), findUnique: vi.fn() },
   group: { findMany: vi.fn() },
-  form: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-  formResponse: { findMany: vi.fn(), upsert: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
+  form: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  formResponse: { findMany: vi.fn(), upsert: vi.fn(), findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
+  // Each guardian's own answer, kept in memory so the answer that stands for a
+  // child is settled from real rows (services/perChildForms).
+  formGuardianAnswer: { findMany: vi.fn(), upsert: vi.fn(), deleteMany: vi.fn() },
+  $transaction: vi.fn(),
+  $executeRaw: vi.fn(),
   message: { create: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
   messageAttachment: { createMany: vi.fn() },
   studentGroupLink: { findMany: vi.fn() },
@@ -91,8 +96,36 @@ const PUPILS = [
   { id: 'stu-8', firstName: 'Aisha', lastName: 'Rahman', hubPupilId: 'hub-aisha' },
 ]
 
+type GuardianRow = { id: string; formId: string; studentId: string; userId: string; answers: unknown; createdAt: Date; updatedAt: Date }
+let guardianRows: GuardianRow[] = []
+let clock = Date.parse('2026-10-11T08:00:00Z')
+const tick = () => new Date((clock += 60_000))
+const matches = (r: GuardianRow, where: any = {}) =>
+  (!where.formId || (typeof where.formId === 'string' ? r.formId === where.formId : where.formId.in.includes(r.formId)))
+  && (!where.studentId || (typeof where.studentId === 'string' ? r.studentId === where.studentId : where.studentId.in.includes(r.studentId)))
+  && (!where.userId || r.userId === where.userId)
+
 beforeEach(() => {
   vi.clearAllMocks()
+  guardianRows = []
+  prismaMock.$transaction.mockImplementation(async (fn: any) => fn(prismaMock))
+  prismaMock.$executeRaw.mockResolvedValue(1)
+  prismaMock.form.findMany.mockImplementation(async () => [{ id: 'f-1', consentFieldId: null }])
+  prismaMock.formGuardianAnswer.findMany.mockImplementation(async ({ where }: any) =>
+    guardianRows.filter(r => matches(r, where)).map(r => ({ ...r, user: { name: `Name of ${r.userId}`, hubUserId: `hub-${r.userId}` } })))
+  prismaMock.formGuardianAnswer.upsert.mockImplementation(async ({ where, update, create }: any) => {
+    const k = where.formId_studentId_userId
+    const found = guardianRows.find(r => r.formId === k.formId && r.studentId === k.studentId && r.userId === k.userId)
+    if (found) { Object.assign(found, update, { updatedAt: tick() }); return found }
+    const at = tick()
+    const row = { id: `ga-${guardianRows.length + 1}`, ...create, createdAt: at, updatedAt: at }
+    guardianRows.push(row)
+    return row
+  })
+  prismaMock.formGuardianAnswer.deleteMany.mockImplementation(async ({ where }: any) => {
+    guardianRows = guardianRows.filter(r => !matches(r, where))
+    return { count: 1 }
+  })
   // The school has turned Wasil Beyond on (services/partnerSwitch).
   prismaMock.school.findUnique.mockResolvedValue({ beyondEnabled: true })
   prismaMock.partnerToken.findUnique.mockResolvedValue({ id: 'pt-1', name: 'beyond', revokedAt: null })
@@ -276,15 +309,31 @@ describe('a parent answering, once per child', () => {
     }))
   })
 
-  it('stores the answer against the child, keyed so the other guardian replaces it', async () => {
+  it('keeps the answer as this guardian\'s own, and as the child\'s answer', async () => {
     const res = await answer({ answers: ANSWERS, studentId: 'stu-2' })
     expect(res.status).toBe(200)
     expect(res.body.studentId).toBe('stu-2')
+    expect(guardianRows).toMatchObject([{ formId: 'f-1', studentId: 'stu-2', userId: 'parent-1', answers: ANSWERS }])
     expect(prismaMock.formResponse.upsert).toHaveBeenCalledWith({
       where: { formId_studentId: { formId: 'f-1', studentId: 'stu-2' } },
-      update: { answers: ANSWERS, userId: 'parent-1' },
+      update: { answers: ANSWERS, userId: 'parent-1', updatedAt: expect.any(Date) },
       create: { formId: 'f-1', userId: 'parent-1', studentId: 'stu-2', answers: ANSWERS },
     })
+  })
+
+  it('settles under a lock on the child, so two guardians at once cannot both win', async () => {
+    await answer({ answers: ANSWERS, studentId: 'stu-2' })
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1)
+    expect(prismaMock.$executeRaw).toHaveBeenCalledTimes(1)
+  })
+
+  it('on a form that is not consent, the other guardian\'s later answer stands', async () => {
+    guardianRows.push({ id: 'ga-0', formId: 'f-1', studentId: 'stu-2', userId: 'parent-2', answers: { ...ANSWERS, consent: 'Yes' }, createdAt: new Date(0), updatedAt: new Date(0) })
+    await answer({ answers: { ...ANSWERS, consent: 'No' }, studentId: 'stu-2' })
+    const call = prismaMock.formResponse.upsert.mock.calls[0][0]
+    expect(call.update).toMatchObject({ userId: 'parent-1', answers: { consent: 'No' } })
+    // Both answers are still on record.
+    expect(guardianRows.map(r => r.userId).sort()).toEqual(['parent-1', 'parent-2'])
   })
 
   it('answers each child separately', async () => {
@@ -360,6 +409,60 @@ describe('the post as the parent sees it', () => {
     const res = await request(makeApp()).get('/api/messages')
     expect(res.body[0].form.userResponse).not.toBeNull()
   })
+  describe('on a consent form', () => {
+    const CONSENT_FORM = { ...FORM, consentFieldId: 'consent' }
+    const other = (consent: string) => guardianRows.push({
+      id: 'ga-other', formId: 'f-1', studentId: 'stu-1', userId: 'parent-2',
+      answers: { consent, pickup: 'Coach', signed: 'Karim Haddad' }, createdAt: new Date(0), updatedAt: new Date(0),
+    })
+    const childOmar = async () => {
+      const res = await request(makeApp()).get('/api/messages')
+      return { form: res.body[0].form, omar: res.body[0].form.children.find((c: any) => c.studentId === 'stu-1') }
+    }
+
+    beforeEach(() => {
+      prismaMock.form.findMany.mockResolvedValue([{ id: 'f-1', consentFieldId: 'consent' }])
+      const feed = prismaMock.message.findMany.getMockImplementation()!
+      prismaMock.message.findMany.mockImplementation(async (args: any) =>
+        args?.where?.formId ? feed(args) : [{ ...feedRow, form: { ...CONSENT_FORM, responses: [] } }])
+    })
+
+    it('still asks this parent when the other parent said No, and shows nothing of that No', async () => {
+      other('No')
+      prismaMock.formResponse.findMany.mockResolvedValue([{
+        id: 'r-1', formId: 'f-1', studentId: 'stu-1', answers: { consent: 'No' },
+        createdAt: new Date(), updatedAt: new Date(), user: { name: 'Karim Haddad' },
+      }])
+      const { form, omar } = await childOmar()
+      expect(omar.response).toBeNull()
+      expect(omar.yourAnswer).toBeNull()
+      expect(JSON.stringify(form)).not.toContain('Karim')
+      expect(form.consentField).toBe('consent')
+    })
+
+    it('counts the other parent\'s Yes as answered, with none of its content', async () => {
+      other('Yes')
+      prismaMock.formResponse.findMany.mockResolvedValue([{
+        id: 'r-1', formId: 'f-1', studentId: 'stu-1', answers: { consent: 'Yes', signed: 'Karim Haddad' },
+        createdAt: new Date(), updatedAt: new Date(), user: { name: 'Karim Haddad' },
+      }])
+      const { form, omar } = await childOmar()
+      expect(omar.response).toMatchObject({ answers: {}, answeredBy: '' })
+      expect(omar.yourAnswer).toBeNull()
+      expect(JSON.stringify(form)).not.toContain('Karim')
+    })
+
+    it('shows this parent their own answer, to see and change', async () => {
+      guardianRows.push({
+        id: 'ga-mine', formId: 'f-1', studentId: 'stu-1', userId: 'parent-1',
+        answers: { consent: 'No', signed: 'Rania Haddad' }, createdAt: new Date(0), updatedAt: new Date(0),
+      })
+      prismaMock.formResponse.findMany.mockResolvedValue([])
+      const { omar } = await childOmar()
+      expect(omar.yourAnswer).toEqual({ answers: { consent: 'No', signed: 'Rania Haddad' }, updatedAt: new Date(0).toISOString() })
+      expect(omar.response).toMatchObject({ answers: { consent: 'No' } })
+    })
+  })
 })
 
 describe('GET /api/partner/forms/:externalRef/responses', () => {
@@ -383,6 +486,7 @@ describe('GET /api/partner/forms/:externalRef/responses', () => {
       answeredBy: { name: 'Rania Haddad', hubUserId: 'hub-guardian-1' },
       firstAnsweredAt: '2026-10-11T08:00:00.000Z',
       answeredAt: '2026-10-11T08:00:00.000Z',
+      guardianAnswers: [],
     }])
     expect(res.body.form.externalRef).toBe(REF)
     expect(res.body.hasMore).toBe(false)
@@ -606,5 +710,128 @@ describe('a pupil_choice field', () => {
     const res = await request(makeApp()).get('/api/forms/all')
     expect(res.status).toBe(200)
     expect(res.body[0].pupilNames).toEqual({ 'hub-jade': 'Jade williams' })
+  })
+})
+
+describe('one Yes stands on a consent form (the school\'s trip policy)', () => {
+  const CONSENT_FORM = { ...FORM, consentFieldId: 'consent' }
+  const answer = (body: Record<string, unknown>) =>
+    request(makeApp()).post('/api/forms/f-1/respond').send(body)
+  const YES = { consent: 'Yes', pickup: 'Coach', signed: 'Rania Haddad' }
+  const NO = { consent: 'No', pickup: 'Coach', signed: 'Rania Haddad' }
+  const otherSaid = (consent: string) => guardianRows.push({
+    id: 'ga-other', formId: 'f-1', studentId: 'stu-1', userId: 'parent-2',
+    answers: { consent, pickup: 'Collected', signed: 'Karim Haddad' }, createdAt: new Date(0), updatedAt: new Date(0),
+  })
+  const standing = () => prismaMock.formResponse.upsert.mock.calls.at(-1)![0].update
+
+  beforeEach(() => {
+    onTheTrip()
+    prismaMock.form.findFirst.mockResolvedValue(CONSENT_FORM)
+    prismaMock.form.findMany.mockResolvedValue([{ id: 'f-1', consentFieldId: 'consent' }])
+    prismaMock.formResponse.findMany.mockResolvedValue([])
+    prismaMock.formResponse.upsert.mockResolvedValue({})
+  })
+
+  it('a Yes after the other parent\'s No stands: a first No no longer decides it', async () => {
+    otherSaid('No')
+    await answer({ answers: YES, studentId: 'stu-1' })
+    expect(standing()).toMatchObject({ userId: 'parent-1', answers: { consent: 'Yes' } })
+  })
+
+  it('a No after the other parent\'s Yes does not overturn it, and is kept on record', async () => {
+    otherSaid('Yes')
+    const res = await answer({ answers: NO, studentId: 'stu-1' })
+    expect(standing()).toMatchObject({ userId: 'parent-2', answers: { consent: 'Yes' } })
+    // The reply is this parent's own answer, never the other parent's.
+    expect(res.body.answers).toEqual(NO)
+    expect(res.body.userId).toBe('parent-1')
+    expect(guardianRows.find(r => r.userId === 'parent-1')?.answers).toEqual(NO)
+  })
+
+  it('a parent changing their own Yes to No withdraws it when nobody else said yes', async () => {
+    await answer({ answers: YES, studentId: 'stu-1' })
+    await answer({ answers: NO, studentId: 'stu-1' })
+    expect(guardianRows.filter(r => r.userId === 'parent-1')).toHaveLength(1)
+    expect(standing()).toMatchObject({ userId: 'parent-1', answers: { consent: 'No' } })
+  })
+
+  it('a parent changing their Yes to No leaves the other parent\'s Yes standing', async () => {
+    otherSaid('Yes')
+    await answer({ answers: YES, studentId: 'stu-1' })
+    await answer({ answers: NO, studentId: 'stu-1' })
+    expect(standing()).toMatchObject({ userId: 'parent-2', answers: { consent: 'Yes' } })
+  })
+
+  it('still refuses a change after the deadline', async () => {
+    prismaMock.form.findFirst.mockResolvedValue({ ...CONSENT_FORM, expiresAt: new Date('2020-01-01') })
+    expect((await answer({ answers: NO, studentId: 'stu-1' })).status).toBe(409)
+    expect(prismaMock.formGuardianAnswer.upsert).not.toHaveBeenCalled()
+  })
+
+  it('a removed guardian\'s answer goes, and the other guardian\'s then stands', async () => {
+    const { removeGuardianAnswers } = await import('../src/services/perChildForms')
+    otherSaid('No')
+    guardianRows.push({ id: 'ga-mine', formId: 'f-1', studentId: 'stu-1', userId: 'parent-1', answers: YES, createdAt: new Date(1), updatedAt: new Date(1) })
+    prismaMock.formGuardianAnswer.findMany.mockImplementationOnce(async () => [
+      { formId: 'f-1', studentId: 'stu-1', form: { consentFieldId: 'consent' } },
+    ])
+    await removeGuardianAnswers('parent-1')
+    expect(guardianRows.map(r => r.userId)).toEqual(['parent-2'])
+    expect(standing()).toMatchObject({ userId: 'parent-2', answers: { consent: 'No' } })
+  })
+
+  it('the school\'s read shows the answer that stands, when it was given, and every guardian\'s own', async () => {
+    otherSaid('Yes')
+    guardianRows.push({ id: 'ga-mine', formId: 'f-1', studentId: 'stu-1', userId: 'parent-1', answers: NO, createdAt: new Date(5), updatedAt: new Date('2026-10-12T09:00:00Z') })
+    prismaMock.formResponse.findMany.mockResolvedValue([{
+      id: 'r-1', studentId: 'stu-1', userId: 'parent-2', answers: { consent: 'Yes', pickup: 'Collected', signed: 'Karim Haddad' },
+      createdAt: new Date(0), updatedAt: new Date('2026-10-12T09:00:00Z'),
+      student: { hubPupilId: 'hub-omar' }, user: { name: 'Karim Haddad', hubUserId: 'hub-parent-2' },
+    }])
+    const res = await auth(request(makeApp()).get(`/api/partner/forms/${REF}/responses?school_id=hub-school`))
+    const [entry] = res.body.responses
+    expect(entry.answers.consent).toBe(true)
+    // When the Yes was given, not when the other parent's No moved the entry.
+    expect(entry.answeredAt).toBe(new Date(0).toISOString())
+    expect(entry.guardianAnswers.map((g: any) => [g.answeredBy.hubUserId, g.answers.consent])).toEqual([
+      ['hub-parent-2', true], ['hub-parent-1', false],
+    ])
+  })
+})
+
+describe('consentField on publish', () => {
+  const publish = (body: Record<string, unknown> = {}) =>
+    auth(request(makeApp()).put(`/api/partner/forms/${REF}`)).send({
+      hub_user_id: 'hub-lead', title: 'Consent: Year 4 Etihad Museum', deadline: '2099-10-18T20:00:00.000Z',
+      fields: FIELDS, ...body,
+    })
+
+  it('names the yes/no question that is the consent', async () => {
+    prismaMock.form.findFirst.mockResolvedValue(null)
+    const res = await publish({ consentField: 'consent' })
+    expect(res.status).toBe(201)
+    expect(prismaMock.form.create.mock.calls[0][0].data.consentFieldId).toBe('consent')
+    expect(res.body.consentField).toBe('consent')
+  })
+
+  it('must be a required yes/no question', async () => {
+    prismaMock.form.findFirst.mockResolvedValue(null)
+    expect((await publish({ consentField: 'pickup' })).status).toBe(400)
+    expect((await publish({ consentField: 'missing' })).status).toBe(400)
+    expect((await publish({ consentField: 7 })).status).toBe(400)
+  })
+
+  it('is left alone when a re-publish omits it', async () => {
+    prismaMock.form.findFirst.mockResolvedValue({ id: 'f-1', managedBy: 'beyond', fields: STORED_FIELDS, consentFieldId: 'consent', _count: { responses: 3 } })
+    expect((await publish()).status).toBe(200)
+    expect(prismaMock.form.update.mock.calls[0][0].data).not.toHaveProperty('consentFieldId')
+  })
+
+  it('may be set on a form already answered, but not moved or cleared once answered', async () => {
+    prismaMock.form.findFirst.mockResolvedValue({ id: 'f-1', managedBy: 'beyond', fields: STORED_FIELDS, consentFieldId: null, _count: { responses: 3 } })
+    expect((await publish({ consentField: 'consent' })).status).toBe(200)
+    prismaMock.form.findFirst.mockResolvedValue({ id: 'f-1', managedBy: 'beyond', fields: STORED_FIELDS, consentFieldId: 'consent', _count: { responses: 3 } })
+    expect((await publish({ consentField: null })).body.error).toBe('form_has_answers')
   })
 })

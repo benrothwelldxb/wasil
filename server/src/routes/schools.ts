@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt'
 import prisma from '../services/prisma.js'
 import { isAuthenticated, isSuperAdmin } from '../middleware/auth.js'
 import { logAudit, computeChanges } from '../services/audit.js'
+import { removeGuardianAnswers } from '../services/perChildForms.js'
 
 const router = Router()
 const SALT_ROUNDS = 12
@@ -482,6 +483,9 @@ router.delete('/:id/users/:userId', isAuthenticated, isSuperAdmin, async (req, r
       return res.status(403).json({ error: 'Cannot remove a SUPER_ADMIN user' })
     }
 
+    // A guardian's per-child form answers go with them; the other guardian's
+    // answer then stands for the child (services/perChildForms).
+    await removeGuardianAnswers(userId)
     await prisma.user.delete({ where: { id: userId } })
 
     logAudit({ req, action: 'DELETE', resourceType: 'STAFF', resourceId: userId, metadata: { name: user.name, email: user.email, role: user.role } })

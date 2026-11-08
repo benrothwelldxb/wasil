@@ -4,6 +4,7 @@ import prisma from '../services/prisma.js'
 import { isAdmin, isAuthenticated } from '../middleware/auth.js'
 import { SUPPORTED_LANGUAGES } from '../services/translation.js'
 import { logAudit, computeChanges, anonymizeUserAuditLogs } from '../services/audit.js'
+import { removeGuardianAnswers } from '../services/perChildForms.js'
 
 const router = Router()
 
@@ -254,6 +255,9 @@ router.delete('/:id', isAdmin, async (req, res) => {
     // Anonymise the user's audit trail and delete the user atomically. The
     // FK from AuditLog.userId is ON DELETE SET NULL so the trail itself
     // survives; stripping userName here is the GDPR step.
+    // A guardian's answers on per-child forms go with them, and the other
+    // guardian's answer then stands for the child (services/perChildForms).
+    await removeGuardianAnswers(id)
     await prisma.$transaction(async tx => {
       await anonymizeUserAuditLogs(tx, id)
       await tx.user.delete({ where: { id } })
