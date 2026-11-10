@@ -25,6 +25,7 @@ export const ACTIVITY_INTENT_EVENT_TYPES = [
   'fixture.team_removed',
   'fixture.cancelled',
   'fixture.back_on',
+  'fixture.update',
 ] as const
 
 export type ActivityIntentEventType = (typeof ACTIVITY_INTENT_EVENT_TYPES)[number]
@@ -44,6 +45,9 @@ const NOTIFICATION_TYPE: Record<ActivityIntentEventType, string> = {
   'fixture.team_removed': 'ECA_FIXTURE_TEAM',
   'fixture.cancelled': 'ECA_FIXTURE_STATUS',
   'fixture.back_on': 'ECA_FIXTURE_STATUS',
+  // Same preference as a cancellation: it is news about whether and how the
+  // afternoon happens.
+  'fixture.update': 'ECA_FIXTURE_STATUS',
 }
 
 export interface ActivityIntent {
@@ -118,6 +122,16 @@ function composeFixtureCopy(
     }
   }
 
+  // Something changed on the day, written by the teacher for parents. Their
+  // words are the message; the standing note is not repeated under it.
+  if (eventType === 'fixture.update') {
+    const message = stringField(payload, 'message')
+    return {
+      title: `Update on ${childName}'s fixture`,
+      body: message ? `${fixture}${on}: ${message}` : `There is an update about ${fixture}${on}.`,
+    }
+  }
+
   if (eventType === 'fixture.team_removed') {
     return {
       title: 'Team change',
@@ -186,7 +200,8 @@ export function composeCopy(
     eventType === 'fixture.team_selected' ||
     eventType === 'fixture.team_removed' ||
     eventType === 'fixture.cancelled' ||
-    eventType === 'fixture.back_on'
+    eventType === 'fixture.back_on' ||
+    eventType === 'fixture.update'
   ) {
     return composeFixtureCopy(eventType, payload, childName)
   }
