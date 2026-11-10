@@ -180,6 +180,7 @@ function messageInclude(userId: string) {
     acknowledgments: { where: { userId } },
     views: { where: { userId }, select: { userId: true } },
     pinDismissals: { where: { userId }, select: { userId: true } },
+    hides: { where: { userId }, select: { userId: true } },
     _count: { select: { acknowledgments: true } },
     form: { include: { responses: { where: { userId } } } },
     attachments: true,
@@ -234,6 +235,58 @@ async function perChildStatesFor(messages: Array<{ form?: { id: string; perChild
   return perChildFormStates(formIds, parentChildrenOf(user), user.id)
 }
 
+/**
+ * Does this post still ask something of this parent? Then it may not be hidden:
+ * a parent tidying their feed must not tidy away the consent form, the
+ * acknowledgement or the payment the school is waiting on. Urgent posts count
+ * too — "urgent" is the school saying this one must be seen.
+ *
+ * `answered` is the form as this parent's family has answered it (see
+ * serializeParentMessage): per child, every child it asks about.
+ */
+export function stillAsksOfParent(
+  msg: {
+    isUrgent: boolean
+    requiresAcknowledgment: boolean
+    acknowledgments: unknown[]
+    actionDueDate: Date | null
+    form?: { status: string; expiresAt: Date | null } | null
+  },
+  answered: boolean,
+  now: Date,
+): boolean {
+  if (msg.isUrgent) return true
+  if (msg.requiresAcknowledgment && msg.acknowledgments.length === 0) return true
+  if (msg.actionDueDate && msg.actionDueDate > now) return true
+  if (msg.form && msg.form.status === 'ACTIVE' && !answered && (!msg.form.expiresAt || msg.form.expiresAt > now)) return true
+  return false
+}
+
+/**
+ * The feed's exception to a parent's hide, in the query's own terms: a hidden
+ * post comes back if it is asking something again (the school marked it urgent,
+ * or added a form, after the parent hid it). Broader than stillAsksOfParent on
+ * a per-child form — a form a co-parent finished for every child still counts
+ * here — which errs toward showing a post, never toward losing one.
+ */
+function hiddenUnlessAsking(userId: string, now: Date) {
+  return {
+    OR: [
+      { hides: { none: { userId } } },
+      { isUrgent: true },
+      { AND: [{ requiresAcknowledgment: true }, { acknowledgments: { none: { userId } } }] },
+      { actionDueDate: { gt: now } },
+      {
+        form: {
+          status: 'ACTIVE',
+          responses: { none: { userId } },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      },
+    ],
+  }
+}
+
 /** One post as a parent reads it. Shared so the dashboard and the Posts page
  *  cannot drift into rendering the same post differently. */
 function serializeParentMessage(
@@ -242,6 +295,7 @@ function serializeParentMessage(
   perChild: Map<string, ChildFormState[]> = new Map(),
   lang = 'en',
   formFields: Map<string, unknown[]> = new Map(),
+  now: Date = new Date(),
 ) {
   // A per-child form counts as answered only when every child it asks about
   // has an answer, whichever guardian gave it. `children` carries the detail,
@@ -315,6 +369,11 @@ function serializeParentMessage(
       acknowledgmentCount: msg._count.acknowledgments,
       // Lets the card skip reporting a post this parent has already seen.
       seen: msg.views.length > 0,
+      // Hidden from this parent's feed by this parent. Shown on the Posts page
+      // so a post swiped away by accident can be put back.
+      hidden: (msg.hides?.length ?? 0) > 0,
+      // The server decides, so the app never offers a hide the server refuses.
+      canHide: !stillAsksOfParent(msg, !!ownResponse, now),
       createdAt: msg.createdAt.toISOString(),
   }
 }
@@ -338,6 +397,9 @@ router.get('/', isAuthenticated, async (req, res) => {
         AND: [
           ...liveForParent(now),
           ...parentVisibleMessageWhere(),
+          // Not a post this parent hid — unless it has started asking
+          // something of them since.
+          hiddenUnlessAsking(user.id, now),
           {
             OR: [
               { createdAt: { gte: windowStart } },
@@ -364,7 +426,7 @@ router.get('/', isAuthenticated, async (req, res) => {
     // The query orders on the school's pin; re-sorted on the parent's own, so a
     // post they unpinned drops back into date order. Stable, so urgent-then-
     // newest still holds within each half.
-    const serialized = messages.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en', formFields))
+    const serialized = messages.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en', formFields, now))
     serialized.sort((a, b) => Number(b.isPinned) - Number(a.isPinned))
     res.json(serialized)
   } catch (error) {
@@ -391,13 +453,20 @@ router.get('/archive', isAuthenticated, async (req, res) => {
 
     const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 50)
     const cursor = typeof req.query.cursor === 'string' && req.query.cursor.trim() ? req.query.cursor.trim() : null
+    // `?hidden=only`: just the posts this parent hid — where one swiped away
+    // by accident is found again.
+    const hiddenOnly = req.query.hidden === 'only'
 
     const messages = await prisma.message.findMany({
       where: {
         schoolId: user.schoolId,
         channel: 'FEED',
         OR: audienceOR(audience),
-        AND: [...liveForParent(now), ...parentVisibleMessageWhere()],
+        AND: [
+          ...liveForParent(now),
+          ...parentVisibleMessageWhere(),
+          ...(hiddenOnly ? [{ hides: { some: { userId: user.id } } }] : []),
+        ],
       },
       include: messageInclude(user.id),
       // Strictly by date here, not pinned-first: this is a record of what was
@@ -416,7 +485,7 @@ router.get('/archive', isAuthenticated, async (req, res) => {
     const perChild = await perChildStatesFor(page, user)
     const formFields = await parentFieldsByForm(page.flatMap(m => m.form ? [m.form] : []))
     res.json({
-      messages: page.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en', formFields)),
+      messages: page.map(msg => serializeParentMessage(msg, getTranslated, perChild, user.preferredLanguage || 'en', formFields, now)),
       nextCursor: hasMore ? page[page.length - 1].id : null,
     })
   } catch (error) {
@@ -464,6 +533,54 @@ router.delete('/:id/unpin', isAuthenticated, async (req, res) => {
   } catch (error) {
     console.error('Error re-pinning message:', error)
     res.status(500).json({ error: 'Failed to pin' })
+  }
+})
+
+/**
+ * A parent hiding a post from their own feed, or putting it back.
+ *
+ *   POST   /api/messages/:id/hide   → { hidden: true }
+ *   DELETE /api/messages/:id/hide   → { hidden: false }
+ *
+ * Nobody else's feed changes and the school is not told. A post that still
+ * asks something of this parent (stillAsksOfParent) is refused with 409, so a
+ * hide can never quietly bury a consent form. Feed posts only: admin notices
+ * have their own section and their own "seen" handling.
+ */
+router.post('/:id/hide', isAuthenticated, async (req, res) => {
+  try {
+    const user = (await loadUserWithRelations(req.user!.id))!
+    const now = new Date()
+    const message = await prisma.message.findFirst({
+      where: { id: req.params.id, schoolId: user.schoolId, channel: 'FEED' },
+      include: messageInclude(user.id),
+    })
+    if (!message) return res.status(404).json({ error: 'Message not found' })
+    const perChild = await perChildStatesFor([message], user)
+    const { canHide } = serializeParentMessage(message, t => t, perChild, 'en', new Map(), now)
+    if (!canHide) {
+      return res.status(409).json({ error: 'This post is still waiting on you, so it stays in your feed.' })
+    }
+    await prisma.messageHide.upsert({
+      where: { messageId_userId: { messageId: message.id, userId: user.id } },
+      update: {},
+      create: { messageId: message.id, userId: user.id },
+    })
+    res.json({ hidden: true })
+  } catch (error) {
+    console.error('Error hiding message:', error)
+    res.status(500).json({ error: 'Failed to hide' })
+  }
+})
+
+router.delete('/:id/hide', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user!
+    await prisma.messageHide.deleteMany({ where: { messageId: req.params.id, userId: user.id } })
+    res.json({ hidden: false })
+  } catch (error) {
+    console.error('Error unhiding message:', error)
+    res.status(500).json({ error: 'Failed to show' })
   }
 })
 

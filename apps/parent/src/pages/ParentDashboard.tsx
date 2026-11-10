@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react'
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MessageCard } from '../components/messages'
+import { MessageCard, SwipeToHide } from '../components/messages'
 import { CalendarChangesStrip } from '../components/CalendarChangesStrip'
 import { AvailabilityQuestions } from '../components/schedule/AvailabilityQuestions'
 import { PulseBanner, PulseSurveyModal } from '../components/pulse'
@@ -564,6 +564,58 @@ export function ParentDashboard() {
       await api.messages.unpinForMe(messageId)
     } catch {
       setPinned(true)
+    }
+  }
+
+  // Hiding is for this parent only, and never final: the card goes at once,
+  // an Undo bar stays for a few seconds, and the post is on the Posts page
+  // after that, marked hidden, with "Show in feed" on it.
+  const [undo, setUndo] = useState<{ message: Message; failed: boolean } | null>(null)
+  const pendingHide = useRef<Promise<unknown> | null>(null)
+  const undoTimer = useRef<number | null>(null)
+
+  const armUndoTimer = () => {
+    if (undoTimer.current) window.clearTimeout(undoTimer.current)
+    undoTimer.current = window.setTimeout(() => setUndo(null), 6000)
+  }
+  useEffect(() => () => { if (undoTimer.current) window.clearTimeout(undoTimer.current) }, [])
+
+  const putBack = (message: Message) =>
+    setMessages(prev => (prev ? [...prev.filter(m => m.id !== message.id), message].sort(byFeedOrder) : prev))
+
+  const handleHide = (messageId: string) => {
+    const message = messages?.find(m => m.id === messageId)
+    if (!message) return
+    setMessages(prev => prev?.filter(m => m.id !== messageId) || null)
+    setUndo({ message, failed: false })
+    armUndoTimer()
+    const request = api.messages.hideForMe(messageId)
+    pendingHide.current = request
+    request.catch(() => {
+      // Already undone: the post is back and there is nothing to report.
+      if (pendingHide.current !== request) return
+      // Refused (it started asking something) or offline: it comes back, and
+      // the bar says so rather than leaving a parent thinking it went.
+      putBack(message)
+      setUndo({ message, failed: true })
+      armUndoTimer()
+    })
+  }
+
+  const handleUndoHide = async () => {
+    if (!undo) return
+    const { message } = undo
+    setUndo(null)
+    putBack(message)
+    // Wait for the hide to land first, so the show cannot arrive before it.
+    const hide = pendingHide.current
+    pendingHide.current = null
+    await hide?.catch(() => {})
+    try {
+      await api.messages.showForMe(message.id)
+    } catch {
+      // The post is back on screen; on the next load it would be hidden again.
+      // The Posts page still has it, with "Show in feed".
     }
   }
 
@@ -1267,14 +1319,20 @@ export function ParentDashboard() {
               </>
             ) : filteredMessages.length > 0 ? (
               filteredMessages.map((message) => (
-                <MessageCard
+                <SwipeToHide
                   key={message.id}
-                  message={message}
-                  onAcknowledge={handleAcknowledge}
-                  onUnpin={handleUnpin}
-                  onFormRespond={handleFormResponse}
-                  classColors={classColorMap}
-                />
+                  enabled={!!message.canHide}
+                  onHide={() => handleHide(message.id)}
+                >
+                  <MessageCard
+                    message={message}
+                    onAcknowledge={handleAcknowledge}
+                    onUnpin={handleUnpin}
+                    onHide={handleHide}
+                    onFormRespond={handleFormResponse}
+                    classColors={classColorMap}
+                  />
+                </SwipeToHide>
               ))
             ) : (
               <p className="text-center py-8 font-medium" style={{ color: '#A8929A' }}>
@@ -1363,6 +1421,35 @@ export function ParentDashboard() {
             refetchPulse()
           }}
         />
+      )}
+
+      {/* Just hidden: the quick way back from an accidental swipe. Sits above
+          the tab bar. */}
+      {undo && (
+        <div
+          role="status"
+          className="fixed left-4 right-4 z-[60] flex items-center gap-3 px-4 py-3 shadow-lg"
+          style={{
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 84px)',
+            borderRadius: '16px',
+            backgroundColor: '#2D2225',
+            color: '#FFFFFF',
+          }}
+        >
+          <span className="flex-1 text-sm font-semibold">
+            {undo.failed ? t('messages.hideFailed', "Couldn't hide that post") : t('messages.hidden', 'Post hidden')}
+          </span>
+          {!undo.failed && (
+            <button
+              type="button"
+              onClick={handleUndoHide}
+              className="text-sm font-extrabold px-2 py-1"
+              style={{ color: '#F4B6C6' }}
+            >
+              {t('messages.undo', 'Undo')}
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Newspaper } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
@@ -17,6 +17,10 @@ import type { Message } from '@wasil/shared'
  *
  * Grouped by month, because that's how someone searches their memory for a
  * thing the school sent: roughly when, not roughly where in a list.
+ *
+ * Posts a parent hid from their feed are here too, marked, with "Show in feed"
+ * on each — and "Hidden" lists just those, for finding one swiped away by
+ * accident without scrolling a term's worth of posts.
  */
 function monthLabel(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
@@ -31,11 +35,17 @@ export function PostsPage() {
   const [hasMore, setHasMore] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [hiddenOnly, setHiddenOnly] = useState(false)
+  // Which list is wanted now. A page for the other one, arriving late after a
+  // switch, is dropped rather than mixed in.
+  const listRef = useRef(hiddenOnly)
+  listRef.current = hiddenOnly
 
   const load = useCallback(async (after: string | null) => {
     setError(false)
     try {
-      const page = await api.messages.archive(after)
+      const page = await api.messages.archive(after, 20, { hiddenOnly })
+      if (listRef.current !== hiddenOnly) return
       // Appended, never replaced: a page arriving while the parent is reading
       // must not move what is under their thumb.
       setPosts(prev => (after ? [...prev, ...page.messages] : page.messages))
@@ -47,13 +57,30 @@ export function PostsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [hiddenOnly])
 
-  useEffect(() => { load(null) }, [load])
+  useEffect(() => { setLoading(true); load(null) }, [load])
 
   const handleAcknowledge = async (id: string) => {
     await api.messages.acknowledge(id)
     setPosts(prev => prev.map(p => (p.id === id ? { ...p, acknowledged: true } : p)))
+  }
+
+  // Applied at once, put back if the server refuses.
+  const setHidden = (id: string, hidden: boolean) =>
+    setPosts(prev => prev.map(p => (p.id === id ? { ...p, hidden } : p)))
+
+  const handleHide = async (id: string) => {
+    setHidden(id, true)
+    try { await api.messages.hideForMe(id) } catch { setHidden(id, false) }
+  }
+
+  const handleShow = async (id: string) => {
+    const before = posts
+    // In the Hidden list a post put back no longer belongs there.
+    if (hiddenOnly) setPosts(prev => prev.filter(p => p.id !== id))
+    else setHidden(id, false)
+    try { await api.messages.showForMe(id) } catch { setPosts(before) }
   }
 
   // Month headings, computed as we go so a post never lands under the wrong one.
@@ -69,6 +96,23 @@ export function PostsPage() {
         <p className="text-sm font-medium mt-1" style={{ color: '#7A6469' }}>
           {t('posts.subtitle', 'Everything the school has shared')}
         </p>
+      </div>
+
+      <div className="flex gap-2">
+        {([false, true] as const).map(only => (
+          <button
+            key={String(only)}
+            onClick={() => setHiddenOnly(only)}
+            className="px-4 py-2 rounded-full text-sm font-bold transition-colors"
+            style={
+              hiddenOnly === only
+                ? { backgroundColor: '#C4506E', color: '#FFFFFF' }
+                : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
+            }
+          >
+            {only ? t('posts.hidden', 'Hidden') : t('posts.all', 'All posts')}
+          </button>
+        ))}
       </div>
 
       {loading ? (
@@ -96,7 +140,9 @@ export function PostsPage() {
         <div className="bg-white px-5 py-8 text-center" style={{ borderRadius: '18px', border: '1.5px solid #F0E4E6' }}>
           <Newspaper className="w-8 h-8 mx-auto mb-3" style={{ color: '#E9B9C7' }} />
           <p className="text-sm font-bold" style={{ color: '#2D2225' }}>
-            {t('posts.empty', 'Nothing posted yet')}
+            {hiddenOnly
+              ? t('posts.noneHidden', "You haven't hidden any posts")
+              : t('posts.empty', 'Nothing posted yet')}
           </p>
         </div>
       ) : (
@@ -115,6 +161,8 @@ export function PostsPage() {
                 <MessageCard
                   message={post}
                   onAcknowledge={handleAcknowledge}
+                  onHide={handleHide}
+                  onShow={handleShow}
                   showAcknowledgeButton={false}
                 />
               </div>
