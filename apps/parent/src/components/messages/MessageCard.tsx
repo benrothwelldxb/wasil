@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import DOMPurify from 'dompurify'
-import { Share2, AlertTriangle, Pin, X, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
+import { Share2, AlertTriangle, Pin, X, Check, Clock, CreditCard, Paperclip, FileText, Image, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2, EyeOff, Eye } from 'lucide-react'
 import { useTheme } from '@wasil/shared'
 import type { Message, FormField, FormFieldCondition } from '@wasil/shared'
 import { formProgress, changeableChildren, answersToChange } from '../../utils/perChildForm'
@@ -14,6 +14,11 @@ interface MessageCardProps {
   onAcknowledge?: (id: string) => void
   /** Unpin this post for this parent only. Absent → the pin is display-only. */
   onUnpin?: (id: string) => void
+  /** Hide this post from this parent's feed. Offered only when the server says
+   *  the post asks nothing more of them (`message.canHide`). */
+  onHide?: (id: string) => void
+  /** Put a hidden post back in the feed. Offered only on a hidden post. */
+  onShow?: (id: string) => void
   onFormRespond?: (formId: string, answers: Record<string, unknown>, studentId?: string) => void
   showAcknowledgeButton?: boolean
   classColors?: Record<string, { bg: string; hex: string }>
@@ -37,6 +42,8 @@ export function MessageCard({
   message,
   onAcknowledge,
   onUnpin,
+  onHide,
+  onShow,
   onFormRespond,
   showAcknowledgeButton = true,
   classColors = {},
@@ -352,6 +359,27 @@ export function MessageCard({
       }}
     >
       <div className="p-[18px]">
+        {/* Hidden by this parent: said plainly, with the way back right here,
+            so a post swiped away by accident is one tap from the feed. */}
+        {message.hidden && onShow && (
+          <div
+            className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl text-[12px] font-semibold"
+            style={{ backgroundColor: '#F7F0F1', color: '#7A6469' }}
+          >
+            <EyeOff className="h-3.5 w-3.5 flex-shrink-0" />
+            <span className="flex-1">{t('messages.hiddenFromFeed', 'Hidden from your feed')}</span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onShow(message.id) }}
+              className="flex items-center gap-1 font-bold"
+              style={{ color: '#C4506E' }}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {t('messages.showInFeed', 'Show in feed')}
+            </button>
+          </div>
+        )}
+
         {/* Urgent badge */}
         {isUrgent && (
           <div
@@ -411,6 +439,20 @@ export function MessageCard({
           ))}
           {!message.acknowledged && (
             <div className="w-[9px] h-[9px] rounded-full flex-shrink-0" style={{ backgroundColor: '#C4506E' }} />
+          )}
+          {/* The button behind the swipe: swiping is a shortcut, not the only
+              way, and a parent who never finds it still has this. */}
+          {onHide && message.canHide && !message.hidden && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onHide(message.id) }}
+              className="w-8 h-8 -mr-1 flex items-center justify-center rounded-full flex-shrink-0"
+              style={{ color: '#A8929A' }}
+              aria-label={t('messages.hideFromFeed', 'Hide from my feed')}
+              title={t('messages.hideFromFeed', 'Hide from my feed')}
+            >
+              <EyeOff className="h-4 w-4" />
+            </button>
           )}
         </div>
 

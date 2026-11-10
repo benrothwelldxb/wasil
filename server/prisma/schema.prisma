@@ -345,6 +345,7 @@ model User {
   messageAcks    MessageAcknowledgment[]
   messageViews   MessageView[]
   pinDismissals  MessagePinDismissal[]
+  postHides      MessageHide[]
   formResponses  FormResponse[]
   formGuardianAnswers FormGuardianAnswer[]
   eventRsvps     EventRsvp[]
@@ -809,6 +810,7 @@ model Message {
   acknowledgments MessageAcknowledgment[]
   views           MessageView[]
   pinDismissals   MessagePinDismissal[]
+  hides           MessageHide[]
   attachments     MessageAttachment[]
   /// Set only on a post addressed to named pupils' families (a waiting-list
   /// offer, a consent chaser). Such a row has no class, year group or group,
@@ -2593,6 +2595,25 @@ model MessageView {
 /// every other parent still sees it pinned — this parent just stops having it
 /// held at the top of their feed.
 model MessagePinDismissal {
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([messageId, userId])
+  @@index([userId])
+}
+
+/// A parent hiding a post from their own feed. Nobody else's feed changes,
+/// and the school is not told: it is the parent tidying their own screen, not
+/// an answer to the school. The post stays on the Posts page, marked hidden,
+/// so a post swiped away by accident can always be put back.
+///
+/// A post that still asks something of this parent (urgent, an unanswered
+/// acknowledgement or form, an action not yet due) cannot be hidden, and comes
+/// back to the feed if it starts asking after it was hidden.
+model MessageHide {
   messageId String
   message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
   userId    String

@@ -451,9 +451,10 @@ export const messages = {
    * dashboard window. Cursor-paginated — a school posts daily, and an offset
    * would skip or repeat a post whenever a new one landed mid-scroll.
    */
-  archive: (cursor?: string | null, limit = 20) => {
+  archive: (cursor?: string | null, limit = 20, opts: { hiddenOnly?: boolean } = {}) => {
     const params = new URLSearchParams({ limit: String(limit) })
     if (cursor) params.set('cursor', cursor)
+    if (opts.hiddenOnly) params.set('hidden', 'only')
     return fetchApi<MessageArchivePage>(`/api/messages/archive?${params.toString()}`)
   },
   listAll: () => fetchApi<Message[]>('/api/messages/all'),
@@ -527,6 +528,11 @@ export const messages = {
     fetchApi<{ pinned: false }>(`/api/messages/${id}/unpin`, { method: 'POST' }),
   repinForMe: (id: string) =>
     fetchApi<{ pinned: true }>(`/api/messages/${id}/unpin`, { method: 'DELETE' }),
+  /** A parent hiding a post from their own feed. It stays on the Posts page. */
+  hideForMe: (id: string) =>
+    fetchApi<{ hidden: true }>(`/api/messages/${id}/hide`, { method: 'POST' }),
+  showForMe: (id: string) =>
+    fetchApi<{ hidden: false }>(`/api/messages/${id}/hide`, { method: 'DELETE' }),
   /** Admin tidy-up: archive (hide from parents, keep) or restore, in bulk. */
   bulkArchive: (ids: string[], archived: boolean) =>
     fetchApi<{ changed: number }>('/api/messages/bulk-archive', {

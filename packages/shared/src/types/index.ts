@@ -201,6 +201,10 @@ export interface Message {
   acknowledgmentCount?: number
   /** This parent has had the post on screen (parent reads only). */
   seen?: boolean
+  /** This parent hid it from their own feed (parent reads only). */
+  hidden?: boolean
+  /** This parent may hide it: it asks nothing more of them (parent reads only). */
+  canHide?: boolean
   createdAt: string
 }
 
