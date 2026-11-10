@@ -346,6 +346,7 @@ model User {
   messageViews   MessageView[]
   pinDismissals  MessagePinDismissal[]
   postHides      MessageHide[]
+  releasesSeen   ParentReleaseSeen[]
   formResponses  FormResponse[]
   formGuardianAnswers FormGuardianAnswer[]
   eventRsvps     EventRsvp[]
@@ -2622,6 +2623,19 @@ model MessageHide {
 
   @@id([messageId, userId])
   @@index([userId])
+}
+
+/// "What's new" entries a parent has been shown and closed. The entries
+/// themselves are in code (services/parentReleases.ts); this is only who has
+/// seen which. Kept on the server, not the device, so a parent with the app on
+/// a phone and the web is told once, not once per device.
+model ParentReleaseSeen {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  releaseId String
+  seenAt    DateTime @default(now())
+
+  @@id([userId, releaseId])
 }
 
 model MessageReaction {
