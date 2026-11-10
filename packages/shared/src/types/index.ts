@@ -168,6 +168,17 @@ export interface MessageAttachment {
   createdAt: string
 }
 
+/** A "What's new" entry, as the parent app is sent it (in the parent's language). */
+export interface ParentRelease {
+  id: string
+  date: string
+  title: string
+  blurb: string
+  icon: 'pin' | 'eye-off' | 'sparkles'
+  href?: string
+  cta?: string
+}
+
 export interface Message {
   id: string
   title: string

@@ -2,6 +2,7 @@ import { config } from '../config'
 import { Preferences } from '@capacitor/preferences'
 import { Capacitor } from '@capacitor/core'
 import type {
+  ParentRelease,
   User,
   Message,
   PostReach,
@@ -441,6 +442,13 @@ export interface MessageArchivePage {
   messages: Message[]
   /** Pass back as `cursor` for the next page; null when there are no more. */
   nextCursor: string | null
+}
+
+/** "What's new" for parents: features launched since they last looked. */
+export const whatsNew = {
+  list: () => fetchApi<ParentRelease[]>('/api/whats-new'),
+  markSeen: (ids: string[]) =>
+    fetchApi<{ recorded: number }>('/api/whats-new/seen', { method: 'POST', body: JSON.stringify({ ids }) }),
 }
 
 export const messages = {

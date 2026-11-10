@@ -13,6 +13,7 @@ import { BottomTabBar } from './components/layout/BottomTabBar'
 import { SideMenu } from './components/layout/SideMenu'
 import { InstallPrompt } from './components/layout/InstallPrompt'
 import { NotificationOptIn } from './components/layout/NotificationOptIn'
+import { WhatsNewDialog } from './components/layout/WhatsNewDialog'
 import { LoginView } from './components/LoginView'
 import { RootLanding } from './components/RootLanding'
 import { RegisterPage } from './pages/RegisterPage'
@@ -98,6 +99,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       </main>
       <NotificationOptIn />
       <InstallPrompt />
+      <WhatsNewDialog />
       <BottomTabBar onMorePress={() => setMenuOpen(true)} />
     </div>
   )
