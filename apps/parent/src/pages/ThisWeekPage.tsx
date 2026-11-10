@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react'
 import { CalendarDays, MapPin, Trophy, Users, AlertCircle } from 'lucide-react'
 import { useApi, api, useAuth } from '@wasil/shared'
-import type { ThisWeekResponse, ThisWeekDay, ThisWeekItem, ThisWeekAvailabilityAsk } from '@wasil/shared'
+import type { ThisWeekResponse, ThisWeekDay, ThisWeekItem } from '@wasil/shared'
+import { AvailabilityQuestions } from '../components/schedule/AvailabilityQuestions'
+import { dayLabel } from '../utils/schoolDay'
 
 interface ChildRef { id: string; name: string; className?: string }
 
@@ -10,27 +12,6 @@ interface ChildRef { id: string; name: string; className?: string }
 function todayISO(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-/** A date label from a YYYY-MM-DD string, built from its own parts.
- *
- *  Deliberately NOT `new Date(dateStr)` then toLocaleDateString: that parses as
- *  UTC midnight and renders in the device's zone, so a parent west of the
- *  school sees every day shifted back by one. The string names a day at the
- *  school; only its parts are used. */
-function dayLabel(dateStr: string): { weekday: string; day: string; isWeekend: boolean } {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const at = new Date(Date.UTC(y, m - 1, d))
-  const dow = at.getUTCDay() // 0 = Sunday, 6 = Saturday
-  return {
-    weekday: at.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }),
-    day: at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }),
-    // Saturday and Sunday. True for the UAE school week and for most of the
-    // schools Connect serves; a school whose week runs Sunday–Thursday would
-    // need this from its own calendar rather than from the day number, and
-    // there is nothing on the wire that says so today.
-    isWeekend: dow === 0 || dow === 6,
-  }
 }
 
 const isCancelled = (s: string) => s === 'cancelled' || s === 'postponed'
@@ -144,91 +125,6 @@ function Notice({ children }: { children: React.ReactNode }) {
     <div className="flex items-start gap-2 rounded-xl p-3" style={{ backgroundColor: '#FBF7F7' }}>
       <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#C4506E' }} />
       <p className="text-sm" style={{ color: '#7A6469' }}>{children}</p>
-    </div>
-  )
-}
-
-/**
- * "Can they play?" — above the week and across every child, because the fixture
- * is often next week and may be a sibling's. A push about it arrives with no
- * other way to answer. When there is nothing open, or the questions could not
- * be loaded, this says nothing: the week below has its own messages.
- */
-function AvailabilityQuestions() {
-  const { data } = useApi<{ asks: ThisWeekAvailabilityAsk[] }>(() => api.thisWeek.availability(), [])
-  const asks = data?.asks ?? []
-  if (asks.length === 0) return null
-
-  return (
-    <div className="space-y-2">
-      <h3 className="text-sm font-bold" style={{ color: '#4A3B3F' }}>The school is asking</h3>
-      {asks.map((ask) => (
-        <AvailabilityCard key={`${ask.fixtureId}:${ask.studentId}`} ask={ask} />
-      ))}
-    </div>
-  )
-}
-
-function AvailabilityCard({ ask }: { ask: ThisWeekAvailabilityAsk }) {
-  const [state, setState] = useState(ask.state)
-  const [saving, setSaving] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
-  const firstName = ask.childName.split(' ')[0]
-  const { weekday, day } = dayLabel(ask.date)
-
-  async function reply(next: 'available' | 'unavailable') {
-    setSaving(true)
-    setProblem(null)
-    try {
-      await api.thisWeek.replyAvailability({ studentId: ask.studentId, fixtureId: ask.fixtureId, state: next })
-      setState(next)
-    } catch (e) {
-      setProblem(
-        e instanceof Error && e.message.includes('fixture_closed')
-          ? 'This fixture is no longer taking replies. The school office can help.'
-          : "That didn't go through. Please try again.",
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const button = (value: 'available' | 'unavailable', label: string) => (
-    <button
-      type="button"
-      disabled={saving}
-      aria-pressed={state === value}
-      onClick={() => reply(value)}
-      className="flex-1 px-3 py-2 rounded-full text-sm font-bold transition-colors disabled:opacity-50"
-      style={
-        state === value
-          ? { backgroundColor: '#C4506E', color: '#FFFFFF' }
-          : { backgroundColor: '#FFFFFF', color: '#7A6469', border: '1.5px solid #F0E4E6' }
-      }
-    >
-      {label}
-    </button>
-  )
-
-  return (
-    <div className="rounded-xl p-3" style={{ backgroundColor: '#FFFFFF', border: '1.5px solid #F0E4E6' }}>
-      <p className="text-sm font-bold" style={{ color: '#4A3B3F' }}>Can {firstName} play?</p>
-      <p className="text-xs mt-0.5" style={{ color: '#7A6469' }}>
-        {ask.name} · {weekday} {day}, {ask.startsAt}
-        {ask.venue ? ` · ${ask.venue}` : ''}
-      </p>
-      <div className="flex gap-2 mt-2">
-        {button('available', 'Yes, can play')}
-        {button('unavailable', "No, can't play")}
-      </div>
-      {state !== 'unknown' && !problem && (
-        <p className="text-xs mt-2" style={{ color: '#A8929A' }}>
-          {ask.respondedVia === 'staff' && state === ask.state
-            ? 'This is what the school has down. You can change it here.'
-            : 'The school can see your answer. You can change it here.'}
-        </p>
-      )}
-      {problem && <p className="text-xs mt-2" role="alert" style={{ color: '#C4506E' }}>{problem}</p>}
     </div>
   )
 }

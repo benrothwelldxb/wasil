@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MessageCard } from '../components/messages'
 import { CalendarChangesStrip } from '../components/CalendarChangesStrip'
+import { AvailabilityQuestions } from '../components/schedule/AvailabilityQuestions'
 import { PulseBanner, PulseSurveyModal } from '../components/pulse'
 // ScheduleWidget no longer used — schedule items shown inline in child cards
 import { useAuth } from '@wasil/shared'
@@ -901,6 +902,11 @@ export function ParentDashboard() {
           </div>
         </div>
       )}
+
+      {/* "Can they play?" A question the school is waiting on, so it sits with
+          the other things that need a parent, not only on This Week. Renders
+          nothing when no question is open. */}
+      {isEnabled('activeScheduleEnabled') && <AvailabilityQuestions />}
 
       {/* Today at school — today's calendar events (Hub-sourced) */}
       {isEnabled('eventsEnabled') && todaysEvents.length > 0 && (
