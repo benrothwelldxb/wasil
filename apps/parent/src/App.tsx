@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { loadLanguage } from './i18n'
 import { initPushNotifications, setupPushListeners, isPushSupported } from './services/pushNotifications'
 import { ensureWebPushRegistered } from './services/webPush'
+import { pushRoute } from './utils/pushRoute'
 import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
 import { BottomTabBar } from './components/layout/BottomTabBar'
@@ -213,13 +214,27 @@ export default function App() {
         setupPushListeners((notification) => {
           console.log('Received notification:', notification)
           // Handle notification - could show in-app toast or navigate
-          if (notification.tapped && notification.data?.route) {
-            window.location.href = notification.data.route as string
-          }
+          const route = notification.tapped ? pushRoute(notification.data?.route) : null
+          if (route) window.location.href = route
         })
       }
     })
   }, [isAuthenticated, user])
+
+  // Web push: a tapped notification opens its page. The push service worker
+  // sits at its own scope and does not control this page, so it cannot move it
+  // there itself; it focuses this window and says where to go.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'wasil-open-route') return
+      const route = pushRoute(event.data.route)
+      if (route) window.location.href = route
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage)
+    navigator.serviceWorker.startMessages()
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage)
+  }, [])
 
   // Web push (browser / installed PWA): if the parent has already granted
   // notification permission, silently ensure this browser's FCM token is

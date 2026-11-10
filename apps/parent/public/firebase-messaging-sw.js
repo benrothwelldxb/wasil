@@ -16,6 +16,46 @@
  * PWA is not served through the helmet-protected API, so importScripts from
  * gstatic and the FCM endpoints are not blocked.
  */
+/**
+ * Opening the right page when a notification is tapped.
+ *
+ * Registered BEFORE the Firebase SDK loads, on purpose. The SDK's own click
+ * handler stops every listener after it, and with no `fcmOptions.link` (which
+ * must be a full https URL, and the server does not know which address the
+ * parent opened the app at) it then does nothing at all: the tap went nowhere.
+ *
+ * The page comes from `data.route` and is only followed when it is a path in
+ * this app (the same rule as src/utils/pushRoute.ts). Anything else, or no
+ * route, opens the app's home page rather than nothing.
+ */
+function routeFrom(data) {
+  var inner = (data && data.FCM_MSG && data.FCM_MSG.data) || data || {}
+  var raw = typeof inner.route === 'string' ? inner.route.trim() : ''
+  if (raw.charAt(0) !== '/' || raw.charAt(1) === '/' || raw.charAt(1) === '\\') return '/'
+  return raw
+}
+
+self.addEventListener('notificationclick', function (event) {
+  if (event.action) return
+  event.stopImmediatePropagation()
+  event.notification.close()
+  var route = routeFrom(event.notification.data)
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (windows) {
+      var mine = windows.filter(function (w) {
+        return new URL(w.url).origin === self.location.origin
+      })
+      if (mine.length > 0) {
+        var target = mine[0]
+        return target.focus().then(function (focused) {
+          ;(focused || target).postMessage({ type: 'wasil-open-route', route: route })
+        })
+      }
+      return self.clients.openWindow(route)
+    })
+  )
+})
+
 importScripts('https://www.gstatic.com/firebasejs/12.17.1/firebase-app-compat.js')
 importScripts('https://www.gstatic.com/firebasejs/12.17.1/firebase-messaging-compat.js')
 

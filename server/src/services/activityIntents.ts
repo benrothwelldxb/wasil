@@ -328,6 +328,10 @@ export async function recordIntent(intent: ActivityIntent): Promise<IntentResult
     const fixtureId = stringField(intent.payload, 'fixtureId')
     const isFixture = intent.eventType.startsWith('fixture.')
     const resourceType = isFixture ? 'ACTIVE_FIXTURE' : 'ECA_ACTIVITY'
+    // Where a tap on the notification opens. Every fixture message is about
+    // something This Week shows, and the availability question can only be
+    // answered there or on the home page.
+    const route = isFixture ? '/this-week' : null
     const resourceId = isFixture ? fixtureId : activityId
 
     const deviceTokens = await prisma.deviceToken.findMany({
@@ -355,7 +359,7 @@ export async function recordIntent(intent: ActivityIntent): Promise<IntentResult
           body,
           resourceType,
           resourceId,
-          data: { ...intent.payload, studentId: student.id, eventType: intent.eventType },
+          data: { ...intent.payload, studentId: student.id, eventType: intent.eventType, ...(route ? { route } : {}) },
           schoolId: school.id,
         })),
       })
@@ -373,6 +377,7 @@ export async function recordIntent(intent: ActivityIntent): Promise<IntentResult
               ...(activityId ? { resourceId: activityId, activityId } : {}),
               ...(isFixture && fixtureId ? { resourceId: fixtureId, fixtureId } : {}),
               studentId: student.id,
+              ...(route ? { route } : {}),
             },
           },
           tx

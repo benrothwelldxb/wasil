@@ -262,6 +262,13 @@ describe('fixtures', () => {
     )
   })
 
+  it('opens This Week when the notification is tapped', async () => {
+    prismaMock.deviceToken.findMany.mockResolvedValue([{ token: 'device-1' }])
+    await send('fixture.availability_requested', {})
+    expect(sent().data).toMatchObject({ route: '/this-week' })
+    expect(outboxMock.enqueuePush.mock.calls[0][1].data).toMatchObject({ route: '/this-week', fixtureId: 'fx-1' })
+  })
+
   it('leaves the note out when a child comes out of the team', async () => {
     await send('fixture.team_removed', { familyNote: 'Collection is from the Al Barsha gate.' })
     expect(sent().body).toBe('Amina is no longer in the team for U11 A Netball v DESS on Wednesday 11 November.')
