@@ -322,6 +322,23 @@ describe('fixtures', () => {
     expect(txMock.notification.createMany).not.toHaveBeenCalled()
   })
 
+  it('reminds a family that has not answered, and says where to answer', async () => {
+    await send('fixture.availability_reminder', { familyNote: 'Collection is from the Al Barsha gate.' })
+    expect(sent()).toMatchObject({
+      type: 'ECA_FIXTURE_AVAILABILITY',
+      title: 'Reminder: can Amina play?',
+      body: 'U11 A Netball v DESS on Wednesday 11 November. Collection is from the Al Barsha gate. We have not had your reply yet. Open This Week in Connect to answer.',
+    })
+    expect(sent().data).toMatchObject({ route: '/this-week' })
+  })
+
+  it('does not remind when the school has no screen to answer it on', async () => {
+    prismaMock.school.findUnique.mockResolvedValue({ id: 'school-1', activeScheduleEnabled: false })
+    const res = await send('fixture.availability_reminder', {})
+    expect(res.body).toMatchObject({ status: 'UNDELIVERABLE', reason: 'this_week_off', recipients: 0 })
+    expect(txMock.notification.createMany).not.toHaveBeenCalled()
+  })
+
   it('still sends team news when that screen is off, since it asks nothing', async () => {
     prismaMock.school.findUnique.mockResolvedValue({ id: 'school-1', activeScheduleEnabled: false })
     const res = await send('fixture.team_selected', { role: 'playing' })
