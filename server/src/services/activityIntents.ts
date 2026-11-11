@@ -26,6 +26,7 @@ export const ACTIVITY_INTENT_EVENT_TYPES = [
   'fixture.cancelled',
   'fixture.back_on',
   'fixture.update',
+  'fixture.availability_reminder',
 ] as const
 
 export type ActivityIntentEventType = (typeof ACTIVITY_INTENT_EVENT_TYPES)[number]
@@ -48,6 +49,8 @@ const NOTIFICATION_TYPE: Record<ActivityIntentEventType, string> = {
   // Same preference as a cancellation: it is news about whether and how the
   // afternoon happens.
   'fixture.update': 'ECA_FIXTURE_STATUS',
+  // The same question again, so the same preference as asking it.
+  'fixture.availability_reminder': 'ECA_FIXTURE_AVAILABILITY',
 }
 
 export interface ActivityIntent {
@@ -119,6 +122,15 @@ function composeFixtureCopy(
     return {
       title: `Can ${childName} play?`,
       body: `${fixture}${on}.${note} Open This Week in Connect to reply.`,
+    }
+  }
+
+  // The question again, for a family that has not answered. Sent by a teacher
+  // pressing "remind", never on a timer of Connect's.
+  if (eventType === 'fixture.availability_reminder') {
+    return {
+      title: `Reminder: can ${childName} play?`,
+      body: `${fixture}${on}.${note} We have not had your reply yet. Open This Week in Connect to answer.`,
     }
   }
 
@@ -201,7 +213,8 @@ export function composeCopy(
     eventType === 'fixture.team_removed' ||
     eventType === 'fixture.cancelled' ||
     eventType === 'fixture.back_on' ||
-    eventType === 'fixture.update'
+    eventType === 'fixture.update' ||
+    eventType === 'fixture.availability_reminder'
   ) {
     return composeFixtureCopy(eventType, payload, childName)
   }
@@ -294,7 +307,11 @@ export async function recordIntent(intent: ActivityIntent): Promise<IntentResult
     // A question with nowhere to answer it is worse than no question: the reply
     // buttons live on This Week. Recorded with a reason so Active can tell the
     // teacher, rather than a parent being asked and left unable to say.
-    if (intent.eventType === 'fixture.availability_requested' && !school.activeScheduleEnabled) {
+    if (
+      (intent.eventType === 'fixture.availability_requested' ||
+        intent.eventType === 'fixture.availability_reminder') &&
+      !school.activeScheduleEnabled
+    ) {
       return await undeliverable('this_week_off', { schoolId: school.id })
     }
 
