@@ -165,7 +165,14 @@ function composeFixtureCopy(
   const practical: string[] = []
   const out = stringField(payload, 'meetAt') ?? stringField(payload, 'departsAt')
   const back = stringField(payload, 'returnsAt')
-  if (out && back) practical.push(`Out of lessons from ${out}, back by ${back}.`)
+  // Some fixtures end with families collecting from the venue instead of the
+  // team coming back to school. Active sends that as collectAt, never with
+  // returnsAt, so "back by" is never said for a team that is not coming back.
+  const collect = stringField(payload, 'collectAt')
+  if (collect) {
+    if (out) practical.push(`Out of lessons from ${out}.`)
+    practical.push(`Collect from the venue at ${collect}.`)
+  } else if (out && back) practical.push(`Out of lessons from ${out}, back by ${back}.`)
   else if (out) practical.push(`Out of lessons from ${out}.`)
   else if (back) practical.push(`Back by ${back}.`)
   const kit = stringField(payload, 'kit')
