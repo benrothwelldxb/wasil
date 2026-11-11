@@ -243,6 +243,13 @@ describe('fixtures', () => {
     )
   })
 
+  it('tells families to collect from the venue when the team is not coming back to school', async () => {
+    await send('fixture.team_selected', { role: 'playing', previousRole: null, returnsAt: null, collectAt: '16:45' })
+    expect(sent().body).toBe(
+      'Amina is playing in U11 A Netball v DESS on Wednesday 11 November. Out of lessons from 14:00. Collect from the venue at 16:45. Kit: Whites.'
+    )
+  })
+
   it('passes on the transport and the note for families, in the words the teacher wrote', async () => {
     await send('fixture.team_selected', {
       role: 'playing',
