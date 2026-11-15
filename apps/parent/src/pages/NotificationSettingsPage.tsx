@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, Bell, MessageSquare, Mail, AlertTriangle, Calendar, Newspaper, Activity, Sparkles, CalendarCheck, Clock } from 'lucide-react'
+import { ArrowLeft, Bell, MessageSquare, Mail, AlertTriangle, Calendar, Newspaper, Activity, Sparkles, CalendarCheck, Clock, FileText } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import * as api from '@wasil/shared'
@@ -33,6 +33,7 @@ const SECTIONS: Array<{
       { key: 'events', label: 'Events', description: 'School events and calendar updates', icon: Calendar, color: '#5BA97B' },
       { key: 'weeklyUpdates', label: "Principal's Updates", description: 'Weekly messages from leadership', icon: Newspaper, color: '#E8A54B' },
       { key: 'pulseSurveys', label: 'Parent Pulse', description: 'Half-termly feedback surveys', icon: Activity, color: '#C47A5B' },
+      { key: 'reports', label: 'Reports', description: "When your child's report is ready, or has been updated", icon: FileText, color: '#C4506E' },
     ],
   },
   {

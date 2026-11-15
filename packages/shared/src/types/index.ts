@@ -827,6 +827,12 @@ export interface StudentReport {
   reportType: string
   reportPeriod?: string | null
   academicYear?: string | null
+  /** Set on a report delivered by another Wasil app; shown in place of the period. */
+  title?: string | null
+  /** Admin views only: the app that delivered it ("little-things"), null for an upload. */
+  sourceApp?: string | null
+  /** Admin views only: set while the report is hidden from parents until this time. */
+  scheduledFor?: string | null
   createdAt: string
 }
 
@@ -1349,6 +1355,7 @@ export interface NotificationPreferences {
   consultations: boolean
   schoolServices: boolean
   scheduleReminders: boolean
+  reports: boolean
 }
 
 // Cafeteria Types

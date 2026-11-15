@@ -11,6 +11,12 @@ interface BulkImportResult {
   errors?: string[]
 }
 
+/** Wasil apps that deliver reports to Connect (CP-1). */
+const SOURCE_APP_LABELS: Record<string, string> = {
+  'little-things': 'Little Things',
+  'class-passport': 'Class Passport',
+}
+
 export function StudentsPage() {
   const theme = useTheme()
   const toast = useToast()
@@ -324,8 +330,20 @@ export function StudentsPage() {
                         <td className="px-3 py-2 text-gray-500">{report.className}</td>
                         <td className="px-3 py-2">
                           <a href={report.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate block max-w-[200px]">
-                            {report.fileName}
+                            {report.title || report.fileName}
                           </a>
+                          {(report.sourceApp || report.scheduledFor) && (
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {report.sourceApp && (
+                                <span className="text-[11px] text-slate-500">From {SOURCE_APP_LABELS[report.sourceApp] ?? report.sourceApp}</span>
+                              )}
+                              {report.scheduledFor && (
+                                <span className="text-[11px] px-1.5 rounded bg-amber-50 text-amber-700 border border-amber-200" title="Hidden from parents until then">
+                                  Scheduled · {new Date(report.scheduledFor).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-gray-500">{report.reportPeriod || report.academicYear || '-'}</td>
                         <td className="px-3 py-2 text-gray-400 text-xs">{new Date(report.createdAt).toLocaleDateString()}</td>

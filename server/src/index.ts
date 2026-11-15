@@ -51,6 +51,7 @@ import dashboardRoutes from './routes/dashboard.js'
 import inboxRoutes from './routes/inbox.js'
 import partnerRoutes from './routes/partner.js'
 import partnerCommunicationRoutes from './routes/partnerCommunication.js'
+import partnerStudentReportRoutes from './routes/partnerStudentReports.js'
 import thisWeekRoutes from './routes/thisWeek.js'
 import inclusionRoutes from './routes/inclusion.js'
 import searchRoutes from './routes/search.js'
@@ -73,6 +74,7 @@ import { cleanupOldAuditLogs } from './services/audit.js'
 import { sendDueAttendanceDigests } from './services/attendanceDigest.js'
 import { drainOutbox } from './services/outbox.js'
 import { publishDueScheduledMessages, publishDueWeeklyMessages } from './services/scheduledMessages.js'
+import { releaseDueReports } from './services/studentReportRelease.js'
 import { withJobLock } from './services/jobLock.js'
 import { sendEventRsvpReminders } from './services/eventReminders.js'
 
@@ -217,6 +219,8 @@ app.use('/api/suggestions', suggestionRoutes)
 app.use('/api/this-week', thisWeekRoutes)
 app.use('/api/inclusion', inclusionRoutes)
 app.use('/api/partner/communication', partnerCommunicationRoutes)
+// Report delivery from Little Things / Class Passport (CP-1).
+app.use('/api/partner/student-reports', partnerStudentReportRoutes)
 app.use('/api/partner', partnerRoutes)
 // "Today your child has …" timetable helper, sourced from Wasil Hub.
 app.use('/api/timetable', timetableRoutes)
@@ -377,6 +381,9 @@ app.listen(PORT, () => {
   // which is per family per event and survives a crash, a double deploy or two
   // replicas ticking at once.
   const consultationOpenings = runJob('notifyConsultationOpenings', () => notifyConsultationOpenings())
+  // Every tick, like scheduled posts: a report scheduled for 07:00 is released
+  // at 07:00. Idempotency is the conditional notifiedAt claim in the sweep.
+  const reportReleases = runJob('releaseDueReports', releaseDueReports)
 
   tokenCleanup()
   setInterval(tokenCleanup, SIX_HOURS)
@@ -413,4 +420,7 @@ app.listen(PORT, () => {
   // 18:00 should hear at 18:00, not at 18:45.
   consultationOpenings()
   setInterval(consultationOpenings, ONE_MINUTE)
+
+  reportReleases()
+  setInterval(reportReleases, ONE_MINUTE)
 })
