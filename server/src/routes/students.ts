@@ -4,6 +4,7 @@ import prisma from '../services/prisma.js'
 import { isAdmin, isAuthenticated } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { uploadFile, generateKey, deleteFile, extractKeyFromUrl } from '../services/storage.js'
+import { deleteReportsForStudents } from '../services/studentReportFiles.js'
 
 const router = Router()
 
@@ -790,6 +791,11 @@ router.delete('/:id', isAdmin, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Student not found' })
     }
 
+    // Reports go first: their files must be removed before the cascade can
+    // drop the rows that point at them. Throws (and keeps the student) if a
+    // file cannot be removed.
+    await deleteReportsForStudents([id])
+
     // Remove related records first, then delete student
     await prisma.parentStudentLink.deleteMany({ where: { studentId: id } })
     await prisma.studentInvitationLink.deleteMany({ where: { studentId: id } })
@@ -837,6 +843,9 @@ router.post('/bulk-delete', isAdmin, async (req: Request, res: Response) => {
     }
 
     const validIds = students.map(s => s.id)
+
+    // Reports first, files before rows; see deleteReportsForStudents.
+    await deleteReportsForStudents(validIds)
 
     // Remove related records first
     await prisma.parentStudentLink.deleteMany({ where: { studentId: { in: validIds } } })
