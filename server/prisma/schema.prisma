@@ -2724,6 +2724,9 @@ model NotificationPreference {
   // Daily
   scheduleReminders Boolean @default(true) // Evening reminder of tomorrow's activities
 
+  // Reports
+  reports Boolean @default(true) // A child's report is ready, or has been updated
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -2821,12 +2824,31 @@ model StudentReport {
   reportType   String   @default("REPORT_CARD") // REPORT_CARD, PROGRESS_REPORT, OTHER
   reportPeriod String? // "Term 1 2025-26", "Semester 1", etc.
   academicYear String? // "2025-26"
-  uploadedById String
-  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  // The admin who uploaded it. Null for a report delivered by another Wasil
+  // app (sourceApp set): no person uploaded it, and borrowing an admin's id
+  // would put their name on a document they never saw.
+  uploadedById String?
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
   createdAt    DateTime @default(now())
 
+  // Partner delivery (CP-1, PUT /api/partner/student-reports/:sourceApp/:sourceReportId).
+  // All null on an admin upload.
+  title          String? // Shown to parents in place of the period when set
+  sourceApp      String? // "little-things", "class-passport"
+  sourceReportId String? // The sender's own id for this report
+  version        Int? // The sender's version; strictly higher replaces the file
+  managedBy      String? // Owning partner token's name; nobody else may replace it
+  // Hidden from parents until then; null means visible on arrival. Parents are
+  // told when it becomes visible, not when it arrives.
+  publishAt      DateTime?
+  // When parents were told this report was released: the claim the release
+  // sweep takes, so two replicas cannot both announce it. Null on admin uploads.
+  notifiedAt     DateTime?
+
+  @@unique([schoolId, sourceApp, sourceReportId])
   @@index([studentId])
   @@index([schoolId])
+  @@index([publishAt])
 }
 
 // ============================================

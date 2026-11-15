@@ -14,6 +14,9 @@ const EMAIL_FALLBACK_TYPES = new Set([
   'FORM',
   'EVENT',
   'PULSE_SURVEY',
+  // A child's report: a parent who has not opened the app in a week should
+  // still hear that it is there.
+  'STUDENT_REPORT',
   'ECA_REGISTRATION_OPEN',
   'ECA_ALLOCATION_RESULTS',
   'CONSULTATION',
@@ -308,6 +311,7 @@ export async function sendNotification({ req, type, title, body, resourceType, r
       CONSULTATION: 'consultations',
       SCHOOL_SERVICE: 'schoolServices',
       SCHEDULE_CHANGE: 'scheduleReminders',
+      STUDENT_REPORT: 'reports',
     }
 
     const prefKey = PREF_MAP[type]

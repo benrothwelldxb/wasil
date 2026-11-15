@@ -5,6 +5,7 @@ import { isAdmin, isAuthenticated } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import { uploadFile, generateKey, deleteFile, extractKeyFromUrl } from '../services/storage.js'
 import { deleteReportsForStudents } from '../services/studentReportFiles.js'
+import { parentVisibleReportWhere, isVisibleToParents } from '../services/studentReportRelease.js'
 
 const router = Router()
 
@@ -208,6 +209,16 @@ const reportUpload = multer({
   },
 })
 
+/** What an admin sees beyond a parent: where a report came from, and whether
+ *  parents can see it yet. `scheduledFor` is set only while it is hidden. */
+function adminReportExtras(r: { title: string | null; sourceApp: string | null; publishAt: Date | null }) {
+  return {
+    title: r.title,
+    sourceApp: r.sourceApp,
+    scheduledFor: r.publishAt && !isVisibleToParents(r) ? r.publishAt.toISOString() : null,
+  }
+}
+
 // Bulk upload report cards (admin) - matched by UPN filename
 router.post('/reports/bulk', isAdmin, reportUpload.array('files', 200), async (req: Request, res: Response) => {
   try {
@@ -333,6 +344,7 @@ router.get('/reports/all', isAdmin, async (req: Request, res: Response) => {
         reportType: r.reportType,
         reportPeriod: r.reportPeriod,
         academicYear: r.academicYear,
+        ...adminReportExtras(r),
         createdAt: r.createdAt.toISOString(),
       })),
       pagination: {
@@ -366,7 +378,8 @@ router.get('/reports/my-children', isAuthenticated, async (req: Request, res: Re
     }
 
     const reports = await prisma.studentReport.findMany({
-      where: { studentId: { in: studentIds } },
+      // A scheduled report does not exist for parents until its time.
+      where: { studentId: { in: studentIds }, ...parentVisibleReportWhere() },
       include: { student: { select: { firstName: true, lastName: true, class: { select: { name: true } } } } },
       orderBy: { createdAt: 'desc' },
     })
@@ -382,6 +395,7 @@ router.get('/reports/my-children', isAuthenticated, async (req: Request, res: Re
       reportType: r.reportType,
       reportPeriod: r.reportPeriod,
       academicYear: r.academicYear,
+      title: r.title,
       createdAt: r.createdAt.toISOString(),
     })))
   } catch (error) {
@@ -514,6 +528,7 @@ router.get('/:id/reports', isAdmin, async (req: Request, res: Response) => {
       reportType: r.reportType,
       reportPeriod: r.reportPeriod,
       academicYear: r.academicYear,
+      ...adminReportExtras(r),
       createdAt: r.createdAt.toISOString(),
     })))
   } catch (error) {

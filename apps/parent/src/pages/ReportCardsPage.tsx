@@ -64,9 +64,9 @@ export function ReportCardsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: '#2D2225' }}>
-                        {report.reportPeriod || (report.reportType === 'REPORT_CARD' ? 'Report Card' : report.reportType)}
+                        {report.title || report.reportPeriod || (report.reportType === 'REPORT_CARD' ? 'Report Card' : report.reportType)}
                       </p>
-                      {report.reportPeriod && (
+                      {report.title && report.reportPeriod && (
                         <p className="text-xs" style={{ color: '#7A6469' }}>{report.reportPeriod}</p>
                       )}
                       {report.academicYear && (
