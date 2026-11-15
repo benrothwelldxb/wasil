@@ -1,4 +1,5 @@
 import prisma from './prisma.js'
+import { deleteReportsForStudents } from './studentReportFiles.js'
 
 // ECA Activity templates by category
 const ECA_ACTIVITIES = {
@@ -509,6 +510,10 @@ export async function clearTestData(schoolId: string): Promise<{ studentsDeleted
       parentIds.add(link.userId)
     }
   }
+
+  // Test students should never hold reports, but if one does its file must
+  // not outlive the cascade below.
+  await deleteReportsForStudents(testStudents.map(s => s.id))
 
   // Delete students (cascades to parent links, ECA selections, etc.)
   const deleteResult = await prisma.student.deleteMany({
