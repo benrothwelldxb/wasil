@@ -2683,6 +2683,9 @@ export interface ThisWeekItem {
   cancellation_reason?: string | null
   departs_at?: string | null
   returns_at?: string | null
+  /** Fixture only: set INSTEAD of returns_at when families collect from the
+   *  venue rather than the school. Not yet sent by Active's live feed. */
+  collect_at?: string | null
   /** This child is missing that club because of their own fixture. Per child,
    *  not per club — the rest of the squad still trains. */
   displaced_by_fixture_id?: string | null

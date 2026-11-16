@@ -4,6 +4,7 @@ import { useApi, api, useAuth } from '@wasil/shared'
 import type { ThisWeekResponse, ThisWeekDay, ThisWeekItem } from '@wasil/shared'
 import { AvailabilityQuestions } from '../components/schedule/AvailabilityQuestions'
 import { dayLabel } from '../utils/schoolDay'
+import { fixtureTimeLines } from '../utils/fixtureTimes'
 
 interface ChildRef { id: string; name: string; className?: string }
 
@@ -52,11 +53,11 @@ function ItemCard({ item, childName, fixtures }: {
 
           {/* Times are printed exactly as Active sent them — wall clock at the
               school. No conversion, no locale formatting, no Date parsing. */}
-          <p className="text-xs mt-0.5" style={{ color: '#7A6469' }}>
-            {item.departs_at
-              ? `Leaves ${item.departs_at}${item.returns_at ? ` · back ${item.returns_at}` : ''}`
-              : `${item.starts_at}${item.ends_at ? `–${item.ends_at}` : ''}`}
-          </p>
+          {fixtureTimeLines(item).map((line, i) => (
+            <p key={i} className={`text-xs ${i === 0 ? 'mt-0.5' : 'mt-0.5 font-medium'}`} style={{ color: '#7A6469' }}>
+              {line}
+            </p>
+          ))}
 
           {item.venue && (
             <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#A8929A' }}>
