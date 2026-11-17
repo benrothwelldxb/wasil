@@ -456,6 +456,11 @@ router.get('/archive', isAuthenticated, async (req, res) => {
     // `?hidden=only`: just the posts this parent hid — where one swiped away
     // by accident is found again.
     const hiddenOnly = req.query.hidden === 'only'
+    // `?id=`: one post, for a search result or a link. `?form=`: the latest
+    // post carrying that form. Same audience and liveness rules as the list,
+    // so either answers with nothing for a post this parent cannot see.
+    const onlyId = typeof req.query.id === 'string' && req.query.id.trim() ? req.query.id.trim() : null
+    const onlyForm = typeof req.query.form === 'string' && req.query.form.trim() ? req.query.form.trim() : null
 
     const messages = await prisma.message.findMany({
       where: {
@@ -466,6 +471,8 @@ router.get('/archive', isAuthenticated, async (req, res) => {
           ...liveForParent(now),
           ...parentVisibleMessageWhere(),
           ...(hiddenOnly ? [{ hides: { some: { userId: user.id } } }] : []),
+          ...(onlyId ? [{ id: onlyId }] : []),
+          ...(onlyForm ? [{ formId: onlyForm }] : []),
         ],
       },
       include: messageInclude(user.id),

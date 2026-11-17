@@ -459,10 +459,14 @@ export const messages = {
    * dashboard window. Cursor-paginated — a school posts daily, and an offset
    * would skip or repeat a post whenever a new one landed mid-scroll.
    */
-  archive: (cursor?: string | null, limit = 20, opts: { hiddenOnly?: boolean } = {}) => {
+  /** `id` asks for one post, `formId` for the latest post carrying that form;
+   *  either returns no messages when this parent cannot see it. */
+  archive: (cursor?: string | null, limit = 20, opts: { hiddenOnly?: boolean; id?: string; formId?: string } = {}) => {
     const params = new URLSearchParams({ limit: String(limit) })
     if (cursor) params.set('cursor', cursor)
     if (opts.hiddenOnly) params.set('hidden', 'only')
+    if (opts.id) params.set('id', opts.id)
+    if (opts.formId) params.set('form', opts.formId)
     return fetchApi<MessageArchivePage>(`/api/messages/archive?${params.toString()}`)
   },
   listAll: () => fetchApi<Message[]>('/api/messages/all'),

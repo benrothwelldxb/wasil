@@ -145,6 +145,23 @@ describe('the dashboard shows what is current', () => {
 })
 
 describe('the archive holds the rest', () => {
+  // A search result opens one post. It goes through the same audience and
+  // liveness rules as the list, so it can never open what the list would hide.
+  it('?id= narrows to one post, inside the same rules', async () => {
+    await request(makeApp()).get('/api/messages/archive?id=msg-9')
+    const where = prismaMock.message.findMany.mock.calls[0][0].where
+    expect(where.AND).toContainEqual({ id: 'msg-9' })
+    expect(where.channel).toBe('FEED')
+    expect(where.OR).toBeDefined()
+  })
+
+  it('?form= finds the post carrying a form, inside the same rules', async () => {
+    await request(makeApp()).get('/api/messages/archive?form=form-3')
+    const where = prismaMock.message.findMany.mock.calls[0][0].where
+    expect(where.AND).toContainEqual({ formId: 'form-3' })
+    expect(where.OR).toBeDefined()
+  })
+
   it('applies no date window at all', async () => {
     await request(makeApp()).get('/api/messages/archive')
     const where = prismaMock.message.findMany.mock.calls[0][0].where

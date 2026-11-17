@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
 import { useAuth, useApi, useMutation, stripMarkdown } from '@wasil/shared'
@@ -9,11 +10,20 @@ import type { WeeklyMessage } from '@wasil/shared'
 export function PrincipalUpdatesPage() {
   const { user } = useAuth()
   const [selectedMessage, setSelectedMessage] = useState<WeeklyMessage | null>(null)
+  // `?open=<id>` from a search result opens that update once the list is in.
+  const [params] = useSearchParams()
+  const openId = params.get('open')
 
   const { data: messages, setData: setMessages, isLoading } = useApi<WeeklyMessage[]>(
     () => api.weeklyMessage.list(),
     []
   )
+
+  useEffect(() => {
+    if (!openId || !messages) return
+    const found = messages.find(m => m.id === openId)
+    if (found) setSelectedMessage(found)
+  }, [openId, messages])
 
   const { mutate: toggleHeart } = useMutation(api.weeklyMessage.toggleHeart)
 
