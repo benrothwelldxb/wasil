@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom'
 import { Trophy, MapPin, Megaphone, ChevronRight } from 'lucide-react'
 import { useApi, api } from '@wasil/shared'
-import type { FixtureDayCard, FixtureDayResponse, FixtureUpdateMessage } from '@wasil/shared'
+import type { FixtureDayCard, FixtureDayResponse, FixtureUpdateMessage, ThisWeekItem } from '@wasil/shared'
 import { dayLabel } from '../../utils/schoolDay'
-import { fixtureTimeLines } from '../../utils/fixtureTimes'
+import { fixtureTimeLines, fixtureDetailRows } from '../../utils/fixtureTimes'
 import { addDaysISO } from '../../utils/fixtureDay'
 
 /**
@@ -87,9 +87,33 @@ function FixtureCard({ card, today }: { card: FixtureDayCard; today: string }) {
           <ChevronRight className="h-4 w-4 mt-1 flex-shrink-0" style={{ color: '#A8929A' }} />
         </div>
 
+        {item && !cancelled && <FixtureDetails item={item} />}
+
         {card.updates.map((u, i) => <UpdateNote key={i} update={u} />)}
       </div>
     </Link>
+  )
+}
+
+/** Squad, kit, transport and the note for families, from Active's feed.
+ *  Nothing renders for a field Active has not set. Not shown on a cancelled
+ *  fixture, where none of it applies. */
+export function FixtureDetails({ item }: { item: ThisWeekItem }) {
+  const rows = fixtureDetailRows(item)
+  if (rows.length === 0 && !item.family_note) return null
+  return (
+    <div className="space-y-1">
+      {rows.map((r) => (
+        <p key={r.label} className="text-xs" style={{ color: '#4A3B3F' }}>
+          <span className="font-bold" style={{ color: '#7A6469' }}>{r.label}: </span>{r.value}
+        </p>
+      ))}
+      {item.family_note && (
+        <p className="text-xs whitespace-pre-line rounded-lg p-2 mt-1" style={{ color: '#4A3B3F', backgroundColor: '#FBF7F7' }}>
+          {item.family_note}
+        </p>
+      )}
+    </div>
   )
 }
 

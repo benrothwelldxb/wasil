@@ -2686,6 +2686,15 @@ export interface ThisWeekItem {
   /** Fixture only: set INSTEAD of returns_at when families collect from the
    *  venue rather than the school. Not yet sent by Active's live feed. */
   collect_at?: string | null
+  /** Fixture only, from Active's schedule feed. Null means not set. Wall clock
+   *  at the school. */
+  meet_at?: string | null
+  kit?: string | null
+  transport?: string | null
+  /** The teacher's note for families, verbatim. */
+  family_note?: string | null
+  /** This child's place in the squad. */
+  role?: 'playing' | 'substitute' | string | null
   /** This child is missing that club because of their own fixture. Per child,
    *  not per club — the rest of the squad still trains. */
   displaced_by_fixture_id?: string | null
