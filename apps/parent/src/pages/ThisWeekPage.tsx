@@ -5,7 +5,7 @@ import type { ThisWeekResponse, ThisWeekDay, ThisWeekItem } from '@wasil/shared'
 import { AvailabilityQuestions } from '../components/schedule/AvailabilityQuestions'
 import { dayLabel } from '../utils/schoolDay'
 import { fixtureTimeLines } from '../utils/fixtureTimes'
-import { UpdateNote } from '../components/schedule/FixtureDay'
+import { UpdateNote, FixtureDetails } from '../components/schedule/FixtureDay'
 import type { FixtureUpdateMessage } from '@wasil/shared'
 
 interface ChildRef { id: string; name: string; className?: string }
@@ -82,6 +82,10 @@ function ItemCard({ item, childName, fixtures, updates = [] }: {
               {childName.split(' ')[0]} will miss this — {childName.split(' ')[0] === childName ? 'they are' : 'they are'} at the {displacedBy.name}.
             </p>
           )}
+          {item.kind === 'fixture' && !cancelled && (
+            <div className="mt-2"><FixtureDetails item={item} /></div>
+          )}
+
           {updates.length > 0 && (
             <div className="mt-2 space-y-2">
               {updates.map((u, k) => <UpdateNote key={k} update={u} />)}

@@ -64,6 +64,12 @@ export interface ActiveScheduleItem {
   /** Fixtures only: set instead of returns_at when families collect from the
    *  venue. Passed through untouched. */
   collect_at?: string | null
+  /** Fixtures only; null means not set. Passed through untouched. */
+  meet_at?: string | null
+  kit?: string | null
+  transport?: string | null
+  family_note?: string | null
+  role?: string | null
   /** Set on a club session THIS child is missing because of their own fixture.
    *  Per child, not per club: the rest of the squad still trains that day. */
   displaced_by_fixture_id?: string | null

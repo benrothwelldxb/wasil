@@ -28,3 +28,20 @@ describe('fixture times on This Week', () => {
       .toEqual(['15:15–16:15'])
   })
 })
+
+describe('fixture details from Active', () => {
+  it('puts the meet time first', () => {
+    expect(fixtureTimeLines(fixture({ meet_at: '14:00', departs_at: '14:05', starts_at: '15:00', collect_at: '16:00' })))
+      .toEqual(['Meet 14:00 · leaves 14:05 · starts 15:00', 'Collect from the venue at 16:00'])
+  })
+
+  it('lists squad, kit and transport, only when set', async () => {
+    const { fixtureDetailRows } = await import('./fixtureTimes')
+    expect(fixtureDetailRows(fixture({ role: 'substitute', kit: 'Burgundy Polo', transport: null }))).toEqual([
+      { label: 'Squad', value: 'Substitute' },
+      { label: 'Kit', value: 'Burgundy Polo' },
+    ])
+    expect(fixtureDetailRows(fixture({}))).toEqual([])
+    expect(fixtureDetailRows({ kind: 'club', name: 'Swim', status: 'scheduled', starts_at: '15:15', kit: 'x' } as any)).toEqual([])
+  })
+})
