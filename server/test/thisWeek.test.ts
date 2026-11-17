@@ -10,7 +10,7 @@ import request from 'supertest'
  * the morning after one was allocated, is worse than telling them nothing — so
  * the four states are distinct on the wire and each is pinned here.
  */
-const prismaMock = { school: { findUnique: vi.fn() } }
+const prismaMock = { school: { findUnique: vi.fn() }, partnerIntent: { findMany: vi.fn(async () => []) } }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
 
 const loadUserWithRelations = vi.fn()
@@ -58,6 +58,7 @@ beforeEach(() => {
     activeScheduleEnabled: true, hubSchoolId: 'hub-sch-1', timezone: 'Asia/Dubai',
   })
   fetchChildWeek.mockResolvedValue({ timezone: 'Asia/Dubai', days: [], unknown: false })
+  prismaMock.partnerIntent.findMany.mockResolvedValue([])
 })
 afterEach(() => vi.unstubAllEnvs())
 

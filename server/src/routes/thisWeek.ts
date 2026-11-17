@@ -23,6 +23,10 @@ import {
   activeConfigured,
   ActiveScheduleError,
 } from '../services/activeSchedule.js'
+import type { ActiveScheduleItem } from '../services/activeSchedule.js'
+import { fixtureUpdatesFor, addDays, DAY_BEFORE_FROM } from '../services/fixtureUpdates.js'
+import type { FixtureUpdate } from '../services/fixtureUpdates.js'
+import { nowInTimezone } from '../services/dateTime.js'
 
 const router = Router()
 
@@ -129,9 +133,16 @@ router.get('/child/:studentId', isAuthenticated, requireModule('activeScheduleEn
       return res.json({ state: 'not_synced', childName, days: [], timezone: week.timezone, from, to })
     }
 
+    // What the school has told this family about the week's fixtures, so a
+    // tapped "Update on Maya's fixture" lands on a page that shows it.
+    const updates = await fixtureUpdatesFor([child.id], from, to)
+    const fixtureUpdates: Record<string, Array<{ message: string; sentAt: string }>> = {}
+    for (const u of updates) (fixtureUpdates[u.fixtureId] ??= []).push({ message: u.message, sentAt: u.sentAt })
+
     res.json({
       state: 'ok',
       childName,
+      fixtureUpdates,
       // Named so the page can say which zone the times are in if it ever needs
       // to. Every time below is ALREADY in it — display only, never converted.
       timezone: week.timezone,
@@ -197,6 +208,95 @@ async function hubSchoolIdFor(schoolId: string): Promise<string | null> {
   const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { hubSchoolId: true } })
   return school?.hubSchoolId && activeConfigured() ? school.hubSchoolId : null
 }
+
+// GET /api/this-week/fixture-day   (parent)
+//
+// The home page's fixture card: every fixture one of the requester's children
+// is picked for, today, and from 15:00 the day before for tomorrow's; plus any
+// "update to families" about a fixture still to come, from the moment it is
+// sent. Updates are Connect's own record, so they show even if Active is down;
+// `scheduleUnavailable` says the times could not be read.
+//
+// Nothing here is stored. Times are Active's wall clock, passed through.
+router.get('/fixture-day', isAuthenticated, requireModule('activeScheduleEnabled'), async (req, res) => {
+  try {
+    const user = (await loadUserWithRelations(req.user!.id))!
+    const children = requesterChildren(user)
+    if (children.length === 0) return res.json({ cards: [], scheduleUnavailable: false })
+
+    const school = await prisma.school.findUnique({
+      where: { id: req.user!.schoolId },
+      select: { hubSchoolId: true, timezone: true },
+    })
+    const now = nowInTimezone(school?.timezone || 'UTC')
+    const today = now.date
+    const lastDay = now.time >= DAY_BEFORE_FROM ? addDays(today, 1) : today
+
+    type Card = {
+      studentId: string
+      childName: string
+      fixtureId: string
+      date: string | null
+      name: string
+      item: ActiveScheduleItem | null
+      updates: Array<{ message: string; sentAt: string }>
+    }
+    const cards = new Map<string, Card>()
+    const nameOf = new Map(children.map(c => [c.id, c.name]))
+
+    let scheduleUnavailable = false
+    const linked = children.filter(c => c.hubPupilId)
+    if (linked.length > 0) {
+      if (!school?.hubSchoolId || !activeConfigured()) {
+        scheduleUnavailable = true
+      } else {
+        const weeks = await Promise.allSettled(linked.map(c => fetchChildWeek({
+          hubSchoolId: school.hubSchoolId!, hubPupilId: c.hubPupilId!, from: today, to: lastDay,
+        })))
+        weeks.forEach((w, i) => {
+          if (w.status === 'rejected') { scheduleUnavailable = true; return }
+          const child = linked[i]
+          for (const day of w.value.days) {
+            for (const item of day.items) {
+              // A played fixture is over; nothing on it is worth the top of the page.
+              if (item.kind !== 'fixture' || !item.id || item.status === 'played') continue
+              cards.set(`${child.id}:${item.id}`, {
+                studentId: child.id, childName: child.name, fixtureId: item.id,
+                date: day.date, name: item.name, item, updates: [],
+              })
+            }
+          }
+        })
+      }
+    }
+
+    const updates: FixtureUpdate[] = await fixtureUpdatesFor(children.map(c => c.id), today)
+    for (const u of updates) {
+      const key = `${u.studentId}:${u.fixtureId}`
+      let card = cards.get(key)
+      if (!card) {
+        // An update about a fixture further ahead, or one this child is not
+        // (yet) picked for: shown on its own, from the moment it was sent.
+        card = {
+          studentId: u.studentId, childName: nameOf.get(u.studentId) ?? '', fixtureId: u.fixtureId,
+          date: u.date, name: u.fixtureName ?? 'Fixture', item: null, updates: [],
+        }
+        cards.set(key, card)
+      }
+      card.updates.push({ message: u.message, sentAt: u.sentAt })
+    }
+
+    const list = [...cards.values()].sort((a, b) =>
+      (a.date ?? '9999').localeCompare(b.date ?? '9999')
+      || (a.item?.departs_at ?? a.item?.starts_at ?? '').localeCompare(b.item?.departs_at ?? b.item?.starts_at ?? '')
+      || a.childName.localeCompare(b.childName))
+
+    res.json({ today, cards: list, scheduleUnavailable })
+  } catch (error) {
+    console.error('Error building fixture-day card:', error)
+    res.status(500).json({ error: 'Failed to load fixtures' })
+  }
+})
 
 // GET /api/this-week/availability   (parent)
 router.get('/availability', isAuthenticated, requireModule('activeScheduleEnabled'), async (req, res) => {
