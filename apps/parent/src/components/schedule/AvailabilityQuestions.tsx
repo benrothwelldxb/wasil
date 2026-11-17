@@ -16,10 +16,13 @@ export function AvailabilityQuestions({ heading = 'The school is asking' }: { he
   const { data } = useApi<{ asks: ThisWeekAvailabilityAsk[] }>(() => api.thisWeek.availability(), [])
   const asks = data?.asks ?? []
   if (asks.length === 0) return null
+  // Once every question has a reply nothing is being asked any more; the
+  // heading says what the compact rows below are instead.
+  const allAnswered = asks.every((a) => a.state !== 'unknown')
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-bold" style={{ color: '#4A3B3F' }}>{heading}</h3>
+      <h3 className="text-sm font-bold" style={{ color: '#4A3B3F' }}>{allAnswered ? 'Your replies to the school' : heading}</h3>
       {asks.map((ask) => (
         <AvailabilityCard key={`${ask.fixtureId}:${ask.studentId}`} ask={ask} />
       ))}
@@ -31,6 +34,9 @@ function AvailabilityCard({ ask }: { ask: ThisWeekAvailabilityAsk }) {
   const [state, setState] = useState(ask.state)
   const [saving, setSaving] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // An answered question shrinks to one line, so it stops taking the top of
+  // the page once there is nothing left to do. "Change" opens it again.
+  const [open, setOpen] = useState(false)
   const firstName = ask.childName.split(' ')[0]
   const { weekday, day } = dayLabel(ask.date)
 
@@ -40,6 +46,7 @@ function AvailabilityCard({ ask }: { ask: ThisWeekAvailabilityAsk }) {
     try {
       await api.thisWeek.replyAvailability({ studentId: ask.studentId, fixtureId: ask.fixtureId, state: next })
       setState(next)
+      setOpen(false)
     } catch (e) {
       setProblem(
         e instanceof Error && e.message.includes('fixture_closed')
@@ -67,6 +74,36 @@ function AvailabilityCard({ ask }: { ask: ThisWeekAvailabilityAsk }) {
       {label}
     </button>
   )
+
+  if (state !== 'unknown' && !open && !problem) {
+    const yes = state === 'available'
+    return (
+      <div
+        className="rounded-xl px-3 py-2 flex items-center gap-2"
+        style={{ backgroundColor: '#FFFFFF', border: '1.5px solid #F0E4E6' }}
+      >
+        <span
+          aria-hidden
+          className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+          style={yes ? { backgroundColor: '#C4506E', color: '#FFFFFF' } : { backgroundColor: '#F0E4E6', color: '#7A6469' }}
+        >
+          {yes ? '✓' : '✕'}
+        </span>
+        <p className="flex-1 min-w-0 text-xs truncate" style={{ color: '#4A3B3F' }}>
+          <span className="font-bold">{firstName} {yes ? 'can play' : "can't play"}</span>
+          <span style={{ color: '#7A6469' }}> · {ask.name} · {weekday} {day}</span>
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-xs font-bold flex-shrink-0 px-2 py-1"
+          style={{ color: '#C4506E' }}
+        >
+          Change
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-xl p-3" style={{ backgroundColor: '#FFFFFF', border: '1.5px solid #F0E4E6' }}>
