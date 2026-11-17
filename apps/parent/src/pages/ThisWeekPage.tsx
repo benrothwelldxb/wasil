@@ -5,6 +5,8 @@ import type { ThisWeekResponse, ThisWeekDay, ThisWeekItem } from '@wasil/shared'
 import { AvailabilityQuestions } from '../components/schedule/AvailabilityQuestions'
 import { dayLabel } from '../utils/schoolDay'
 import { fixtureTimeLines } from '../utils/fixtureTimes'
+import { UpdateNote } from '../components/schedule/FixtureDay'
+import type { FixtureUpdateMessage } from '@wasil/shared'
 
 interface ChildRef { id: string; name: string; className?: string }
 
@@ -17,10 +19,12 @@ function todayISO(): string {
 
 const isCancelled = (s: string) => s === 'cancelled' || s === 'postponed'
 
-function ItemCard({ item, childName, fixtures }: {
+function ItemCard({ item, childName, fixtures, updates = [] }: {
   item: ThisWeekItem
   childName: string
   fixtures: Map<string, ThisWeekItem>
+  /** What the school has said about this fixture, newest first. */
+  updates?: FixtureUpdateMessage[]
 }) {
   const cancelled = isCancelled(item.status)
   // The single most valuable thing in the payload, and it deserves prose rather
@@ -78,13 +82,22 @@ function ItemCard({ item, childName, fixtures }: {
               {childName.split(' ')[0]} will miss this — {childName.split(' ')[0] === childName ? 'they are' : 'they are'} at the {displacedBy.name}.
             </p>
           )}
+          {updates.length > 0 && (
+            <div className="mt-2 space-y-2">
+              {updates.map((u, k) => <UpdateNote key={k} update={u} />)}
+            </div>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-function DayBlock({ day, childName }: { day: ThisWeekDay; childName: string }) {
+function DayBlock({ day, childName, fixtureUpdates = {} }: {
+  day: ThisWeekDay
+  childName: string
+  fixtureUpdates?: Record<string, FixtureUpdateMessage[]>
+}) {
   const { weekday, day: date, isWeekend } = dayLabel(day.date)
   // Fixtures are looked up by id so a displaced club can name the one that
   // took the child away.
@@ -113,7 +126,7 @@ function DayBlock({ day, childName }: { day: ThisWeekDay; childName: string }) {
       ) : (
         <div className="space-y-2">
           {day.items.map((item, i) => (
-            <ItemCard key={item.id ?? i} item={item} childName={childName} fixtures={fixtures} />
+            <ItemCard key={item.id ?? i} item={item} childName={childName} fixtures={fixtures} updates={item.id ? fixtureUpdates[item.id] : undefined} />
           ))}
         </div>
       )}
@@ -226,7 +239,7 @@ export function ThisWeekPage() {
         hasAnything ? (
           <div className="space-y-4">
             {(data.days ?? []).map((day) => (
-              <DayBlock key={day.date} day={day} childName={childName} />
+              <DayBlock key={day.date} day={day} childName={childName} fixtureUpdates={data.fixtureUpdates} />
             ))}
           </div>
         ) : (

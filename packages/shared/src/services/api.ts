@@ -2705,6 +2705,38 @@ export interface ThisWeekResponse {
    *  only; a fixture has no publication step. Undefined when Active doesn't
    *  say, which is a third thing and not the same as false. */
   clubsPublished?: boolean
+  /** "Update to families" messages about this week's fixtures, by fixture id,
+   *  newest first. The teacher's words, verbatim. */
+  fixtureUpdates?: Record<string, FixtureUpdateMessage[]>
+}
+
+export interface FixtureUpdateMessage {
+  message: string
+  /** ISO instant the update was sent. */
+  sentAt: string
+}
+
+/** One fixture on the home page: today's, tomorrow's from the afternoon
+ *  before, or one further ahead that the school has sent an update about. */
+export interface FixtureDayCard {
+  studentId: string
+  childName: string
+  fixtureId: string
+  /** YYYY-MM-DD at the school; null only for an update that named no date. */
+  date: string | null
+  name: string
+  /** Active's schedule item, when the child is picked and it is today or
+   *  tomorrow. Null for an update-only card. */
+  item: ThisWeekItem | null
+  updates: FixtureUpdateMessage[]
+}
+
+export interface FixtureDayResponse {
+  /** The school's today, YYYY-MM-DD. */
+  today: string
+  cards: FixtureDayCard[]
+  /** Active could not be read: updates still show, times may be missing. */
+  scheduleUnavailable: boolean
 }
 
 /** A question the school has asked about a child and a fixture. */
@@ -2832,6 +2864,7 @@ export const thisWeek = {
       `/api/this-week/child/${studentId}${weekOf ? `?weekOf=${weekOf}` : ''}`,
     ),
   availability: () => fetchApi<{ asks: ThisWeekAvailabilityAsk[] }>('/api/this-week/availability'),
+  fixtureDay: () => fetchApi<FixtureDayResponse>('/api/this-week/fixture-day'),
   replyAvailability: (body: { studentId: string; fixtureId: string; state: 'available' | 'unavailable' }) =>
     fetchApi<{ ok: true }>('/api/this-week/availability', {
       method: 'POST',

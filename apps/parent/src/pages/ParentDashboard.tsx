@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { MessageCard, SwipeToHide } from '../components/messages'
 import { CalendarChangesStrip } from '../components/CalendarChangesStrip'
 import { AvailabilityQuestions } from '../components/schedule/AvailabilityQuestions'
+import { FixtureDay } from '../components/schedule/FixtureDay'
 import { PulseBanner, PulseSurveyModal } from '../components/pulse'
 // ScheduleWidget no longer used — schedule items shown inline in child cards
 import { useAuth } from '@wasil/shared'
@@ -926,6 +927,12 @@ export function ParentDashboard() {
         </h1>
         <p className="text-[15px] font-medium mt-1" style={{ color: '#7A6469' }}>{todayFormatted}</p>
       </div>
+
+      {/* A child's fixture today (or tomorrow, from the afternoon before), and
+          any update the school has sent about one. Directly under the greeting:
+          on match day, where to be and when is the first thing a parent needs.
+          Only emergency alerts sit above it. Renders nothing otherwise. */}
+      {isEnabled('activeScheduleEnabled') && <FixtureDay />}
 
       {/* A new weekly update, above everything the school did not write. It
           drops back to its usual place at the bottom after a few days — see
