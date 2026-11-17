@@ -89,7 +89,7 @@ router.get('/', isAuthenticated, async (req, res) => {
         // A partner a school has turned off (Wasil Beyond) is hidden here too.
         ...(parentMessageAudience ? { AND: [parentMessageAudience, ...parentVisibleMessageWhere()] } : {}),
       },
-      select: { id: true, title: true, targetClass: true, createdAt: true },
+      select: { id: true, title: true, targetClass: true, createdAt: true, channel: true },
       orderBy: { createdAt: 'desc' },
       take: 5,
     })
@@ -100,7 +100,12 @@ router.get('/', isAuthenticated, async (req, res) => {
         title: m.title,
         subtitle: m.targetClass,
         date: m.createdAt.toISOString(),
-        route: isParent ? '/' : '/messages',
+        // A parent lands ON the post. This sent them to the home page, where a
+        // post more than a few days old is not even shown, so search looked
+        // broken. An admin notice lives on its own page.
+        route: isParent
+          ? (m.channel === 'FEED' ? `/posts?open=${m.id}` : '/admin-notices')
+          : '/messages',
       })
     })
 
@@ -125,7 +130,7 @@ router.get('/', isAuthenticated, async (req, res) => {
         title: e.title,
         subtitle: e.location || undefined,
         date: e.date.toISOString(),
-        route: '/events',
+        route: isParent ? `/events?open=${e.id}` : '/events',
       })
     })
 
@@ -149,7 +154,7 @@ router.get('/', isAuthenticated, async (req, res) => {
         title: w.title,
         subtitle: 'Principal\'s Update',
         date: w.weekOf.toISOString(),
-        route: '/principal-updates',
+        route: isParent ? `/principal-updates?open=${w.id}` : '/principal-updates',
       })
     })
 
@@ -174,7 +179,8 @@ router.get('/', isAuthenticated, async (req, res) => {
         title: f.title,
         subtitle: f.status,
         date: f.createdAt.toISOString(),
-        route: isParent ? '/' : '/forms',
+        // A parent answers a form on the post that carries it.
+        route: isParent ? `/posts?form=${f.id}` : '/forms',
       })
     })
 
@@ -196,7 +202,7 @@ router.get('/', isAuthenticated, async (req, res) => {
         id: a.id,
         title: a.title,
         subtitle: a.category.name,
-        route: isParent ? '/resources' : '/knowledge-base',
+        route: isParent ? `/resources?open=${a.id}` : '/knowledge-base',
       })
     })
 

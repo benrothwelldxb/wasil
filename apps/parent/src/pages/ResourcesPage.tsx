@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Search,
@@ -78,6 +79,16 @@ export function ResourcesPage() {
   const { data: kbCategories } = useApi<KnowledgeCategory[]>(() => api.knowledge.list(), [])
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [selectedArticle, setSelectedArticle] = useState<KnowledgeArticle | null>(null)
+  // `?open=<article id>` from a search result opens that article once loaded.
+  const [searchParams] = useSearchParams()
+  const openArticleId = searchParams.get('open')
+  useEffect(() => {
+    if (!openArticleId || !kbCategories) return
+    for (const cat of kbCategories) {
+      const found = cat.articles?.find(a => a.id === openArticleId)
+      if (found) { setSelectedArticle(found); return }
+    }
+  }, [openArticleId, kbCategories])
 
   // ===== Policies =====
   const { data: policies } = useApi<Policy[]>(() => api.policies.list(), [])

@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, Users, Check, X, HelpCircle, Download, CalendarPlus, List, Grid3X3, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { PageLogo } from '../components/PageHeader'
@@ -104,6 +105,20 @@ export function EventsPage() {
   }, [filteredEvents])
 
   // Filter and split events into upcoming and past
+  // `?open=<event id>` from a search result: show the list, then scroll to
+  // that event and outline it, past or upcoming.
+  const [eventParams] = useSearchParams()
+  const focusEventId = eventParams.get('open')
+  useEffect(() => {
+    if (!focusEventId || !events) return
+    setViewMode('list')
+    const t = setTimeout(() => {
+      document.getElementById(`event-${focusEventId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+    return () => clearTimeout(t)
+  }, [focusEventId, events])
+  const focusRing = (id: string) => (id === focusEventId ? { boxShadow: '0 0 0 2px #C4506E' } : {})
+
   const { upcomingGroups, pastEvents } = useMemo(() => {
     if (!events) return { upcomingGroups: [], pastEvents: [] }
 
@@ -277,8 +292,9 @@ export function EventsPage() {
                   return (
                     <div
                       key={event.id}
+                      id={`event-${event.id}`}
                       className="bg-white overflow-hidden"
-                      style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6' }}
+                      style={{ borderRadius: '22px', border: '1.5px solid #F0E4E6', ...focusRing(event.id) }}
                     >
                       <div className="p-[18px]">
                         <div className="flex gap-4">
@@ -440,8 +456,9 @@ export function EventsPage() {
               return (
                 <div
                   key={event.id}
+                  id={`event-${event.id}`}
                   className="flex items-center gap-3 px-4 py-3 bg-white"
-                  style={{ borderRadius: '14px', border: '1px solid #F0E4E6', opacity: 0.7 }}
+                  style={{ borderRadius: '14px', border: '1px solid #F0E4E6', opacity: event.id === focusEventId ? 1 : 0.7, ...focusRing(event.id) }}
                 >
                   <span className="text-xs font-bold shrink-0" style={{ color: '#A8929A', width: '80px' }}>
                     {dateStr}

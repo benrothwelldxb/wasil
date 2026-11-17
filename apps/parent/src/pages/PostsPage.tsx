@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Newspaper } from 'lucide-react'
+import { Newspaper, X } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { PageLogo } from '../components/PageHeader'
 import { MessageCard } from '../components/messages'
 import { useAuth } from '@wasil/shared'
@@ -41,6 +42,25 @@ export function PostsPage() {
   const listRef = useRef(hiddenOnly)
   listRef.current = hiddenOnly
 
+  // Opened from a search result: `?open=<post id>`, or `?form=<form id>` for
+  // the post carrying a form. Fetched on its own, because an older post may be
+  // pages down the list, and shown above it. Undefined while loading; null
+  // when the parent cannot see it (taken down, or not addressed to them).
+  const [params, setParams] = useSearchParams()
+  const openId = params.get('open')
+  const openForm = params.get('form')
+  const [opened, setOpened] = useState<Message | null | undefined>(undefined)
+  useEffect(() => {
+    if (!openId && !openForm) { setOpened(undefined); return }
+    let live = true
+    setOpened(undefined)
+    api.messages.archive(null, 1, openId ? { id: openId } : { formId: openForm! })
+      .then(page => { if (live) setOpened(page.messages[0] ?? null) })
+      .catch(() => { if (live) setOpened(null) })
+    return () => { live = false }
+  }, [openId, openForm])
+  const closeOpened = () => setParams({}, { replace: true })
+
   const load = useCallback(async (after: string | null) => {
     setError(false)
     try {
@@ -64,6 +84,7 @@ export function PostsPage() {
   const handleAcknowledge = async (id: string) => {
     await api.messages.acknowledge(id)
     setPosts(prev => prev.map(p => (p.id === id ? { ...p, acknowledged: true } : p)))
+    setOpened(prev => (prev && prev.id === id ? { ...prev, acknowledged: true } : prev))
   }
 
   // Applied at once, put back if the server refuses.
@@ -97,6 +118,41 @@ export function PostsPage() {
           {t('posts.subtitle', 'Everything the school has shared')}
         </p>
       </div>
+
+      {(openId || openForm) && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#A8929A' }}>
+              {t('posts.fromSearch', 'From your search')}
+            </p>
+            <button onClick={closeOpened} className="p-1" aria-label={t('common.close', 'Close')}>
+              <X className="w-4 h-4" style={{ color: '#A8929A' }} />
+            </button>
+          </div>
+          {opened === undefined ? (
+            <div className="bg-white" style={{ borderRadius: '18px', border: '1.5px solid #F0E4E6', height: '120px' }} />
+          ) : opened === null ? (
+            <div className="bg-white px-5 py-6 text-center" style={{ borderRadius: '18px', border: '1.5px solid #F0E4E6' }}>
+              <p className="text-sm font-bold" style={{ color: '#2D2225' }}>
+                {t('posts.notAvailable', 'This post is no longer available')}
+              </p>
+              <p className="text-xs mt-1" style={{ color: '#7A6469' }}>
+                {t('posts.notAvailableHint', 'The school may have taken it down. Everything still showing is below.')}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-[20px]" style={{ boxShadow: '0 0 0 2px #C4506E' }}>
+              <MessageCard
+                message={opened}
+                onAcknowledge={handleAcknowledge}
+                onHide={handleHide}
+                onShow={handleShow}
+                showAcknowledgeButton={false}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-2">
         {([false, true] as const).map(only => (
