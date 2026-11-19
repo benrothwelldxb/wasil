@@ -33,6 +33,7 @@ import logger from '../services/logger.js'
 import { enqueuePush } from '../services/outbox.js'
 import { notifyAttendanceReviewed } from '../services/attendanceReviewNotify.js'
 import { sanitizeRichText } from '../services/htmlSanitizer.js'
+import { repairPlaceholderLinkLabels } from '../services/linkLabels.js'
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { ALLOWED_REACTION_EMOJIS } from './inbox.js'
@@ -53,7 +54,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 /** Desk markdown → sanitized HTML (broadcast content model is HTML). */
 function markdownToSafeHtml(md: string): string {
-  const html = marked.parse(md, { async: false, gfm: true, breaks: true }) as string
+  const html = marked.parse(repairPlaceholderLinkLabels(md), { async: false, gfm: true, breaks: true }) as string
   return sanitizeRichText(html)
 }
 

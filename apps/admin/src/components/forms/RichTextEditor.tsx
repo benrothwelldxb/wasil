@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback } from 'react'
 import { Bold, Italic, Underline, List, ListOrdered, Minus, Heading2, Link } from 'lucide-react'
+import { normaliseLinkUrl } from '../MarkdownToolbarEditor'
 
 interface RichTextEditorProps {
   value: string
@@ -51,7 +52,9 @@ export function RichTextEditor({ value, onChange, placeholder = 'Write your cont
 
   const execCommand = (command: string, arg?: string) => {
     if (command === 'createLink') {
-      const url = prompt('Enter URL:')
+      // `www.x.com` typed without https:// was stored as a relative link, which
+      // opened a broken page inside Connect.
+      const url = normaliseLinkUrl(prompt('Enter URL:') || '')
       if (!url) return
       document.execCommand(command, false, url)
     } else {

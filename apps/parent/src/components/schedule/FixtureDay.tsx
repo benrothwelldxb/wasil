@@ -1,10 +1,18 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Trophy, MapPin, Megaphone, ChevronRight } from 'lucide-react'
+import { Trophy, MapPin, Megaphone, ChevronRight, X } from 'lucide-react'
 import { useApi, api } from '@wasil/shared'
 import type { FixtureDayCard, FixtureDayResponse, FixtureUpdateMessage, ThisWeekItem } from '@wasil/shared'
 import { dayLabel } from '../../utils/schoolDay'
 import { fixtureTimeLines, fixtureDetailRows } from '../../utils/fixtureTimes'
-import { addDaysISO } from '../../utils/fixtureDay'
+import {
+  addDaysISO,
+  fixtureCardKey,
+  fixtureCardSignature,
+  readHiddenFixtureCards,
+  writeHiddenFixtureCards,
+  type HiddenFixtureCards,
+} from '../../utils/fixtureDay'
 
 /**
  * The top of the home page on a fixture day: where the child is going, when
@@ -17,13 +25,21 @@ import { addDaysISO } from '../../utils/fixtureDay'
  */
 export function FixtureDay() {
   const { data } = useApi<FixtureDayResponse>(() => api.thisWeek.fixtureDay(), [])
-  const cards = data?.cards ?? []
+  const [hidden, setHidden] = useState<HiddenFixtureCards>(readHiddenFixtureCards)
+  // A hidden card stays hidden only while it says what it said when hidden.
+  const cards = (data?.cards ?? []).filter((c) => hidden[fixtureCardKey(c)]?.sig !== fixtureCardSignature(c))
   if (!data || cards.length === 0) return null
+
+  const hide = (card: FixtureDayCard) => {
+    const next = { ...hidden, [fixtureCardKey(card)]: { sig: fixtureCardSignature(card), date: card.date } }
+    setHidden(next)
+    writeHiddenFixtureCards(next, data.today)
+  }
 
   return (
     <div className="space-y-2">
       {cards.map((c) => (
-        <FixtureCard key={`${c.studentId}:${c.fixtureId}`} card={c} today={data.today} />
+        <FixtureCard key={fixtureCardKey(c)} card={c} today={data.today} onHide={() => hide(c)} />
       ))}
       {data.scheduleUnavailable && (
         <p className="text-xs px-1" style={{ color: '#A8929A' }}>
@@ -42,7 +58,7 @@ function whenLabel(date: string | null, today: string): string {
   return `${weekday} ${day}`
 }
 
-function FixtureCard({ card, today }: { card: FixtureDayCard; today: string }) {
+function FixtureCard({ card, today, onHide }: { card: FixtureDayCard; today: string; onHide: () => void }) {
   const item = card.item
   const cancelled = item ? item.status === 'cancelled' || item.status === 'postponed' : false
   const firstName = card.childName.split(' ')[0] || card.childName
@@ -59,6 +75,16 @@ function FixtureCard({ card, today }: { card: FixtureDayCard; today: string }) {
         <p className="text-xs font-bold uppercase tracking-wider" style={{ color: cancelled ? '#C4506E' : '#FFFFFF' }}>
           {when} · {firstName}&apos;s fixture
         </p>
+        {/* Inside the card's link, so the tap must not also open This Week. */}
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onHide() }}
+          className="ml-auto -mr-2 p-1.5 rounded-full"
+          aria-label={`Hide ${card.name} from the home page`}
+          title="Hide from the home page"
+        >
+          <X className="h-4 w-4" style={{ color: cancelled ? '#C4506E' : '#FFFFFF' }} />
+        </button>
       </div>
 
       <div className="p-[18px] space-y-2">
