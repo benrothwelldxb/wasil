@@ -52,10 +52,33 @@ export function RichText({ content, renderLink, className }: RichTextProps) {
           },
         }}
       >
-        {content}
+        {autolinkUrls(content)}
       </ReactMarkdown>
     </div>
   )
+}
+
+/**
+ * A web address typed or pasted into a body becomes a link. Plain markdown
+ * (no GFM) leaves a bare address as text a parent cannot tap. Addresses already
+ * inside a link, as its words or its target, are left alone.
+ *
+ * Done on the text before parsing rather than with a plugin, and without
+ * lookbehind, which older iOS Safari cannot parse at all.
+ */
+const BARE_URL = /(\]\(|<|\[)?\b((?:https?:\/\/|www\.)[^\s<>()[\]]*[^\s<>()[\].,;:!?'"])/gi
+
+export function autolinkUrls(input: string): string {
+  if (!input) return input
+  return input.replace(BARE_URL, (match: string, before: string | undefined, url: string, offset: number) => {
+    if (before) return match
+    // The words of a markdown link: `[see https://x.com](...)`.
+    const lineStart = input.lastIndexOf('\n', offset) + 1
+    const preceding = input.slice(lineStart, offset)
+    if (preceding.lastIndexOf('[') > preceding.lastIndexOf(']')) return match
+    const href = /^www\./i.test(url) ? `https://${url}` : url
+    return `[${url}](${href})`
+  })
 }
 
 /**
