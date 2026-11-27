@@ -54,7 +54,7 @@ const prismaMock = {
   partnerToken: { findUnique: vi.fn(), update: vi.fn() },
   user: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
   conversation: { findFirst: vi.fn(), update: vi.fn() },
-  conversationMessage: { create: vi.fn() },
+  conversationMessage: { create: vi.fn(), update: vi.fn() },
   conversationAttachment: { createMany: vi.fn() },
   deviceToken: { findMany: vi.fn() },
   notification: { create: vi.fn() },

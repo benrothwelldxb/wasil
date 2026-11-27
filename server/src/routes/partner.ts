@@ -20,6 +20,7 @@ import { todayInTimezone, parseWallClockForSchool, parseExpiryForSchool, default
 import { currentStaffWhere, hasLeft } from '../services/currentStaff.js'
 import { describeAttachments } from '../services/attachmentSummary.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
+import { pushOutcomeFor, readPushOutcome, type PushOutcome } from '../services/pushOutcome.js'
 import { getPushBadgeCount } from '../services/unreadCount.js'
 import { resolveIlsa } from '../services/ilsaResolution.js'
 import { withdrawMessage, WITHDRAW_WINDOW_MS } from '../services/messageWithdrawal.js'
@@ -1087,6 +1088,12 @@ router.get('/inbox/threads/:id', requirePartner, async (req, res) => {
           // was taken back is exactly what a teacher needs to know afterwards,
           // and is the one fact about a tombstone worth keeping.
           readAt: m.readAt?.toISOString() ?? null,
+          // Whether it reached the parent's phone as a notification: 'SENT',
+          // 'NO_DEVICE', or null (no claim). A parent can read a short message
+          // in full on the lock screen without opening Connect, so readAt alone
+          // cannot tell "saw it there" from "never got it" — this tells Desk
+          // which unread messages nothing was ever sent for. See pushOutcome.ts.
+          pushOutcome: readPushOutcome(m.pushOutcome),
           // The same { [emoji]: { count, reacted } } summary the parent inbox
           // builds, with `reacted` relative to the caller. Omitted when empty so
           // Desk can treat a missing key as "no reactions" — which is what lets
@@ -1245,13 +1252,17 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
       })
     }
 
-    // FCM push to each recipient that hasn't muted this thread.
+    // FCM push to each recipient that hasn't muted this thread. The primary
+    // parent's outcome is kept on the message — see pushOutcome.ts.
+    let parentPush: PushOutcome | null = null
     for (const r of dedupedRecipients) {
+      const isPrimaryParent = r.userId === conversation.parentId
       if (r.muted) continue
       const deviceTokens = await prisma.deviceToken.findMany({
         where: { userId: r.userId },
         select: { token: true },
       })
+      if (isPrimaryParent && deviceTokens.length === 0) parentPush = 'NO_DEVICE'
       if (deviceTokens.length > 0) {
         const tokens = deviceTokens.map((dt) => dt.token)
         // The recipient's OWN unread total, now including the message just
@@ -1273,13 +1284,19 @@ router.post('/inbox/threads/:id/messages', requirePartner, async (req, res) => {
           },
           badge,
         })
+        if (isPrimaryParent) {
+          parentPush = pushOutcomeFor({ muted: false, tokenCount: tokens.length, successCount: result.successCount })
+        }
         if (result.failedTokens.length > 0) {
           await removeInvalidTokens(result.failedTokens)
         }
       }
     }
+    if (parentPush) {
+      await prisma.conversationMessage.update({ where: { id: message.id }, data: { pushOutcome: parentPush } })
+    }
 
-    res.status(201).json({ id: message.id, sentAt: message.createdAt.toISOString() })
+    res.status(201).json({ id: message.id, sentAt: message.createdAt.toISOString(), pushOutcome: parentPush })
   } catch (error) {
     console.error('Error sending partner inbox message:', error)
     res.status(500).json({ error: 'internal_error' })

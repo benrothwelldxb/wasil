@@ -2562,6 +2562,14 @@ model ConversationMessage {
   sender         User                  @relation("SentConversationMessages", fields: [senderId], references: [id])
   content        String
   readAt         DateTime?
+  /// Whether this reached the PRIMARY parent's phone as a notification — the
+  /// same person readAt is about. 'SENT' (Apple/Google accepted it for at least
+  /// one device) | 'NO_DEVICE' (no phone registered, nothing was sent) | null
+  /// (no claim: muted, every device refused, a parent's own message, or sent
+  /// before this was recorded). Not "delivered" — APNs/FCM accepting a push
+  /// is not the phone showing it — and never "read": a parent can read the
+  /// whole message on the lock screen and Connect cannot know.
+  pushOutcome    String?
   deletedAt      DateTime?
   deletedBy      String?
   replyToId      String?

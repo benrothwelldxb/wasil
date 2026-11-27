@@ -1017,6 +1017,25 @@ function ConversationThread({ conversationId, onBack }: { conversationId: string
                         {formatReadAtTime(msg.readAt)}
                       </span>
                     )}
+                    {/* Not read in the app yet. A notification shows the start of
+                        the message, so "sent to phone" may well mean read on the
+                        lock screen; "not notified" means nothing told them. */}
+                    {outgoing && !msg.readAt && !msg.deleted && msg.pushOutcome === 'SENT' && (
+                      <span
+                        className="ml-1"
+                        title="A notification went to their phone with the start of this message. They may have read it there without opening Connect."
+                      >
+                        Sent to phone
+                      </span>
+                    )}
+                    {outgoing && !msg.readAt && !msg.deleted && msg.pushOutcome === 'NO_DEVICE' && (
+                      <span
+                        className="ml-1 font-medium text-amber-600"
+                        title="They have no phone set up for Connect notifications, so nothing alerted them. They will see it the next time they open Connect."
+                      >
+                        Not notified
+                      </span>
+                    )}
                   </p>
                 </div>
 

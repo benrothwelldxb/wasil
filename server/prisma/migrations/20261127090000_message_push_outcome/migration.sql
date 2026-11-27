@@ -1,0 +1,11 @@
+-- Whether a staff message actually went to the parent's phone.
+--
+-- A parent can read a message in full on the lock screen without opening the
+-- app, so readAt stays null and staff cannot tell "read it there" from "never
+-- got it". Nobody can know the first. The second is knowable: at send time
+-- Connect knows whether the parent had a phone registered for notifications.
+--
+-- 'SENT'      Apple/Google accepted the notification for at least one device.
+-- 'NO_DEVICE' The parent had no phone registered, so nothing was sent.
+-- NULL        No claim: muted thread, every device refused, or sent before this.
+ALTER TABLE "ConversationMessage" ADD COLUMN "pushOutcome" TEXT;

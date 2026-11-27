@@ -11,7 +11,7 @@ import request from 'supertest'
 
 const prismaMock = {
   conversation: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-  conversationMessage: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
+  conversationMessage: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), count: vi.fn(), update: vi.fn() },
   conversationAttachment: { createMany: vi.fn(), findMany: vi.fn() },
   conversationParticipant: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   parentStudentLink: { findFirst: vi.fn(), findMany: vi.fn() },

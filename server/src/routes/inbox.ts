@@ -6,6 +6,7 @@ import { isAuthenticated, isAdmin, isStaff, loadUserWithRelations } from '../mid
 import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
+import { pushOutcomeFor, readPushOutcome, type PushOutcome } from '../services/pushOutcome.js'
 import { getInboxUnreadCount, getPushBadgeCount } from '../services/unreadCount.js'
 import { teachingStaffForClasses, timetableLookupPossible } from '../services/classTeachingStaff.js'
 import { todayInTimezone } from '../services/dateTime.js'
@@ -53,6 +54,7 @@ function serializeMessage(
     sender: { id: string; name: string }
     content: string
     readAt: Date | null
+    pushOutcome?: string | null
     createdAt: Date
     deletedAt: Date | null
     replyTo?: { id: string; content: string; senderId: string; sender: { name: string }; deletedAt: Date | null } | null
@@ -98,6 +100,10 @@ function serializeMessage(
     deleted: isDeleted || undefined,
     deletedAt: m.deletedAt?.toISOString() || null,
     readAt: hideReadReceipt ? null : m.readAt?.toISOString() || null,
+    // Staff-only, like the receipt it stands beside: whether this reached the
+    // parent's phone. A parent is never shown it — on their own messages it is
+    // always null anyway, and on messages they received it is about themselves.
+    pushOutcome: viewerIsParent ? null : readPushOutcome(m.pushOutcome),
     createdAt: m.createdAt.toISOString(),
     replyTo: m.replyTo
       ? {
@@ -667,12 +673,18 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
     }
 
     // Send FCM push to each recipient that hasn't muted this thread.
+    // The primary parent's outcome is kept on the message (see pushOutcome.ts):
+    // it is the only thing that tells staff "nothing reached their phone" apart
+    // from "they read it on the lock screen".
+    let parentPush: PushOutcome | null = null
     for (const r of dedupedRecipients) {
+      const isPrimaryParent = r.userId === conversation.parentId
       if (r.muted) continue
       const deviceTokens = await prisma.deviceToken.findMany({
         where: { userId: r.userId },
         select: { token: true },
       })
+      if (isPrimaryParent && deviceTokens.length === 0) parentPush = 'NO_DEVICE'
       if (deviceTokens.length > 0) {
         const tokens = deviceTokens.map(dt => dt.token)
         // The recipient's OWN unread total, now including the message just
@@ -690,10 +702,16 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
           },
           badge,
         })
+        if (isPrimaryParent) {
+          parentPush = pushOutcomeFor({ muted: false, tokenCount: tokens.length, successCount: result.successCount })
+        }
         if (result.failedTokens.length > 0) {
           await removeInvalidTokens(result.failedTokens)
         }
       }
+    }
+    if (parentPush) {
+      await prisma.conversationMessage.update({ where: { id: message.id }, data: { pushOutcome: parentPush } })
     }
 
     const createdAttachments = await prisma.conversationAttachment.findMany({
@@ -706,6 +724,7 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
       senderName: user.name,
       content: message.content,
       readAt: null,
+      pushOutcome: parentPush,
       createdAt: message.createdAt.toISOString(),
       attachments: createdAttachments.map(a => ({
         id: a.id,

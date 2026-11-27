@@ -11,7 +11,7 @@ const prismaMock = {
   partnerToken: { findUnique: vi.fn(), update: vi.fn() },
   user: { findUnique: vi.fn(), findFirst: vi.fn() },
   conversation: { count: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-  conversationMessage: { create: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn() },
+  conversationMessage: { create: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   conversationParticipant: { update: vi.fn(), create: vi.fn() },
   conversationAttachment: { createMany: vi.fn() },
   notification: { create: vi.fn() },
@@ -554,7 +554,7 @@ describe('GET /api/partner/inbox/threads/:id', () => {
     expect(res.body.messages).toEqual([
       {
         id: 'm-1', senderName: 'Amina Dad', mine: false, content: 'Hello', sentAt: '2026-08-14T09:00:00.000Z',
-        deletedAt: null, readAt: null,
+        deletedAt: null, readAt: null, pushOutcome: null,
         attachments: [{ name: 'note.pdf', url: 'https://x/note.pdf', type: 'application/pdf', size: 1234 }],
       },
       {
@@ -563,13 +563,15 @@ describe('GET /api/partner/inbox/threads/:id', () => {
         // "They read it at 19:42" — on a message the teacher sent, this is the
         // parent having opened the thread.
         readAt: '2026-08-14T19:42:00.000Z',
+        // Written before outcomes were recorded: no claim either way.
+        pushOutcome: null,
       },
       // The withdrawal keeps its place and its authorship, and carries NO
       // content and NO attachment URLs — sending either would undo it.
       {
         id: 'm-3', senderName: 'Amina Dad', mine: false, content: '', deleted: true,
         deletedAt: '2026-08-14T09:11:00.000Z', sentAt: '2026-08-14T09:10:00.000Z', attachments: [],
-        readAt: null,
+        readAt: null, pushOutcome: null,
       },
     ])
   })
@@ -599,7 +601,9 @@ describe('GET /api/partner/inbox/threads/:id', () => {
       // `readAt` joined the shape: when the OTHER party opened the thread after
       // this message was sent. On `mine: true` that is the parent, which is the
       // whole point — "did they read the one asking to meet".
-      ['attachments', 'content', 'deletedAt', 'id', 'mine', 'readAt', 'senderName', 'sentAt'].sort(),
+      // `pushOutcome` beside it: whether a notification reached their phone
+      // ('SENT' | 'NO_DEVICE' | null), since a lock-screen read leaves readAt null.
+      ['attachments', 'content', 'deletedAt', 'id', 'mine', 'pushOutcome', 'readAt', 'senderName', 'sentAt'].sort(),
     )
     expect(Object.keys(res.body.messages[0].attachments[0]).sort()).toEqual(['name', 'size', 'type', 'url'].sort())
   })
@@ -646,7 +650,8 @@ describe('POST /api/partner/inbox/threads/:id/messages', () => {
       .send({ hub_user_id: 'hu-staff', content: 'Hello parent' })
 
     expect(res.status).toBe(201)
-    expect(res.body).toEqual({ id: 'msg-9', sentAt: '2026-08-14T11:00:00.000Z' })
+    expect(res.body).toMatchObject({ id: 'msg-9', sentAt: '2026-08-14T11:00:00.000Z' })
+    expect(Object.keys(res.body).sort()).toEqual(['id', 'pushOutcome', 'sentAt'])
     expect(prismaMock.conversationMessage.create).toHaveBeenCalledWith({
       data: { conversationId: 'c-1', senderId: 'staff-1', content: 'Hello parent' },
     })
