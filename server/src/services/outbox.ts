@@ -193,7 +193,9 @@ async function dispatch(kind: OutboxDispatchKind, payload: unknown): Promise<voi
       })
     }
     // We don't throw on partial failure — some recipients got it, which is
-    // good enough. Total failure is when FCM itself throws.
+    // good enough. When FCM was unavailable as a whole, throw so the row
+    // backs off and retries instead of being marked sent.
+    if (result.unavailable) throw new Error('FCM unavailable')
     return
   }
   if (kind === 'MESSAGE_ALERT') {
