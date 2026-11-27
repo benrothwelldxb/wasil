@@ -9,6 +9,7 @@ import request from 'supertest'
 // is mocked (the established pattern in this repo — see inboxSecurity.test.ts).
 
 const prismaMock = {
+  outboxEntry: { create: vi.fn() },
   conversation: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
   conversationMessage: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), count: vi.fn(), update: vi.fn() },
   conversationAttachment: { createMany: vi.fn(), findMany: vi.fn() },
