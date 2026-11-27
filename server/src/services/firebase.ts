@@ -66,18 +66,53 @@ export interface PushMessage {
   badge?: number
 }
 
+/**
+ * The FCM error codes that mean THIS TOKEN is dead for good: the app was
+ * uninstalled, the user signed out, or the token was never valid. Only these
+ * justify deleting a device.
+ *
+ * Everything else — FCM unavailable, internal error, quota, a bad credential, a
+ * payload problem — is about the send, not the phone, and the same token works
+ * on the next message. `messaging/invalid-argument` is deliberately NOT here:
+ * FCM uses it for a malformed payload too, and treating that as a dead token
+ * would unregister every phone the bad payload was sent to.
+ */
+const DEAD_TOKEN_CODES = new Set([
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+])
+
+export interface PushSendResult {
+  successCount: number
+  failureCount: number
+  /**
+   * Tokens FCM says are permanently dead — the ONLY ones a caller should pass
+   * to removeInvalidTokens. Not "every token that failed": that version deleted
+   * every device in a send whenever FCM had a bad moment, silently ending a
+   * family's notifications until they next opened the app.
+   */
+  failedTokens: string[]
+  /**
+   * True when nothing could be attempted or FCM failed as a whole (not
+   * configured, unreachable, threw). Worth retrying; says nothing about tokens.
+   */
+  unavailable: boolean
+}
+
 export async function sendPushNotification(
   tokens: string[],
   message: PushMessage
-): Promise<{ successCount: number; failureCount: number; failedTokens: string[] }> {
+): Promise<PushSendResult> {
   if (!firebaseApp) {
-    if (!initFirebase()) {
-      return { successCount: 0, failureCount: tokens.length, failedTokens: tokens }
+    // Awaited: this was `!initFirebase()` on a Promise, which is never falsy,
+    // so an unconfigured server fell through to admin.messaging() and threw.
+    if (!(await initFirebase())) {
+      return { successCount: 0, failureCount: tokens.length, failedTokens: [], unavailable: true }
     }
   }
 
   if (tokens.length === 0) {
-    return { successCount: 0, failureCount: 0, failedTokens: [] }
+    return { successCount: 0, failureCount: 0, failedTokens: [], unavailable: false }
   }
 
   const messaging = admin.messaging()
@@ -142,9 +177,12 @@ export async function sendPushNotification(
 
     const failedTokens: string[] = []
     response.responses.forEach((resp, idx) => {
-      if (!resp.success) {
+      if (resp.success) return
+      const code = resp.error?.code ?? ''
+      if (DEAD_TOKEN_CODES.has(code)) {
         failedTokens.push(tokens[idx])
-        console.error('FCM send error for token:', tokens[idx], resp.error?.message)
+      } else {
+        console.error('FCM send error (token kept):', code || 'unknown', resp.error?.message)
       }
     })
 
@@ -152,10 +190,15 @@ export async function sendPushNotification(
       successCount: response.successCount,
       failureCount: response.failureCount,
       failedTokens,
+      // Every device failed and none of them because the token is dead: FCM
+      // itself is having trouble, which a retry can fix.
+      unavailable: response.successCount === 0 && failedTokens.length === 0 && response.failureCount > 0,
     }
   } catch (error) {
+    // A thrown send is FCM, the network or our credentials — never evidence
+    // about any phone. Keep every token.
     console.error('Failed to send FCM messages:', error)
-    return { successCount: 0, failureCount: tokens.length, failedTokens: tokens }
+    return { successCount: 0, failureCount: tokens.length, failedTokens: [], unavailable: true }
   }
 }
 
