@@ -1468,6 +1468,12 @@ export interface ConversationMessageItem {
   senderName: string
   content: string
   readAt: string | null
+  /**
+   * Staff view only: whether this reached the parent's phone as a notification.
+   * 'SENT' = Apple/Google accepted it; 'NO_DEVICE' = they have no phone set up,
+   * so nothing alerted them; null/absent = no claim. Never means "read".
+   */
+  pushOutcome?: 'SENT' | 'NO_DEVICE' | null
   deleted?: boolean
   deletedAt?: string | null
   replyTo?: {

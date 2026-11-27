@@ -152,6 +152,21 @@ describe('the thread itself carries a stamp per message', () => {
     expect(res.body.messages[0].readAt).toBeNull()
   })
 
+  // A short message is often read in full on the lock screen, so an unread
+  // stamp alone can't tell "saw it there" from "nothing reached them".
+  it('says whether it reached their phone, and claims nothing it does not know', async () => {
+    prismaMock.conversation.findFirst.mockResolvedValue(
+      detail([
+        { id: 'm-1', senderId: 'staff-1', content: 'a', readAt: null, createdAt: SENT, pushOutcome: 'SENT' },
+        { id: 'm-2', senderId: 'staff-1', content: 'b', readAt: null, createdAt: SENT, pushOutcome: 'NO_DEVICE' },
+        { id: 'm-3', senderId: 'staff-1', content: 'c', readAt: null, createdAt: SENT, pushOutcome: null },
+        { id: 'm-4', senderId: 'staff-1', content: 'd', readAt: null, createdAt: SENT, pushOutcome: 'junk' },
+      ]),
+    )
+    const res = await auth(request(makeApp()).get('/api/partner/inbox/threads/c-1?hub_user_id=hu-1'))
+    expect(res.body.messages.map((m: { pushOutcome: unknown }) => m.pushOutcome)).toEqual(['SENT', 'NO_DEVICE', null, null])
+  })
+
   // Whether a parent saw something before it was withdrawn is exactly what a
   // teacher needs to know afterwards.
   it('keeps the stamp on a withdrawn message, even though the content goes', async () => {
