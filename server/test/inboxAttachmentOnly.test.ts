@@ -17,6 +17,7 @@ import request from 'supertest'
  */
 
 const prismaMock = {
+  outboxEntry: { create: vi.fn() },
   conversation: { findFirst: vi.fn(), update: vi.fn() },
   conversationMessage: { create: vi.fn(), count: vi.fn(), findFirst: vi.fn() },
   conversationAttachment: { createMany: vi.fn(), findMany: vi.fn() },
@@ -81,6 +82,25 @@ describe('POST /api/inbox/conversations/:id/messages', () => {
     expect(res.status).toBe(201)
     expect(prismaMock.conversationMessage.create).toHaveBeenCalled()
     expect(prismaMock.conversationAttachment.createMany).toHaveBeenCalled()
+  })
+
+  // A parent's message is alerted once they stop typing (messageAlert.ts):
+  // nothing buzzes now, one outbox row is due a minute out.
+  it('queues the alert for later instead of pushing on send', async () => {
+    prismaMock.deviceToken.findMany.mockResolvedValue([{ token: 'tok-staff' }])
+    const res = await send({ content: 'Hi' })
+
+    expect(res.status).toBe(201)
+    const { sendPushNotification } = await import('../src/services/firebase')
+    expect(sendPushNotification).not.toHaveBeenCalled()
+    const queued = prismaMock.outboxEntry.create.mock.calls.map(c => c[0].data)
+    expect(queued).toEqual([expect.objectContaining({
+      kind: 'MESSAGE_ALERT',
+      payload: { conversationId: 'c-1', messageId: 'm-1' },
+      runAfter: new Date('2026-09-20T09:01:00Z'),
+    })])
+    // The bell row is not delayed — only the interruption is.
+    expect(prismaMock.notification.create).toHaveBeenCalled()
   })
 
   it('sends a photo when content is absent entirely', async () => {

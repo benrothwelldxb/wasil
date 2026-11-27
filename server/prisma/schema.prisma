@@ -2962,6 +2962,8 @@ enum OutboxKind {
   PUSH
   SMS
   WHATSAPP
+  /// A parent's message, alerted once they stop typing (services/messageAlert.ts).
+  MESSAGE_ALERT
 }
 
 // ─── External providers ──────────────────────────────────────────────────────

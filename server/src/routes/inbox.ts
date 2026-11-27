@@ -7,6 +7,7 @@ import { uploadFile, generateKey } from '../services/storage.js'
 import { checkUpload, ATTACHMENT_MIME_TYPES } from '../services/uploadValidation.js'
 import { sendPushNotification, removeInvalidTokens } from '../services/firebase.js'
 import { pushOutcomeFor, readPushOutcome, type PushOutcome } from '../services/pushOutcome.js'
+import { enqueueParentMessageAlert } from '../services/messageAlert.js'
 import { getInboxUnreadCount, getPushBadgeCount } from '../services/unreadCount.js'
 import { teachingStaffForClasses, timetableLookupPossible } from '../services/classTeachingStaff.js'
 import { todayInTimezone } from '../services/dateTime.js'
@@ -626,50 +627,15 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
       })
     }
 
-    // Email teacher when parent starts a new exchange (first message ever, or no messages in 24h)
-    if (senderIsParent) {
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-      const recentMessages = await prisma.conversationMessage.count({
-        where: {
-          conversationId: id,
-          id: { not: message.id }, // Exclude the message we just created
-          createdAt: { gte: twentyFourHoursAgo },
-        },
-      })
-      // Send email if no other messages in the last 24 hours
-      if (recentMessages === 0) {
-        const ADMIN_APP_URL = process.env.ADMIN_APP_URL || process.env.ADMIN_URL || 'http://localhost:3001'
-        const inboxLink = `${ADMIN_APP_URL}/inbox`
-        const staffEmail = await prisma.user.findUnique({
-          where: { id: conversation.staffId },
-          select: { email: true },
-        })
-        if (staffEmail?.email) {
-          const { enqueueEmail } = await import('../services/outbox.js')
-          const school = await prisma.school.findUnique({ where: { id: conversation.schoolId }, select: { name: true } })
-          await enqueueEmail(conversation.schoolId, {
-            to: staffEmail.email,
-            subject: `New message from ${conversation.parent.name} — ${school?.name || 'School'}`,
-            html: `<div style="font-family: sans-serif; max-width: 520px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px;">
-              <h2 style="color: #2D2225; margin: 0 0 4px;">New Parent Message</h2>
-              <p style="color: #7A6469; font-size: 14px; margin: 0 0 20px;">${school?.name || 'School'}</p>
-              <div style="background: #FAF8F6; border-radius: 10px; padding: 16px; margin-bottom: 20px;">
-                <p style="color: #7A6469; font-size: 13px; margin: 0 0 6px; font-weight: 600;">From: ${conversation.parent.name}</p>
-                <p style="color: #2D2225; font-size: 15px; line-height: 1.5; margin: 0;">${content.trim()}</p>
-              </div>
-              <p style="color: #A8929A; font-size: 13px; margin: 0 0 16px; font-style: italic;">
-                Please do not reply to this email. To respond, use the admin portal.
-              </p>
-              <div style="text-align: center;">
-                <a href="${inboxLink}" style="display: inline-block; background-color: #C4506E; color: white; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-weight: 600; font-size: 14px;">
-                  Reply in Admin Portal
-                </a>
-              </div>
-            </div>`,
-            text: `New message from ${conversation.parent.name}\n\n"${content.trim()}"\n\nPlease do not reply to this email. Reply in the admin portal: ${inboxLink}`,
-          })
-        }
-      }
+    // A PARENT's message alerts nobody yet. Parents type "Hi" ⏎ and then the
+    // message; alerting per message buzzed the teacher with "Hi" and emailed
+    // them "Hi". One outbox row, due a minute out, sends a single push (and
+    // the new-exchange email) once they've stopped. See messageAlert.ts.
+    // The message itself, the thread preview and the bell rows above are not
+    // delayed — only the interruption is.
+    const alertLater = user.role === 'PARENT'
+    if (alertLater) {
+      await enqueueParentMessageAlert(conversation.schoolId, { conversationId: id, messageId: message.id }, message.createdAt)
     }
 
     // Send FCM push to each recipient that hasn't muted this thread.
@@ -677,7 +643,7 @@ router.post('/conversations/:id/messages', isAuthenticated, async (req, res) => 
     // it is the only thing that tells staff "nothing reached their phone" apart
     // from "they read it on the lock screen".
     let parentPush: PushOutcome | null = null
-    for (const r of dedupedRecipients) {
+    for (const r of alertLater ? [] : dedupedRecipients) {
       const isPrimaryParent = r.userId === conversation.parentId
       if (r.muted) continue
       const deviceTokens = await prisma.deviceToken.findMany({

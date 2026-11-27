@@ -132,7 +132,7 @@ export async function enqueueWhatsapp(
 
 // ─── Dispatch ────────────────────────────────────────────────────────────────
 
-type OutboxDispatchKind = 'EMAIL' | 'PUSH' | 'SMS' | 'WHATSAPP'
+type OutboxDispatchKind = 'EMAIL' | 'PUSH' | 'SMS' | 'WHATSAPP' | 'MESSAGE_ALERT'
 
 // When an entry carries an AlertDelivery id, reflect the final per-recipient
 // outcome back onto that row so the emergency-alert dashboard stays accurate.
@@ -194,6 +194,13 @@ async function dispatch(kind: OutboxDispatchKind, payload: unknown): Promise<voi
     }
     // We don't throw on partial failure — some recipients got it, which is
     // good enough. Total failure is when FCM itself throws.
+    return
+  }
+  if (kind === 'MESSAGE_ALERT') {
+    // Imported here, not at the top: messageAlert enqueues its email through
+    // this module, and a static import each way would be a cycle.
+    const { dispatchParentMessageAlert } = await import('./messageAlert.js')
+    await dispatchParentMessageAlert(payload as { conversationId: string; messageId: string })
     return
   }
   throw new Error(`Unknown outbox kind: ${kind}`)
