@@ -1048,10 +1048,25 @@ export const users = {
     }),
   contactPrompt: () =>
     fetchApi<import('../types').ContactPrompt>('/api/users/me/contact-prompt'),
-  confirmContact: (phone: string) =>
-    fetchApi<{ phone: string; confirmedAt: string }>('/api/users/me/contact-confirm', {
+  /** `email` is the address the parent says is right: their current one to
+   *  confirm it, or a new one to ask the school to change it to. */
+  confirmContact: (phone: string, email?: string) =>
+    fetchApi<{ phone: string; phoneReachable?: boolean; pendingEmail?: string | null; confirmedAt: string }>('/api/users/me/contact-confirm', {
       method: 'POST',
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify(email === undefined ? { phone } : { phone, email }),
+    }),
+}
+
+// Parents' contact corrections, for the office to load into the MIS.
+export const contactChanges = {
+  list: (status: 'open' | 'done' = 'open') =>
+    fetchApi<{ requests: import('../types').ContactChangeRequestItem[] }>(`/api/admin/contact-changes?status=${status}`),
+  exportCsv: () =>
+    downloadCSV('/api/admin/contact-changes/export.csv', `contact-updates-${new Date().toISOString().slice(0, 10)}.csv`),
+  resolve: (ids: string[]) =>
+    fetchApi<{ resolved: number }>('/api/admin/contact-changes/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
     }),
 }
 
@@ -3556,6 +3571,7 @@ export const hub = {
 export default {
   auth,
   hub,
+  contactChanges,
   suggestions,
   messages,
   forms,

@@ -1961,8 +1961,36 @@ export function isNavItemAvailable(item: ParentNavCatalogItem, flags: SchoolModu
 
 export interface ContactPrompt {
   needsConfirmation: boolean
+  /** Why it is due: never answered, no UAE number (asked every 14 days), a new
+   *  term, or the school's day count when it has no term dates. */
+  reason?: 'never' | 'no_uae_number' | 'new_term' | 'interval' | null
   phone: string | null
+  /** False when the school cannot ring this as a UAE number (or there is none). */
+  phoneReachable?: boolean
+  email?: string | null
+  /** An email change this parent asked for that the school hasn't made yet. */
+  pendingEmail?: string | null
+  /** Legacy; always 0. */
   daysOverdue: number
+}
+
+/** A parent's correction to their phone or email, waiting for the office to
+ *  put it into the school's records (admin "Contact updates"). */
+export interface ContactChangeRequestItem {
+  id: string
+  field: 'PHONE' | 'EMAIL'
+  oldValue: string | null
+  newValue: string
+  requestedAt: string
+  exportedAt: string | null
+  resolvedAt: string | null
+  resolvedBy: string | null
+  parent: {
+    name: string
+    email: string
+    hubGuardianId: string | null
+    children: Array<{ name: string; className: string | null }>
+  }
 }
 
 export type SchoolSettingsUpdate = Partial<Omit<SchoolSettings, 'id' | 'name'>>

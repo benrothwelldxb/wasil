@@ -4,6 +4,7 @@ import { useTheme, useApi, api, ConfirmModal, useToast } from '@wasil/shared'
 import type { ParentInvitation, InvitationStatus, Class, ClassSignInCodes, ClassSignInCode, ParentRow } from '@wasil/shared'
 import QRCode from 'qrcode'
 import { HubSyncBanner } from '../components/HubSyncBanner'
+import { ContactUpdatesPanel } from '../components/ContactUpdatesPanel'
 
 // Where the slip's QR points. Same resolution the admin app uses to hand a
 // staff-parent over to the parent app.
@@ -375,6 +376,7 @@ export function ParentsPage() {
   return (
     <div>
       <HubSyncBanner noun="Parents" onSynced={() => { refetchParents(); refetchInvitations() }} />
+      <ContactUpdatesPanel />
 
       {/* Tabs */}
       <div className="flex items-center border-b border-slate-200 mb-6">

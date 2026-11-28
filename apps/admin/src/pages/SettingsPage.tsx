@@ -318,14 +318,15 @@ export function SettingsPage() {
           Parent Contact Confirmation
         </h2>
         <p className="text-xs text-slate-500 mb-4">
-          Periodically prompt parents to confirm their mobile number is still
-          correct. The prompt is a non-dismissable modal — they confirm "still
-          mine" or update it before continuing.
+          Ask parents to confirm their mobile number and email are still right:
+          once a term, and every 2 weeks for a parent with no UAE number (the
+          school can't ring them). Changes appear under Contact updates on the
+          Parents page, as a CSV for IT to add to Nexquare.
         </p>
         <div className="flex items-end gap-3">
           <div>
             <label className="block text-xs font-semibold text-slate-500 mb-1">
-              Re-prompt after (days)
+              Without term dates, every (days)
             </label>
             <input
               type="number"
@@ -342,7 +343,7 @@ export function SettingsPage() {
           <p className="text-xs text-slate-500 pb-2.5">
             {settings.contactConfirmDays === 0
               ? 'Disabled — parents are never prompted.'
-              : `Parents are prompted every ${settings.contactConfirmDays} days.`}
+              : `Once a term (or every ${settings.contactConfirmDays} days if no term dates are set). 0 turns it off.`}
           </p>
         </div>
       </section>
