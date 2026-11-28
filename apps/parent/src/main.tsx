@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
 import { AuthProvider, TenantProvider, ThemeProvider, SessionExpiredModal, ContactConfirmModal } from '@wasil/shared'
+// Most of the parent app's screens live in packages/shared (ContactConfirmModal
+// among them). A change there alone may not redeploy this app: check that the
+// live bundle actually changed, not just that main did.
 import App from './App'
 import './index.css'
 import './i18n'
