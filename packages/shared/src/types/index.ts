@@ -1974,6 +1974,26 @@ export interface ContactPrompt {
   daysOverdue: number
 }
 
+/** Who has answered "are your details up to date?" this round. Headline in
+ *  children (covered once any parent confirmed); adults alongside. */
+export interface ContactConfirmationSummary {
+  enabled: boolean
+  termStart: string | null
+  children: { total: number; confirmed: number; noUaeNumber: number }
+  parents: { total: number; confirmed: number; outstanding: number; outstandingNeverSignedIn: number }
+  outstanding: Array<{
+    id: string
+    name: string
+    email: string
+    phone: string | null
+    phoneReachable: boolean
+    lastConfirmedAt: string | null
+    signedIn: boolean
+    children: Array<{ name: string; className: string | null }>
+  }>
+  noUaeChildren: Array<{ name: string; className: string | null; parents: string[] }>
+}
+
 /** A parent's correction to their phone or email, waiting for the office to
  *  put it into the school's records (admin "Contact updates"). */
 export interface ContactChangeRequestItem {

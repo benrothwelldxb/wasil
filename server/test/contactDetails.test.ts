@@ -12,7 +12,7 @@ import request from 'supertest'
  */
 
 const prismaMock = {
-  user: { findUnique: vi.fn(), update: vi.fn() },
+  user: { findUnique: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   school: { findUnique: vi.fn() },
   termDate: { findFirst: vi.fn() },
   contactChangeRequest: {
@@ -20,6 +20,8 @@ const prismaMock = {
   },
 }
 vi.mock('../src/services/prisma', () => ({ default: prismaMock }))
+const signInMock = vi.fn(async () => ({ signedIn: new Set<string>(), neverSignedIn: new Set<string>() }))
+vi.mock('../src/services/parentActivation', () => ({ parentsBySignInStatus: signInMock }))
 let currentUser: Record<string, unknown> = { id: 'par-1', schoolId: 'sch-1', role: 'PARENT', name: 'Sadia' }
 vi.mock('../src/middleware/auth', () => {
   const attach = (req: express.Request, _res: express.Response, next: express.NextFunction) => {
@@ -31,7 +33,7 @@ vi.mock('../src/middleware/auth', () => {
 
 const cd = await import('../src/services/contactDetails')
 const { default: userRoutes } = await import('../src/routes/users')
-const { default: contactRoutes, csvCell } = await import('../src/routes/contactChanges')
+const { default: contactRoutes, csvCell, contactSummary } = await import('../src/routes/contactChanges')
 
 const app = () => {
   const a = express()
@@ -264,5 +266,73 @@ describe('the office export', () => {
     expect(csvCell('+971501234567', { phone: true })).toBe('+971501234567')
     expect(csvCell('=1+1', { phone: true })).toBe("'=1+1")
     expect(csvCell('Khan, Sadia')).toBe('"Khan, Sadia"')
+  })
+})
+
+describe('who has confirmed', () => {
+  const kid = (id: string, first: string, cls: string) => ({ student: { id, firstName: first, lastName: 'K', class: { name: cls } } })
+  const parent = (id: string, phone: string | null, confirmedAt: Date | null, kids: ReturnType<typeof kid>[]) => ({
+    id, name: id, email: `${id}@x.com`, phone, phoneConfirmedAt: confirmedAt, studentLinks: kids,
+  })
+
+  beforeEach(() => {
+    prismaMock.school.findUnique.mockResolvedValue({ contactConfirmDays: 180 })
+    prismaMock.termDate.findFirst.mockResolvedValue({ date: daysAgo(30) })
+    signInMock.mockResolvedValue({ signedIn: new Set(['mum', 'dad']), neverSignedIn: new Set(['gran']) })
+  })
+
+  // VHPS has ~1.5 adults per child: a parent count reads as inflated against
+  // the roll. The headline is children, covered once ANY parent answered.
+  it('counts children covered by at least one parent, with adults alongside', async () => {
+    prismaMock.user.findMany.mockResolvedValue([
+      parent('mum', '+971501111111', daysAgo(5), [kid('s1', 'Amina', '3A')]),
+      parent('dad', '+971502222222', daysAgo(60), [kid('s1', 'Amina', '3A')]),     // before this term: due
+      parent('gran', '+447700900123', null, [kid('s2', 'Omar', '1B')]),           // never, foreign number
+      parent('left', '+971503333333', daysAgo(5), []),                           // family who has left
+    ])
+    const r = await contactSummary('sch-1', NOW)
+
+    expect(r.children).toEqual({ total: 2, confirmed: 1, noUaeNumber: 1 })
+    expect(r.parents).toEqual({ total: 3, confirmed: 1, outstanding: 2, outstandingNeverSignedIn: 1 })
+    expect(r.outstanding.map(o => o.id)).toEqual(['dad', 'gran'])
+    expect(r.noUaeChildren).toEqual([{ name: 'Omar K', className: '1B', parents: ['gran'] }])
+  })
+
+  // Same rule as the prompt, so the panel never calls someone confirmed whom
+  // the app is still asking.
+  it('a non-UAE parent who answered last week is confirmed; three weeks ago is not', async () => {
+    prismaMock.user.findMany.mockResolvedValue([
+      parent('a', '+447700900123', daysAgo(7), [kid('s1', 'A', '1A')]),
+      parent('b', '+447700900124', daysAgo(21), [kid('s2', 'B', '1A')]),
+    ])
+    const r = await contactSummary('sch-1', NOW)
+    expect(r.outstanding.map(o => o.id)).toEqual(['b'])
+  })
+
+  it('reports nobody confirmed while the prompt is turned off', async () => {
+    prismaMock.school.findUnique.mockResolvedValue({ contactConfirmDays: 0 })
+    prismaMock.user.findMany.mockResolvedValue([parent('a', '+971501111111', daysAgo(1), [kid('s1', 'A', '1A')])])
+    const r = await contactSummary('sch-1', NOW)
+    expect(r.enabled).toBe(false)
+    expect(r.children.confirmed).toBe(0)
+  })
+
+  it('only counts real parents and children on roll', async () => {
+    prismaMock.user.findMany.mockResolvedValue([])
+    await contactSummary('sch-1', NOW)
+    const q = prismaMock.user.findMany.mock.calls[0][0]
+    expect(q.where).toEqual({ schoolId: 'sch-1', role: 'PARENT', isTest: false })
+    expect(q.select.studentLinks.where).toEqual({ student: { leftAt: null, isTest: false } })
+  })
+
+  it('exports the parents still to answer as a CSV for chasing', async () => {
+    currentUser = { id: 'adm-1', schoolId: 'sch-1', role: 'ADMIN', name: 'Office' }
+    prismaMock.user.findMany.mockResolvedValue([
+      parent('gran', '+447700900123', null, [kid('s2', 'Omar', '1B')]),
+    ])
+    const res = await request(app()).get('/api/admin/contact-changes/outstanding.csv')
+    const lines = res.text.replace(/^\uFEFF/, '').trim().split('\r\n')
+    expect(lines[0]).toBe('Parent name,Sign-in email,Phone,UAE number,Children,Classes,Last confirmed,Signed in to Connect')
+    expect(lines[1]).toBe('gran,gran@x.com,+447700900123,No,Omar K,1B,Never,No')
   })
 })
