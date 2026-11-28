@@ -24,6 +24,7 @@ const prismaMock = {
     delete: vi.fn(),
   },
   auditLog: { create: vi.fn(async () => ({})) },
+  parentStudentLink: { findMany: vi.fn(async () => [{ userId: 'par-1' }, { userId: 'par-2' }]) },
 }
 const storageMock = {
   uploadFile: vi.fn(async (_b: Buffer, key: string) => `https://acct.r2.cloudflarestorage.com/${key}`),
@@ -119,7 +120,7 @@ describe('delivering a new report', () => {
       type: 'STUDENT_REPORT',
       title: 'A new report for Maya is ready',
       data: { route: '/report-cards' },
-      target: { targetClass: 'Reports', studentIds: ['stu-maya'], schoolId: 'school-1' },
+      target: { targetClass: 'Reports', parentUserIds: ['par-1', 'par-2'], schoolId: 'school-1' },
     }))
   })
 

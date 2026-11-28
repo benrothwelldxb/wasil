@@ -177,6 +177,11 @@ export interface HubGuardianPupilLink {
   pupilId: string
   relationship: string
   isPrimary: boolean
+  /** School-set: does this adult receive this child's reports (Hub #258). A
+   *  real boolean on Hub's side, defaulting true. Optional HERE because a Hub
+   *  without #258 deployed omits it, and an absent field must change nothing
+   *  rather than read as false and hide every report in the school. */
+  receivesReports?: boolean
 }
 export interface HubGuardian {
   id: string

@@ -658,6 +658,13 @@ model ParentStudentLink {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   studentId String
   student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Whether the school wants this adult to receive this child's reports. From
+  /// Hub's GuardianPupil.receivesReports — school-set, per adult-child pair (a
+  /// separated parent the school sends to, an emergency-only contact it does
+  /// not). Not consent. False hides the child's reports from this parent and
+  /// they are not told about new ones; everything else about the link stands.
+  /// Defaults true; only the Hub sync ever sets it, and only when Hub sends it.
+  receivesReports Boolean @default(true)
   createdAt DateTime @default(now())
 
   @@unique([userId, studentId])

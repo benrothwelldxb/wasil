@@ -362,6 +362,36 @@ describe('syncSchoolFromHub — guardian provisioning', () => {
     expect(summary.parentLinks).toEqual({ created: 1, skippedNoPupil: 0 })
   })
 
+  // Hub #258: whether the school sends this adult this child's reports.
+  // Written both ways when Hub sends it (a school can switch it back on)...
+  it.each([false, true])('mirrors Hub receivesReports=%s onto the link, on create and on update', async (flag) => {
+    mGuardians.mockResolvedValue([{ ...GUARDIAN, pupils: [{ ...GUARDIAN.pupils[0], receivesReports: flag }] }])
+    prismaMock.user.findFirst.mockResolvedValue(null)
+    prismaMock.user.create.mockResolvedValue({ id: 'cu-parent' })
+
+    await syncSchoolFromHub('connect-school-1')
+
+    expect(prismaMock.parentStudentLink.upsert).toHaveBeenCalledWith({
+      where: { userId_studentId: { userId: 'cu-parent', studentId: 'cs-hp1' } },
+      create: { userId: 'cu-parent', studentId: 'cs-hp1', receivesReports: flag },
+      update: { receivesReports: flag },
+    })
+  })
+
+  // ...and never when it doesn't. A Hub without #258 omits the field; reading
+  // that as false would hide every report in the school on the next sync.
+  it('leaves receivesReports alone when Hub does not send it', async () => {
+    mGuardians.mockResolvedValue([GUARDIAN])
+    prismaMock.user.findFirst.mockResolvedValue(null)
+    prismaMock.user.create.mockResolvedValue({ id: 'cu-parent' })
+
+    await syncSchoolFromHub('connect-school-1')
+
+    const arg = prismaMock.parentStudentLink.upsert.mock.calls[0][0] as any
+    expect(arg.create).not.toHaveProperty('receivesReports')
+    expect(arg.update).toEqual({})
+  })
+
   it('re-run is idempotent — no duplicate user or link', async () => {
     mGuardians.mockResolvedValue([GUARDIAN])
     let provisioned: any = null

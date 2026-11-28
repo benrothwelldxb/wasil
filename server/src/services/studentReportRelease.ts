@@ -29,9 +29,27 @@ export function isVisibleToParents(report: { publishAt: Date | null }, now: Date
 }
 
 /**
+ * Who is told about a child's report: the parents linked to the child whom the
+ * school sends reports to (ParentStudentLink.receivesReports, from Hub). The
+ * same rule as the parent reports page, so nobody is notified about a report
+ * they cannot open. A pupil who has left is told nothing, as before.
+ */
+export async function reportAudience(report: { studentId: string; schoolId: string }): Promise<string[]> {
+  const links = await prisma.parentStudentLink.findMany({
+    where: {
+      studentId: report.studentId,
+      receivesReports: true,
+      student: { schoolId: report.schoolId, leftAt: null },
+    },
+    select: { userId: true },
+  })
+  return [...new Set(links.map(l => l.userId))]
+}
+
+/**
  * Tell a child's parents about a report: a first release ("new") or a
- * correction to one they can already see ("updated"). Audience is the child's
- * parentStudentLink, nothing the sender says. Respects the parent's "Reports"
+ * correction to one they can already see ("updated"). Audience is
+ * reportAudience(), nothing the sender says. Respects the parent's "Reports"
  * preference. Never throws (sendNotification swallows its own failures).
  */
 export async function announceReport(
@@ -50,8 +68,9 @@ export async function announceReport(
     resourceType: 'STUDENT_REPORT',
     resourceId: report.id,
     data: { route: '/report-cards' },
-    // Label only: the studentIds branch is the audience and never falls wider.
-    target: { targetClass: 'Reports', studentIds: [report.studentId], schoolId: report.schoolId },
+    // Label only: the explicit parent list is the audience and never falls
+    // wider — an empty list sends to nobody.
+    target: { targetClass: 'Reports', parentUserIds: await reportAudience(report), schoolId: report.schoolId },
   })
 }
 
