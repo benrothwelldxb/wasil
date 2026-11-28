@@ -134,8 +134,11 @@ model School {
   // those without publishing figures.
   attendanceFigureVisibleToParents Boolean @default(false)
 
-  // Periodically ask parents to confirm their mobile number is still current.
-  // Days between prompts. 0 disables the prompt entirely.
+  // Periodically ask parents to confirm their contact details are current.
+  // 0 disables the prompt entirely. Otherwise parents are asked once a TERM
+  // (from TermDate term-starts), falling back to every N days for a school
+  // with no term dates; a parent with no UAE number is asked every 14 days
+  // regardless. See services/contactDetails.ts.
   contactConfirmDays Int @default(180)
 
   // The three middle items of the parent app's bottom tab bar (Home + these 3 +
@@ -196,6 +199,7 @@ model School {
 
   // Outbox (email + push delivery queue)
   outboxEntries OutboxEntry[]
+  contactChangeRequests ContactChangeRequest[]
 
   // External providers (ECA / catering) linked to this school
   providerLinks        ProviderSchoolLink[]
@@ -245,10 +249,9 @@ model User {
 
   // Phone number for SMS/WhatsApp alerts
   phone            String?
-  // When the parent last confirmed/updated their phone via the contact-
-  // details modal. Null means never confirmed — they'll be prompted on next
-  // login. Compared against School.contactConfirmDays to decide when to
-  // re-prompt.
+  // When the parent last answered the contact-details prompt (phone AND
+  // email since 2026-11-28 — the name predates email being asked). Null means
+  // never — they'll be prompted on next login. See services/contactDetails.ts.
   phoneConfirmedAt DateTime?
 
   // 2FA fields
@@ -408,6 +411,7 @@ model User {
 
   // Report card uploads
   uploadedReports StudentReport[]
+  contactChangeRequests ContactChangeRequest[]
 
   // Attendance relations
   attendanceMarked   AttendanceRecord[]  @relation("AttendanceMarkedBy")
@@ -3349,4 +3353,43 @@ model PartnerIntent {
 
   @@index([status, createdAt])
   @@index([hubSchoolId, createdAt])
+}
+
+/// A parent telling the school their phone or email has changed.
+///
+/// Hub (and the MIS behind it, Nexquare) holds a family's contact details, and
+/// Connect cannot write to it. So a correction made in Connect is a REQUEST:
+/// the office downloads the open ones as a CSV for IT to load into the MIS,
+/// and marks them done. A request also closes itself when the Hub sync sees
+/// Hub holding the new value.
+///
+/// PHONE: Connect uses the new number at once (User.phone) for its own texts,
+/// and the Hub sync leaves it alone while the request is open — before this,
+/// the next sync silently put the old number back.
+/// EMAIL: never applied by Connect. The email is the parent's sign-in, and a
+/// mistyped one would lock them out; it changes when the school changes it.
+///
+/// At most one OPEN request per (user, field): a second correction updates
+/// newValue in place, keeping oldValue as what the school's records hold.
+model ContactChangeRequest {
+  id         String    @id @default(cuid())
+  schoolId   String
+  school     School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// 'PHONE' | 'EMAIL'
+  field      String
+  /// What the school's records held when the parent asked. Null = nothing.
+  oldValue   String?
+  newValue   String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  /// Last included in a CSV download. Informational; the row stays open.
+  exportedAt DateTime?
+  resolvedAt DateTime?
+  /// 'hub' when the sync saw Hub catch up; otherwise the admin's name.
+  resolvedBy String?
+
+  @@index([schoolId, resolvedAt])
+  @@index([userId, field])
 }

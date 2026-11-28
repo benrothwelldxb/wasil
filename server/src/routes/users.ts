@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { currentTermStart, isUaePhone, promptDue, requestContactChange, samePhone } from '../services/contactDetails.js'
 import { Role } from '@prisma/client'
 import prisma from '../services/prisma.js'
 import { isAdmin, isAuthenticated } from '../middleware/auth.js'
@@ -284,9 +285,9 @@ router.get('/languages', isAuthenticated, async (_req, res) => {
 })
 
 // ─── Contact-details confirmation ────────────────────────────────────────────
-// Parents are periodically asked to confirm their mobile number is still
-// current. School.contactConfirmDays governs the cadence; 0 disables it.
-// Staff/admins don't need this prompt.
+// Parents are periodically asked whether their phone and email are still
+// right — once a term, or every 14 days when the school has no UAE number to
+// ring. The rules are in services/contactDetails.ts. Staff/admins are not asked.
 
 function normalisePhone(raw: string): string | null {
   const cleaned = raw.trim().replace(/[^\d+]/g, '')
@@ -295,40 +296,59 @@ function normalisePhone(raw: string): string | null {
   return cleaned
 }
 
-// GET /me/contact-prompt — should the contact-details modal be shown?
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+async function pendingEmailFor(userId: string): Promise<string | null> {
+  const r = await prisma.contactChangeRequest.findFirst({
+    where: { userId, field: 'EMAIL', resolvedAt: null },
+    orderBy: { createdAt: 'desc' },
+    select: { newValue: true },
+  })
+  return r?.newValue ?? null
+}
+
+// GET /me/contact-prompt — should the contact-details prompt be shown?
 router.get('/me/contact-prompt', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
     if (user.role !== 'PARENT') {
-      return res.json({ needsConfirmation: false, phone: null, daysOverdue: 0 })
+      return res.json({ needsConfirmation: false, phone: null, email: null, daysOverdue: 0 })
     }
 
-    const [me, school] = await Promise.all([
+    const now = new Date()
+    const [me, school, termStart, pendingEmail] = await Promise.all([
       prisma.user.findUnique({
         where: { id: user.id },
-        select: { phone: true, phoneConfirmedAt: true },
+        select: { phone: true, email: true, phoneConfirmedAt: true },
       }),
       prisma.school.findUnique({
         where: { id: user.schoolId },
         select: { contactConfirmDays: true },
       }),
+      currentTermStart(user.schoolId, now),
+      pendingEmailFor(user.id),
     ])
 
-    const intervalDays = school?.contactConfirmDays ?? 0
-    if (intervalDays <= 0) {
-      return res.json({ needsConfirmation: false, phone: me?.phone ?? null, daysOverdue: 0 })
-    }
-
-    const now = Date.now()
-    const intervalMs = intervalDays * 24 * 60 * 60 * 1000
-    const lastConfirmed = me?.phoneConfirmedAt?.getTime() ?? 0
-    const overdue = lastConfirmed === 0 ? true : now - lastConfirmed > intervalMs
-    const daysOverdue = lastConfirmed === 0 ? 0 : Math.max(0, Math.floor((now - lastConfirmed - intervalMs) / (24 * 60 * 60 * 1000)))
+    const reason = promptDue({
+      now,
+      intervalDays: school?.contactConfirmDays ?? 0,
+      lastConfirmedAt: me?.phoneConfirmedAt ?? null,
+      phone: me?.phone ?? null,
+      currentTermStart: termStart,
+    })
 
     res.json({
-      needsConfirmation: overdue,
+      needsConfirmation: reason !== null,
+      reason,
       phone: me?.phone ?? null,
-      daysOverdue,
+      // False when the school cannot ring this number as a UAE call (or there
+      // is none) — the prompt says so, and comes back every 14 days.
+      phoneReachable: isUaePhone(me?.phone ?? null),
+      email: me?.email ?? null,
+      // An email change the parent asked for that the school hasn't made yet.
+      pendingEmail,
+      // Kept for older app builds, which read it; nothing new should.
+      daysOverdue: 0,
     })
   } catch (error) {
     console.error('Error fetching contact prompt:', error)
@@ -336,7 +356,9 @@ router.get('/me/contact-prompt', isAuthenticated, async (req, res) => {
   }
 })
 
-// POST /me/contact-confirm — parent confirms or updates their number
+// POST /me/contact-confirm — parent confirms or corrects their details.
+// Body: { phone, email? }. `email` is optional so older app builds, which
+// send only the phone, keep working.
 router.post('/me/contact-confirm', isAuthenticated, async (req, res) => {
   try {
     const user = req.user!
@@ -344,7 +366,7 @@ router.post('/me/contact-confirm', isAuthenticated, async (req, res) => {
       return res.status(403).json({ error: 'Only parents can use this endpoint' })
     }
 
-    const { phone } = req.body as { phone?: string }
+    const { phone, email } = req.body as { phone?: string; email?: string }
     if (typeof phone !== 'string') {
       return res.status(400).json({ error: 'phone is required' })
     }
@@ -352,13 +374,45 @@ router.post('/me/contact-confirm', isAuthenticated, async (req, res) => {
     if (!normalised) {
       return res.status(400).json({ error: 'Please enter a valid mobile number (digits only, 6–20 characters)' })
     }
+    const nextEmail = typeof email === 'string' ? email.trim() : null
+    if (nextEmail !== null && !EMAIL_RE.test(nextEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email address' })
+    }
 
+    const me = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { phone: true, email: true },
+    })
+    if (!me) return res.status(404).json({ error: 'User not found' })
+
+    // A new number is used by Connect at once and handed to the office; the
+    // Hub sync leaves it alone until the school's records catch up.
+    if (!samePhone(me.phone, normalised)) {
+      await requestContactChange({
+        schoolId: user.schoolId, userId: user.id, field: 'PHONE',
+        schoolValue: me.phone, newValue: normalised,
+      })
+    }
+    // A new email is ONLY requested. It is their sign-in; the school changes it.
+    if (nextEmail !== null) {
+      await requestContactChange({
+        schoolId: user.schoolId, userId: user.id, field: 'EMAIL',
+        schoolValue: me.email, newValue: nextEmail.toLowerCase(),
+      })
+    }
+
+    const confirmedAt = new Date()
     await prisma.user.update({
       where: { id: user.id },
-      data: { phone: normalised, phoneConfirmedAt: new Date() },
+      data: { phone: normalised, phoneConfirmedAt: confirmedAt },
     })
 
-    res.json({ phone: normalised, confirmedAt: new Date().toISOString() })
+    res.json({
+      phone: normalised,
+      phoneReachable: isUaePhone(normalised),
+      pendingEmail: await pendingEmailFor(user.id),
+      confirmedAt: confirmedAt.toISOString(),
+    })
   } catch (error) {
     console.error('Error confirming contact details:', error)
     res.status(500).json({ error: 'Failed to confirm contact details' })

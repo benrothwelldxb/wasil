@@ -19,6 +19,7 @@ import whatsNewRoutes from './routes/whatsNew.js'
 import publicTenantRoutes from './routes/publicTenant.js'
 import hubAuthRoutes from './routes/hubAuth.js'
 import hubSyncRoutes from './routes/hubSync.js'
+import contactChangeRoutes from './routes/contactChanges.js'
 import hubWebhookRoutes from './routes/hubWebhook.js'
 import messagesRoutes from './routes/messages.js'
 import formsRoutes from './routes/forms.js'
@@ -226,6 +227,7 @@ app.use('/api/partner', partnerRoutes)
 app.use('/api/timetable', timetableRoutes)
 // Admin-triggered Wasil Hub MIS sync (POST /api/admin/hub-sync)
 app.use('/api/admin', hubSyncRoutes)
+app.use('/api/admin', contactChangeRoutes)
 // Admin-only "Test Student" backdoor account provisioning (school-scoped).
 app.use('/api/admin/test-accounts', testAccountsRoutes)
 

@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // (year-group → class → pupil), and staff email-fallback linking that never
 // rewrites an existing user's Connect role.
 const prismaMock = {
+  contactChangeRequest: { findMany: vi.fn(async () => []), update: vi.fn() },
   school: { findUnique: vi.fn(), update: vi.fn() },
   yearGroup: { upsert: vi.fn(), create: vi.fn() },
   class: { upsert: vi.fn(), create: vi.fn() },
@@ -783,6 +784,18 @@ describe('syncSchoolFromHub — a guardian who changed their email', () => {
     expect(prismaMock.user.update.mock.calls[0][0].data.email).toBe('ness@nessdealmaker.com')
     expect(summary.guardians.emailUpdated).toBe(1)
     expect(summary.guardians.emailConflicts).toEqual([])
+  })
+
+  // The bug this replaced: a parent corrected their number in Connect and the
+  // next sync quietly put Hub's old one back.
+  it('keeps a number the parent gave while the school’s records still have the old one', async () => {
+    linkAs(provisionedAccount())
+    prismaMock.contactChangeRequest.findMany.mockResolvedValueOnce([
+      { id: 'ccr-1', userId: 'cu-parent', field: 'PHONE', newValue: '+971502222222' },
+    ])
+    await syncSchoolFromHub('connect-school-1')
+    expect(prismaMock.user.update.mock.calls[0][0].data.phone).toBeUndefined()
+    expect(prismaMock.contactChangeRequest.update).not.toHaveBeenCalled()
   })
 
   it('still never touches role', async () => {

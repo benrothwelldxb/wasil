@@ -22,6 +22,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  */
 
 const prismaMock = {
+  contactChangeRequest: { findMany: vi.fn(async () => []), update: vi.fn() },
   school: { findUnique: vi.fn(), update: vi.fn() },
   yearGroup: { upsert: vi.fn(), create: vi.fn() },
   class: { upsert: vi.fn(), create: vi.fn() },

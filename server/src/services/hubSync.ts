@@ -29,6 +29,7 @@
 // Field mapping (Hub DTO → Connect column) and every unmapped field are
 // documented inline next to each upsert.
 import type { Role } from '@prisma/client'
+import { openRequestsByUser, reconcileWithHub } from './contactDetails.js'
 import prisma from './prisma.js'
 import {
   listYearGroups,
@@ -430,8 +431,11 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
     emailUpdated: 0, emailConflicts: [],
   }
   const parentLinkSummary = { created: 0, skippedNoPupil: 0 }
+  // Parents' pending contact corrections: the sync must not write Hub's old
+  // phone over a new one, and closes a request once Hub has caught up.
+  const pendingContact = await openRequestsByUser(schoolId)
   for (const g of hubGuardians) {
-    const userId = await upsertGuardian(g, schoolId, guardianSummary)
+    const userId = await upsertGuardian(g, schoolId, guardianSummary, pendingContact)
     if (!userId) continue // no-email guardian: can't be a login, already counted
     for (const link of g.pupils) {
       const studentId = studentIdByHubPupil.get(link.pupilId)
@@ -810,6 +814,7 @@ async function upsertGuardian(
   g: HubGuardian,
   schoolId: string,
   summary: SyncSummary['guardians'],
+  pendingContact: Map<string, Array<{ id: string; field: string; newValue: string }>> = new Map(),
 ): Promise<string | null> {
   const name = `${g.firstName} ${g.lastName}`.trim()
   const email = g.email?.trim().toLowerCase() || null
@@ -820,10 +825,11 @@ async function upsertGuardian(
   })
   if (linked) {
     const nextEmail = await resolveEmailChange(linked, g, email, summary)
+    const { phone } = await reconcileWithHub(pendingContact.get(linked.id), { phone: g.phone, email })
     await prisma.user.update({
       where: { id: linked.id },
       // Refresh profile; deliberately DO NOT touch `role`.
-      data: { name, phone: g.phone ?? undefined, ...(nextEmail ? { email: nextEmail } : {}) },
+      data: { name, phone, ...(nextEmail ? { email: nextEmail } : {}) },
     })
     summary.linked++
     return linked.id
@@ -843,11 +849,12 @@ async function upsertGuardian(
     // identity link onto another Hub guardian.
     const linkHubGuardianId =
       !candidate.hubGuardianId || candidate.hubGuardianId === g.id ? g.id : undefined
+    const { phone } = await reconcileWithHub(pendingContact.get(candidate.id), { phone: g.phone, email })
     await prisma.user.update({
       where: { id: candidate.id },
       data: {
         name,
-        phone: g.phone ?? undefined,
+        phone,
         ...(linkHubGuardianId ? { hubGuardianId: linkHubGuardianId } : {}),
       },
     })
