@@ -1063,6 +1063,10 @@ export const contactChanges = {
     fetchApi<{ requests: import('../types').ContactChangeRequestItem[] }>(`/api/admin/contact-changes?status=${status}`),
   exportCsv: () =>
     downloadCSV('/api/admin/contact-changes/export.csv', `contact-updates-${new Date().toISOString().slice(0, 10)}.csv`),
+  summary: () =>
+    fetchApi<import('../types').ContactConfirmationSummary>('/api/admin/contact-changes/summary'),
+  exportOutstanding: () =>
+    downloadCSV('/api/admin/contact-changes/outstanding.csv', `contact-not-confirmed-${new Date().toISOString().slice(0, 10)}.csv`),
   resolve: (ids: string[]) =>
     fetchApi<{ resolved: number }>('/api/admin/contact-changes/resolve', {
       method: 'POST',
