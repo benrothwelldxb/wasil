@@ -441,10 +441,14 @@ export async function syncSchoolFromHub(connectSchoolId: string): Promise<SyncSu
         continue
       }
       // Idempotent on the unique [userId, studentId] — re-runs never duplicate.
+      // `receivesReports` is written only when Hub actually sends a boolean.
+      // Absent (a Hub without #258) leaves the link as it is: reading a missing
+      // field as false would hide every report in the school overnight.
+      const reports = typeof link.receivesReports === 'boolean' ? { receivesReports: link.receivesReports } : {}
       await prisma.parentStudentLink.upsert({
         where: { userId_studentId: { userId, studentId } },
-        create: { userId, studentId },
-        update: {},
+        create: { userId, studentId, ...reports },
+        update: reports,
       })
       parentLinkSummary.created++
     }

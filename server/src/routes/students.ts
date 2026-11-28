@@ -365,9 +365,12 @@ router.get('/reports/my-children', isAuthenticated, async (req: Request, res: Re
   try {
     const user = req.user!
 
-    // Get parent's student links
+    // Get parent's student links — only the children whose reports the school
+    // sends to this parent. A separated parent the school has switched off
+    // (Hub's receivesReports) sees none of that child's reports, while still
+    // seeing everything else about them.
     const links = await prisma.parentStudentLink.findMany({
-      where: { userId: user.id },
+      where: { userId: user.id, receivesReports: true },
       select: { studentId: true },
     })
 
